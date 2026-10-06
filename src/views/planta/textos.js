@@ -19,6 +19,12 @@ export const num = (v, d, u) => (v === null || v === undefined || isNaN(v)) ? '�
 export const ent = (v) => (v === '' || v === null || v === undefined || isNaN(v)) ? '—' : Math.round(Number(v)).toLocaleString('es-EC');
 export const dec = (v, d) => (v === '' || v === null || v === undefined || isNaN(v)) ? '—' : fmt(Number(v), d);
 export const dm = (iso) => (/^\d{4}-\d{2}-\d{2}$/.test(iso || '') ? iso.slice(8, 10) + '/' + iso.slice(5, 7) : '—');
+const msDia = (iso) => Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10));
+const dos = (n) => String(n).padStart(2, '0');
+/** Días de `a` a `b` (fechas ISO; 0 si son la misma), sin depender de la zona ni del horario de verano. */
+export const difDias = (a, b) => Math.round((msDia(b) - msDia(a)) / 864e5);
+/** La fecha ISO `n` días después de `iso`. */
+export const masDias = (iso, n) => { const d = new Date(msDia(iso) + n * 864e5); return d.getUTCFullYear() + '-' + dos(d.getUTCMonth() + 1) + '-' + dos(d.getUTCDate()); };
 // es-EC como fmtPop: agrupa los miles también en cuatro cifras («1.006,0 M»; 'es' daba «1006,0 M»)
 export const millones = (v, d = 1) => (v / 1e6).toLocaleString('es-EC', { minimumFractionDigits: d, maximumFractionDigits: d }) + ' M';
 const SEM = { ok: 'en rango', bajo: 'bajo el rango', alto: 'sobre el rango' };
@@ -327,4 +333,57 @@ export function tablaDeTanques(grupos, area, opc, ctx) {
   const visibles = opc.soloAlerta ? todas.filter((f) => f.alerta) : todas;
   if (!visibles.length) return { ...base, resumen, vacio: 'Ningún tanque en alerta.' };
   return { ...base, resumen, vacio: '', filas: ordenarTanques(visibles, k, dir) };
+}
+
+/* ---------- 📊 Cronograma del ciclo (T3 de Análisis, 2026-10-06, usuario) ----------
+   Lo que se dibuja del cronograma (estado.js · cronogramaPlanta): un eje de fechas COMÚN —de la siembra más antigua de lo
+   que se ve hasta hoy (o el cierre del mes elegido), como mucho los últimos VENTANA_CRONO días— y una fila por módulo (los
+   10, siempre) con sus tramos de etapa en %, el despacho (🚚 en el primero y rayado desde él), la marca gris de la
+   desinfección, la etiqueta del final («día 22 · PL8», «despachada 02/10»…) y el detalle de cada tramo. */
+export const VENTANA_CRONO = 60;
+export function cronogramaParaPintar(grupos, crono, ctx) {
+  if (!ctx.cargado || !crono) return { vacio: ctx.cargado ? 'Sin datos de larvicultura.' : 'Cargando datos de producción…', filas: [], marcas: [] };
+  const hasta = crono.hasta, larv = grupos.filter((g) => g.kind === 'larv');
+  const inicios = larv.map((g) => crono.modulos[g.id]).flatMap((c) => (!c ? [] : c.inicio ? [c.inicio] : c.ultimo ? [c.ultimo] : []));
+  let desde = inicios.length ? inicios.reduce((a, b) => (a < b ? a : b)) : masDias(hasta, -27);
+  if (difDias(desde, hasta) > VENTANA_CRONO - 1) desde = masDias(hasta, -(VENTANA_CRONO - 1));
+  const total = difDias(desde, hasta) + 1, r2 = (v) => Math.round(v * 100) / 100;
+  const pos = (iso) => Math.max(0, Math.min(total, difDias(desde, iso))) / total * 100;   // el comienzo del día, en %
+  const ancho = (a, b) => Math.max(0, pos(masDias(b, 1)) - pos(a));
+  const medio = (iso) => r2(pos(iso) + 50 / total);
+  const marcas = [], paso = total > 49 ? 14 : 7;
+  for (let d = 0; d < total; d += paso) marcas.push({ pct: r2(pos(masDias(desde, d))), txt: dm(masDias(desde, d)) });
+  const filas = larv.map((g) => {
+    const c = crono.modulos[g.id] || { tipo: 'sin' };
+    const f = { g, id: g.id, short: g.short, tipo: c.tipo, corrida: c.corrida || null, tramos: [], desp: null, camion: null, desinf: null, cortada: false };
+    if (c.tipo === 'sin') { f.etiqueta = 'sin corrida'; f.aria = g.name + ': sin corrida'; return f; }
+    const C = 'C' + c.corrida;
+    if (c.tipo === 'desinfeccion') {
+      f.etiqueta = 'pre-siembra (' + C + ')' + (c.ultimo ? ' · desinfección ' + dm(c.ultimo) : '');
+      if (c.ultimo && c.ultimo >= desde) f.desinf = medio(c.ultimo);
+      f.aria = g.name + ': ' + f.etiqueta; return f;
+    }
+    f.cortada = c.inicio < desde;
+    const desdeDe = (iso) => (iso < desde ? desde : iso);
+    f.tramos = c.tramos.filter((t) => t.hasta >= desde).map((t, i, arr) => ({
+      key: t.key, color: t.color, left: r2(pos(desdeDe(t.desde))), width: r2(ancho(desdeDe(t.desde), t.hasta)),
+      detalle: g.short + ' · ' + C + ' · ' + t.label + (t.range ? ' (' + t.range + ')' : '') + ' · ' + dm(t.desde) + '–' + dm(t.hasta) + ' · '
+        + t.dias + (t.dias === 1 ? ' día' : ' días') + (c.tipo === 'cultivo' && i === arr.length - 1 ? (ctx.mesPasado ? ' · sigue al cierre' : ' · sigue hoy') : ''),
+    }));
+    if (c.despacho && c.fin >= desde) {
+      f.desp = { left: r2(pos(desdeDe(c.despacho.desde))), width: r2(ancho(desdeDe(c.despacho.desde), c.fin)) };
+      if (c.despacho.desde >= desde) f.camion = r2(pos(c.despacho.desde));
+    }
+    f.etiqueta = c.tipo === 'despachado' ? 'despachada ' + dm(c.despacho.hasta) + ' · ' + C
+      : 'día ' + c.dias + (c.estadio ? ' · ' + c.estadio : '') + (c.despacho ? ' · despachando desde ' + dm(c.despacho.desde) : '');
+    f.aria = g.name + ', ' + C + ': ' + f.etiqueta;
+    return f;
+  });
+  const cortePct = medio(hasta);
+  return {
+    // una marca pegada a la de «hoy»/«cierre» se le montaría encima (medido en el celular): se omite
+    vacio: '', desde, hasta, marcas: marcas.filter((m) => m.pct < cortePct - 12), filas, corte: ctx.mesPasado ? 'cierre' : 'hoy', cortePct,
+    nota: 'Cada barra va de la siembra ' + (ctx.mesPasado ? 'al cierre de ' + ctx.mesPasado.mes : 'a hoy') + ' (o al despacho), por etapa: la del estadío más '
+      + 'avanzado de cada día.' + (difDias(desde, hasta) + 1 >= VENTANA_CRONO ? ' Se ven los últimos ' + VENTANA_CRONO + ' días.' : '') + ' Toca un tramo para su detalle.',
+  };
 }

@@ -25,7 +25,7 @@ import './planta.css';
 import { esc } from '../../core/format.js';
 import { store, on, EV } from '../../core/store.js';
 import { asegurarLibro } from '../../core/refresh.js';
-import { estadoPlanta, estadoMaduracion, hoyLocal } from './estado.js';
+import { estadoPlanta, estadoMaduracion, cronogramaPlanta, hoyLocal } from './estado.js';
 import { cifrasGerencia } from './cifras.js';
 
 const MAQUETA = `
@@ -120,12 +120,14 @@ export function plantaView(root) {
   let memo = { datos: null, hoy: '', meses: new Map() };
   const calcularMes = (hoy) => {
     const fallos = [];
-    let larv = null, mad = null, cifras = null;
+    let larv = null, mad = null, cifras = null, crono = null;
     try { cifras = cifrasGerencia(store.globalData, hoy, mesElegido); } catch (e) { console.error('[planta] cifras', e); fallos.push('producción del mes (' + e.message + ')'); }
     const pasado = cifras && !cifras.actual ? cifras : null;   // sin cifras, hoy
     try { larv = estadoPlanta(pasado ? pasado.corridas : undefined); } catch (e) { console.error('[planta] larvicultura', e); fallos.push('larvicultura (' + e.message + ')'); }
     try { mad = estadoMaduracion(store.globalData, hoy, pasado ? pasado.cierre : undefined); } catch (e) { console.error('[planta] maduración', e); fallos.push('maduración (' + e.message + ')'); }
-    return { cifras, pasado, larv, mad, fallos };
+    // el cronograma del ciclo (T3 de 📊 Análisis): las corridas que pinta larv, hasta hoy o el cierre del mes elegido
+    if (larv) try { crono = cronogramaPlanta(larv.modulos, pasado ? pasado.cierre : hoy); } catch (e) { console.error('[planta] cronograma', e); fallos.push('cronograma (' + e.message + ')'); }
+    return { cifras, pasado, larv, mad, crono, fallos };
   };
   const pintar = () => {
     if (!vista) return;   // la del modo elegido aún se está cargando: pinta al montarse
@@ -134,8 +136,8 @@ export function plantaView(root) {
     if (memo.datos !== store.globalData || memo.hoy !== hoy) memo = { datos: store.globalData, hoy, meses: new Map() };
     let calc = memo.meses.get(mesElegido);
     if (!calc) { calc = calcularMes(hoy); if (!calc.fallos.length) memo.meses.set(mesElegido, calc); }
-    const { cifras, pasado, larv, mad, fallos } = calc;
-    vista.pintarEstado({ modulos: larv ? larv.modulos : {}, resumen: larv ? larv.resumen : null, mad, cifras,
+    const { cifras, pasado, larv, mad, crono, fallos } = calc;
+    vista.pintarEstado({ modulos: larv ? larv.modulos : {}, resumen: larv ? larv.resumen : null, mad, cifras, crono,
       mes: pasado ? { mes: pasado.mes, cierre: pasado.cierre } : null });
     const hora = new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
     vista.aviso(fallos.length ? 'No se pudo calcular: ' + fallos.join(' · ')

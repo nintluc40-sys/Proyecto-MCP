@@ -1,7 +1,7 @@
 /* PLANTA · textos.js: lo que dicen fichas, filas, cifras, producción, «Qué atender hoy» y reproductores (compartido por
    la maqueta y 📊 Análisis). Fixtures mínimos con la forma de estado.js y cifras.js. */
 import { describe, it, expect } from 'vitest';
-import { fichaGrupo, fichaTanque, textoFila, cifrasDelPanel, textosProduccion, textoMes, alertasParaAtender, reproductoresPorDias, colorGrupo, tablaDeTanques } from './textos.js';
+import { fichaGrupo, fichaTanque, textoFila, cifrasDelPanel, textosProduccion, textoMes, alertasParaAtender, reproductoresPorDias, colorGrupo, tablaDeTanques, cronogramaParaPintar } from './textos.js';
 
 const HOY = { cargado: true, mesPasado: null };
 const PASADO = { cargado: true, mesPasado: { mes: 'Septiembre', cierre: '2026-09-30' } };
@@ -163,5 +163,43 @@ describe('detalle por tanque (T2 de Análisis)', () => {
     expect(tablaDeTanques([grupo('M3', 'larv', { 1: { estado: 'vacio' } })], 'larv', { soloAlerta: false }, PASADO).vacio).toBe('Ningún tanque en cultivo en Septiembre.');
     expect(tablaDeTanques([grupo('M3', 'larv', { 1: larv(1) })], 'larv', { soloAlerta: true }, HOY))
       .toMatchObject({ resumen: '1 tanque en cultivo · ninguno en alerta', filas: [], vacio: 'Ningún tanque en alerta.' });
+  });
+});
+
+describe('cronograma del ciclo (T3 de Análisis): lo que se dibuja', () => {
+  const g = (id) => ({ id, kind: 'larv', name: 'Módulo ' + id.slice(1), short: id, st: null, tanks: [], desove: [] });
+  const G = ['M1', 'M2', 'M3', 'M4'].map(g).concat([{ id: 'S1', kind: 'mat', name: 'Maduración 1', short: 'S1', tanks: [], desove: [] }]);
+  const tr = (key, label, range, desde, hasta, dias) => ({ key, label, range, color: '#000', desde, hasta, dias });
+  const crono = (m1inicio = '2026-09-17') => ({ hasta: '2026-10-06', modulos: {
+    M1: { tipo: 'cultivo', corrida: '900', inicio: m1inicio, fin: '2026-10-06', dias: 20, estadio: 'PL8', despacho: { desde: '2026-10-05', hasta: '2026-10-05' },
+      tramos: [tr('desarrollo', 'Desarrollo', 'Z3–PL3', m1inicio, '2026-09-30', 14), tr('crecimiento', 'Crecimiento', 'PL7–PL10', '2026-10-01', '2026-10-06', 6)] },
+    M2: { tipo: 'despachado', corrida: '890', inicio: '2026-09-08', fin: '2026-10-02', dias: 25, estadio: 'PL12', despacho: { desde: '2026-09-30', hasta: '2026-10-02' },
+      tramos: [tr('cosecha', 'Cosecha', 'PL11+', '2026-09-08', '2026-10-02', 25)] },
+    M3: { tipo: 'desinfeccion', corrida: '905', ultimo: '2026-10-03' },
+    M4: { tipo: 'sin' } } });
+
+  it('eje común desde la siembra más antigua hasta hoy, con los tramos, el despacho y la desinfección en %', () => {
+    const P = cronogramaParaPintar(G, crono(), HOY);   // del 08/09 al 06/10: 29 días
+    expect([P.desde, P.hasta, P.corte, P.cortePct]).toEqual(['2026-09-08', '2026-10-06', 'hoy', 98.28]);
+    // la del 06/10 caería sobre «hoy»: fuera
+    expect(P.marcas).toEqual([{ pct: 0, txt: '08/09' }, { pct: 24.14, txt: '15/09' }, { pct: 48.28, txt: '22/09' }, { pct: 72.41, txt: '29/09' }]);
+    expect(P.filas.map((f) => f.id)).toEqual(['M1', 'M2', 'M3', 'M4']);   // sólo larvicultura, los 4 siempre
+    const [m1, m2, m3, m4] = P.filas;
+    expect(m1.tramos.map((t) => [t.left, t.width])).toEqual([[31.03, 48.28], [79.31, 20.69]]);
+    expect(m1.tramos[0].detalle).toBe('M1 · C900 · Desarrollo (Z3–PL3) · 17/09–30/09 · 14 días');
+    expect(m1.tramos[1].detalle).toBe('M1 · C900 · Crecimiento (PL7–PL10) · 01/10–06/10 · 6 días · sigue hoy');
+    expect([m1.camion, m1.desp, m1.etiqueta]).toEqual([93.1, { left: 93.1, width: 6.9 }, 'día 20 · PL8 · despachando desde 05/10']);
+    expect([m2.etiqueta, m2.desp, m2.tramos[0].detalle.endsWith('25 días')]).toEqual(['despachada 02/10 · C890', { left: 75.86, width: 10.34 }, true]);
+    expect([m3.etiqueta, m3.desinf, m3.tramos]).toEqual(['pre-siembra (C905) · desinfección 03/10', 87.93, []]);
+    expect([m4.etiqueta, m4.tramos, m4.camion]).toEqual(['sin corrida', [], null]);
+  });
+  it('un mes pasado dice «cierre»; una siembra de hace más de 60 días se corta; sin datos, cargando', () => {
+    const P = cronogramaParaPintar(G, crono(), PASADO);
+    expect([P.corte, P.filas[0].tramos[1].detalle.endsWith('· sigue al cierre')]).toEqual(['cierre', true]);
+    expect(P.nota).toContain('al cierre de Septiembre');
+    const V = cronogramaParaPintar(G, crono('2026-07-01'), HOY);
+    expect([V.desde, V.filas[0].cortada, V.filas[0].tramos[0].left]).toEqual(['2026-08-08', true, 0]);
+    expect(V.nota).toContain('Se ven los últimos 60 días.');
+    expect(cronogramaParaPintar(G, null, { cargado: false, mesPasado: null }).vacio).toBe('Cargando datos de producción…');
   });
 });

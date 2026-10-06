@@ -25,7 +25,12 @@ function estado() {
   const S1 = { registrado: { estado: 'Producción', fecha: '2026-10-01' }, propuesto: { estado: 'Producción' }, coinciden: true, ocupados: 2, total: 15,
     fueraDeCatalogo: 0, hembras: 20, machos: 20, lotes: ['BN'], periodo: { bajas: 2, descartes: 0, copulas: 6 }, lecturas: { temperatura: null, oxigeno: null },
     alertaTanques: 1, alerta: false, motivos: [], tanques: { [s1]: tqMad({ hm: 2.5, alerta: true, motivos: ['H:M'] }), [s2]: tqMad() } };
-  return { modulos: { M1 }, resumen: null, mad: { salas: { S1 }, resumen: null, reemplazo: null }, cifras: null, mes: null };
+  const tr = (key, label, desde, hasta, dias) => ({ key, label, range: '', color: '#123456', desde, hasta, dias });
+  const crono = { hasta: '2026-10-06', modulos: {   // los demás módulos no vienen: «sin corrida»
+    M1: { tipo: 'cultivo', corrida: '597', inicio: '2026-09-17', fin: '2026-10-06', dias: 20, estadio: 'PL5', despacho: { desde: '2026-10-05', hasta: '2026-10-05' },
+      tramos: [tr('desarrollo', 'Desarrollo', '2026-09-17', '2026-09-30', 14), tr('transferencia', 'Transferencia', '2026-10-01', '2026-10-06', 6)] },
+    M2: { tipo: 'desinfeccion', corrida: '602', ultimo: '2026-10-03' } } };
+  return { modulos: { M1 }, resumen: null, mad: { salas: { S1 }, resumen: null, reemplazo: null }, cifras: null, mes: null, crono };
 }
 
 let host, v;
@@ -78,5 +83,44 @@ describe('📊 Análisis · detalle por tanque', () => {
     const fila = $('.an-fila[data-id="S1"]');
     expect(fila.querySelector('.an-det').hidden).toBe(false);
     expect(fila.querySelector('.an-tq-ficha h4').textContent).toBe('Maduración 1 · tanque ' + s2);
+  });
+});
+
+describe('📊 Análisis · cronograma del ciclo', () => {
+  const fila = (id) => host.querySelector('.an-cr-fila[data-id="' + id + '"]');
+  it('sin datos dice que carga; con datos, los 10 módulos con sus tramos, el despacho y su etiqueta', () => {
+    expect($('[data-k="crono-vacio"]').textContent).toBe('Cargando datos de producción…');
+    expect($('[data-k="crono"]').hidden).toBe(true);
+    v.pintarEstado(estado());
+    expect(host.querySelectorAll('.an-cr-fila').length).toBe(10);
+    expect(fila('M1').querySelectorAll('.an-cr-tramo').length).toBe(2);
+    expect(fila('M1').querySelector('.an-cr-camion').textContent).toBe('🚚');
+    expect(fila('M1').querySelector('.an-cr-et').textContent).toBe('día 20 · PL5 · despachando desde 05/10');
+    expect(fila('M2').querySelector('.an-cr-desinf')).not.toBe(null);
+    expect(fila('M3').querySelector('.an-cr-et').textContent).toBe('sin corrida');
+    expect(host.querySelector('.an-cr-marcas b').textContent).toBe('hoy');
+  });
+  it('tocar un tramo da su detalle (y otra vez lo quita); «Ver» y la etiqueta abren el módulo; el refresco lo conserva', () => {
+    v.pintarEstado(estado());
+    const det = $('[data-k="crono-det"]');
+    expect(det.hidden).toBe(true);
+    fila('M1').querySelectorAll('.an-cr-tramo')[1].click();
+    expect(det.hidden).toBe(false);
+    expect($('[data-k="crono-det-txt"]').textContent).toBe('M1 · C597 · Transferencia · 01/10–06/10 · 6 días · sigue hoy');
+    expect(fila('M1').querySelectorAll('.an-cr-tramo')[1].getAttribute('aria-pressed')).toBe('true');
+    v.pintarEstado(estado());
+    expect($('[data-k="crono-det"]').hidden).toBe(false);   // el refresco conserva el tramo elegido
+    $('[data-k="crono-det-ir"]').click();
+    expect($('.an-fila[data-id="M1"] .an-det').hidden).toBe(false);
+    fila('M1').querySelectorAll('.an-cr-tramo')[1].click();
+    expect($('[data-k="crono-det"]').hidden).toBe(true);
+    fila('M2').querySelector('.an-cr-et').click();
+    expect($('.an-fila[data-id="M2"] .an-det').hidden).toBe(false);
+    // otro mes trae OTRA corrida al módulo: el tramo elegido de la anterior deja de estarlo
+    fila('M1').querySelectorAll('.an-cr-tramo')[0].click();
+    expect($('[data-k="crono-det"]').hidden).toBe(false);
+    const otro = estado(); otro.crono.modulos.M1 = { ...otro.crono.modulos.M1, corrida: '601' };
+    v.pintarEstado(otro);
+    expect($('[data-k="crono-det"]').hidden).toBe(true);
   });
 });

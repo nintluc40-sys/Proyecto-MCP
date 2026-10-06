@@ -15,12 +15,15 @@
    Módulos del plano M1…M10 ↔ módulos del Sheet M01…M10 (por su número); CIO no está en el plano.
    ============================================================ */
 import { getField, F } from '../../core/fields.js';
+import { parseAnyDate } from '../../core/dates.js';
+import { STAGE_ORDER } from '../../config.js';
 import { odLevel, tmpLevel } from '../../core/format.js';
 import { isDespachoRow, modCorDispatched, modCorStats } from '../../core/prodCalendar.js';
 import { buildContext, modStats, tankStats } from '../supervisor/stats.js';
 import { desinfeccionEnCurso } from '../supervisor/desinfeccion.js';
 import { stageCategory, isAlert, svAlert, freshness } from '../supervisor/etapas.js';
 import { LARV, MAT } from './plano.js';
+import { difDias, masDias } from './textos.js';
 import { modeloOperativo, serieDiaria, diasDeTanque } from '../maduracion/operativo.data.js';
 import { mapaDePlanta, normalizarFiltro, periodoDe, alertas, ESTADO_VACIO } from '../maduracion/operativo.tablero.js';
 import { capasDelMapa, contextoDelMapa, resumenDeTanque } from '../maduracion/operativo.mapa.js';
@@ -176,6 +179,64 @@ const pad2 = (n) => String(n).padStart(2, '0');
 /** Hoy en la zona del equipo, en ISO (la misma cuenta que el tablero de Maduración). */
 export function hoyLocal(d = new Date()) {
   return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+}
+
+/* ---------- Cronograma del ciclo (T3 de 📊 Análisis, 2026-10-06, usuario) ----------
+   Cada módulo del plano con SU corrida (la que pinta estadoPlanta) en el calendario: desde su primer registro de
+   Larvicultura (la siembra) hasta `hasta` —hoy, o el cierre del mes pasado elegido— o hasta su despacho, en TRAMOS por
+   etapa: cada día toma la etapa del estadío más avanzado registrado ese día en el módulo, y un día sin registro sigue con la
+   del anterior. Las filas posteriores a `hasta` no cuentan: un mes pasado se ve como estaba a su cierre. `dias` es la misma
+   cuenta que la ficha (modStats: de la primera a la última fecha con registro, + 1) y `estadio` el de la ficha; con filas
+   cortadas, los de esas filas. Despachado = el módulo despachado entero CON su despacho dentro del período. */
+const SIN_ETAPA = { key: 'sin', label: 'Sin estadío', range: '', color: '#b9c7cf' };
+export function cronogramaPlanta(modulos, hasta) {
+  const grupos = filasPorModulo(contextoCompleto());
+  const out = {};
+  LARV.forEach((m) => {
+    const mo = modulos && modulos[m.id];
+    if (!mo || mo.estado === 'sin-datos' || !mo.mod || mo.corrida === null || mo.corrida === undefined) { out[m.id] = { tipo: 'sin' }; return; }
+    if (mo.estado === 'desinfeccion') {
+      const ult = mo.ultimo instanceof Date && !isNaN(mo.ultimo) ? hoyLocal(mo.ultimo) : null;
+      out[m.id] = { tipo: 'desinfeccion', corrida: mo.corrida, ultimo: ult && ult <= hasta ? ult : null };
+      return;
+    }
+    const porDia = new Map();   // ISO → { idx: el estadío más avanzado del día (STAGE_ORDER), desp: hubo despacho }
+    let cortado = false, despTrasCorte = false;
+    for (const r of grupos.larvCM.get(mo.mod) || []) {
+      if (getField(r, F.corrida) !== mo.corrida) continue;
+      const f = parseAnyDate(getField(r, F.fecha)); if (!f || isNaN(f)) continue;
+      const dia = hoyLocal(f);
+      if (dia > hasta) { cortado = true; if (isDespachoRow(r)) despTrasCorte = true; continue; }
+      const e = porDia.get(dia) || { idx: -1, desp: false };
+      const i = STAGE_ORDER.indexOf(String(getField(r, F.estadio) || '').toUpperCase().replace(/\s+/g, ''));
+      if (i > e.idx) e.idx = i;
+      if (isDespachoRow(r)) e.desp = true;
+      porDia.set(dia, e);
+    }
+    const dias = [...porDia.keys()].sort();
+    if (!dias.length) { out[m.id] = { tipo: 'sin', corrida: mo.corrida }; return; }
+    const despachos = dias.filter((d) => porDia.get(d).desp);
+    const despachado = mo.estado === 'despachado' && despachos.length > 0 && !despTrasCorte;
+    const inicio = dias[0], ultimo = dias[dias.length - 1], fin = despachado ? ultimo : hasta;
+    const tramos = [];
+    let idx = -1;
+    dias.forEach((d, k) => {
+      if (porDia.get(d).idx >= 0) idx = porDia.get(d).idx;
+      const etapa = (idx >= 0 && stageCategory(STAGE_ORDER[idx])) || SIN_ETAPA;
+      const hastaT = k + 1 < dias.length ? masDias(dias[k + 1], -1) : fin;
+      const prev = tramos[tramos.length - 1];
+      if (prev && prev.key === etapa.key) prev.hasta = hastaT;
+      else tramos.push({ key: etapa.key, label: etapa.label, range: etapa.range, color: etapa.color, desde: d, hasta: hastaT });
+    });
+    tramos.forEach((t) => { t.dias = difDias(t.desde, t.hasta) + 1; });
+    out[m.id] = {
+      tipo: despachado ? 'despachado' : 'cultivo', corrida: mo.corrida, inicio, fin, tramos,
+      despacho: despachos.length ? { desde: despachos[0], hasta: despachos[despachos.length - 1] } : null,
+      dias: !cortado && mo.dias ? mo.dias : difDias(inicio, ultimo) + 1,
+      estadio: !cortado && mo.estadio ? mo.estadio : (idx >= 0 ? STAGE_ORDER[idx] : ''),
+    };
+  });
+  return { hasta, modulos: out };
 }
 const fueraDeSuRango = (e) => e === 'bajo' || e === 'alto';
 

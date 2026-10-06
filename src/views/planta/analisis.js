@@ -9,13 +9,17 @@
    Detalle por tanque (T2, 2026-10-06, usuario): al final, una tabla con TODOS los tanques activos (Larvicultura |
    Maduración), «sólo en alerta», ordenable tocando un encabezado; tocar una fila abre ese tanque en su módulo o sala, como
    «Qué atender hoy». En el celular se desliza a los lados con la columna del tanque fija. Lo que dice, tablaDeTanques.
+   Cronograma del ciclo (T3, 2026-10-06, usuario): encima, los 10 módulos en un calendario común, cada uno de su siembra a
+   hoy (o al despacho) en tramos por etapa, con 🚚 y rayado desde el despacho, la marca de la desinfección y «día · estadío»;
+   tocar un tramo da su detalle (con «Ver módulo»), y el módulo o su etiqueta lo abren. Cálculo: estado.js
+   (cronogramaPlanta); lo que se dibuja: textos.js (cronogramaParaPintar).
    ============================================================ */
 import { LARV, MAT, tanquesDeSala } from './plano.js';
 import { STAGE_CATS } from '../supervisor/etapas.js';
 import { META_POR_DEFECTO, normalizarMeta } from './cifras.js';
 import { leerMeta, guardarMeta } from './meta.js';
 import { dm, MAD_HEX, colorGrupo, colorTanque, fichaGrupo, fichaTanque, textoFila, cifrasDelPanel, textosProduccion, textoMes,
-  alertasParaAtender, reproductoresPorDias, tablaDeTanques, COLUMNAS_TANQUES } from './textos.js';
+  alertasParaAtender, reproductoresPorDias, tablaDeTanques, COLUMNAS_TANQUES, cronogramaParaPintar } from './textos.js';
 
 const MARCO = `
 <div class="planta planta-an">
@@ -63,6 +67,13 @@ const MARCO = `
       <section aria-label="Colores"><h2>Colores</h2><div class="legend" data-k="legend"></div></section>
     </div>
   </div>
+  <section class="an-crono" aria-label="Cronograma del ciclo">
+    <h2>Cronograma del ciclo</h2>
+    <p class="an-tabla-res" data-k="crono-nota"></p>
+    <p class="at-vacio" data-k="crono-vacio" hidden></p>
+    <div class="an-crono-caja" data-k="crono"></div>
+    <div class="an-cr-det" data-k="crono-det" role="status" hidden><span data-k="crono-det-txt"></span><button type="button" data-k="crono-det-ir"></button></div>
+  </section>
   <section class="an-tabla" aria-label="Detalle por tanque">
     <div class="an-tabla-cab">
       <h2>Detalle por tanque</h2>
@@ -252,6 +263,59 @@ export function montarAnalisis(host) {
     ul.append(el('li', 'rp-nota', P.nota));
   }
 
+  /* ---- Cronograma del ciclo: una fila por módulo; tocar un tramo da su detalle, y el módulo o su etiqueta lo abren ---- */
+  let cronoSel = null;   // { id, i }: el tramo cuyo detalle se ve (sobrevive al refresco si sigue existiendo)
+  function pintarCrono(crono) {
+    const P = cronogramaParaPintar(grupos, crono, ctx()), caja = $('crono');
+    caja.textContent = '';
+    $('crono-nota').textContent = P.nota || '';
+    $('crono-vacio').textContent = P.vacio; $('crono-vacio').hidden = !P.vacio; caja.hidden = !!P.vacio;
+    // el tramo elegido sigue elegido sólo en SU corrida (otro mes del selector trae otra corrida al mismo módulo)
+    const fSel = cronoSel && P.filas.find((f) => f.id === cronoSel.id && f.corrida === cronoSel.corrida), tSel = fSel && fSel.tramos[cronoSel.i];
+    if (!tSel) cronoSel = null;
+    $('crono-det').hidden = !tSel;
+    if (tSel) { $('crono-det-txt').textContent = tSel.detalle; $('crono-det-ir').textContent = 'Ver ' + fSel.g.name + ' →'; }
+    if (P.vacio) return;
+    const ejes = el('div', 'an-cr-ejes'), marcas = el('div', 'an-cr-marcas');
+    ejes.setAttribute('aria-hidden', 'true');
+    P.marcas.forEach((m) => { const s = el('span', m.pct > 88 ? 'fin' : '', m.txt); s.style.left = m.pct + '%'; marcas.append(s); });
+    const corte = el('b', 'corte', P.corte); corte.style.left = P.cortePct + '%'; marcas.append(corte);
+    ejes.append(el('span'), marcas, el('span'));
+    caja.append(ejes);
+    P.filas.forEach((f) => {
+      const fila = el('div', 'an-cr-fila ' + f.tipo); fila.dataset.id = f.id;
+      const mod = el('button', 'an-cr-mod'), tag = el('span', 'tag', f.short); mod.type = 'button';
+      tag.style.background = colorGrupo(f.g) === '#b9c7cf' ? '#8fa3ad' : colorGrupo(f.g); mod.append(tag); mod.setAttribute('aria-label', 'Ver ' + f.g.name);
+      const pista = el('div', 'an-cr-pista' + (f.cortada ? ' cortada' : ''));
+      f.tramos.forEach((t, i) => {
+        const b = el('button', 'an-cr-tramo'); b.type = 'button'; b.dataset.i = String(i);
+        b.style.left = t.left + '%'; b.style.width = t.width + '%'; b.style.background = t.color;
+        b.setAttribute('aria-label', t.detalle); b.setAttribute('aria-pressed', String(!!(fSel === f && cronoSel.i === i)));
+        pista.append(b);
+      });
+      if (f.desp) { const d = el('i', 'an-cr-desp'); d.style.left = f.desp.left + '%'; d.style.width = f.desp.width + '%'; pista.append(d); }
+      if (f.camion !== null) { const k = el('span', 'an-cr-camion', '🚚'); k.style.left = f.camion + '%'; k.setAttribute('aria-hidden', 'true'); pista.append(k); }
+      if (f.desinf !== null) { const k = el('i', 'an-cr-desinf'); k.style.left = f.desinf + '%'; k.title = f.etiqueta; pista.append(k); }
+      const hoy = el('i', 'an-cr-hoy'); hoy.style.left = P.cortePct + '%'; pista.append(hoy);
+      const et = el('button', 'an-cr-et', f.etiqueta); et.type = 'button'; et.setAttribute('aria-label', 'Ver ' + f.aria);
+      fila.append(mod, pista, et);
+      caja.append(fila);
+    });
+  }
+  let ultimoCrono = null;
+  $('crono').addEventListener('click', (e) => {
+    const fila = e.target.closest('.an-cr-fila'), g = fila && grupos.find((x) => x.id === fila.dataset.id);
+    if (!g) return;
+    const t = e.target.closest('.an-cr-tramo');
+    if (t) {
+      const i = +t.dataset.i, corrida = (ultimoCrono && ultimoCrono.modulos[g.id] && ultimoCrono.modulos[g.id].corrida) || null;
+      cronoSel = cronoSel && cronoSel.id === g.id && cronoSel.i === i ? null : { id: g.id, i, corrida };
+      pintarCrono(ultimoCrono); return;
+    }
+    if (e.target.closest('.an-cr-mod, .an-cr-et')) irA(g);
+  });
+  $('crono-det-ir').addEventListener('click', () => { const g = cronoSel && grupos.find((x) => x.id === cronoSel.id); if (g) irA(g); });
+
   /* ---- Detalle por tanque: área, «sólo en alerta» y el orden sobreviven al refresco y al cambio de mes ---- */
   const tabla = { area: 'larv', soloAlerta: false, k: 'tq', dir: 'asc', filas: [] };
   function pintarTabla() {
@@ -319,6 +383,7 @@ export function montarAnalisis(host) {
     });
     const reemplazo = E && E.mad ? E.mad.reemplazo : null;
     pintarProduccion(E && E.cifras); pintarCifras(E); pintarReproductores(reemplazo); pintarAtender(reemplazo); pintarFilas();
+    ultimoCrono = (E && E.crono) || null; pintarCrono(ultimoCrono);
     pintarTabla();
   }
   pintarEstado(null);

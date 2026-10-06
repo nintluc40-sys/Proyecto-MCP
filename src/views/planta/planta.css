@@ -201,6 +201,35 @@
 .planta-an .an-tq[aria-pressed="true"] { outline: 2px solid var(--sel); outline-offset: 2px; }
 .planta-an .an-tq-ficha { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--chip); }
 .planta-an .an-tq-ficha h4 { margin: 0 0 4px; font: 700 14px/1.2 var(--font-sans); }
+/* Cronograma del ciclo (T3): una fila por módulo con su pista; los tramos, el rayado del despacho, 🚚, la desinfección y la
+   línea de hoy van en % de la pista (textos.js · cronogramaParaPintar) */
+.planta-an .an-crono { margin-top: 24px; min-width: 0; }
+.planta-an .an-crono-caja { display: grid; gap: 0; }
+.planta-an .an-crono-caja[hidden], .planta-an .an-cr-det[hidden] { display: none; }
+.planta-an .an-cr-ejes, .planta-an .an-cr-fila { display: grid; grid-template-columns: 40px minmax(0, 1fr) minmax(170px, 240px); align-items: center; gap: 4px 10px; }
+.planta-an .an-cr-marcas { position: relative; height: 16px; font: 400 11px/1 var(--font-mono); color: var(--muted); }
+.planta-an .an-cr-marcas span, .planta-an .an-cr-marcas b { position: absolute; top: 2px; white-space: nowrap; }
+.planta-an .an-cr-marcas .fin, .planta-an .an-cr-marcas b { transform: translateX(-100%); }
+.planta-an .an-cr-marcas b { font-weight: 700; color: var(--ink); }
+.planta-an .an-cr-fila { padding: 4px 0; border-top: 1px solid var(--line); }
+.planta-an .an-cr-mod { background: none; border: 0; padding: 0; cursor: pointer; }
+.planta-an .an-cr-pista { position: relative; height: 24px; background: var(--chip); border-radius: 6px; overflow: hidden; }
+.planta-an .an-cr-pista.cortada { border-left: 3px dotted var(--muted); }
+.planta-an .an-cr-tramo { position: absolute; top: 4px; bottom: 4px; border: 0; padding: 0; margin: 0; cursor: pointer; min-width: 3px; }
+.planta-an .an-cr-tramo[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--sel); z-index: 2; }
+.planta-an .an-cr-desp { position: absolute; top: 4px; bottom: 4px; pointer-events: none; z-index: 1; background: repeating-linear-gradient(135deg, rgba(255, 255, 255, .6) 0 3px, transparent 3px 7px); }
+.planta-an .an-cr-camion { position: absolute; top: 50%; transform: translate(-50%, -50%); font-size: 14px; line-height: 1; pointer-events: none; z-index: 3; }
+.planta-an .an-cr-desinf { position: absolute; top: 5px; bottom: 5px; width: 10px; margin-left: -5px; border-radius: 3px; background: #9e9e9e; }
+.planta-an .an-cr-hoy { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--ink); opacity: .5; pointer-events: none; z-index: 3; }
+.planta-an .an-cr-et { font: 500 12px/1.3 var(--font-mono); color: var(--ink); background: none; border: 0; padding: 0; text-align: left; cursor: pointer; }
+.planta-an .an-cr-fila.sin .an-cr-et, .planta-an .an-cr-fila.desinfeccion .an-cr-et { color: var(--muted); }
+.planta-an .an-cr-det { margin-top: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font: 500 12.5px/1.4 var(--font-mono); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; background: var(--chip); }
+.planta-an .an-cr-det button { font: 600 12.5px/1 var(--font-sans); color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 6px 10px; cursor: pointer; }
+@media (max-width: 640px) {
+  .planta-an .an-cr-ejes, .planta-an .an-cr-fila { grid-template-columns: 40px minmax(0, 1fr); }
+  .planta-an .an-cr-ejes > :last-child { display: none; }
+  .planta-an .an-cr-et { grid-column: 2; }
+}
 /* Detalle por tanque (T2): la tabla se desliza a los lados DENTRO de su caja (la página no se desborda) y la columna del
    tanque queda fija a la izquierda */
 .planta-an .an-tabla { margin-top: 24px; min-width: 0; }

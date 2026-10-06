@@ -5,7 +5,7 @@
    ============================================================ */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { store } from '../../core/store.js';
-import { estadoPlanta } from './estado.js';
+import { estadoPlanta, cronogramaPlanta } from './estado.js';
 
 const L = (o) => ({ _SheetOrigin: 'Larvicultura', ...o });
 const CT = (o) => ({ _SheetOrigin: 'Control_Tanque M07', ...o });
@@ -120,5 +120,30 @@ describe('estado · otros casos', () => {
     expect(r.total).toBe(112);
     expect(r.cultivo + r.vacio + r.despachado + r.fuera + r.desinfeccion).toBe(112);
     expect(r).toMatchObject({ cultivo: 2, despachado: 1, fuera: 1, alerta: 1, desinfeccion: 12 });
+  });
+});
+
+describe('cronograma del ciclo (T3 de 📊 Análisis)', () => {
+  it('en cultivo: de la siembra a hoy en tramos por etapa (la del estadío más avanzado de cada día), con el despacho', () => {
+    const C = cronogramaPlanta(E.modulos, '2026-10-06');
+    expect(C.hasta).toBe('2026-10-06');
+    const m7 = C.modulos.M7;
+    expect(m7).toMatchObject({ tipo: 'cultivo', corrida: '900', inicio: '2026-09-01', fin: '2026-10-06', dias: E.modulos.M7.dias, estadio: 'PL12',
+      despacho: { desde: '2026-09-05', hasta: '2026-09-05' } });
+    expect(m7.tramos.map((t) => [t.key, t.desde, t.hasta, t.dias])).toEqual([['transferencia', '2026-09-01', '2026-09-04', 4], ['cosecha', '2026-09-05', '2026-10-06', 32]]);
+  });
+  it('despachado entero: termina en su despacho; desinfección con su última fecha; sin corrida', () => {
+    const C = cronogramaPlanta(E.modulos, '2026-10-06').modulos;
+    expect(C.M9).toMatchObject({ tipo: 'despachado', corrida: '890', inicio: '2026-09-01', fin: '2026-09-01', dias: 1, despacho: { desde: '2026-09-01', hasta: '2026-09-01' } });
+    expect(C.M9.tramos.map((t) => [t.key, t.dias])).toEqual([['cosecha', 1]]);
+    expect(C.M3).toEqual({ tipo: 'desinfeccion', corrida: '905', ultimo: '2026-10-03' });
+    expect(C.M1).toEqual({ tipo: 'sin' });
+  });
+  it('un mes pasado se ve como estaba a su cierre: las filas posteriores no cuentan', () => {
+    const C = cronogramaPlanta(E.modulos, '2026-09-03').modulos;
+    expect(C.M7).toMatchObject({ tipo: 'cultivo', fin: '2026-09-03', dias: 1, estadio: 'PL6', despacho: null });
+    expect(C.M7.tramos.map((t) => [t.key, t.desde, t.hasta])).toEqual([['transferencia', '2026-09-01', '2026-09-03']]);
+    expect(C.M3.ultimo).toBe(null);   // desinfectado DESPUÉS del cierre
+    expect(cronogramaPlanta(E.modulos, '2026-08-31').modulos.M9).toEqual({ tipo: 'sin', corrida: '890' });
   });
 });
