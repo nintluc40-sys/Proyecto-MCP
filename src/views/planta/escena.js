@@ -22,6 +22,8 @@
    Sombras más baratas (2026-10-05, usuario, velocidad · 1): mapa de 2048 con borde normal (no suave), recalculado sólo
    cuando cambia algo que las proyecta; personas, técnicos y autos sin sombra. Medido: las sombras eran el mayor coste
    de la tarjeta gráfica (sin ellas, el giro pasaba de ~21 a ~38 cuadros por segundo).
+   Nitidez según el ritmo (2026-10-05, usuario, velocidad · 4): si va lenta, la imagen baja de nitidez en 1–2 s hasta la de
+   la pantalla normal (1×) y vuelve a subir cuando va holgada (ver «Nitidez según el ritmo», junto al bucle).
    Selector de mes (2026-10-04, usuario): ◀ ▶ y un deslizador como la tabla Producción Omarsa, que mueven TODA la vista:
    en un mes pasado, la maqueta con las corridas de ese mes y maduración a su cierre, y las alertas «al cierre de <mes>».
    Reflejos del cielo (2026-10-04, usuario, opción A): un mapa de entorno generado del propio cielo (PMREM), uno por hora
@@ -100,7 +102,7 @@ groups.forEach(g => { g.vol = g.tanks.reduce((s, t) => s + t.vol, 0); const nums
 /* ---------- Renderizador, cámara y luz ---------- */
 const vp = $('#vp'), canvas = $('#c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-const DPR_MAX = Math.min(devicePixelRatio || 1, 2), DPR_MIN = Math.min(DPR_MAX, 1.25);
+const DPR_MAX = Math.min(devicePixelRatio || 1, 2), DPR_MIN = Math.min(DPR_MAX, 1);   // de la nitidez de la pantalla (hasta 2×) a la normal (1×)
 renderer.setPixelRatio(DPR_MAX);
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
@@ -1449,6 +1451,7 @@ function pintarEstado(E) {
   });
   paintWater(); pintarBalizas(); pintarCamiones(); pintarLuces(); pintarPersonal(); pintarCifras(E); pintarProduccion(E && E.cifras); pintarReemplazo(E && E.mad ? E.mad.reemplazo : null); pintarAtender(); groups.forEach(pintarFila);
   renderer.shadowMap.needsUpdate = true;   // los camiones de despacho cambian con los datos y el mes
+  esperarNitidez();   // el cálculo y el repintado traban unos cuadros: no son la tarjeta gráfica
   wasFar = null;   // rehace los rótulos en el próximo cuadro
   if (selected) { if (tanqueFicha && tanqueFicha.g === selected) (selected.kind === 'larv' ? fichaTanque : fichaTanqueMad)(tanqueFicha); else fichaModulo(selected); }
 }
@@ -1693,7 +1696,30 @@ function dispose() {
   renderer.dispose();
   if (renderer.forceContextLoss) renderer.forceContextLoss();
 }
-let slowFrames = 0, fastFrames = 0;
+/* Nitidez según el ritmo (velocidad · 4, 2026-10-05, usuario): cada segundo de movimiento se mide el ritmo —la MEDIANA
+   de sus cuadros: un tirón suelto, como un cálculo, no la mueve—; si va lento (más de 40 ms por cuadro, menos de ~25 por
+   segundo) la nitidez baja un escalón (dos si pasa de 66 ms) hasta la de la pantalla normal (1×), y si va holgado (menos
+   de 18 ms) cuatro segundos seguidos, sube uno. Antes bajaba sólo con cuadros de más de 55 ms y tras 90 de ellos (6–15 s en
+   un celular), y no de 1,25×. Medido: con la imagen grande la tarjeta gráfica es el freno (con la mitad de nitidez la vista
+   cercana iba al doble). No se mide en los 5 s del arranque ni 1,5 s después de pintar datos o cambiar de mes (esperarNitidez): esos
+   tirones son del procesador, no de la tarjeta (medido: en la carga bajaba la nitidez de una pantalla que después iba
+   sobrada, y ya no volvía a subir). Un cuadro de más de 250 ms es una pausa: no cuenta. */
+const RITMO_LENTO = 40, RITMO_MUY_LENTO = 66, RITMO_HOLGADO = 18;
+let ritmo = [], ritmoMs = 0, holgados = 0, nitidezDesde = performance.now() + 5000;   // el arranque (sombreadores, texturas, el vuelo inicial) tampoco cuenta
+function reiniciarRitmo() { ritmo = []; ritmoMs = 0; holgados = 0; }
+function esperarNitidez() { nitidezDesde = performance.now() + 1500; reiniciarRitmo(); }
+function ajustarNitidez(now, dtMs) {
+  if (now < nitidezDesde || !(dtMs > 0 && dtMs < 250)) return;
+  ritmo.push(dtMs); ritmoMs += dtMs;
+  if (ritmoMs < 1000) return;
+  const mediana = ritmo.sort((a, b) => a - b)[ritmo.length >> 1], pr = renderer.getPixelRatio();
+  ritmo = []; ritmoMs = 0;
+  let nuevo = pr;
+  if (mediana > RITMO_LENTO) { holgados = 0; nuevo = Math.max(DPR_MIN, pr - (mediana > RITMO_MUY_LENTO ? .5 : .25)); }
+  else if (mediana < RITMO_HOLGADO) { if (++holgados >= 4) { holgados = 0; nuevo = Math.min(DPR_MAX, pr + .25); } }
+  else holgados = 0;
+  if (nuevo !== pr) { renderer.setPixelRatio(nuevo); renderer.setSize(W, H, false); }
+}
 function loop(now) {
   if (!root.isConnected) { dispose(); return; }
   // con la pantalla de elegir rol encima (shell.js · showEntry pone .is-entry en .app) la maqueta no se ve, aunque para el
@@ -1705,12 +1731,7 @@ function loop(now) {
   ultimoCuadro = now;
   const rawDt = (now - last) / 1000;
   // la nitidez se ajusta sólo con el ritmo pleno: los cuadros espaciados del reposo no son «equipo lento»
-  if (activo) {
-    slowFrames = rawDt > .055 ? slowFrames + 1 : Math.max(0, slowFrames - .5);
-    fastFrames = rawDt < .022 ? fastFrames + 1 : 0;
-    if (slowFrames > 90 && renderer.getPixelRatio() > DPR_MIN) { renderer.setPixelRatio(Math.max(DPR_MIN, renderer.getPixelRatio() - .25)); renderer.setSize(W, H, false); slowFrames = 0; }
-    if (fastFrames > 240 && renderer.getPixelRatio() < DPR_MAX) { renderer.setPixelRatio(Math.min(DPR_MAX, renderer.getPixelRatio() + .25)); renderer.setSize(W, H, false); fastFrames = 0; }
-  }
+  if (activo) ajustarNitidez(now, rawDt * 1000); else reiniciarRitmo();
   try { frameBody(now); } catch (err) { console.error(err); }
 }
 function frameBody(now) {
