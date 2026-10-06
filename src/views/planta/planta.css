@@ -201,6 +201,43 @@
 .planta-an .an-tq[aria-pressed="true"] { outline: 2px solid var(--sel); outline-offset: 2px; }
 .planta-an .an-tq-ficha { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--chip); }
 .planta-an .an-tq-ficha h4 { margin: 0 0 4px; font: 700 14px/1.2 var(--font-sans); }
+/* Plano del laboratorio (T4): un SVG en metros del dibujo (las medidas de trazo y letra van en metros); en el celular
+   conserva 720 px de ancho y se desliza dentro de su caja */
+.planta-an .an-plano { margin-top: 24px; min-width: 0; }
+.planta-an .an-plano-caja { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: #e9eef0; }
+.planta-an .an-pl { display: block; width: 100%; min-width: 720px; max-width: 1100px; height: auto; margin: 0 auto; }
+.planta-an .an-pl-terreno { fill: #f4f6f7; stroke: #b9c3c9; stroke-width: .25; }
+.planta-an .an-pl-grava { fill: #d9d3c5; }
+.planta-an .an-pl-calle { fill: #5b6066; }
+.planta-an .an-pl-raya { stroke: #f2f2f2; stroke-width: .25; stroke-dasharray: 3 4; }
+.planta-an .an-pl-playa { fill: #eadfc0; }
+.planta-an .an-pl-mar { fill: #2c7290; }
+.planta-an .an-pl-otra { fill: #d7dde1; stroke: #b5bec5; stroke-width: .15; cursor: pointer; }
+.planta-an .an-pl-otra.res { fill: #cddfe9; }
+.planta-an .an-pl-otra.alg { fill: #d3e5cd; }
+.planta-an .an-pl-otra.canal { fill: #a9cbdc; }
+.planta-an .an-pl-grupo { fill: #ffffff; stroke: #9aa7b0; stroke-width: .25; cursor: pointer; }
+.planta-an .an-pl-grupo:focus-visible { outline: none; stroke: var(--sel); stroke-width: .8; }
+.planta-an .an-pl-tq { stroke: rgba(0, 0, 0, .3); stroke-width: .15; cursor: pointer; }
+.planta-an .an-pl-grupo.alerta, .planta-an .an-pl-tq.alerta { stroke: #e53935; stroke-width: .7; }
+.planta-an .an-pl-otra.sel, .planta-an .an-pl-grupo.sel, .planta-an .an-pl-tq.sel { stroke: var(--sel); stroke-width: .9; }
+.planta-an .an-pl-num { font: 600 2.1px/1 var(--font-mono); pointer-events: none; }
+.planta-an .an-pl-aviso { font: 700 1.8px/1 var(--font-sans); fill: #c62828; pointer-events: none; }
+.planta-an .an-pl-ficha { margin-top: 8px; }
+.planta-an .an-pl-ficha[hidden], .planta-an .an-pl-ficha button[hidden] { display: none; }
+.planta-an .an-pl-ficha button { margin-top: 8px; font: 600 12.5px/1 var(--font-sans); color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 6px 10px; cursor: pointer; }
+[data-theme="dark"] .planta-an .an-plano-caja { background: #1b2226; }
+[data-theme="dark"] .planta-an .an-pl-terreno { fill: #232c31; stroke: #3d4a52; }
+[data-theme="dark"] .planta-an .an-pl-grava { fill: #3d3a32; }
+[data-theme="dark"] .planta-an .an-pl-calle { fill: #2e3236; }
+[data-theme="dark"] .planta-an .an-pl-playa { fill: #5e5640; }
+[data-theme="dark"] .planta-an .an-pl-mar { fill: #1d4f66; }
+[data-theme="dark"] .planta-an .an-pl-otra { fill: #333c42; stroke: #46525a; }
+[data-theme="dark"] .planta-an .an-pl-otra.res { fill: #2c4350; }
+[data-theme="dark"] .planta-an .an-pl-otra.alg { fill: #314536; }
+[data-theme="dark"] .planta-an .an-pl-otra.canal { fill: #2e5b6e; }
+[data-theme="dark"] .planta-an .an-pl-grupo { fill: #1c2328; stroke: #5b6870; }
+[data-theme="dark"] .planta-an .an-pl-aviso { fill: #ff8a80; }
 /* Cronograma del ciclo (T3): una fila por módulo con su pista; los tramos, el rayado del despacho, 🚚, la desinfección y la
    línea de hoy van en % de la pista (textos.js · cronogramaParaPintar) */
 .planta-an .an-crono { margin-top: 24px; min-width: 0; }

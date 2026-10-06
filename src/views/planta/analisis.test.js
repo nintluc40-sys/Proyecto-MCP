@@ -8,7 +8,8 @@
    ============================================================ */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { montarAnalisis } from './analisis.js';
-import { LARV, MAT } from './plano.js';
+import { LARV, MAT, OTHERS } from './plano.js';
+import { MAD_HEX } from './textos.js';
 
 const etapa = { key: 'cos', label: 'Cosecha', color: '#123456' };
 const n1 = LARV[0].num(0, 0), n2 = LARV[0].num(0, 1);           // dos tanques del Módulo 1
@@ -122,5 +123,49 @@ describe('📊 Análisis · cronograma del ciclo', () => {
     const otro = estado(); otro.crono.modulos.M1 = { ...otro.crono.modulos.M1, corrida: '601' };
     v.pintarEstado(otro);
     expect($('[data-k="crono-det"]').hidden).toBe(true);
+  });
+});
+
+describe('📊 Análisis · plano del laboratorio', () => {
+  const tq = (id, num, desove) => host.querySelector('.an-pl-tq[data-grupo="' + id + '"][data-num="' + num + '"]' + (desove ? '[data-desove]' : ':not([data-desove])'));
+  const tocar = (e) => e.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  const aviso = (e) => e.nextElementSibling.nextElementSibling;   // forma · número · ⚠
+  it('dibuja todos los tanques (112 + 38 + 6 de desove), los 15 módulos y salas y las otras áreas; color de su ficha y alerta', () => {
+    expect(host.querySelectorAll('.an-pl-tq').length).toBe(156);
+    expect(host.querySelectorAll('.an-pl-grupo').length).toBe(15);
+    expect(host.querySelectorAll('.an-pl-otra').length).toBe(OTHERS.length);
+    expect($('[data-k="plano-nota"]').textContent).toBe('Cargando datos de producción…');
+    const E = estado(); E.mad.salas.S1.alerta = true;
+    v.pintarEstado(E);
+    expect([tq('M1', n1).getAttribute('fill'), tq('M1', n1).classList.contains('alerta'), aviso(tq('M1', n1)).style.display]).toEqual(['#123456', true, '']);
+    expect([tq('M1', n2).classList.contains('alerta'), aviso(tq('M1', n2)).style.display]).toEqual([false, 'none']);
+    expect(tq('M1', n1).nextElementSibling.textContent).toBe(String(n1));
+    expect([tq('S1', s2).getAttribute('fill'), tq('S1', s1).classList.contains('alerta')]).toEqual([MAD_HEX['Producción'], true]);
+    expect(tq('S1', 1, true).nextElementSibling.textContent).toBe('D1');
+    expect($('.an-pl-grupo[data-grupo="S1"]').classList.contains('alerta')).toBe(true);
+    expect($('.an-pl-grupo[data-grupo="S2"]').classList.contains('alerta')).toBe(false);
+  });
+  it('tocar un tanque da su ficha debajo y «Ver en su módulo» lo abre; el refresco la conserva; tocarlo otra vez la quita', () => {
+    v.pintarEstado(estado());
+    const card = $('[data-k="plano-ficha"]');
+    expect(card.hidden).toBe(true);
+    tocar(tq('M1', n1));
+    expect([card.hidden, $('[data-k="plano-ficha-h"]').textContent, $('[data-k="plano-ficha-ir"]').hidden]).toEqual([false, 'Módulo 1 · tanque ' + n1, false]);
+    expect(tq('M1', n1).classList.contains('sel')).toBe(true);
+    v.pintarEstado(estado());
+    expect(card.hidden).toBe(false);
+    $('[data-k="plano-ficha-ir"]').click();
+    const fila = $('.an-fila[data-id="M1"]');
+    expect([fila.querySelector('.an-det').hidden, fila.querySelector('.an-tq-ficha h4').textContent]).toEqual([false, 'Módulo 1 · tanque ' + n1]);
+    tocar(tq('M1', n1));
+    expect(card.hidden).toBe(true);
+  });
+  it('tocar el contorno de una sala da su ficha; un área, su nombre y su uso (sin «Ver en su módulo»)', () => {
+    v.pintarEstado(estado());
+    tocar($('.an-pl-grupo[data-grupo="S1"]'));
+    expect([$('[data-k="plano-ficha-h"]').textContent, $('[data-k="plano-ficha-ir"]').hidden]).toEqual(['Maduración 1', false]);
+    tocar($('.an-pl-otra[data-area="1"]'));
+    const [tit, uso] = OTHERS[1][6].split(' · ');
+    expect([$('[data-k="plano-ficha-h"]').textContent, $('[data-k="plano-ficha-dl"]').textContent, $('[data-k="plano-ficha-ir"]').hidden]).toEqual([tit, 'Uso' + uso, true]);
   });
 });

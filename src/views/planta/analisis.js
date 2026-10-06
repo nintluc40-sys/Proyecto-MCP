@@ -13,8 +13,13 @@
    hoy (o al despacho) en tramos por etapa, con 🚚 y rayado desde el despacho, la marca de la desinfección y «día · estadío»;
    tocar un tramo da su detalle (con «Ver módulo»), y el módulo o su etiqueta lo abren. Cálculo: estado.js
    (cronogramaPlanta); lo que se dibuja: textos.js (cronogramaParaPintar).
+   Plano del laboratorio (T4, 2026-10-06, usuario): encima del cronograma, el plano esquemático en SVG (plano.js ·
+   formasDelPlano: los módulos y salas con sus tanques a escala, las otras áreas, la calle y una franja de playa y mar de
+   orientación), cada tanque con el color de su ficha, su número y ⚠ con borde rojo si está en alerta (la sala en alerta,
+   con su borde rojo); tocar un tanque, un módulo o sala, o un área da su ficha debajo, con «Ver en su módulo →». En el
+   celular conserva 720 px de ancho y se desliza dentro de su caja.
    ============================================================ */
-import { LARV, MAT, tanquesDeSala } from './plano.js';
+import { LARV, MAT, tanquesDeSala, formasDelPlano } from './plano.js';
 import { STAGE_CATS } from '../supervisor/etapas.js';
 import { META_POR_DEFECTO, normalizarMeta } from './cifras.js';
 import { leerMeta, guardarMeta } from './meta.js';
@@ -67,6 +72,12 @@ const MARCO = `
       <section aria-label="Colores"><h2>Colores</h2><div class="legend" data-k="legend"></div></section>
     </div>
   </div>
+  <section class="an-plano" aria-label="Plano del laboratorio">
+    <h2>Plano del laboratorio</h2>
+    <p class="an-tabla-res" data-k="plano-nota"></p>
+    <div class="an-plano-caja" data-k="plano"></div>
+    <div class="an-tq-ficha an-pl-ficha" data-k="plano-ficha" role="status" hidden><h4 data-k="plano-ficha-h"></h4><dl class="an-ficha" data-k="plano-ficha-dl"></dl><button type="button" data-k="plano-ficha-ir">Ver en su módulo →</button></div>
+  </section>
   <section class="an-crono" aria-label="Cronograma del ciclo">
     <h2>Cronograma del ciclo</h2>
     <p class="an-tabla-res" data-k="crono-nota"></p>
@@ -263,6 +274,89 @@ export function montarAnalisis(host) {
     ul.append(el('li', 'rp-nota', P.nota));
   }
 
+  /* ---- Plano 2D: el dibujo se arma UNA vez (plano.js · formasDelPlano); cada pintado sólo cambia colores, alertas y lo
+     elegido. Tocar un tanque, un módulo o sala (su contorno) o un área da su ficha debajo, sin mover la página. ---- */
+  const NS = 'http://www.w3.org/2000/svg';
+  const sv = (tag, attrs, cls) => { const e = document.createElementNS(NS, tag); if (cls) e.setAttribute('class', cls); Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, String(v))); return e; };
+  const PL = formasDelPlano(), tanquesPlano = [];   // { g, t, forma, txt, aviso }
+  let planoSel = null;   // { tipo: 'tanque', id, num, desove } | { tipo: 'grupo', id } | { tipo: 'area', i }
+  {
+    const V = PL.vista, svg = sv('svg', { viewBox: [V.x, V.z, V.w, V.h].join(' '), role: 'group', 'aria-label': 'Plano del laboratorio visto desde arriba' }, 'an-pl');
+    PL.bandas.forEach((b) => svg.append(sv('rect', { x: b.x, y: b.z, width: b.w, height: b.h }, 'an-pl-' + b.tipo)));
+    const ca = PL.bandas.find((b) => b.tipo === 'calle');
+    svg.append(sv('line', { x1: ca.x, x2: ca.x + ca.w, y1: ca.z + ca.h / 2, y2: ca.z + ca.h / 2 }, 'an-pl-raya'));
+    svg.append(sv('rect', { x: PL.terreno.x, y: PL.terreno.z, width: PL.terreno.w, height: PL.terreno.h, rx: 0.6 }, 'an-pl-terreno'));
+    PL.otras.forEach((o, i) => { const r = sv('rect', { x: o.x, y: o.z, width: o.w, height: o.h, rx: 0.4 }, 'an-pl-otra ' + o.tipo); r.dataset.area = String(i); svg.append(r); });
+    PL.grupos.forEach((G) => {
+      const g = grupos.find((x) => x.id === G.id); if (!g) return;
+      const caja = sv('rect', { x: G.x, y: G.z, width: G.w, height: G.h, rx: 0.5, tabindex: 0, role: 'button', 'aria-label': 'Ficha de ' + g.name }, 'an-pl-grupo');
+      caja.dataset.grupo = G.id; svg.append(caja);
+      G.tanques.forEach((F) => {
+        const t = (F.desove ? g.desove : g.tanks).find((x) => x.num === F.num); if (!t) return;
+        const circ = F.forma === 'circ';
+        const forma = circ ? sv('circle', { cx: F.cx, cy: F.cz, r: F.r }, 'an-pl-tq') : sv('rect', { x: F.x, y: F.z, width: F.w, height: F.h, rx: 0.3 }, 'an-pl-tq');
+        forma.dataset.grupo = G.id; forma.dataset.num = String(F.num); if (F.desove) forma.dataset.desove = '1';
+        // el número al centro; con alerta, el ⚠ a su derecha (rectángulos, que son anchos) o encima (círculos) y el número
+        // se corre para no pisarse (medido: «10⚠» se tocaban en los tanques chicos)
+        const cx = circ ? F.cx : F.x + F.w / 2, cz = circ ? F.cz : F.z + F.h / 2;
+        const pos = { base: [cx, cz], alerta: circ ? [cx, cz + 0.65] : [cx - 0.8, cz] };
+        const txt = sv('text', { x: cx, y: cz, 'text-anchor': 'middle', 'dominant-baseline': 'central' }, 'an-pl-num');
+        txt.textContent = (F.desove ? 'D' : '') + F.num;
+        const aviso = sv('text', circ ? { x: cx, y: cz - 0.95, 'text-anchor': 'middle', 'dominant-baseline': 'central' }
+          : { x: F.x + F.w - 0.3, y: cz, 'text-anchor': 'end', 'dominant-baseline': 'central' }, 'an-pl-aviso');
+        aviso.textContent = '⚠';
+        svg.append(forma, txt, aviso);
+        tanquesPlano.push({ g, t, forma, txt, aviso, pos });
+      });
+    });
+    $('plano').append(svg);
+  }
+  function fichaDelPlano() {
+    if (!planoSel) return null;
+    if (planoSel.tipo === 'area') {
+      const o = PL.otras[planoSel.i], [tit, det] = o.nombre.split(' · ');
+      return { ficha: { name: tit, rows: det ? [['Uso', det]] : [] }, g: null, t: null };
+    }
+    const g = grupos.find((x) => x.id === planoSel.id); if (!g) return null;
+    if (planoSel.tipo === 'grupo') return { ficha: fichaGrupo(g, ctx()), g, t: null };
+    const t = (planoSel.desove ? g.desove : g.tanks).find((x) => x.num === planoSel.num);
+    return t ? { ficha: fichaTanque(t, ctx()), g, t } : null;
+  }
+  function pintarPlano() {
+    $('plano-nota').textContent = !cargado ? 'Cargando datos de producción…'
+      : (mesPasado ? 'Al cierre de ' + mesPasado.mes : 'Hoy') + ': cada tanque con el color de su ficha (⚠ en alerta). Toca un tanque, un módulo o sala, o un área.';
+    const es = (t) => planoSel && planoSel.tipo === 'tanque' && planoSel.id === t.g.id && planoSel.num === t.num && !!planoSel.desove === !!t.desove;
+    tanquesPlano.forEach(({ t, forma, txt, aviso, pos }) => {
+      const c = colorTanque(t), al = !!(t.st && t.st.alerta), [x, y] = al ? pos.alerta : pos.base;
+      forma.setAttribute('fill', c); txt.setAttribute('fill', tintaSobre(c)); txt.setAttribute('x', String(x)); txt.setAttribute('y', String(y));
+      forma.classList.toggle('alerta', al); forma.classList.toggle('sel', !!es(t));
+      aviso.style.display = al ? '' : 'none';
+    });
+    root.querySelectorAll('.an-pl-grupo').forEach((b) => {
+      const g = grupos.find((x) => x.id === b.dataset.grupo);
+      b.classList.toggle('alerta', !!(g && g.kind === 'mat' && g.st && g.st.alerta));
+      b.classList.toggle('sel', !!(planoSel && planoSel.tipo === 'grupo' && planoSel.id === b.dataset.grupo));
+    });
+    root.querySelectorAll('.an-pl-otra').forEach((r) => r.classList.toggle('sel', !!(planoSel && planoSel.tipo === 'area' && planoSel.i === +r.dataset.area)));
+    const F = fichaDelPlano(), card = $('plano-ficha');
+    card.hidden = !F;
+    if (!F) return;
+    $('plano-ficha-h').textContent = F.ficha.name;
+    const d = $('plano-ficha-dl'); d.textContent = '';
+    F.ficha.rows.forEach(([k, v]) => d.append(el('dt', '', k), el('dd', '', v)));
+    $('plano-ficha-ir').hidden = !F.g;
+  }
+  const elegirEnPlano = (target) => {
+    const f = target.closest('.an-pl-tq'), b = target.closest('.an-pl-grupo'), a = target.closest('.an-pl-otra');
+    const s = f ? { tipo: 'tanque', id: f.dataset.grupo, num: +f.dataset.num, desove: !!f.dataset.desove } : b ? { tipo: 'grupo', id: b.dataset.grupo } : a ? { tipo: 'area', i: +a.dataset.area } : null;
+    if (!s) return;
+    planoSel = planoSel && JSON.stringify(planoSel) === JSON.stringify(s) ? null : s;   // tocar lo mismo otra vez lo quita
+    pintarPlano();
+  };
+  $('plano').addEventListener('click', (e) => elegirEnPlano(e.target));
+  $('plano').addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('.an-pl-grupo')) { e.preventDefault(); elegirEnPlano(e.target); } });
+  $('plano-ficha-ir').addEventListener('click', () => { const F = fichaDelPlano(); if (F && F.g) irA(F.g, F.t || undefined); });
+
   /* ---- Cronograma del ciclo: una fila por módulo; tocar un tramo da su detalle, y el módulo o su etiqueta lo abren ---- */
   let cronoSel = null;   // { id, i }: el tramo cuyo detalle se ve (sobrevive al refresco si sigue existiendo)
   function pintarCrono(crono) {
@@ -383,6 +477,7 @@ export function montarAnalisis(host) {
     });
     const reemplazo = E && E.mad ? E.mad.reemplazo : null;
     pintarProduccion(E && E.cifras); pintarCifras(E); pintarReproductores(reemplazo); pintarAtender(reemplazo); pintarFilas();
+    pintarPlano();
     ultimoCrono = (E && E.crono) || null; pintarCrono(ultimoCrono);
     pintarTabla();
   }

@@ -62,3 +62,36 @@ export const OTHERS = [
   [79.2, 18.4, 176.5, 20.1, .6, 'canal', 'Canal sedimentador y recolector'],
 ];
 export const SITE = [0.9, 0.9, 176.6, 89.2], C0 = [88.7, 45], STREET = [97, 107];
+
+/* ---------- 📊 Plano 2D (T4 de Análisis, 2026-10-06, usuario) ----------
+   Las formas del plano esquemático visto desde arriba, en METROS del dibujo (el SVG usa x, z tal cual: x al este, z hacia
+   la calle): el terreno; delante, la grava, la calle a escala y una franja de playa y otra de mar SÓLO de orientación (la
+   orilla real queda a ~20 m de la calle: a escala dejaría medio plano vacío); las otras áreas con su nombre; y cada módulo y
+   sala con su contorno y sus tanques —rectángulos por su esquina con el largo hacia el este, círculos por su centro—, los
+   mismos de la maqueta (escena.js). */
+export function formasDelPlano() {
+  const r2 = (v) => Math.round(v * 100) / 100;
+  const caja = (b) => ({ x: b[0], z: b[1], w: r2(b[2] - b[0]), h: r2(b[3] - b[1]) });
+  const ancho = r2(SITE[2] + SITE[0]), playa = STREET[1] + 2.5, fin = playa + 5.5;
+  const grupos = [
+    ...LARV.map((m) => ({ id: m.id, kind: 'larv', ...caja(m.box),
+      tanques: m.rows.flatMap((z, r) => m.cols.map((x, c) => ({ num: m.num(r, c), forma: 'rect', x, z, w: m.L, h: m.W }))) })),
+    ...MAT.map((m) => ({ id: m.id, kind: 'mat', ...caja(m.box),
+      tanques: m.circ
+        ? [...m.circ.zs.flatMap((z, r) => m.circ.xs.map((x, c) => ({ num: m.circ.num(r, c), forma: 'circ', cx: x, cz: z, r: m.circ.d / 2 }))),
+          ...m.desove.zs.flatMap((z, r) => m.desove.xs.map((x, c) => ({ num: m.desove.num(r, c), desove: true, forma: 'circ', cx: x, cz: z, r: m.desove.d / 2 })))]
+        : tanquesDeSala(m).map(({ x, z, num }) => ({ num, forma: 'rect', x, z, w: m.L, h: m.W })) })),
+  ];
+  return {
+    vista: { x: 0, z: 0, w: ancho, h: fin },
+    terreno: caja(SITE),
+    bandas: [
+      { tipo: 'grava', x: 0, z: SITE[3], w: ancho, h: r2(STREET[0] - SITE[3]) },
+      { tipo: 'calle', x: 0, z: STREET[0], w: ancho, h: STREET[1] - STREET[0] },
+      { tipo: 'playa', x: 0, z: STREET[1], w: ancho, h: r2(playa - STREET[1]) },
+      { tipo: 'mar', x: 0, z: playa, w: ancho, h: r2(fin - playa) },
+    ],
+    otras: OTHERS.map((o) => ({ ...caja([o[0], o[1], o[2], o[3]]), tipo: o[5], nombre: o[6] })),
+    grupos,
+  };
+}
