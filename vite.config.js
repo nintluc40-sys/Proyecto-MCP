@@ -24,7 +24,12 @@ function listaDePrecache() {
     generateBundle: {
       order: 'post',
       handler(_, bundle) {
-        const excluido = (c) => { const id = c && c.facadeModuleId ? c.facadeModuleId.replace(/\\/g, '/') : ''; return !!id && ENTRADAS_FUERA_DE_PRECACHE.some((re) => re.test(id)); };
+        // 2026-10-05 (📊 Análisis de Planta) · Rollup puede FUSIONAR una entrada diferida con lo que comparte con sus propios
+        // bloques diferidos (Planta con su escena y Análisis): ese trozo sale SIN facadeModuleId (medido: null) y la regla
+        // dejaba de verlo, así que three.js, la escena y Análisis entraban en la lista. Se reconoce también por los módulos
+        // que lleva, si es una entrada diferida.
+        const esFuera = (id) => !!id && ENTRADAS_FUERA_DE_PRECACHE.some((re) => re.test(String(id).replace(/\\/g, '/')));
+        const excluido = (c) => !!c && (esFuera(c.facadeModuleId) || (!!c.isDynamicEntry && (c.moduleIds || Object.keys(c.modules || {})).some(esFuera)));
         const cssDe = (c) => [...((c.viteMetadata && c.viteMetadata.importedCss) || [])];
         // lo que la app alcanza desde sus entradas sin pasar por un bloque excluido (importaciones estáticas y dinámicas)
         const alcanzado = new Set(), pila = Object.keys(bundle).filter((f) => bundle[f].type === 'chunk' && bundle[f].isEntry && !excluido(bundle[f]));

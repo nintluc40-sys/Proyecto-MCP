@@ -163,3 +163,45 @@
   .planta .viewport:fullscreen .views, .planta.expandida .views { top: 70px; }
   .planta .resumen-fs { right: 12px; font-size: 12px; }
 }
+
+/* ---- Selector «🏭 Maqueta | 📊 Análisis» (T1 de Análisis, 2026-10-05): fuera de .planta, con los tokens de la app ---- */
+.planta-modos { display: inline-flex; gap: 3px; padding: 3px; margin: 0 0 10px; border: 1px solid var(--c-border); border-radius: 10px; background: var(--c-surface); }
+.planta-modos button { font: 600 13px/1 var(--font-sans); color: var(--c-text); background: transparent; border: 0; border-radius: 7px; padding: 8px 14px; cursor: pointer; }
+.planta-modos button:hover { background: var(--c-surface-2); }
+.planta-modos button[aria-pressed="true"] { background: var(--c-text); color: var(--c-surface); }
+.planta-modos button:focus-visible { outline: 2px solid #d9622b; outline-offset: 2px; }
+.planta.planta-carga { display: grid; place-items: center; text-align: center; padding: 24px; color: var(--muted); }
+/* en escritorio la maqueta deja sitio al selector (≈ 46 px) para no desbordar la pantalla */
+@media (min-width: 901px) { .planta-cuerpo > .planta:not(.planta-an) { height: calc(100vh - 196px); } }
+
+/* ---- 📊 Análisis: la misma información sin la maqueta (analisis.js) ---- */
+.planta.planta-an { display: block; height: auto; min-height: 0; overflow: visible; padding: 18px 20px 24px; }
+.planta-an .an-cab { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+.planta-an .an-cab .compartir { margin-top: 4px; }
+.planta-an .an-cols { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 24px; align-items: start; }
+.planta-an .an-col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.planta-an .an-filas { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.planta-an .an-fila { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.planta-an .an-cabeza { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 10px; text-align: left; font: inherit; color: inherit; background: transparent; border: 0; padding: 8px 10px; cursor: pointer; }
+.planta-an .an-cabeza:hover, .planta-an .an-cabeza[aria-expanded="true"] { background: var(--chip); }
+.planta-an .tag { font: 600 12px/1 var(--font-mono); width: 34px; height: 26px; display: grid; place-items: center; border-radius: 6px; color: #fff; }
+.planta-an .nm { font-weight: 600; min-width: 0; }
+.planta-an .nm small { display: block; font: 400 12px/1.3 var(--font-mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.planta-an .ct { font: 500 12.5px/1 var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.planta-an .chev { color: var(--muted); font-size: 12px; width: 12px; text-align: center; }
+.planta-an .an-det { padding: 4px 12px 12px; border-top: 1px solid var(--line); display: grid; gap: 10px; }
+.planta-an .an-det[hidden] { display: none; }
+.planta-an .an-ficha { margin: 6px 0 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; font-size: 13px; }
+.planta-an .an-ficha dt { color: var(--muted); }
+.planta-an .an-ficha dd { margin: 0; font-family: var(--font-mono); font-size: 12.5px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.planta-an .an-tq-tit { font: 600 11px/1 var(--font-sans); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.planta-an .an-tqs { display: flex; flex-wrap: wrap; gap: 6px; }
+.planta-an .an-tq { min-width: 40px; font: 600 12.5px/1 var(--font-mono); border: 1px solid rgba(0, 0, 0, .14); border-radius: 8px; padding: 9px 8px; cursor: pointer; }
+.planta-an .an-tq.alerta { box-shadow: 0 0 0 2px #e53935; }
+.planta-an .an-tq[aria-pressed="true"] { outline: 2px solid var(--sel); outline-offset: 2px; }
+.planta-an .an-tq-ficha { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--chip); }
+.planta-an .an-tq-ficha h4 { margin: 0 0 4px; font: 700 14px/1.2 var(--font-sans); }
+@media (max-width: 900px) {
+  .planta.planta-an { padding: 14px 12px 22px; }
+  .planta-an .an-cols { grid-template-columns: minmax(0, 1fr); }
+}

@@ -13,20 +13,22 @@
    La vista se monta SIN esperar al libro (`necesitaLibro: false`): la maqueta sale al instante, pide
    el libro si no está y pinta los estados al llegar; en cada refresco (EV.DATA) sólo vuelve a pintar
    los colores (`repintaConDatos: false`: rehacer la escena perdería la cámara).
-   La escena (three.js) vive en planta/escena.js y llega en este mismo bloque
-   diferido: main.js lo importa sólo al abrir la vista, así que el resto de la app no carga three.js.
-   El marco es estático (no lleva contenido dinámico); lo que cambia lo escribe escena.js con
+   📊 Análisis (T1, 2026-10-05, usuario): un selector «🏭 Maqueta | 📊 Análisis» arriba elige entre la maqueta y una
+   página analítica sin 3D (planta/analisis.js) con los mismos datos y textos (planta/textos.js); el equipo recuerda la
+   elección. La escena (three.js, planta/escena.js) llega en su PROPIO bloque diferido, que sólo se pide en Maqueta: ni
+   el resto de la app ni Análisis cargan three.js (y, como sólo se llega a ellos por esta vista, quedan fuera de la
+   precarga del service worker: vite.config.js · ENTRADAS_FUERA_DE_PRECACHE).
+   Los marcos son estáticos (no llevan contenido dinámico); lo que cambia lo escriben escena.js y analisis.js con
    textContent.
    ============================================================ */
 import './planta.css';
-import { montarPlanta } from './escena.js';
 import { esc } from '../../core/format.js';
 import { store, on, EV } from '../../core/store.js';
 import { asegurarLibro } from '../../core/refresh.js';
 import { estadoPlanta, estadoMaduracion, hoyLocal } from './estado.js';
 import { cifrasGerencia } from './cifras.js';
 
-const MARCO = `
+const MAQUETA = `
 <div class="planta">
   <main class="viewport" id="vp">
     <canvas id="c" tabindex="0" aria-label="Maqueta 3D del laboratorio"></canvas>
@@ -90,20 +92,27 @@ const MARCO = `
   </aside>
 </div>`;
 
-/** Pinta la vista y monta la maqueta. Sin WebGL (equipo o navegador sin aceleración) avisa en vez de romper. */
+/* El selector «🏭 Maqueta | 📊 Análisis» (T1 de Análisis, 2026-10-05, usuario): la maqueta (escena.js, con three.js) o la
+   página analítica sin 3D (analisis.js). Las dos reciben lo MISMO —el mes elegido, la memoria por mes, los avisos— por la
+   misma interfaz ({ pintarEstado, aviso, alElegirMes }), y el equipo recuerda la última elección (planta_modo). Cada una
+   se carga sólo al elegirla: en Análisis no se descarga three.js. */
+const MODO_KEY = 'planta_modo';
+const leerModo = () => { try { return localStorage.getItem(MODO_KEY) === 'analisis' ? 'analisis' : 'maqueta'; } catch (_) { return 'maqueta'; } };
+const guardarModo = (m) => { try { localStorage.setItem(MODO_KEY, m); } catch (_) { /* sin almacenamiento: sólo en esta sesión */ } };
+const MARCO = `
+<div class="planta-vista">
+  <div class="planta-modos" role="group" aria-label="Cómo ver la planta"><button type="button" data-modo="maqueta" aria-pressed="false">🏭 Maqueta</button><button type="button" data-modo="analisis" aria-pressed="false">📊 Análisis</button></div>
+  <div class="planta-cuerpo"></div>
+</div>`;
+
+/** Pinta la vista con el modo que el equipo eligió la última vez. Sin WebGL, la maqueta avisa y Análisis sigue a mano. */
 export function plantaView(root) {
   root.innerHTML = MARCO;
-  const host = root.querySelector('.planta');
-  let escena;
-  try {
-    escena = montarPlanta(host);
-  } catch (e) {
-    host.querySelector('.viewport').innerHTML = '<div class="empty-state" style="padding:48px">No se pudo mostrar la maqueta 3D en este equipo.<br>'
-      + `<small class="mono">${esc(e.message)}</small></div>`;
-    return;
-  }
+  const marco = root.querySelector('.planta-vista'), cuerpo = marco.querySelector('.planta-cuerpo');
+  let vista = null, modo = null, turno = 0;
   // El mes elegido: null = el último con datos (sigue al mes en curso); al elegir uno anterior se conserva en cada
-  // actualización de datos, como en la tabla Producción Omarsa. Mueve toda la vista, no sólo la tarjeta.
+  // actualización de datos, como en la tabla Producción Omarsa. Mueve toda la vista, no sólo la tarjeta. Lo comparten
+  // los dos modos: cambiar de Maqueta a Análisis sigue en el mismo mes.
   let mesElegido = null;
   // Memoria por mes (velocidad · 2, 2026-10-05, usuario): lo calculado de cada mes ya visitado se guarda mientras el
   // libro (`store.globalData`, que cada refresco reemplaza entero) y el día sean los mismos —la clave de las demás
@@ -119,25 +128,58 @@ export function plantaView(root) {
     return { cifras, pasado, larv, mad, fallos };
   };
   const pintar = () => {
-    if (!store.connected || !store.globalData.length) { escena.pintarEstado(null); return; }
+    if (!vista) return;   // la del modo elegido aún se está cargando: pinta al montarse
+    if (!store.connected || !store.globalData.length) { vista.pintarEstado(null); return; }
     const hoy = hoyLocal();
     if (memo.datos !== store.globalData || memo.hoy !== hoy) memo = { datos: store.globalData, hoy, meses: new Map() };
     let calc = memo.meses.get(mesElegido);
     if (!calc) { calc = calcularMes(hoy); if (!calc.fallos.length) memo.meses.set(mesElegido, calc); }
     const { cifras, pasado, larv, mad, fallos } = calc;
-    escena.pintarEstado({ modulos: larv ? larv.modulos : {}, resumen: larv ? larv.resumen : null, mad, cifras,
+    vista.pintarEstado({ modulos: larv ? larv.modulos : {}, resumen: larv ? larv.resumen : null, mad, cifras,
       mes: pasado ? { mes: pasado.mes, cierre: pasado.cierre } : null });
     const hora = new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
-    escena.aviso(fallos.length ? 'No se pudo calcular: ' + fallos.join(' · ')
+    vista.aviso(fallos.length ? 'No se pudo calcular: ' + fallos.join(' · ')
       : 'Datos del MCP · puestos al día a las ' + hora + (pasado ? ' · mostrando ' + pasado.mes + ' (maduración al ' + pasado.cierre.slice(8, 10) + '/' + pasado.cierre.slice(5, 7) + ')' : ''));
   };
-  escena.alElegirMes((mIdx, esUltimo) => { mesElegido = esUltimo ? null : mIdx; pintar(); });
-  pintar();
+  // Cambiar de modo reemplaza el cuerpo: la escena se libera sola al dejar el documento (escena.js · dispose).
+  async function montar(nuevo) {
+    const mio = ++turno; modo = nuevo; vista = null; guardarModo(nuevo);
+    marco.querySelectorAll('[data-modo]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.modo === nuevo)));
+    cuerpo.innerHTML = '<div class="planta planta-carga"><p>' + (nuevo === 'maqueta' ? 'Cargando la maqueta…' : 'Cargando…') + '</p></div>';
+    let v;
+    try {
+      if (nuevo === 'maqueta') {
+        const { montarPlanta } = await import('./escena.js');
+        if (mio !== turno || !marco.isConnected) return;
+        cuerpo.innerHTML = MAQUETA;
+        const host = cuerpo.querySelector('.planta');
+        try { v = montarPlanta(host); } catch (e) {
+          host.querySelector('.viewport').innerHTML = '<div class="empty-state" style="padding:48px">No se pudo mostrar la maqueta 3D en este equipo: usa 📊 Análisis.<br>'
+            + `<small class="mono">${esc(e.message)}</small></div>`;
+          return;
+        }
+      } else {
+        const { montarAnalisis } = await import('./analisis.js');
+        if (mio !== turno || !marco.isConnected) return;
+        v = montarAnalisis(cuerpo);
+      }
+    } catch (e) {
+      if (mio !== turno || !marco.isConnected) return;
+      console.error('[planta] modo', e);
+      cuerpo.innerHTML = '<div class="planta planta-carga"><p>No se pudo cargar esta vista. Revisa la conexión y vuelve a elegirla.<br>' + `<small class="mono">${esc(e.message)}</small></p></div>`;
+      return;
+    }
+    vista = v;
+    vista.alElegirMes((mIdx, esUltimo) => { mesElegido = esUltimo ? null : mIdx; pintar(); });
+    pintar();
+  }
+  marco.querySelector('.planta-modos').addEventListener('click', (e) => { const b = e.target.closest('[data-modo]'); if (b && b.dataset.modo !== modo) montar(b.dataset.modo); });
+  montar(leerModo());
   if (!store.connected) asegurarLibro();
-  // Se desuscribe solo cuando la vista ya no está en el documento (el router no avisa al salir).
-  const offData = on(EV.DATA, () => { if (!host.isConnected) { offData(); offConn(); return; } pintar(); });
+  // Se desuscribe solo cuando la vista ya no está en el documento (el router no avisa al salir; su contenedor sigue).
+  const offData = on(EV.DATA, () => { if (!marco.isConnected) { offData(); offConn(); return; } pintar(); });
   const offConn = on(EV.CONN, (c) => {
-    if (!host.isConnected) { offData(); offConn(); return; }
-    if (c && c.state === 'error' && !store.connected) escena.aviso('No se pudieron cargar los datos de producción. Pulsa ⟳ arriba para reintentar.');
+    if (!marco.isConnected) { offData(); offConn(); return; }
+    if (vista && c && c.state === 'error' && !store.connected) vista.aviso('No se pudieron cargar los datos de producción. Pulsa ⟳ arriba para reintentar.');
   });
 }

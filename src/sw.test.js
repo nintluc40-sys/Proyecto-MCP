@@ -536,4 +536,24 @@ describe('Build · precache-assets.json, la lista que lee el service worker', ()
     });
     expect(JSON.parse(emitidos[0].source)).toEqual(['./assets/comun-CCC.js', './assets/index-AAA.css', './assets/index-AAA.js', './assets/maduracion.produccion-MMM.js', './assets/sheets.worker-WWW.js']);
   });
+
+  it('🔴 y si Rollup FUSIONA la entrada de Planta (sin facadeModuleId), sigue fuera con su escena, three.js y 📊 Análisis (2026-10-05)', async () => {
+    const { default: config } = await import('../vite.config.js');
+    const cfg = typeof config === 'function' ? config({ command: 'build', mode: 'production' }) : config;
+    const plugin = (cfg.plugins || []).find((p) => p && p.name === 'mcp-precache-assets');
+    const emitidos = [];
+    const ch = (o) => ({ type: 'chunk', imports: [], dynamicImports: [], viteMetadata: { importedCss: new Set() }, ...o });
+    plugin.generateBundle.handler.call({ emitFile: (f) => emitidos.push(f) }, {}, {
+      'assets/index-AAA.js': ch({ isEntry: true, facadeModuleId: 'C:/repo/src/main.js', imports: ['assets/comun-CCC.js'], dynamicImports: ['assets/index-PPP.js'] }),
+      'assets/comun-CCC.js': ch({ facadeModuleId: null, isDynamicEntry: false, moduleIds: ['C:/repo/src/core/store.js'] }),
+      // la medida del build real: entrada diferida, facadeModuleId null, y planta/index.js entre sus módulos
+      'assets/index-PPP.js': ch({ facadeModuleId: null, isDynamicEntry: true, moduleIds: ['C:\\repo\\src\\views\\planta\\index.js', 'C:\\repo\\src\\views\\planta\\estado.js'],
+        imports: ['assets/comun-CCC.js'], dynamicImports: ['assets/escena-EEE.js', 'assets/analisis-NNN.js'] }),
+      'assets/escena-EEE.js': ch({ facadeModuleId: 'C:/repo/src/views/planta/escena.js', isDynamicEntry: true, imports: ['assets/three-TTT.js', 'assets/index-PPP.js', 'assets/textos-XXX.js'] }),
+      'assets/analisis-NNN.js': ch({ facadeModuleId: 'C:/repo/src/views/planta/analisis.js', isDynamicEntry: true, imports: ['assets/index-PPP.js', 'assets/textos-XXX.js'] }),
+      'assets/textos-XXX.js': ch({ facadeModuleId: null, imports: ['assets/index-PPP.js'] }),
+      'assets/three-TTT.js': ch({ facadeModuleId: null }),
+    });
+    expect(JSON.parse(emitidos[0].source)).toEqual(['./assets/comun-CCC.js', './assets/index-AAA.js']);
+  });
 });

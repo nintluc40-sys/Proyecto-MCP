@@ -36,6 +36,17 @@ export function colorGrupo(g) {
   return st.estado === 'desinfeccion' ? '#9e9e9e' : '#b9c7cf';
 }
 
+/** El color de un tanque, el mismo que pinta su agua la maqueta (escena.js · colorTanque): en cultivo, su etapa; si no,
+ *  su estado; en maduración, el estado del tanque (modo «Estado» del mapa de salas); sin datos, el agua de su lugar. */
+export const ESTADO_HEX = { vacio: '#d9e8ea', despachado: '#a9bcc8', agrupado: '#5b6266', descartado: '#5b6266', desinfeccion: '#9e9e9e' };
+export function colorTanque(t) {
+  const st = t.st;
+  if (t.g.kind === 'mat' && st) return MAD_HEX[st.estado] || MAD_HEX['Sin estado'];
+  if (st && st.estado === 'cultivo') return st.etapa ? st.etapa.color : '#3f8f74';
+  if (st) return ESTADO_HEX[st.estado] || ESTADO_HEX.vacio;
+  return t.desove ? '#3a6fa8' : t.g.kind === 'larv' ? '#3f8f74' : '#2d6f8a';
+}
+
 /* ---------- Fichas: { kind, name, rows: [[etiqueta, valor]] } ---------- */
 /** La siembra de la corrida: fecha promedio (la de la tabla Producción Omarsa), tanques sembrados y nauplios. */
 function txtSiembra(sb) {
