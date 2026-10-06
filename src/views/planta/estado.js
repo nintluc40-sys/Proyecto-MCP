@@ -42,6 +42,25 @@ function contextoCompleto() {
   return f;
 }
 
+// Las filas de cada módulo, agrupadas UNA vez por contexto (velocidad · 2, 2026-10-05, usuario): antes cada uno de los
+// 10 módulos recorría las filas enteras tres veces en cada cambio de mes. Cada grupo conserva el orden de las filas, así
+// que filtrarlo por corrida da exactamente lo mismo que filtrar todas por módulo y corrida. Se leen, no se modifican.
+const _porModulo = new WeakMap();
+function agruparPorModulo(filas) {
+  const m = new Map();
+  for (const r of filas) { const k = getField(r, F.modulo); const a = m.get(k); if (a) a.push(r); else m.set(k, [r]); }
+  return m;
+}
+function filasPorModulo(ctx) {
+  let x = _porModulo.get(ctx);
+  if (!x) {
+    const larvCM = agruparPorModulo(ctx.larvCM);
+    x = { larvCM, larvWin: ctx.larvWin === ctx.larvCM ? larvCM : agruparPorModulo(ctx.larvWin), tanqWin: agruparPorModulo(ctx.tanqWin) };
+    _porModulo.set(ctx, x);
+  }
+  return x;
+}
+
 /** Por qué está en alerta (los mismos tres parámetros que la tarjeta de la Vista Ejecutiva). */
 function motivos({ od, tmp, sv }) {
   return [svAlert(sv) && 'Superv.', isAlert(odLevel(od)) && 'OD', isAlert(tmpLevel(tmp)) && 'Temp'].filter(Boolean);
@@ -77,7 +96,8 @@ function estadoModulo(ctx, m, desinf, enMes) {
   const nT = m.rows.length * m.cols.length;
   const vacios = (estado) => Object.fromEntries(Array.from({ length: nT }, (_, i) => [i + 1, { estado }]));
   const mod = ctx.allMods.find((x) => esModulo(x, m.n)) || null;
-  const rows = mod ? ctx.larvCM.filter((r) => getField(r, F.modulo) === mod) : [];
+  const grupos = filasPorModulo(ctx);
+  const rows = mod ? grupos.larvCM.get(mod) || [] : [];
   // Corrida = la de número más alto con datos de Larvicultura (su texto tal cual, que es como filtran las estadísticas);
   // en un mes pasado, la más alta de las de ESE mes.
   let corrida = null;
@@ -106,9 +126,9 @@ function estadoModulo(ctx, m, desinf, enMes) {
   // tankStats recorre el contexto ENTERO por cada tanque (tres pasadas × 112 tanques: ~3 s con el libro real, y cada
   // cambio de mes del selector lo repite). Con sólo las filas de este módulo y corrida —exactamente las que su filtro
   // deja pasar: gMod/gCor de stats.js son getField de F.modulo y F.corrida— da lo mismo en una fracción del tiempo.
-  const deEsta = (r) => getField(r, F.modulo) === mod && getField(r, F.corrida) === corrida;
-  const larvWin = ctx.larvWin.filter(deEsta);
-  const ctxMC = { larvWin, larvCM: ctx.larvCM === ctx.larvWin ? larvWin : ctx.larvCM.filter(deEsta), tanqWin: ctx.tanqWin.filter(deEsta) };
+  const deEsta = (r) => getField(r, F.corrida) === corrida;   // sobre las filas del módulo (filasPorModulo)
+  const larvWin = (grupos.larvWin.get(mod) || []).filter(deEsta);
+  const ctxMC = { larvWin, larvCM: ctx.larvCM === ctx.larvWin ? larvWin : (grupos.larvCM.get(mod) || []).filter(deEsta), tanqWin: (grupos.tanqWin.get(mod) || []).filter(deEsta) };
   const tanques = {};
   for (let k = 1; k <= nT; k++) {
     const nombre = nombres.get(k);

@@ -8,6 +8,8 @@
    Acceso de Gerencia (2026-10-05): «Compartir acceso» abre, en otra pestaña, la página del QR 3D (qr/index.js, ?qr=gerencia).
    Selector de mes (2026-10-04, usuario): el mes elegido mueve TODA la vista. El en curso es hoy; uno pasado pinta cada
    módulo con su corrida de ese mes (como las tarjetas del Supervisor) y maduración al cierre de su mes de calendario.
+   Mes sin congelar (2026-10-05, usuario, velocidad · 2): lo calculado de cada mes visitado se guarda mientras el libro y
+   el día no cambien, y volver a él no recalcula; las filas de cada módulo se agrupan una vez (estado.js).
    La vista se monta SIN esperar al libro (`necesitaLibro: false`): la maqueta sale al instante, pide
    el libro si no está y pinta los estados al llegar; en cada refresco (EV.DATA) sólo vuelve a pintar
    los colores (`repintaConDatos: false`: rehacer la escena perdería la cámara).
@@ -103,15 +105,26 @@ export function plantaView(root) {
   // El mes elegido: null = el último con datos (sigue al mes en curso); al elegir uno anterior se conserva en cada
   // actualización de datos, como en la tabla Producción Omarsa. Mueve toda la vista, no sólo la tarjeta.
   let mesElegido = null;
-  const cifrasDelMes = () => cifrasGerencia(store.globalData, hoyLocal(), mesElegido);
-  const pintar = () => {
-    if (!store.connected || !store.globalData.length) { escena.pintarEstado(null); return; }
+  // Memoria por mes (velocidad · 2, 2026-10-05, usuario): lo calculado de cada mes ya visitado se guarda mientras el
+  // libro (`store.globalData`, que cada refresco reemplaza entero) y el día sean los mismos —la clave de las demás
+  // memorias del proyecto—, y volver a él no recalcula. Con un fallo no se guarda: se reintenta en el próximo pintado.
+  let memo = { datos: null, hoy: '', meses: new Map() };
+  const calcularMes = (hoy) => {
     const fallos = [];
     let larv = null, mad = null, cifras = null;
-    try { cifras = cifrasDelMes(); } catch (e) { console.error('[planta] cifras', e); fallos.push('producción del mes (' + e.message + ')'); }
+    try { cifras = cifrasGerencia(store.globalData, hoy, mesElegido); } catch (e) { console.error('[planta] cifras', e); fallos.push('producción del mes (' + e.message + ')'); }
     const pasado = cifras && !cifras.actual ? cifras : null;   // sin cifras, hoy
     try { larv = estadoPlanta(pasado ? pasado.corridas : undefined); } catch (e) { console.error('[planta] larvicultura', e); fallos.push('larvicultura (' + e.message + ')'); }
-    try { mad = estadoMaduracion(store.globalData, hoyLocal(), pasado ? pasado.cierre : undefined); } catch (e) { console.error('[planta] maduración', e); fallos.push('maduración (' + e.message + ')'); }
+    try { mad = estadoMaduracion(store.globalData, hoy, pasado ? pasado.cierre : undefined); } catch (e) { console.error('[planta] maduración', e); fallos.push('maduración (' + e.message + ')'); }
+    return { cifras, pasado, larv, mad, fallos };
+  };
+  const pintar = () => {
+    if (!store.connected || !store.globalData.length) { escena.pintarEstado(null); return; }
+    const hoy = hoyLocal();
+    if (memo.datos !== store.globalData || memo.hoy !== hoy) memo = { datos: store.globalData, hoy, meses: new Map() };
+    let calc = memo.meses.get(mesElegido);
+    if (!calc) { calc = calcularMes(hoy); if (!calc.fallos.length) memo.meses.set(mesElegido, calc); }
+    const { cifras, pasado, larv, mad, fallos } = calc;
     escena.pintarEstado({ modulos: larv ? larv.modulos : {}, resumen: larv ? larv.resumen : null, mad, cifras,
       mes: pasado ? { mes: pasado.mes, cierre: pasado.cierre } : null });
     const hora = new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
