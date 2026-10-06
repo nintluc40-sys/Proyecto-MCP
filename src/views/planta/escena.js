@@ -25,7 +25,8 @@
    Selector de mes (2026-10-04, usuario): ◀ ▶ y un deslizador como la tabla Producción Omarsa, que mueven TODA la vista:
    en un mes pasado, la maqueta con las corridas de ese mes y maduración a su cierre, y las alertas «al cierre de <mes>».
    Reflejos del cielo (2026-10-04, usuario, opción A): un mapa de entorno generado del propio cielo (PMREM), uno por hora
-   del día y guardado; en toda la maqueta, tenue en el agua de los tanques para que se siga leyendo la etapa.
+   del día y guardado; en toda la maqueta, tenue en el agua de los tanques para que se siga leyendo la etapa. Desde el
+   2026-10-05 (usuario, velocidad · 3), sólo en el agua: tanques, mar, canal y piscina de sal (ver «Reflejos del cielo» abajo).
    Pantalla completa (2026-10-05, usuario, punto 3): ⛶ junto a las vistas pone la maqueta en pantalla completa con un
    resumen flotante (mes, producción frente a la meta y alertas); sale con el mismo botón o Esc. Donde el navegador no
    la permite (iPhone), la maqueta se expande dentro de la página y el gesto de volver también la cierra.
@@ -212,9 +213,12 @@ const stars = (() => { const n = 700, pos = new Float32Array(n * 3); for (let i 
 stars.visible = false; scene.add(stars);
 /* Reflejos del cielo: el entorno de los materiales se genera del MISMO cielo (otra malla con su material), así reflejan
    el degradado y el sol de la hora elegida. Cada uno se genera la primera vez que se elige su hora (unos ms) y queda
-   guardado: volver a esa hora sólo lo cambia, nunca se rehace por cuadro. La luz ambiente baja
-   (al 40 %) y los reflejos van al 60 %, porque el entorno también ilumina: así la escena queda igual de clara que sin él
-   (medido el 2026-10-04: día 179 frente a 176, tarde 111 frente a 112, noche 63 frente a 63, de 255). El cielo pinta sus colores tal cual (toneMapped: false), así que su
+   guardado: volver a esa hora sólo lo cambia, nunca se rehace por cuadro. Desde el 2026-10-05 (usuario, velocidad · 3)
+   sólo lo refleja el AGUA (AGUA: tanques, mar con su orilla baja, canal y piscina de sal): en el resto costaba ~+50 % de
+   tarjeta gráfica y con sus acabados mates casi no se veía. Así la luz ambiente vuelve a ser entera (antes bajaba al 40 %
+   porque el entorno también iluminaba) y la de la tarde toma el color del cielo crepuscular que antes reflejaban techos y
+   películas. Medido (brillo medio de la vista general, de 255): día 173 → 172, tarde 110 → 110, noche 69 → 69; el mar,
+   ~+8. El cielo pinta sus colores tal cual (toneMapped: false), así que su
    copia los recibe pasados a lineal: si no, el reflejo saldría más claro que el cielo que se ve. */
 const pmrem = new THREE.PMREMGenerator(renderer);
 const envSkyMat = sky.material.clone();
@@ -223,7 +227,7 @@ const envSkyMat = sky.material.clone();
 envSkyMat.fragmentShader = envSkyMat.fragmentShader.replace('gl_FragColor = vec4(c, 1.0);', 'gl_FragColor = linearToOutputTexel(vec4(c, 1.0));');
 const envSky = new THREE.Mesh(sky.geometry, envSkyMat); const envScene = new THREE.Scene(); envScene.add(envSky);
 const envRTs = {};
-const ENV_AMBIENTE = .4, ENV_REFLEJO = .6;   // luz ambiente que queda e intensidad de los reflejos (ver arriba)
+const ENV_AMBIENTE = 1, ENV_REFLEJO = .6;   // luz ambiente (entera: el entorno ya sólo lo refleja el agua) e intensidad de los reflejos
 function generarEntorno(T) {
   const e = envSky.material.uniforms;
   e.top.value.set(T.sky[0]).convertSRGBToLinear(); e.mid.value.set(T.sky[1]).convertSRGBToLinear(); e.bot.value.set(T.sky[2]).convertSRGBToLinear();
@@ -298,7 +302,8 @@ const seaNormal = waterNormal.clone(); seaNormal.needsUpdate = true; seaNormal.r
 const seaM = std({ color: col('#2c7290'), roughness: .1, metalness: .2, normalMap: seaNormal, normalScale: new THREE.Vector2(.9, .9) });
 plane(-1500, SHORE, 1500, SHORE + 1400, .02, seaM, coast);
 const shallowTex = canvasTex(64, (g, n) => { const gr = g.createLinearGradient(0, 0, 0, n); gr.addColorStop(0, 'rgba(126,206,196,.8)'); gr.addColorStop(1, 'rgba(126,206,196,0)'); g.fillStyle = gr; g.fillRect(0, 0, n, n); });
-plane(-1500, SHORE, 1500, SHORE + 50, .024, std({ map: shallowTex, transparent: true, depthWrite: false, roughness: .2 }), coast);
+const bajoM = std({ map: shallowTex, transparent: true, depthWrite: false, roughness: .2 });
+plane(-1500, SHORE, 1500, SHORE + 50, .024, bajoM, coast);
 // espuma de las olas que llegan a la orilla
 const foamTex = canvasTex(512, (g, n) => { g.clearRect(0, 0, n, n); for (let i = 0; i < 1400; i++) { const x = R(0, n), spread = n * (.12 + .18 * Math.abs(Math.sin(x / n * Math.PI * 4 + 1))); const y = n / 2 + R(-1, 1) * spread * R(0, 1); g.fillStyle = 'rgba(255,255,255,' + R(.2, .75).toFixed(2) + ')'; g.beginPath(); g.ellipse(x, y, R(3, 14), R(2, 6), 0, 0, 6.29); g.fill(); } });
 const foams = [];
@@ -320,12 +325,16 @@ plane(-1500, CH[1], 1500, .8, .012, std({ map: rep(TX.sand, 90, 1), color: col('
 plane(-1500, CH[1] - 1.2, 1500, CH[1], .014, std({ color: col('#6b6450'), roughness: .9 }), coast);
 plane(-1500, CH[0], 1500, CH[0] + 1.2, .014, std({ color: col('#6b6450'), roughness: .9 }), coast);
 const chNormal = waterNormal.clone(); chNormal.needsUpdate = true; chNormal.repeat.set(300, 4);
-plane(-1500, CH[0] + 1.2, 1500, CH[1] - 1.2, .016, std({ color: col('#2f4136'), roughness: .12, metalness: .15, normalMap: chNormal, normalScale: new THREE.Vector2(.5, .5) }), coast);
+const canalM = std({ color: col('#2f4136'), roughness: .12, metalness: .15, normalMap: chNormal, normalScale: new THREE.Vector2(.5, .5) });
+plane(-1500, CH[0] + 1.2, 1500, CH[1] - 1.2, .016, canalM, coast);
 box(-1500, DIKE[0], 1500, DIKE[1], 0, 1.5, std({ map: rep(TX.gravel, 300, 2), color: col('#c4b08a'), roughness: 1 }), false, coast);
 plane(-1500, DIKE[0] + 3, 1500, DIKE[1] - 3, 1.52, std({ map: rep(TX.gravel, 300, 1), color: col('#ddd0b1'), roughness: 1 }), coast);   // camino del dique
 const saltTex = canvasTex(512, (g, n) => { grain(g, n, '#6f8e84', 10, 5000, 1.5); blotches(g, n, ['rgba(160,190,175,.14)', 'rgba(80,110,98,.14)'], 40, 20, 80); g.strokeStyle = 'rgba(200,220,210,.10)'; for (let i = 0; i < 90; i++) { const y = R(0, n); g.lineWidth = R(.5, 2); g.beginPath(); g.moveTo(0, y); g.bezierCurveTo(n * .3, y + R(-6, 6), n * .7, y + R(-6, 6), n, y); g.stroke(); } });
 const pondNormal = waterNormal.clone(); pondNormal.needsUpdate = true; pondNormal.repeat.set(160, 60);
-plane(-1500, -900, 1500, DIKE[0], .45, std({ map: rep(saltTex, 60, 18), color: col('#86ad9f'), roughness: .45, metalness: 0, normalMap: pondNormal, normalScale: new THREE.Vector2(.1, .1) }), coast);
+const salM = std({ map: rep(saltTex, 60, 18), color: col('#86ad9f'), roughness: .45, metalness: 0, normalMap: pondNormal, normalScale: new THREE.Vector2(.1, .1) });
+plane(-1500, -900, 1500, DIKE[0], .45, salM, coast);
+// el reflejo del cielo, sólo en el agua (velocidad · 3): los tanques, el mar con su orilla baja, el canal y la piscina de sal
+const AGUA = [M.waterL, M.waterM, seaM, bajoM, canalM, salM];
 // tuberías de descarga del laboratorio al canal
 const outlets = [];
 [58, 104, 150].forEach(x => {
@@ -865,11 +874,13 @@ function astroDe(k) {
 function setTod(k) {
   const T = { ...TOD[k], sun: astroDe(k) || TOD[k].sun };
   sun.position.set(...T.sun); sun.intensity = T.sunI; sun.color = col(T.sunC); hemi.intensity = T.hemiI * ENV_AMBIENTE; renderer.shadowMap.needsUpdate = true;
-  hemi.color = col(k === 'night' ? '#36486e' : k === 'dusk' ? '#f6cfaa' : '#eaf2f4'); hemi.groundColor = col(k === 'night' ? '#141820' : '#9a917e');
+  // de tarde, el lila del cielo crepuscular (su azul de arriba con el naranja del horizonte): es lo que techos y películas
+  // reflejaban cuando todo reflejaba el cielo (velocidad · 3); día y noche quedaban iguales con su color de siempre
+  hemi.color = col(k === 'night' ? '#36486e' : k === 'dusk' ? '#cdb9c3' : '#eaf2f4'); hemi.groundColor = col(k === 'night' ? '#141820' : '#9a917e');
   const u = sky.material.uniforms; u.top.value.set(T.sky[0]); u.mid.value.set(T.sky[1]); u.bot.value.set(T.sky[2]); u.sunCol.value.set(T.skySun); u.sunDir.value.set(...T.sun).normalize();
   scene.fog = new THREE.Fog(col(T.sky[1]), 380, 1300);
   if (!envRTs[k]) envRTs[k] = generarEntorno(T);
-  scene.environment = envRTs[k].texture;
+  AGUA.forEach((m) => { m.envMap = envRTs[k].texture; });
   renderer.toneMappingExposure = T.exp; stars.visible = k === 'night';
   nightMats.forEach(m => { m.emissiveIntensity = T.lights * .9; });
   M.lamp.emissiveIntensity = T.lights * 3; M_LAMP_MEDIA.emissiveIntensity = T.lights * 1.1; glows.visible = T.lights > 0; nightLights.forEach(l => { l.intensity = T.lights * 1.6; });
