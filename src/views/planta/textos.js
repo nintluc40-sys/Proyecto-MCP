@@ -3,12 +3,14 @@
    Lo que dicen las fichas, las cifras, la tarjeta de producción, «Qué atender hoy», los reproductores y las filas de
    las listas, a partir del estado que calculan estado.js y cifras.js. Vivía dentro de la escena 3D (escena.js) y se
    trajo aquí TAL CUAL para que la maqueta y 📊 Análisis digan exactamente lo mismo (decisión del usuario: «módulo
-   compartido»): la escena y el análisis sólo deciden dónde y cómo se pinta.
+   compartido»): la escena y el análisis sólo deciden dónde y cómo se pinta. Desde la T2 (2026-10-06), también la tabla
+   «Detalle por tanque» de 📊 Análisis (tablaDeTanques).
    Un «grupo» es un módulo o una sala: { id, kind: 'larv'|'mat', name, short, st, tanks: [{ num, st, g }], desove: [] };
    un tanque, { num, st, g, desove? }. `ctx` = { cargado: hay datos pintados, mesPasado: { mes, cierre } | null }.
    ============================================================ */
 import { fmtPop } from '../../core/format.js';
 import { fmtShort } from '../../core/dates.js';
+import { STAGE_ORDER } from '../../config.js';
 
 /* ---------- Formatos ---------- */
 export const fmt = (v, d = 2) => v.toLocaleString('es', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -252,4 +254,77 @@ export function reproductoresPorDias(R, ctx) {
     }),
     nota: 'Reemplazo al pasar de ' + R.limite + ' días en producción, la regla del tablero de Maduración.',
   };
+}
+
+/* ---------- 📊 Detalle por tanque (T2 de Análisis, 2026-10-06, usuario) ----------
+   Una tabla con TODOS los tanques activos del laboratorio —larvicultura: los en cultivo; maduración: los que tienen
+   reproductores— para compararlos y ordenarlos por cualquier columna; «sólo en alerta» deja los que están fuera de rango.
+   Las mismas cifras que la ficha del tanque (fichaTanque). Cada celda trae su texto, su valor para ordenar (null = sin
+   dato: va al final en los dos sentidos) y `mal` cuando es la causa de la alerta del tanque. Los de desove no entran: el
+   MCP no lleva registro por tanque de desove. */
+export const COLUMNAS_TANQUES = {
+  larv: [
+    { k: 'tq', titulo: 'Tanque' }, { k: 'estadio', titulo: 'Estadío' }, { k: 'pop', titulo: 'Población', num: true },
+    { k: 'sv', titulo: 'Superv.', num: true }, { k: 'od', titulo: 'OD (mg/L)', num: true }, { k: 'tmp', titulo: 'Temp. (°C)', num: true },
+    { k: 'lote', titulo: 'Lote' }, { k: 'alerta', titulo: '⚠', aria: 'Alerta', desc: true },
+  ],
+  mat: [
+    { k: 'tq', titulo: 'Tanque' }, { k: 'estado', titulo: 'Estado' }, { k: 'h', titulo: '♀', aria: 'Hembras', num: true },
+    { k: 'm', titulo: '♂', aria: 'Machos', num: true }, { k: 'hm', titulo: 'H:M', num: true }, { k: 'dens', titulo: 'Densidad (/m²)', num: true },
+    { k: 'bajas', titulo: 'Bajas 7 d', num: true }, { k: 'desc', titulo: 'Descartes 7 d', num: true },
+    { k: 'cop', titulo: 'Cópulas 7 d', num: true }, { k: 'parte', titulo: 'Último parte' },
+    { k: 'alerta', titulo: '⚠', aria: 'Alerta', desc: true },
+  ],
+};
+const valorNum = (v) => (v === '' || v === null || v === undefined || isNaN(v) ? null : Number(v));
+/** El estadío en su orden biológico (N → Z → M → PL): «PL10» va DESPUÉS de «PL2», no antes como en el abecedario. */
+const ordenEstadio = (est) => { const i = STAGE_ORDER.indexOf(String(est || '').toUpperCase().replace(/\s+/g, '')); return i < 0 ? null : i; };
+function filaDeTanque(g, t, gi) {
+  const st = t.st, mot = st.motivos || [], orden = gi * 1000 + t.num;
+  const c = (txt, v, mal = false) => ({ txt, v, mal });
+  const celdas = { tq: c(g.short + ' · ' + t.num, orden), alerta: c(mot.length ? '⚠ ' + mot.join(', ') : '', mot.length) };
+  if (g.kind === 'larv') {
+    const lote = st.lotes && st.lotes.length ? st.lotes.join(' · ') : null;
+    Object.assign(celdas, {
+      estadio: c(st.estadio || '—', ordenEstadio(st.estadio)), pop: c(fmtPop(st.pop), valorNum(st.pop)),
+      sv: c(pct(st.sv), valorNum(st.sv), mot.includes('Superv.')), od: c(num(st.od, 2, ''), valorNum(st.od), mot.includes('OD')),
+      tmp: c(num(st.tmp, 1, ''), valorNum(st.tmp), mot.includes('Temp')), lote: c(lote || '—', lote),
+    });
+  } else {
+    const p = st.periodo || {}, cop = valorNum(p.pctCopulas), parte = /^\d{4}-\d{2}-\d{2}$/.test(st.ultimoParte || '') ? st.ultimoParte : null;
+    Object.assign(celdas, {
+      estado: c(st.estado || '—', st.estado || null), h: c(ent(st.hembras), valorNum(st.hembras)), m: c(ent(st.machos), valorNum(st.machos)),
+      hm: c(dec(st.hm, 2), valorNum(st.hm), mot.includes('H:M')), dens: c(dec(st.densidad, 1), valorNum(st.densidad), mot.includes('Densidad')),
+      bajas: c(ent(p.bajas), valorNum(p.bajas)), desc: c(ent(p.descartes), valorNum(p.descartes)),
+      cop: c(cop === null ? '—' : dec(cop, 1) + ' %', cop), parte: c(dm(parte), parte),
+    });
+  }
+  return { g, t, orden, alerta: !!st.alerta, celdas };
+}
+/** Ordena por la columna `k` (`dir` 'asc' | 'desc'); sin dato, siempre al final; los empates, por módulo y tanque. */
+export function ordenarTanques(filas, k, dir) {
+  const s = dir === 'desc' ? -1 : 1;
+  return filas.slice().sort((a, b) => {
+    const x = a.celdas[k].v, y = b.celdas[k].v;
+    if (x === null || y === null) return x === y ? a.orden - b.orden : x === null ? 1 : -1;
+    const d = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'es', { numeric: true });
+    return d ? d * s : a.orden - b.orden;
+  });
+}
+/** La tabla de un área ('larv' | 'mat'): { columnas, filas, resumen, vacio, k, dir }. `opc` = { soloAlerta, k, dir }. */
+export function tablaDeTanques(grupos, area, opc, ctx) {
+  const columnas = COLUMNAS_TANQUES[area], col = columnas.find((x) => x.k === opc.k) || columnas[0];
+  const k = col.k, dir = col.k === opc.k && opc.dir === 'desc' ? 'desc' : 'asc';   // otra área sin esa columna: por tanque
+  const base = { columnas, filas: [], resumen: '', k, dir };
+  if (!ctx.cargado) return { ...base, vacio: 'Cargando datos de producción…' };
+  const activo = area === 'larv' ? (st) => st.estado === 'cultivo' : (st) => st.vivos > 0;
+  const todas = [];
+  grupos.forEach((g, gi) => { if (g.kind === area) g.tanks.forEach((t) => { if (t.st && activo(t.st)) todas.push(filaDeTanque(g, t, gi)); }); });
+  const que = area === 'larv' ? 'en cultivo' : 'con reproductores', enAlerta = todas.filter((f) => f.alerta).length;
+  if (!todas.length) return { ...base, vacio: 'Ningún tanque ' + que + (ctx.mesPasado ? ' en ' + ctx.mesPasado.mes : '') + '.' };
+  const resumen = ent(todas.length) + (todas.length === 1 ? ' tanque ' : ' tanques ') + que + ' · '
+    + (enAlerta ? ent(enAlerta) + ' en alerta' : 'ninguno en alerta') + (ctx.mesPasado ? ' (' + ctx.mesPasado.mes + ')' : '');
+  const visibles = opc.soloAlerta ? todas.filter((f) => f.alerta) : todas;
+  if (!visibles.length) return { ...base, resumen, vacio: 'Ningún tanque en alerta.' };
+  return { ...base, resumen, vacio: '', filas: ordenarTanques(visibles, k, dir) };
 }

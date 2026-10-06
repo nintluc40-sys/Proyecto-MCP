@@ -6,13 +6,16 @@
    Decisiones del usuario: selector «🏭 Maqueta | 📊 Análisis» dentro de Planta (index.js), que el equipo recuerda; filas
    desplegables; los textos los arma textos.js —compartido con la maqueta—, así ambas dicen exactamente lo mismo.
    La monta index.js con la misma interfaz que la escena: { pintarEstado(E|null), aviso(texto), alElegirMes(fn) }.
+   Detalle por tanque (T2, 2026-10-06, usuario): al final, una tabla con TODOS los tanques activos (Larvicultura |
+   Maduración), «sólo en alerta», ordenable tocando un encabezado; tocar una fila abre ese tanque en su módulo o sala, como
+   «Qué atender hoy». En el celular se desliza a los lados con la columna del tanque fija. Lo que dice, tablaDeTanques.
    ============================================================ */
 import { LARV, MAT, tanquesDeSala } from './plano.js';
 import { STAGE_CATS } from '../supervisor/etapas.js';
 import { META_POR_DEFECTO, normalizarMeta } from './cifras.js';
 import { leerMeta, guardarMeta } from './meta.js';
 import { dm, MAD_HEX, colorGrupo, colorTanque, fichaGrupo, fichaTanque, textoFila, cifrasDelPanel, textosProduccion, textoMes,
-  alertasParaAtender, reproductoresPorDias } from './textos.js';
+  alertasParaAtender, reproductoresPorDias, tablaDeTanques, COLUMNAS_TANQUES } from './textos.js';
 
 const MARCO = `
 <div class="planta planta-an">
@@ -60,6 +63,18 @@ const MARCO = `
       <section aria-label="Colores"><h2>Colores</h2><div class="legend" data-k="legend"></div></section>
     </div>
   </div>
+  <section class="an-tabla" aria-label="Detalle por tanque">
+    <div class="an-tabla-cab">
+      <h2>Detalle por tanque</h2>
+      <div class="seg an-area" role="group" aria-label="Área"><button type="button" data-area="larv" aria-pressed="true">Larvicultura</button><button type="button" data-area="mat" aria-pressed="false">Maduración</button></div>
+      <label class="an-solo"><input type="checkbox" data-k="solo-alerta"> Sólo en alerta</label>
+    </div>
+    <p class="an-tabla-res" data-k="tabla-res" role="status"></p>
+    <p class="at-vacio" data-k="tabla-vacio" hidden></p>
+    <div class="an-tabla-caja" data-k="tabla-caja" tabindex="0" role="region" aria-label="Tabla de tanques: toca un encabezado para ordenar y una fila para ver el tanque">
+      <table class="an-tq-tabla"><thead data-k="tabla-cab"></thead><tbody data-k="tabla-filas"></tbody></table>
+    </div>
+  </section>
 </div>`;
 const LEDE_HOY = 'El estado de hoy de cada módulo de larvicultura y de cada sala de maduración.';
 
@@ -237,6 +252,52 @@ export function montarAnalisis(host) {
     ul.append(el('li', 'rp-nota', P.nota));
   }
 
+  /* ---- Detalle por tanque: área, «sólo en alerta» y el orden sobreviven al refresco y al cambio de mes ---- */
+  const tabla = { area: 'larv', soloAlerta: false, k: 'tq', dir: 'asc', filas: [] };
+  function pintarTabla() {
+    const T = tablaDeTanques(grupos, tabla.area, tabla, ctx());
+    tabla.k = T.k; tabla.dir = T.dir; tabla.filas = T.filas;
+    root.querySelectorAll('.an-area [data-area]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.area === tabla.area)));
+    $('tabla-res').textContent = T.resumen;
+    $('tabla-vacio').textContent = T.vacio; $('tabla-vacio').hidden = !T.vacio; $('tabla-caja').hidden = !!T.vacio;
+    const cab = $('tabla-cab'), cuerpo = $('tabla-filas'); cab.textContent = ''; cuerpo.textContent = '';
+    if (T.vacio) return;
+    const tr = el('tr');
+    T.columnas.forEach((c) => {
+      const th = el('th', c.num ? 'an-num' : ''), b = el('button', '', c.titulo + (c.k === T.k ? (T.dir === 'asc' ? ' ▲' : ' ▼') : ''));
+      th.scope = 'col'; b.type = 'button'; b.dataset.col = c.k;
+      b.setAttribute('aria-label', 'Ordenar por ' + (c.aria || c.titulo));
+      if (c.k === T.k) th.setAttribute('aria-sort', T.dir === 'asc' ? 'ascending' : 'descending');
+      th.append(b); tr.append(th);
+    });
+    cab.append(tr);
+    T.filas.forEach((f, i) => {
+      const fila = el('tr', f.alerta ? 'alerta' : ''); fila.dataset.i = String(i);
+      T.columnas.forEach((c, j) => {
+        const v = f.celdas[c.k];
+        if (!j) { const th = el('th'), b = el('button', '', v.txt); th.scope = 'row'; b.type = 'button'; b.setAttribute('aria-label', 'Ver ' + fichaTanque(f.t, ctx()).name); th.append(b); fila.append(th); return; }
+        fila.append(el('td', [c.num ? 'an-num' : '', v.mal ? 'mal' : '', c.k === 'alerta' && v.txt ? 'al' : ''].filter(Boolean).join(' '), v.txt));
+      });
+      cuerpo.append(fila);
+    });
+  }
+  root.querySelector('.an-area').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-area]'); if (!b || b.dataset.area === tabla.area) return;
+    tabla.area = b.dataset.area; pintarTabla();
+  });
+  $('solo-alerta').addEventListener('change', (e) => { tabla.soloAlerta = e.target.checked; pintarTabla(); });
+  $('tabla-cab').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-col]'); if (!b) return;
+    const c = b.dataset.col;   // la misma columna invierte el sentido; otra empieza en el suyo (⚠: primero las alertas)
+    if (c === tabla.k) tabla.dir = tabla.dir === 'asc' ? 'desc' : 'asc';
+    else { tabla.k = c; tabla.dir = (COLUMNAS_TANQUES[tabla.area].find((x) => x.k === c) || {}).desc ? 'desc' : 'asc'; }
+    pintarTabla();
+  });
+  $('tabla-filas').addEventListener('click', (e) => {
+    const tr = e.target.closest('tr[data-i]'), f = tr && tabla.filas[+tr.dataset.i];
+    if (f) irA(f.g, f.t);
+  });
+
   /* ---- Colores (los de la maqueta) ---- */
   {
     const lg = $('legend');
@@ -258,6 +319,7 @@ export function montarAnalisis(host) {
     });
     const reemplazo = E && E.mad ? E.mad.reemplazo : null;
     pintarProduccion(E && E.cifras); pintarCifras(E); pintarReproductores(reemplazo); pintarAtender(reemplazo); pintarFilas();
+    pintarTabla();
   }
   pintarEstado(null);
   return {

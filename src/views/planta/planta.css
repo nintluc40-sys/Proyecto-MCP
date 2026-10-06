@@ -201,6 +201,33 @@
 .planta-an .an-tq[aria-pressed="true"] { outline: 2px solid var(--sel); outline-offset: 2px; }
 .planta-an .an-tq-ficha { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--chip); }
 .planta-an .an-tq-ficha h4 { margin: 0 0 4px; font: 700 14px/1.2 var(--font-sans); }
+/* Detalle por tanque (T2): la tabla se desliza a los lados DENTRO de su caja (la página no se desborda) y la columna del
+   tanque queda fija a la izquierda */
+.planta-an .an-tabla { margin-top: 24px; min-width: 0; }
+.planta-an .an-tabla-cab { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; margin-bottom: 8px; }
+.planta-an .an-tabla-cab h2 { margin: 0; }
+.planta-an .an-area { grid-template-columns: repeat(2, auto); }
+.planta-an .an-solo { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.planta-an .an-tabla-res { margin: 0 0 8px; font: 500 12px/1.4 var(--font-mono); color: var(--muted); }
+.planta-an .an-tabla-caja { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+.planta-an .an-tabla-caja[hidden] { display: none; }
+.planta-an .an-tq-tabla { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.planta-an .an-tq-tabla th, .planta-an .an-tq-tabla td { padding: 7px 10px; text-align: left; white-space: nowrap; background: var(--panel); border-bottom: 1px solid var(--line); }
+.planta-an .an-tq-tabla tbody tr:last-child > * { border-bottom: 0; }
+.planta-an .an-tq-tabla td { font-family: var(--font-mono); font-size: 12.5px; }
+/* ⚠ «an-num» y no «num»: `.planta .num` es la etiqueta flotante del número de tanque de la maqueta (position: absolute) y
+   Análisis también lleva la clase .planta: con «num» las columnas de cifras salían sacadas de la tabla (medido, 06-10) */
+.planta-an .an-tq-tabla .an-num { text-align: right; font-variant-numeric: tabular-nums; }
+.planta-an .an-tq-tabla tr > :first-child { position: sticky; left: 0; z-index: 1; border-right: 1px solid var(--line); }
+.planta-an .an-tq-tabla thead button { font: 600 11.5px/1.2 var(--font-sans); letter-spacing: .04em; color: var(--muted); background: none; border: 0; padding: 2px 0; cursor: pointer; white-space: nowrap; }
+.planta-an .an-tq-tabla thead th[aria-sort] button { color: var(--ink); }
+.planta-an .an-tq-tabla tbody tr { cursor: pointer; }
+.planta-an .an-tq-tabla tbody tr:hover > * { background: var(--chip); }
+.planta-an .an-tq-tabla tbody th button { font: 600 13px/1 var(--font-mono); color: var(--ink); background: none; border: 0; padding: 2px 0; cursor: pointer; white-space: nowrap; }
+.planta-an .an-tq-tabla tr.alerta > :first-child { box-shadow: inset 3px 0 0 #e53935; }
+.planta-an .an-tq-tabla td.mal { color: #c62828; font-weight: 700; }
+.planta-an .an-tq-tabla td.al { color: #c62828; }
+[data-theme="dark"] .planta-an .an-tq-tabla td.mal, [data-theme="dark"] .planta-an .an-tq-tabla td.al { color: #ff8a80; }
 @media (max-width: 900px) {
   .planta.planta-an { padding: 14px 12px 22px; }
   .planta-an .an-cols { grid-template-columns: minmax(0, 1fr); }

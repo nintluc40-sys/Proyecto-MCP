@@ -1,7 +1,7 @@
 /* PLANTA · textos.js: lo que dicen fichas, filas, cifras, producción, «Qué atender hoy» y reproductores (compartido por
    la maqueta y 📊 Análisis). Fixtures mínimos con la forma de estado.js y cifras.js. */
 import { describe, it, expect } from 'vitest';
-import { fichaGrupo, fichaTanque, textoFila, cifrasDelPanel, textosProduccion, textoMes, alertasParaAtender, reproductoresPorDias, colorGrupo } from './textos.js';
+import { fichaGrupo, fichaTanque, textoFila, cifrasDelPanel, textosProduccion, textoMes, alertasParaAtender, reproductoresPorDias, colorGrupo, tablaDeTanques } from './textos.js';
 
 const HOY = { cargado: true, mesPasado: null };
 const PASADO = { cargado: true, mesPasado: { mes: 'Septiembre', cierre: '2026-09-30' } };
@@ -111,5 +111,57 @@ describe('Qué atender hoy y reproductores', () => {
     expect(P.lotes.map((l) => [l.nombre, l.salas, l.dias, l.ancho, l.pasa])).toEqual([['BN', 'Sala 1', '30 d', '50%', false], ['⏳ BQ', 'Salas 2 y 3', '75 d', '100%', true]]);
     expect(reproductoresPorDias({ limite: 60, lotes: [] }, HOY).vacio).toBe('Ningún lote en producción');
     expect(reproductoresPorDias(null, HOY).vacio).toBe('Sin datos de maduración');
+  });
+});
+
+describe('detalle por tanque (T2 de Análisis)', () => {
+  const larv = (num, over = {}) => ({ estado: 'cultivo', nombre: 'TQ ' + num, estadio: 'PL5', sv: 80, pop: 1e6, od: 5, tmp: 30, alerta: false, motivos: [], lotes: ['BN'], ...over });
+  const mad = (over = {}) => ({ estado: 'Producción', vivos: 20, hembras: 10, machos: 10, hm: 1, hmEstado: 'ok', densidad: 4, densidadEstado: 'ok', lotes: [],
+    periodo: { bajas: 1, descartes: 0, copulas: 3, pctCopulas: 4.3 }, ultimoParte: '2026-10-05', alerta: false, motivos: [], ...over });
+  function grupo(id, kind, tanques) { const g = { id, kind, name: id, short: id, st: {}, tanks: [], desove: [] }; Object.entries(tanques).forEach(([n, st]) => g.tanks.push(tq(+n, st, g))); return g; }
+  const M1 = grupo('M1', 'larv', { 1: larv(1, { estadio: 'PL10', sv: 61, alerta: true, motivos: ['Superv.'] }), 2: larv(2, { estadio: 'PL2', sv: null }), 3: { estado: 'vacio' }, 4: larv(4, { estado: 'despachado' }) });
+  const M2 = grupo('M2', 'larv', { 1: larv(1, { estadio: 'Z3', sv: 92, od: 3.2, alerta: true, motivos: ['OD'] }) });
+  const S1 = grupo('S1', 'mat', { 1: mad(), 2: mad({ vivos: 0, hembras: 0, machos: 0 }),
+    3: mad({ estado: 'Cuarentena', hm: 2.5, alerta: true, motivos: ['H:M'], periodo: { bajas: 4, descartes: 2, copulas: 0, pctCopulas: '' }, ultimoParte: '' }) });
+  const G = [M1, M2, S1];
+  const T = (area, opc = {}, ctx = HOY) => tablaDeTanques(G, area, { soloAlerta: false, k: 'tq', dir: 'asc', ...opc }, ctx);
+  const tqs = (r) => r.filas.map((f) => f.celdas.tq.txt);
+
+  it('sólo los activos (en cultivo; con reproductores), por módulo y tanque, con su resumen', () => {
+    expect(tqs(T('larv'))).toEqual(['M1 · 1', 'M1 · 2', 'M2 · 1']);
+    expect(T('larv').resumen).toBe('3 tanques en cultivo · 2 en alerta');
+    expect(T('larv', {}, PASADO).resumen).toBe('3 tanques en cultivo · 2 en alerta (Septiembre)');
+    expect(tqs(T('mat'))).toEqual(['S1 · 1', 'S1 · 3']);
+    expect(T('mat').resumen).toBe('2 tanques con reproductores · 1 en alerta');
+  });
+  it('los textos de cada celda y la causa de la alerta marcada', () => {
+    const [a, b, c] = T('larv').filas;
+    expect(a.celdas.sv).toEqual({ txt: '61,0 %', v: 61, mal: true });
+    expect(a.celdas.od.mal).toBe(false);
+    expect(a.celdas.alerta.txt).toBe('⚠ Superv.');
+    expect([b.celdas.sv.txt, b.celdas.sv.v, b.celdas.alerta.txt, b.celdas.lote.txt]).toEqual(['—', null, '', 'BN']);
+    expect(c.celdas.od).toMatchObject({ txt: '3,20', mal: true });
+    const [s1, s3] = T('mat').filas;
+    expect([s1.celdas.cop.txt, s1.celdas.parte.txt, s1.celdas.h.txt]).toEqual(['4,3 %', '05/10', '10']);
+    expect(s3.celdas.hm).toMatchObject({ txt: '2,50', mal: true });
+    expect([s3.celdas.cop.txt, s3.celdas.cop.v, s3.celdas.parte.txt, s3.celdas.parte.v]).toEqual(['—', null, '—', null]);
+  });
+  it('ordena: el estadío en su orden biológico y, sin dato, al final en los dos sentidos', () => {
+    expect(tqs(T('larv', { k: 'estadio' }))).toEqual(['M2 · 1', 'M1 · 2', 'M1 · 1']);   // Z3 < PL2 < PL10
+    expect(tqs(T('larv', { k: 'estadio', dir: 'desc' }))).toEqual(['M1 · 1', 'M1 · 2', 'M2 · 1']);
+    expect(tqs(T('larv', { k: 'sv' }))).toEqual(['M1 · 1', 'M2 · 1', 'M1 · 2']);   // 61, 92, sin dato
+    expect(tqs(T('larv', { k: 'sv', dir: 'desc' }))).toEqual(['M2 · 1', 'M1 · 1', 'M1 · 2']);
+    expect(tqs(T('mat', { k: 'parte', dir: 'desc' }))).toEqual(['S1 · 1', 'S1 · 3']);
+    expect(tqs(T('mat', { k: 'alerta', dir: 'desc' }))).toEqual(['S1 · 3', 'S1 · 1']);
+    expect(tqs(T('mat', { k: 'estado', dir: 'desc' }))).toEqual(['S1 · 1', 'S1 · 3']);   // Producción > Cuarentena
+  });
+  it('«sólo en alerta», una columna de la otra área, cargando y vacío', () => {
+    expect(tqs(T('larv', { soloAlerta: true }))).toEqual(['M1 · 1', 'M2 · 1']);
+    const r = T('mat', { k: 'sv', dir: 'desc' });
+    expect([r.k, r.dir, tqs(r)]).toEqual(['tq', 'asc', ['S1 · 1', 'S1 · 3']]);
+    expect(T('larv', {}, { cargado: false, mesPasado: null })).toMatchObject({ filas: [], vacio: 'Cargando datos de producción…' });
+    expect(tablaDeTanques([grupo('M3', 'larv', { 1: { estado: 'vacio' } })], 'larv', { soloAlerta: false }, PASADO).vacio).toBe('Ningún tanque en cultivo en Septiembre.');
+    expect(tablaDeTanques([grupo('M3', 'larv', { 1: larv(1) })], 'larv', { soloAlerta: true }, HOY))
+      .toMatchObject({ resumen: '1 tanque en cultivo · ninguno en alerta', filas: [], vacio: 'Ningún tanque en alerta.' });
   });
 });
