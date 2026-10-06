@@ -244,13 +244,19 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     la regla vive en `src/core/trovan.js` y está detallada en «Reglas vigentes», más abajo.
     *(Hasta el 2026-09-16 la regla era otra —una hembra «sucedía» a otra si la anterior había muerto
     y la nueva ingresaba después—; se retiró entera, y con ella sus dos rechazos por fechas.)*
-- **Planta** (🏭, 2026-10-04/05): el tablero de producción de **Gerencia** sobre la maqueta 3D del laboratorio
+- **Planta** (🏭, 2026-10-04/06): el tablero de producción de **Gerencia** sobre la maqueta 3D del laboratorio
   (los módulos de larvicultura y las salas de maduración a escala del plano, en su entorno). El color de cada tanque
   es su estado —larvicultura con las reglas de la Vista Ejecutiva (`supervisor/etapas.js`, compartido), maduración con
   el «Estado» del mapa de salas—, con su ficha al tocarlo, balizas de alerta y «Qué atender hoy»; las cifras del mes
   (producción de «Producción Omarsa» frente a una **meta de 400 M editable** con ⚙, guardada en el equipo,
   supervivencia, nauplios y desoves) y el reemplazo de reproductores a los 60 días. El selector de mes mueve TODA la
-  vista (un mes pasado, con las corridas de ese mes). Es del **rol Gerencia**, sin clave, que sólo ve esta vista; el
+  vista (un mes pasado, con las corridas de ese mes); un mes ya visitado no se recalcula mientras no cambien el libro
+  ni el día. Un selector **«🏭 Maqueta | 📊 Análisis»**, que el equipo recuerda, cambia la maqueta por una página
+  analítica SIN 3D (`planta/analisis.js`) con lo mismo: producción con su selector de mes y su meta, las cifras, «Qué
+  atender hoy», módulos y salas en filas desplegables con su ficha y sus tanques, y los reproductores; los textos de
+  los dos modos salen del mismo módulo puro (`planta/textos.js`), así dicen exactamente lo mismo, y three.js sólo se
+  descarga en Maqueta. La maqueta baja su nitidez cuando va lenta, hasta la de la pantalla normal (1×), y la recupera
+  cuando va holgada. Es del **rol Gerencia**, sin clave, que sólo ve esta vista; el
   enlace `…/?rol=gerencia` entra directo y el equipo lo **recuerda** hasta «Cambiar rol» (`ui/accesoRol.js`), y
   `…/?qr=gerencia` es la página con su **QR de acceso** («🔗 Compartir acceso»). Vive SÓLO en la web: **no va a
   `index (8)`** (excepción expresa a los dos destinos). `three` va FIJO en **0.128.0** y la vista queda **fuera de la
@@ -540,7 +546,8 @@ src/
     microbiologia/         data.js (capa pura) · index.js · petri.js (placa de agar SVG)
     maduracion/            🧬 Microchips (el REPRODUCTIVO, por Trovan) y el TABLERO del registro
                            OPERATIVO (operativo.*) · ⚠ sus FICHAS de captura NO están aquí: ver engine.js
-    planta/                🏭 Gerencia: maqueta 3D (escena.js, three.js) · plano · estado · cifras · qr/ (acceso)
+    planta/                🏭 Gerencia: maqueta 3D (escena.js, three.js) · 📊 Análisis sin 3D (analisis.js) ·
+                           textos (lo que dicen ambos) · meta · plano · estado · cifras · qr/ (acceso)
     registros/             Fichas nativas (lib/ + fichas/) sobre el motor engine.js
                            lib/ tiene los esquemas y el LIBRO MAYOR de Maduración, con su
                            prueba de paridad contra el gemelo inline del monolito
