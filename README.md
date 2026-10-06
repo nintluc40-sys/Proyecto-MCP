@@ -244,6 +244,17 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     la regla vive en `src/core/trovan.js` y está detallada en «Reglas vigentes», más abajo.
     *(Hasta el 2026-09-16 la regla era otra —una hembra «sucedía» a otra si la anterior había muerto
     y la nueva ingresaba después—; se retiró entera, y con ella sus dos rechazos por fechas.)*
+- **Planta** (🏭, 2026-10-04/05): el tablero de producción de **Gerencia** sobre la maqueta 3D del laboratorio
+  (los módulos de larvicultura y las salas de maduración a escala del plano, en su entorno). El color de cada tanque
+  es su estado —larvicultura con las reglas de la Vista Ejecutiva (`supervisor/etapas.js`, compartido), maduración con
+  el «Estado» del mapa de salas—, con su ficha al tocarlo, balizas de alerta y «Qué atender hoy»; las cifras del mes
+  (producción de «Producción Omarsa» frente a una **meta de 400 M editable** con ⚙, guardada en el equipo,
+  supervivencia, nauplios y desoves) y el reemplazo de reproductores a los 60 días. El selector de mes mueve TODA la
+  vista (un mes pasado, con las corridas de ese mes). Es del **rol Gerencia**, sin clave, que sólo ve esta vista; el
+  enlace `…/?rol=gerencia` entra directo y el equipo lo **recuerda** hasta «Cambiar rol» (`ui/accesoRol.js`), y
+  `…/?qr=gerencia` es la página con su **QR de acceso** («🔗 Compartir acceso»). Vive SÓLO en la web: **no va a
+  `index (8)`** (excepción expresa a los dos destinos). `three` va FIJO en **0.128.0** y la vista queda **fuera de la
+  precarga** (`ENTRADAS_FUERA_DE_PRECACHE` en `vite.config.js`): sólo la descarga quien la abre.
 - **Registros**: fichas de captura (estrangulamiento gradual del monolito
   `public/registros/engine.js`) que escriben al Sheet vía Google Apps Script.
   Incluye el **registro operativo de Maduración**, que tiene su propia sección aquí abajo
@@ -253,7 +264,9 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   sus 5 puntos; el Score es su suma (máx. 100) y la interpretación sale de los tramos de la planilla (95 · 85 · 70)—.
   Escribe en la hoja **`Registro_Score`**, una fila por tanque con los PUNTOS de cada criterio y un ID fijo (fecha ·
   módulo · corrida · tanque) el último: reenviar una evaluación la CORRIGE (el GAS la upserta sin merge). Un tanque
-  sólo sale con sus 13 criterios, y lo marcado se guarda al instante en el equipo.
+  sólo sale con sus 13 criterios, y lo marcado se guarda al instante en el equipo. «🧹 Vaciar TQ n» borra SÓLO el
+  tanque en pantalla (decisión del usuario, 2026-10-04; «🗑 Nueva evaluación» vacía la entera) y «📄 PDF» imprime la
+  evaluación en pantalla: A4 horizontal, una fila por tanque evaluado, con observaciones y firmas.
   Y **🧾 Auditoría** (2026-10-03): las planillas «AUDITORIAS (MES) Cxxx» de una corrida y su módulo como ficha —la
   **siembra** (origen, guía, cantidad, toneladas del tanque, lote, código genético y el ingreso de reproductores: su
   fecha y sus guías, tecleados), la **transferencia** origen → destino (cantidad, estadío, PL/g y % de larvas pequeñas)
@@ -267,6 +280,19 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   iguales); un tanque sembrado que además recibe atribuye toda su cosecha a sus orígenes (caso anotado: en las planillas
   los destinos eran tanques vacíos). Cambiar una celda pone al día lo calculado EN SU SITIO, sin rehacer la tabla
   —rehacerla perdía el Tab y el clic siguiente—. Como `Registro_Score`, la hoja la crea el GAS con su primer envío.
+  Desde el 2026-10-04/05 (usuario) cada tabla se **pega como en Excel** —desde la celda elegida, añadiendo filas—: sin
+  títulos, por el ORDEN de sus columnas; con su fila de títulos, **por NOMBRE** (los de la ficha, la cabecera de la hoja
+  o los de las planillas AUDITORIAS), así que el bloque de una planilla se pega tal cual en cada tabla y cada una toma lo
+  suyo. Se entienden las fechas como las copia Excel de las planillas («21-dic-25», «2-ene»: sin año, la más reciente no
+  futura) y las listas con sus formas (1ra → 1ª, M3 → M03); lo no reconocido queda vacío y se avisa, y la Partida se
+  recalcula. Enter y las flechas recorren cada tabla; «🧹 Vaciar» borra UNA tabla («🗑 Nueva auditoría», la entera) y
+  «📄 PDF» imprime las tablas con filas, el resumen calculado, observaciones y firmas.
+  🗂 **El histórico (F3, escrito el 2026-10-05):** las planillas de enero a mayo —29 auditorías, una por corrida y
+  módulo— se importaron a `Registro_Auditoria` con el importador del utillaje (`f3-importar-auditorias.mjs`, que construye
+  las filas con las funciones de la ficha y comprueba cada corrida contra la planilla y el MCP). Se reconocen por
+  «Registrado por» = **«Importación F3»** y la planilla de origen en Observaciones; lo calculado no se importó (lo
+  recalculan la ficha y el MCP) y el despacho, que va por guía y mezcla tanques, no se atribuye. Junio queda fuera
+  hasta que sus planillas estén terminadas (la 573, hasta corregir sus fechas de siembra).
 
 ### Maduración · el registro OPERATIVO
 
@@ -304,6 +330,7 @@ del módulo se quede sin contraparte en el monolito.
 | 🍤 **Alimentación** | `Maduración Alimentación` | (fecha, sala, tanque): agenda de tomas y ración calculada |
 | 📈 **Broodstock** | `Maduración Broodstock` | (fecha de corte, piscina): la carga SEMANAL del Excel del área |
 | 🏠 **Salas** · 🛢️ **Tanques** | `Maduración Sala` · `Maduración Tanques` | la grilla diaria; en Tanques, cada ronda de mortalidad es un **parte** con su hora |
+| 📜 **Historial** | *(lo enviado desde ESTE equipo)* | cada envío de las fichas de formulario y de Salas/Tanques: revisarlo, 📄 PDF, 🗑 y ✏️ corregirlo (ver «Las fichas de Maduración»); no escribe por sí mismo |
 
 **Todas guardan un BORRADOR POR FECHA en el dispositivo (2026-09-15).** Salas y Tanques ya lo
 hacían por ser grillas —su lista local lleva la fecha dentro de cada fila—; desde esa fecha las
@@ -502,6 +529,7 @@ src/
     modal.js               Diálogos accesibles compartidos (role/aria, foco atrapado)
     modalEscape.js         Cierre con Escape, uniforme para todas las vistas
     toast.js               Aviso efímero no bloqueante (sustituye a window.alert)
+    accesoRol.js           Rol por enlace (`?rol=gerencia`) y el rol RECORDADO en el equipo
   views/
     supervisor/            Ejecutiva · módulo · tanque · larvia · despacho · traslado · omtex · compareTanks
     larvicultura/          Radar, evolución, heatmap, registros, ICL, ranking, modales
@@ -512,6 +540,7 @@ src/
     microbiologia/         data.js (capa pura) · index.js · petri.js (placa de agar SVG)
     maduracion/            🧬 Microchips (el REPRODUCTIVO, por Trovan) y el TABLERO del registro
                            OPERATIVO (operativo.*) · ⚠ sus FICHAS de captura NO están aquí: ver engine.js
+    planta/                🏭 Gerencia: maqueta 3D (escena.js, three.js) · plano · estado · cifras · qr/ (acceso)
     registros/             Fichas nativas (lib/ + fichas/) sobre el motor engine.js
                            lib/ tiene los esquemas y el LIBRO MAYOR de Maduración, con su
                            prueba de paridad contra el gemelo inline del monolito
@@ -765,6 +794,22 @@ Desde el 2026-09-24 (punto 2a, correcciones A y B, decisiones del usuario):
 - **Vaciarla no pierde nada**: al terminar se relee la cola y sólo se quita lo que ese vaciado
   resolvió; lo que se guardó, se purgó o se sustituyó mientras tanto se respeta.
 
+Y desde el 2026-10-04 (auditoría final de la sincronización, decisiones del usuario) **lo no enviado no se pierde
+sin avisar**:
+- **Sin espacio, un envío no se da por «en cola».** Si no cabe en el almacenamiento —o el navegador acepta el
+  guardado sin hacerlo, como en el modo privado de algunos: se comprueba LEYENDO tras escribir—, el envío da
+  **error** con su motivo y lo tecleado se queda en pantalla. Antes decía «📶 en cola», vaciaba el formulario y se
+  perdía.
+- **Biomol, As Técnico (supervisión) y Traslado CONSERVAN lo no enviado.** A las 48 h sólo se retira lo ya
+  enviado, contadas desde su envío (como ya hacían Score, Auditoría y Microbiología); lo pendiente se queda hasta
+  enviarlo o borrarlo. Las fotos de un viaje caducan con su viaje.
+- **Larvicultura y Lab. Algas: lo de días anteriores.** Se guardan por día y la app lee los de hoy, así que lo no
+  enviado dejaba de verse a medianoche y la limpieza lo borraba. Ahora la limpieza no lo toca y, al abrir el módulo,
+  un aviso dice qué quedó y de qué día, con **«☁️ Enviarlas»** (cada ficha a su hoja con SU fecha) y
+  **«🗑 Descartarlas»**.
+- **Reproductivo · elegir la hembra:** si el envío falla de verdad, los microchips elegidos **siguen** en la lista
+  para reintentar (entregado o en cola, salen como antes).
+
 Y en el **registro reproductivo** (punto 2a · E, decisiones del usuario) cada acción —un desove o una
 mortalidad, un alta, un traslado, elegir la hembra— da **un solo aviso** al terminar: el resultado y, detrás,
 lo que requiere atención (naranja; rojo si no se registró nada). Lo que va pasando se lee en la línea junto a
@@ -933,6 +978,21 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
 - **Salas · «Toneladas»** son las de CADA tanque, y el valor por defecto **se pre-rellena, no se
   impone**: manda lo que hay en la celda, un 0 incluido, y un defecto que nadie tecleó no cuenta como
   registro. Mandan las cifras del catálogo, no las del Excel de un módulo concreto.
+- **Los pesos ♂/♀ del tanque, desde Tanques o desde Alimentación** (usuario, 2026-10-04). Un peso tecleado A MANO
+  en 🍤 Alimentación —los «Manual» de «Fuente del peso», ya en su hoja— cuenta como peso del tanque **donde se usa
+  el peso**: la ración al leer (fuente «Alimentación <fecha>»), el ⚖️ Saldo (peso del lote y carga; lee también esa
+  hoja y, si aún no existe, sigue sin aviso) y, en el MCP, el resumen, el KPI de biomasa, los pesos de los lotes y
+  los últimos pesos de Tanques y del detalle de sala. **El mismo día, sexo a sexo, manda 🛢 Tanques.** Los partes del
+  día no cambian. Pieza común `madPesosDeAlimentacion` (motor) ↔ `pesosDeAlimentacion` (`mad-libro.js`), con
+  paridad. Reenviar Alimentación el mismo día tras releer no pierde el peso tecleado.
+- **📜 Historial** (usuario, 2026-10-04): lo enviado desde ESTE equipo en los últimos **60 días** (hasta 200 POR
+  ficha) de las siete fichas de formulario y de Salas/Tanques (de sus propios registros); Broodstock, fuera. Cada
+  envío —directo, en cola o desde 💾— guarda sus filas: se revisa, se imprime (📄) y se borra (🗑, sólo del
+  equipo). **✏️ Editar** abre la ficha tal como se envió, en corrección (fecha FIJA y aviso), en los últimos
+  **10** envíos de cada ficha (Alimentación, 3); guardar reescribe las MISMAS filas (mismo ID) y avisa antes si
+  cambió la llave. Desoves usa su propia corrección (sólo viaja lo cambiado). Un reenvío con las mismas filas
+  SUSTITUYE a su entrada («🔁 reenviado»). Sin espacio se liberan primero las copias para Editar y después la mitad
+  más vieja del Historial; la cola, nunca.
 - **Los botones lentos leen en PARALELO.** Medido contra el GAS vivo: 13,5 s → 3,4 s.
 
 ### Otras que han costado caras
