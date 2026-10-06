@@ -619,9 +619,15 @@ Dos consecuencias que conviene tener presentes al desplegar:
    Datos M03, 20 de 1 579), y ese recorte pisaba el libro bueno sin avisar; el XLSX de una hoja las
    da todas, igual que el libro entero. El respaldo lo hace el Worker (en la página, cada hoja grande
    por XLSX congelaba ~1,3 s), y el libro sólo se guarda en el equipo si ninguna hoja vino por CSV
-   ni faltó ninguna. Límite conocido: si el libro entero falla por TIEMPO, puede no quedar tiempo
-   para el respaldo antes del tope del Worker (`LIMITE_MS`, en `sheets.lector.js`); entonces se
-   conservan los datos que había.
+   ni faltó ninguna. Comprobado en Chrome el 2026-10-06 contra lo publicado, con el libro entero
+   bloqueado en el Worker: el respaldo pide cada hoja por su XLSX y ninguna por gviz.
+   Límite conocido: el tope del Worker (`LIMITE_MS`, en `sheets.lector.js`, 165 s) cubre la lectura
+   ENTERA, respaldo incluido, no sólo el libro. Si el libro entero falla por tiempo, o si falla al
+   instante pero la red va lenta, el respaldo puede no terminar a tiempo (el 2026-10-06, con la red
+   lenta, leyó 31 de 43 hojas): el Worker se descarta con lo que llevaba leído. En un refresco se
+   conservan los datos que había; en la primera carga la página vuelve a empezar en el hilo
+   principal y puede tardar varios minutos. Es raro: el libro entero falla en torno al 0,05 % de las
+   lecturas.
    **El XLSX se descarga y se lee en un Web Worker** (`core/sheets.worker.js`, clásico, con
    `importScripts` del SheetJS de `public/vendor`; lectura `dense`): la pantalla no se
    congela (medido el 2026-10-01 con el libro real: 21 s → 0,9 s al abrir y 12 s → 0 en cada
@@ -851,7 +857,11 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   (`script.googleusercontent.com`): un 404, 429 o 5xx, o una página en vez de datos, que suele llegar tras
   20–40 s. Es puntual en cada petición, así que insistir sí lo arregla, y por eso «no respondió en 30 s» cuenta
   también como fallo de entrega (decisión del usuario, que cambia la del 1c). Un 403 o un error del propio GAS
-  siguen con 2 intentos. 🔑 Importa sobre todo en los equipos: `index (8)` abierto como archivo lee SIEMPRE por
+  siguen con 2 intentos. Comprobado en Chrome el 2026-10-06 con `index (8)` como archivo y los fallos
+  provocados: un 404, una página de Google y un 404 sin cabecera CORS (que el navegador ve como un corte) se
+  reintentan y la lectura llega; cuatro seguidos acaban en «Google respondió HTTP 404». Ese día, además, la
+  primera lectura de la MATRIZ tardó más de 30 s en las dos corridas, y fue el reintento el que la trajo.
+  🔑 Importa sobre todo en los equipos: `index (8)` abierto como archivo lee SIEMPRE por
   aquí (ver el punto siguiente). `?p=ver` y el aviso de ronda repetida de Tanques (`_madTqHojaFresca`) hacen UN
   intento a propósito.
 - **Sólo con el GAS de producción y desde una página https**: el libro que se exporta es el que escribe ese
@@ -1064,8 +1074,6 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
      el 2026-09-20, cuando esta línea siguió diciendo `2e806a50…` después de que P12 dejara la copia
      buena en otro sha1, y quien la siguiera habría dado por buena la build ANTERIOR—. Se pregunta:
      `git -C "C:/Users/Usuario/Music" log --oneline -1` y `sha1sum "index (8).html"`.
-   - Lo tecleado en las fichas selladas entre el 16 y el 18-09 no se envió (los sellos no casaban) y
-     sigue en el dispositivo: hay que volver a guardarlo.
 
 **Hecho, y comprobado**
 
@@ -1082,7 +1090,9 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
 **Abierto**
 
 4. **`Maduración Transferencias` se estrenó el 2026-09-26** (primer traslado): queda contrastar su panel con
-   dato real (`auditar-tablero-mad-real.mjs`); cuántas filas tiene, lo dice `estado-maduracion.mjs`.
+   dato real, y hace falta una comprobación propia: `auditar-tablero-mad-real.mjs` no lee esa hoja (lee
+   las diez del operativo; Transferencias es del reproductivo). Cuántas filas tiene, lo dice
+   `estado-maduracion.mjs`.
 5. **Microbiología · Patología en fresco** espera a que los usuarios estrenen su hoja.
 6. **Paridad · las funciones que sólo se comparan por NOMBRE** entre `engine.js` e `index (8)`. Desde el
    2026-09-22, `verificar-3copias-v3` saca las funciones con un parser y compara las que delegan en `__rgLib`
