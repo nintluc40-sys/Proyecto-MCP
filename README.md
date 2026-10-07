@@ -622,10 +622,29 @@ Dos consecuencias que conviene tener presentes al desplegar:
    instante con lo guardado. Los refrescos no avisan.
    **Sin congelar al llegar los datos** (2026-10-06): el Worker envía cada hoja que cambió en su PROPIO mensaje
    (`{ id, hoja, filas }` y al final `{ id, ok, orden, huellas }`; `sheets.worker.js · responder`) y el lector las junta
-   en `cambiadas`: la página deserializa cada mensaje al leerlo, y con todas en uno solo eran ~600 ms seguidos en
+   en `cambiadas` (SIEMPRE, vacía si no cambió ninguna: sin ella, cada refresco sin cambios fallaba —corregido el 07-10—).
+   La página deserializa cada mensaje al leerlo, y con todas en uno solo eran ~600 ms seguidos en
    escritorio (×4 en celular). 🏭 Planta, además, calcula por partes cediendo el turno (producción, cada módulo,
    maduración, cronograma) y pinta al acabar. Medido: la tarea más larga al llegar los datos, 1,78 → 0,28 s en escritorio
    y ~8,9 → ~1,2 s en celular ×4.
+   **Consulta ligera antes de cada refresco** (2026-10-07): el ciclo de 5 min pregunta primero la fecha de modificación
+   del libro en Drive (`core/marcaLibro.js`, `CONSULTA_CAMBIOS` en `config.js`) y, si es la misma que la de la última
+   descarga procesada, NO baja el XLSX (~14 MB). La da un Apps Script APARTE, «MCP · consulta ligera» (NO es el GAS del
+   Registro: no toca su sello ni `index (8)`), implementado como aplicación web («Ejecutar como: yo», «Cualquier
+   usuario») con la cuenta dueña del libro. La marca se lee ANTES de descargar y sólo crece: un retraso de Drive cuesta
+   como mucho una descarga de más, nunca un cambio perdido. Sin respuesta en 25 s (Apps Script arranca en frío a veces:
+   medido hasta 19 s), con una respuesta rara o con otro libro activo, se descarga como siempre; ⟳ y la primera carga no
+   preguntan. Si hubiera que recrear el script, éste es su código completo:
+
+   ```js
+   const SS_ID = '1Rrpff6bD1pOQFsi2Lsagan3ttjncxJzXoXLPgtHM0Gs';
+   function doGet() {
+     let out;
+     try { out = { ok: true, mod: DriveApp.getFileById(SS_ID).getLastUpdated().getTime() }; }
+     catch (e) { out = { ok: false, error: String((e && e.message) || e) }; }
+     return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
+   }
+   ```
 1. `connectSheets()` descarga el libro **completo** vía `export?format=xlsx`
    (1 petición, todas las hojas), con reintento y backoff. Si falla, el **respaldo** pide CADA hoja
    por su XLSX (`export?format=xlsx&gid=`; los `gid` salen de `/htmlview`) y sólo la que no llegue,
