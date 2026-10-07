@@ -261,7 +261,10 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   **detalle por tanque** (una tabla con los tanques activos de Larvicultura o de Maduración, ordenable por cualquier
   columna, con «Sólo en alerta» y la causa de la alerta marcada; tocar una fila abre el tanque). Un mes pasado se ve
   como estaba a su cierre. Los textos de los dos modos salen del mismo módulo puro (`planta/textos.js`), así dicen
-  exactamente lo mismo, y three.js sólo se descarga en Maqueta. La maqueta baja su nitidez cuando va lenta, hasta la de la pantalla normal (1×), y la recupera
+  exactamente lo mismo, y three.js sólo se descarga en Maqueta. Cambiar de modo no rehace nada: el que se deja se
+  oculta (la maqueta, en pausa) y vuelve al instante con su cámara, lo elegido y el mes. La primera vez, la maqueta se
+  arma por partes —suelo y tanques, naves, entorno, vida— con «Preparando la maqueta… %», sin congelar la pantalla al
+  compilar sus sombreadores. La maqueta baja su nitidez cuando va lenta, hasta la de la pantalla normal (1×), y la recupera
   cuando va holgada. Es del **rol Gerencia**, sin clave, que sólo ve esta vista; el
   enlace `…/?rol=gerencia` entra directo y el equipo lo **recuerda** hasta «Cambiar rol» (`ui/accesoRol.js`), y
   `…/?qr=gerencia` es la página con su **QR de acceso** («🔗 Compartir acceso»). Vive SÓLO en la web: **no va a
