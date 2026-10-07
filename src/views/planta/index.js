@@ -260,16 +260,19 @@ export function plantaView(root) {
   addEventListener('scroll', alDesplazar, { passive: true });
   montar(leerModo());
   if (!store.connected) asegurarLibro();
-  // Se desuscribe solo cuando la vista ya no está en el documento (el router no avisa al salir; su contenedor sigue).
+  // Se desuscribe solo cuando la vista ya no está en el documento (el router no avisa al salir; su contenedor sigue). UNA
+  // limpieza para las dos vías (2026-10-07, auditoría C1): la de EV.CONN no quitaba la escucha de scroll de la ventana y
+  // ésta retenía la vista entera —su DOM y su escena— hasta el siguiente desplazamiento.
+  const soltar = () => { offData(); offConn(); removeEventListener('scroll', alDesplazar); };
   const offData = on(EV.DATA, (d) => {
-    if (!marco.isConnected) { offData(); offConn(); removeEventListener('scroll', alDesplazar); return; }
+    if (!marco.isConnected) { soltar(); return; }
     const guardado = !!(d && d.guardado);
     const solo = !yaPintado || !!enCurso || guardado || (deGuardado && !usada);
     deGuardado = guardado;
     if (solo) pintar(); else avisarNuevos();
   });
   const offConn = on(EV.CONN, (c) => {
-    if (!marco.isConnected) { offData(); offConn(); return; }
+    if (!marco.isConnected) { soltar(); return; }
     if (vista && c && c.state === 'error' && !store.connected) vista.aviso('No se pudieron cargar los datos de producción. Pulsa ⟳ arriba para reintentar.');
   });
 }

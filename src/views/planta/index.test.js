@@ -181,6 +181,24 @@ describe('🏭 Planta · datos nuevos: se avisan y se actualizan al tocar (2026-
     expect(aviso().hidden).toBe(false);
   });
 
+  it('al salir de la vista, un EV.CONN suelta TODO: el bus y la escucha de scroll de la ventana (auditoría C1)', async () => {
+    const puestas = [];
+    const add = vi.spyOn(window, 'addEventListener').mockImplementation((t, fn) => { if (t === 'scroll') puestas.push(fn); });
+    const quitar = vi.spyOn(window, 'removeEventListener').mockImplementation(() => {});
+    try {
+      const maqueta = await conLibroPintado(false);
+      expect(puestas).toHaveLength(1);
+      document.body.innerHTML = '';                   // el router pinta otra vista: Planta deja el documento
+      emit(EV.CONN, { state: 'connected', label: 'x' });
+      expect(quitar).toHaveBeenCalledWith('scroll', puestas[0]);
+      const antes = maqueta.pintarEstado.mock.calls.length;
+      store.globalData = [{ a: 9 }]; emit(EV.DATA, { firstLoad: false });   // ya no escucha
+      await espera(); await espera();
+      expect(maqueta.pintarEstado.mock.calls.length).toBe(antes);
+      expect(calculos).toHaveLength(1);
+    } finally { add.mockRestore(); quitar.mockRestore(); }
+  });
+
   it('cambiar de modo no recalcula el que ya enseña lo aceptado (sigue el aviso); cambiar de mes acepta lo nuevo', async () => {
     const maqueta = await conLibroPintado(false);
     elegir('analisis'); await espera();
