@@ -174,6 +174,12 @@
 /* en escritorio la maqueta deja sitio al selector (≈ 46 px) para no desbordar la pantalla; cada modo va en su caja
    (.planta-modo, index.js), que se oculta y no se destruye al cambiar de modo */
 @media (min-width: 901px) { .planta-cuerpo > .planta-modo > .planta:not(.planta-an) { height: calc(100vh - 196px); } }
+/* aviso de datos nuevos (index.js, 2026-10-07): flota abajo para verse con el scroll donde esté, también con la maqueta
+   expandida (z-index 150) */
+.planta-nuevos { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 160; display: flex; align-items: center; gap: 10px; width: max-content; max-width: calc(100vw - 32px); padding: 6px 6px 6px 14px; border-radius: 999px; background: var(--c-text); color: var(--c-surface); font: 500 13px/1.3 var(--font-sans); box-shadow: 0 6px 20px rgba(0, 0, 0, .25); }
+.planta-nuevos[hidden] { display: none; }
+.planta-nuevos button { font: 600 13px/1 var(--font-sans); white-space: nowrap; color: #fff; background: #d9622b; border: 0; border-radius: 999px; padding: 9px 14px; cursor: pointer; }
+.planta-nuevos button:focus-visible { outline: 2px solid var(--c-surface); outline-offset: 2px; }
 
 /* ---- 📊 Análisis: la misma información sin la maqueta (analisis.js) ---- */
 .planta.planta-an { display: block; height: auto; min-height: 0; overflow: visible; padding: 18px 20px 24px; }

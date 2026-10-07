@@ -265,7 +265,10 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   oculta (la maqueta, en pausa) y vuelve al instante con su cámara, lo elegido y el mes. La primera vez, la maqueta se
   arma por partes —suelo y tanques, naves, entorno, vida— con «Preparando la maqueta… %», sin congelar la pantalla al
   compilar sus sombreadores. La maqueta baja su nitidez cuando va lenta, hasta la de la pantalla normal (1×), y la recupera
-  cuando va holgada. Es del **rol Gerencia**, sin clave, que sólo ve esta vista; el
+  cuando va holgada. Con datos a la vista, un refresco no la repinta sola: sale «Hay datos nuevos (hh:mm) ·
+  🔄 Actualizar» y se recalcula al tocarlo (o al cambiar de mes), con el desplazamiento y lo abierto en su sitio; al
+  abrir con el libro guardado del equipo, su puesta al día se aplica sola si la vista aún no se usó (2026-10-07).
+  Es del **rol Gerencia**, sin clave, que sólo ve esta vista; el
   enlace `…/?rol=gerencia` entra directo y el equipo lo **recuerda** hasta «Cambiar rol» (`ui/accesoRol.js`), y
   `…/?qr=gerencia` es la página con su **QR de acceso** («🔗 Compartir acceso»). Vive SÓLO en la web: **no va a
   `index (8)`** (excepción expresa a los dos destinos). `three` va FIJO en **0.128.0** y la vista queda **fuera de la
@@ -625,7 +628,8 @@ Dos consecuencias que conviene tener presentes al desplegar:
    en `cambiadas` (SIEMPRE, vacía si no cambió ninguna: sin ella, cada refresco sin cambios fallaba —corregido el 07-10—).
    La página deserializa cada mensaje al leerlo, y con todas en uno solo eran ~600 ms seguidos en
    escritorio (×4 en celular). 🏭 Planta, además, calcula por partes cediendo el turno (producción, cada módulo,
-   maduración, cronograma) y pinta al acabar. Medido: la tarea más larga al llegar los datos, 1,78 → 0,28 s en escritorio
+   maduración, cronograma) y pinta al acabar; desde el 2026-10-07, con datos ya a la vista, sólo AVISA y recalcula al
+   tocar «Actualizar» (en celular ×4 el recálculo eran ~4 s de los ~8 s de bloqueo de cada refresco). Medido: la tarea más larga al llegar los datos, 1,78 → 0,28 s en escritorio
    y ~8,9 → ~1,2 s en celular ×4.
    **Consulta ligera antes de cada refresco** (2026-10-07): el ciclo de 5 min pregunta primero la fecha de modificación
    del libro en Drive (`core/marcaLibro.js`, `CONSULTA_CAMBIOS` en `config.js`) y, si es la misma que la de la última

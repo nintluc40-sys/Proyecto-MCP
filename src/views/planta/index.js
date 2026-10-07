@@ -112,7 +112,15 @@ const MARCO = `
 <div class="planta-vista">
   <div class="planta-modos" role="group" aria-label="Cómo ver la planta"><button type="button" data-modo="maqueta" aria-pressed="false">🏭 Maqueta</button><button type="button" data-modo="analisis" aria-pressed="false">📊 Análisis</button></div>
   <div class="planta-cuerpo"></div>
+  <div class="planta-nuevos" role="status" hidden><span></span><button type="button">🔄 Actualizar</button></div>
 </div>`;
+/* Datos nuevos: avisar y actualizar al tocar (2026-10-07, usuario). Antes cada refresco (los 5 min, ⟳, volver a la app)
+   recalculaba y repintaba la vista sola: en un celular eran ~4 s de pantalla congelada (medido con CPU ×4) en mitad de
+   lo que se estaba mirando. Ahora, con datos a la vista, lo nuevo sólo se ANUNCIA; se recalcula al tocar «Actualizar»
+   (o al cambiar de mes, que ya obliga a recalcular), y el desplazamiento —la página y las cajas con scroll propio— se
+   guarda antes y se repone después. Se pinta solo: lo primero que llega, un cálculo ya en marcha (se rehace con lo
+   último) y, al abrir con el libro GUARDADO del equipo (puede tener días), su puesta al día si la vista aún no se usó. */
+const DESPLAZABLES = '.panel, .an-tabla-caja, .an-plano-caja';
 
 /** Pinta la vista con el modo que el equipo eligió la última vez. Sin WebGL, la maqueta avisa y Análisis sigue a mano. */
 export function plantaView(root) {
@@ -147,9 +155,29 @@ export function plantaView(root) {
   // El cálculo en curso: sólo pinta si sigue siendo el último pedido (llegó otro libro, cambió el día o el mes, o se
   // pintó un mes ya guardado: entonces se descarta). Un mes recién calculado se guarda aunque ya no se pinte.
   let enCurso = null;
+  // Datos nuevos (2026-10-07, ver DESPLAZABLES): `aceptados` es el libro que la vista enseña (o está calculando);
+  // `pintadoCon[modo]`, con qué libro, mes y día se pintó cada modo; `posicion`, lo guardado al tocar «Actualizar».
+  let aceptados = null, yaPintado = false, posicion = null, usada = false, deGuardado = false;
+  const pintadoCon = {};
+  const aviso = marco.querySelector('.planta-nuevos');
+  const avisarNuevos = () => {
+    aviso.querySelector('span').textContent = 'Hay datos nuevos (' + new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' }) + ')';
+    aviso.hidden = false;
+  };
+  const guardarPosicion = () => {
+    const caja = cuerpo.querySelector('[data-cuerpo="' + modo + '"]');
+    posicion = { x: window.scrollX, y: window.scrollY, cajas: caja ? [...caja.querySelectorAll(DESPLAZABLES)].map((el) => [el, el.scrollTop, el.scrollLeft]) : [] };
+  };
+  const reponerPosicion = () => {
+    if (!posicion) return;
+    const p = posicion; posicion = null;
+    p.cajas.forEach(([el, arriba, izq]) => { if (el.isConnected) { el.scrollTop = arriba; el.scrollLeft = izq; } });
+    if (Math.abs(window.scrollY - p.y) > 1 || Math.abs(window.scrollX - p.x) > 1) window.scrollTo(p.x, p.y);
+  };
   const pintar = () => {
     if (!vista) return;   // la del modo elegido aún se está cargando: pinta al montarse
     if (!store.connected || !store.globalData.length) { enCurso = null; vista.pintarEstado(null); return; }
+    aceptados = store.globalData; aviso.hidden = true;   // pintar es enseñar lo último: el aviso sobra
     const hoy = hoyLocal();
     if (memo.datos !== store.globalData || memo.hoy !== hoy) memo = { datos: store.globalData, hoy, meses: new Map() };
     const calc = memo.meses.get(mesElegido);
@@ -167,6 +195,8 @@ export function plantaView(root) {
     const { cifras, pasado, larv, mad, crono, fallos } = calc;
     vista.pintarEstado({ modulos: larv ? larv.modulos : {}, resumen: larv ? larv.resumen : null, mad, cifras, crono,
       mes: pasado ? { mes: pasado.mes, cierre: pasado.cierre } : null });
+    yaPintado = true; pintadoCon[modo] = { datos: aceptados, mes: mesElegido, hoy: memo.hoy };
+    reponerPosicion();
     const hora = new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
     vista.aviso(fallos.length ? 'No se pudo calcular: ' + fallos.join(' · ')
       : 'Datos del MCP · puestos al día a las ' + hora + (pasado ? ' · mostrando ' + pasado.mes + ' (maduración al ' + pasado.cierre.slice(8, 10) + '/' + pasado.cierre.slice(5, 7) + ')' : ''));
@@ -181,7 +211,13 @@ export function plantaView(root) {
     const mio = ++turno; modo = nuevo; vista = null; guardarModo(nuevo);
     marco.querySelectorAll('[data-modo]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.modo === nuevo)));
     [...cuerpo.children].forEach((c) => { c.hidden = c.dataset.cuerpo !== nuevo; });
-    if (montados[nuevo]) { vista = montados[nuevo]; pintar(); return; }
+    if (montados[nuevo]) {
+      vista = montados[nuevo];
+      // con datos nuevos sin aceptar, el modo que ya enseña lo aceptado (mismo mes y día) se deja como está: sigue el aviso
+      const p = pintadoCon[nuevo];
+      if (store.globalData !== aceptados && p && p.datos === aceptados && p.mes === mesElegido && p.hoy === hoyLocal()) return;
+      pintar(); return;
+    }
     cuerpo.querySelectorAll('[data-cuerpo="' + nuevo + '"]').forEach((c) => c.remove());
     const caja = document.createElement('div');
     caja.className = 'planta-modo'; caja.dataset.cuerpo = nuevo;
@@ -216,10 +252,22 @@ export function plantaView(root) {
     pintar();
   }
   marco.querySelector('.planta-modos').addEventListener('click', (e) => { const b = e.target.closest('[data-modo]'); if (b && b.dataset.modo !== modo) montar(b.dataset.modo); });
+  aviso.querySelector('button').addEventListener('click', () => { guardarPosicion(); pintar(); });
+  // «Usada»: un toque, una tecla, la rueda o un desplazamiento desde que se abrió (decide la puesta al día del libro guardado)
+  const marcarUso = () => { usada = true; };
+  ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach((t) => marco.addEventListener(t, marcarUso, { capture: true, passive: true }));
+  const alDesplazar = () => { removeEventListener('scroll', alDesplazar); if (marco.isConnected) usada = true; };
+  addEventListener('scroll', alDesplazar, { passive: true });
   montar(leerModo());
   if (!store.connected) asegurarLibro();
   // Se desuscribe solo cuando la vista ya no está en el documento (el router no avisa al salir; su contenedor sigue).
-  const offData = on(EV.DATA, () => { if (!marco.isConnected) { offData(); offConn(); return; } pintar(); });
+  const offData = on(EV.DATA, (d) => {
+    if (!marco.isConnected) { offData(); offConn(); removeEventListener('scroll', alDesplazar); return; }
+    const guardado = !!(d && d.guardado);
+    const solo = !yaPintado || !!enCurso || guardado || (deGuardado && !usada);
+    deGuardado = guardado;
+    if (solo) pintar(); else avisarNuevos();
+  });
   const offConn = on(EV.CONN, (c) => {
     if (!marco.isConnected) { offData(); offConn(); return; }
     if (vista && c && c.state === 'error' && !store.connected) vista.aviso('No se pudieron cargar los datos de producción. Pulsa ⟳ arriba para reintentar.');
