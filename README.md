@@ -645,6 +645,12 @@ Dos consecuencias que conviene tener presentes al desplegar:
      return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
    }
    ```
+
+   **Red atascada** (2026-10-07): los tiempos máximos (`FETCH_TIMEOUT_MS`, `XLSX_TIMEOUT_MS`) cubren sólo hasta las
+   cabeceras; el CUERPO se corta si pasan `SIN_DATOS_MS` (30 s) sin recibir nada (`sheets.js · cuerpoDe/textoDe`) y entran
+   los reintentos y el respaldo. Antes, con la red atascada a mitad, la carga esperaba para siempre en «0,5 MB». Una red
+   lenta que avanza no se corta. En la primera carga, el aviso dice «la red no avanza, reintento 2 de 3», el intento en
+   curso y «probando hoja por hoja». (El límite de 165 s del Worker no cambia.)
 1. `connectSheets()` descarga el libro **completo** vía `export?format=xlsx`
    (1 petición, todas las hojas), con reintento y backoff. Si falla, el **respaldo** pide CADA hoja
    por su XLSX (`export?format=xlsx&gid=`; los `gid` salen de `/htmlview`) y sólo la que no llegue,
