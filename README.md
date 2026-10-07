@@ -253,9 +253,15 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   vista (un mes pasado, con las corridas de ese mes); un mes ya visitado no se recalcula mientras no cambien el libro
   ni el día. Un selector **«🏭 Maqueta | 📊 Análisis»**, que el equipo recuerda, cambia la maqueta por una página
   analítica SIN 3D (`planta/analisis.js`) con lo mismo: producción con su selector de mes y su meta, las cifras, «Qué
-  atender hoy», módulos y salas en filas desplegables con su ficha y sus tanques, y los reproductores; los textos de
-  los dos modos salen del mismo módulo puro (`planta/textos.js`), así dicen exactamente lo mismo, y three.js sólo se
-  descarga en Maqueta. La maqueta baja su nitidez cuando va lenta, hasta la de la pantalla normal (1×), y la recupera
+  atender hoy», módulos y salas en filas desplegables con su ficha y sus tanques, y los reproductores; debajo, tres
+  secciones propias: el **plano del laboratorio** (SVG con los módulos, las salas y sus tanques en las mismas
+  posiciones que la maqueta, cada tanque con el color de su ficha, su número y ⚠ si está en alerta; tocarlo da su
+  ficha con «Ver en su módulo →»), el **cronograma del ciclo** (los 10 módulos en un calendario común, de su siembra a
+  hoy o al despacho, en tramos por etapa —la del estadío más avanzado de cada día—, con 🚚 desde el despacho) y el
+  **detalle por tanque** (una tabla con los tanques activos de Larvicultura o de Maduración, ordenable por cualquier
+  columna, con «Sólo en alerta» y la causa de la alerta marcada; tocar una fila abre el tanque). Un mes pasado se ve
+  como estaba a su cierre. Los textos de los dos modos salen del mismo módulo puro (`planta/textos.js`), así dicen
+  exactamente lo mismo, y three.js sólo se descarga en Maqueta. La maqueta baja su nitidez cuando va lenta, hasta la de la pantalla normal (1×), y la recupera
   cuando va holgada. Es del **rol Gerencia**, sin clave, que sólo ve esta vista; el
   enlace `…/?rol=gerencia` entra directo y el equipo lo **recuerda** hasta «Cambiar rol» (`ui/accesoRol.js`), y
   `…/?qr=gerencia` es la página con su **QR de acceso** («🔗 Compartir acceso»). Vive SÓLO en la web: **no va a
