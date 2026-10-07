@@ -24,8 +24,10 @@ export const MAD_TRAT_SHEET = 'Maduración Tratamientos';
 export const MAD_TRAT_ESTADOS = ['Producción', 'Cuarentena', 'Mixto', 'Desinfección', 'Desinfección - Producción agrupada'];
 
 /** Catálogos, en el orden en que los dio el usuario. */
-export const MAD_TRAT_PREVENTIVOS = ['Cooper', 'Formol', 'Bacmil', 'Lactosac', 'Lipofeed', 'Carbonato de Calcio', 'Complex B', 'Vitamina C', 'Full Calcio', 'Prokura'];
-export const MAD_TRAT_RAS = ['Bicarbonato', 'EM-1', 'Full Calcio', 'Prokura'];
+/* 2026-10-07 (usuario) · «DB Aqua» al final de Preventivos por lote y de RAS, y PRE-MARCADO en la plantilla de Producción
+   (preventivos y RAS: la usan también Cuarentena, Mixto y la agrupada). */
+export const MAD_TRAT_PREVENTIVOS = ['Cooper', 'Formol', 'Bacmil', 'Lactosac', 'Lipofeed', 'Carbonato de Calcio', 'Complex B', 'Vitamina C', 'Full Calcio', 'Prokura', 'DB Aqua'];
+export const MAD_TRAT_RAS = ['Bicarbonato', 'EM-1', 'Full Calcio', 'Prokura', 'DB Aqua'];
 /* 2026-09-15 (usuario) · Ácido Nítrico, Peróxido y Trilon B entran al catálogo, al final, en el
    orden en que los dio. NO se pre-marcan en ninguna área: no dijo dónde se usan, y adivinarlo
    dejaría casillas puestas que nadie pidió — que en una ficha de desinfección es peor que
@@ -69,7 +71,7 @@ const AREA_PRODUCTOS = {
 };
 
 /* Plantillas por estado (el ejemplo del usuario). La agrupada lleva las dos. */
-const PRODUCCION = { preventivos: ['Bacmil', 'Lactosac', 'Lipofeed', 'Vitamina C', 'Complex B', 'Full Calcio'], ras: ['Bicarbonato', 'EM-1'], desinfeccion: [] };
+const PRODUCCION = { preventivos: ['Bacmil', 'Lactosac', 'Lipofeed', 'Vitamina C', 'Complex B', 'Full Calcio', 'DB Aqua'], ras: ['Bicarbonato', 'EM-1', 'DB Aqua'], desinfeccion: [] };
 const DESINFECCION = { preventivos: [], ras: [], desinfeccion: ['Formol', 'Cooper', 'Virkon'] };
 const PLANTILLAS = {
   'Producción': PRODUCCION,

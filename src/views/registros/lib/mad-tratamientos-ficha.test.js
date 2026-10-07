@@ -69,8 +69,9 @@ describe('Tratamientos · plantillas', () => {
   it('🔴 Producción pre-marca los preventivos y el RAS del primer preventivo; no toca la desinfección', () => {
     H.madTratEstadoChange(pon(q('#mt-estado'), 'Producción'));
     const prev = q('#mt-prevs .mt-prev');
-    expect(marcados(prev, '.mt-prod')).toEqual(['Bacmil', 'Lactosac', 'Lipofeed', 'Complex B', 'Vitamina C', 'Full Calcio']);
-    expect(marcados(prev, '.mt-ras')).toEqual(['Bicarbonato', 'EM-1']);
+    // 2026-10-07 (usuario): «DB Aqua» también, el último (el orden del catálogo).
+    expect(marcados(prev, '.mt-prod')).toEqual(['Bacmil', 'Lactosac', 'Lipofeed', 'Complex B', 'Vitamina C', 'Full Calcio', 'DB Aqua']);
+    expect(marcados(prev, '.mt-ras')).toEqual(['Bicarbonato', 'EM-1', 'DB Aqua']);
     expect(marcados(q('#mt-dess .mt-des'), '.mt-prod')).toEqual([]);
   });
 
@@ -79,7 +80,7 @@ describe('Tratamientos · plantillas', () => {
     const des = q('#mt-dess .mt-des');
     expect(marcados(des, '.mt-prod')).toEqual(['Formol', 'Virkon', 'Cooper']);
     expect(des.querySelector('.mt-area').value).toBe('Salas y tanques');
-    expect(marcados(q('#mt-prevs .mt-prev'), '.mt-prod')).toHaveLength(6);
+    expect(marcados(q('#mt-prevs .mt-prev'), '.mt-prod')).toHaveLength(7);   // con «DB Aqua» (2026-10-07)
   });
 
   it('🔴 un área pre-marca lo suyo sólo si la tarjeta no tiene nada marcado', () => {
@@ -136,7 +137,7 @@ describe('Tratamientos · guardar', () => {
       ['Desinfección', 'Líneas de agua y aire, tinas y reservorios', '', '2026-09-15-S4-D-LINEAS'],
       ['Desinfección', 'Desove, Eclosión y Despacho', '', '2026-09-15-S4-D-DESOVE'],
     ]);
-    expect(v(rows[0], 'Productos RAS')).toBe('Bicarbonato, EM-1');
+    expect(v(rows[0], 'Productos RAS')).toBe('Bicarbonato, EM-1, DB Aqua');   // «DB Aqua» pre-marcado (2026-10-07)
     expect(v(rows[1], 'Productos')).toBe('Formol, Cloro, Jabón neutro, Virkon, Vitamina C');
     expect(rows.every((f) => v(f, 'Estado de la sala') === 'Producción')).toBe(true);
     expect(q('#mt-prevs .mt-lotes').value).toBe('');                  // la ficha vuelve limpia
