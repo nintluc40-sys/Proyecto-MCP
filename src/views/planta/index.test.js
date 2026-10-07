@@ -14,15 +14,27 @@ const montarAnalisis = vi.fn((host) => { host.innerHTML = '<div class="planta pl
 vi.mock('./escena.js', () => ({ montarPlanta: (...a) => montarPlanta(...a) }));
 vi.mock('./analisis.js', () => ({ montarAnalisis: (...a) => montarAnalisis(...a) }));
 vi.mock('../../core/refresh.js', () => ({ asegurarLibro: vi.fn() }));
+// el cálculo de larvicultura, controlado desde la prueba: cada pedido queda esperando hasta que se le contesta
+const calculos = [];
+const estadoPlantaPorPartes = vi.fn(() => new Promise((contestar) => calculos.push(contestar)));
+vi.mock('./estado.js', () => ({
+  estadoPlantaPorPartes: (...a) => estadoPlantaPorPartes(...a),
+  estadoMaduracion: () => ({ salas: {} }),
+  cronogramaPlanta: () => ({ modulos: {} }),
+  hoyLocal: () => '2026-10-06',
+}));
+vi.mock('./cifras.js', () => ({ cifrasGerencia: () => null }));
 
 const { plantaView } = await import('./index.js');
+const { store, emit, EV } = await import('../../core/store.js');
 const espera = () => new Promise((r) => setTimeout(r, 0));
 let root;
 const cajas = (modo) => [...root.querySelectorAll('.planta-cuerpo > [data-cuerpo="' + modo + '"]')];
 const elegir = (modo) => root.querySelector('[data-modo="' + modo + '"]').click();
 
 beforeEach(() => {
-  montarPlanta.mockClear(); montarAnalisis.mockClear();
+  montarPlanta.mockClear(); montarAnalisis.mockClear(); estadoPlantaPorPartes.mockClear(); calculos.length = 0;
+  store.connected = false; store.globalData = [];
   localStorage.removeItem('planta_modo');
   document.body.innerHTML = '<div id="r"></div>';
   root = document.getElementById('r');
@@ -78,5 +90,32 @@ describe('🏭 Planta · cambiar de modo no destruye el que se deja', () => {
     expect(montarPlanta).toHaveBeenCalledTimes(2);
     expect(cajas('maqueta')).toHaveLength(1);
     expect(cajas('maqueta')[0].querySelector('[data-escena="1"]')).not.toBeNull();
+  });
+});
+
+describe('🏭 Planta · al llegar datos calcula por partes y pinta al acabar (punto 5, 2026-10-06)', () => {
+  const conDatos = (v) => v.pintarEstado.mock.calls.filter((c) => c[0]);
+  it('pinta sólo al acabar; un cálculo superado por datos nuevos no pinta; un mes ya calculado sale de la memoria', async () => {
+    store.connected = true; store.globalData = [{ a: 1 }];
+    plantaView(root);
+    await vi.waitFor(() => expect(calculos).toHaveLength(1));
+    const maqueta = montarPlanta.mock.results[0].value;
+    expect(conDatos(maqueta)).toHaveLength(0);   // aún calculando: no pinta a medias
+
+    store.globalData = [{ a: 2 }]; emit(EV.DATA, {});   // llega otro libro antes de acabar
+    await vi.waitFor(() => expect(calculos).toHaveLength(2));
+    calculos[0]({ modulos: { viejo: 1 }, resumen: null });
+    await espera(); await espera(); await espera();
+    expect(conDatos(maqueta)).toHaveLength(0);   // el del libro viejo se descarta
+
+    calculos[1]({ modulos: { nuevo: 1 }, resumen: null });
+    await vi.waitFor(() => expect(conDatos(maqueta)).toHaveLength(1));
+    expect(conDatos(maqueta)[0][0].modulos).toEqual({ nuevo: 1 });
+
+    elegir('analisis'); await espera();   // el mismo mes con el mismo libro: de la memoria, al instante
+    const analisis = montarAnalisis.mock.results[0].value;
+    expect(conDatos(analisis)).toHaveLength(1);
+    expect(conDatos(analisis)[0][0].modulos).toEqual({ nuevo: 1 });
+    expect(estadoPlantaPorPartes).toHaveBeenCalledTimes(2);
   });
 });

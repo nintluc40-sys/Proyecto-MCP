@@ -25,8 +25,17 @@ import './planta.css';
 import { esc } from '../../core/format.js';
 import { store, on, EV } from '../../core/store.js';
 import { asegurarLibro } from '../../core/refresh.js';
-import { estadoPlanta, estadoMaduracion, cronogramaPlanta, hoyLocal } from './estado.js';
+import { estadoPlantaPorPartes, estadoMaduracion, cronogramaPlanta, hoyLocal } from './estado.js';
 import { cifrasGerencia } from './cifras.js';
+
+/** Cede el turno al navegador (pinta y atiende toques) y sigue enseguida. Por MessageChannel y no por setTimeout: con la
+ *  pestaña en segundo plano los temporizadores se espacian a 1 s y el cálculo por partes tardaría segundos de más. */
+const ceder = () => new Promise((seguir) => {
+  if (typeof MessageChannel === 'undefined') { setTimeout(seguir, 0); return; }
+  const c = new MessageChannel();
+  c.port1.onmessage = () => { c.port1.close(); seguir(); };
+  c.port2.postMessage(0);
+});
 
 const MAQUETA = `
 <div class="planta">
@@ -118,24 +127,43 @@ export function plantaView(root) {
   // libro (`store.globalData`, que cada refresco reemplaza entero) y el día sean los mismos —la clave de las demás
   // memorias del proyecto—, y volver a él no recalcula. Con un fallo no se guarda: se reintenta en el próximo pintado.
   let memo = { datos: null, hoy: '', meses: new Map() };
-  const calcularMes = (hoy) => {
+  // Por partes (2026-10-06, usuario, punto 5): al llegar datos el cálculo entero eran ~0,9 s seguidos en escritorio (×4 en
+  // un celular) sin que la pantalla respondiera. Ahora cede el turno entre producción, cada módulo de larvicultura,
+  // maduración y cronograma (tareas de ≤ ~0,2 s), y pinta al acabar. Mismo resultado que de una vez.
+  const calcularMes = async (hoy, mes) => {
     const fallos = [];
     let larv = null, mad = null, cifras = null, crono = null;
-    try { cifras = cifrasGerencia(store.globalData, hoy, mesElegido); } catch (e) { console.error('[planta] cifras', e); fallos.push('producción del mes (' + e.message + ')'); }
+    await ceder();
+    try { cifras = cifrasGerencia(store.globalData, hoy, mes); } catch (e) { console.error('[planta] cifras', e); fallos.push('producción del mes (' + e.message + ')'); }
     const pasado = cifras && !cifras.actual ? cifras : null;   // sin cifras, hoy
-    try { larv = estadoPlanta(pasado ? pasado.corridas : undefined); } catch (e) { console.error('[planta] larvicultura', e); fallos.push('larvicultura (' + e.message + ')'); }
+    try { larv = await estadoPlantaPorPartes(pasado ? pasado.corridas : undefined, ceder); } catch (e) { console.error('[planta] larvicultura', e); fallos.push('larvicultura (' + e.message + ')'); }
+    await ceder();
     try { mad = estadoMaduracion(store.globalData, hoy, pasado ? pasado.cierre : undefined); } catch (e) { console.error('[planta] maduración', e); fallos.push('maduración (' + e.message + ')'); }
+    await ceder();
     // el cronograma del ciclo (T3 de 📊 Análisis): las corridas que pinta larv, hasta hoy o el cierre del mes elegido
     if (larv) try { crono = cronogramaPlanta(larv.modulos, pasado ? pasado.cierre : hoy); } catch (e) { console.error('[planta] cronograma', e); fallos.push('cronograma (' + e.message + ')'); }
     return { cifras, pasado, larv, mad, crono, fallos };
   };
+  // El cálculo en curso: sólo pinta si sigue siendo el último pedido (llegó otro libro, cambió el día o el mes, o se
+  // pintó un mes ya guardado: entonces se descarta). Un mes recién calculado se guarda aunque ya no se pinte.
+  let enCurso = null;
   const pintar = () => {
     if (!vista) return;   // la del modo elegido aún se está cargando: pinta al montarse
-    if (!store.connected || !store.globalData.length) { vista.pintarEstado(null); return; }
+    if (!store.connected || !store.globalData.length) { enCurso = null; vista.pintarEstado(null); return; }
     const hoy = hoyLocal();
     if (memo.datos !== store.globalData || memo.hoy !== hoy) memo = { datos: store.globalData, hoy, meses: new Map() };
-    let calc = memo.meses.get(mesElegido);
-    if (!calc) { calc = calcularMes(hoy); if (!calc.fallos.length) memo.meses.set(mesElegido, calc); }
+    const calc = memo.meses.get(mesElegido);
+    if (calc) { enCurso = null; pintarCalculo(calc); return; }
+    if (enCurso && enCurso.memo === memo && enCurso.mes === mesElegido) return;   // ya se está calculando ese mismo
+    const yo = enCurso = { memo, mes: mesElegido };
+    calcularMes(hoy, yo.mes).then((c) => {
+      if (!c.fallos.length && yo.memo === memo) yo.memo.meses.set(yo.mes, c);
+      if (enCurso !== yo) return;
+      enCurso = null;
+      if (vista && marco.isConnected) pintarCalculo(c);
+    });
+  };
+  const pintarCalculo = (calc) => {
     const { cifras, pasado, larv, mad, crono, fallos } = calc;
     vista.pintarEstado({ modulos: larv ? larv.modulos : {}, resumen: larv ? larv.resumen : null, mad, cifras, crono,
       mes: pasado ? { mes: pasado.mes, cierre: pasado.cierre } : null });

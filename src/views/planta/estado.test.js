@@ -5,7 +5,8 @@
    ============================================================ */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { store } from '../../core/store.js';
-import { estadoPlanta, cronogramaPlanta } from './estado.js';
+import { estadoPlanta, estadoPlantaPorPartes, cronogramaPlanta } from './estado.js';
+import { LARV } from './plano.js';
 
 const L = (o) => ({ _SheetOrigin: 'Larvicultura', ...o });
 const CT = (o) => ({ _SheetOrigin: 'Control_Tanque M07', ...o });
@@ -94,6 +95,17 @@ describe('estado · un mes pasado del selector (las corridas de ese mes, como el
     const V = estadoPlanta(['880']);
     expect(V.modulos.M7).toMatchObject({ corrida: '880', estado: 'cultivo' });
     expect(V.modulos.M7.tanques[9]).toMatchObject({ estado: 'cultivo', estadio: 'PL12' });
+  });
+});
+
+describe('estado · por partes (punto 5, 2026-10-06): cede el turno entre módulo y módulo y da LO MISMO', () => {
+  it('hoy y un mes pasado: idéntico a estadoPlanta; cede una vez por módulo', async () => {
+    let cedidas = 0;
+    const ceder = () => { cedidas++; return Promise.resolve(); };
+    expect(await estadoPlantaPorPartes(undefined, ceder)).toEqual(estadoPlanta());
+    expect(cedidas).toBe(LARV.length);
+    expect(await estadoPlantaPorPartes(['890'], ceder)).toEqual(estadoPlanta(['890']));
+    expect(cedidas).toBe(2 * LARV.length);
   });
 });
 

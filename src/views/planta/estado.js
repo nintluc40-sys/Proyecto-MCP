@@ -77,11 +77,29 @@ function motivos({ od, tmp, sv }) {
  * @returns {{ modulos: Object<string, object>, resumen: { cultivo, vacio, despachado, fuera, alerta, desinfeccion, total } }}
  */
 export function estadoPlanta(corridasDelMes) {
-  const ctx = contextoCompleto();
-  const enMes = Array.isArray(corridasDelMes) ? new Set(corridasDelMes.map(String)) : null;
-  const desinf = enMes ? [] : desinfeccionEnCurso();
+  const { ctx, enMes, desinf } = prepararPlanta(corridasDelMes);
   const modulos = {};
   LARV.forEach((m) => { modulos[m.id] = estadoModulo(ctx, m, desinf, enMes); });
+  return { modulos, resumen: resumenPlanta(modulos) };
+}
+
+/** Lo mismo que estadoPlanta, pero cediendo el turno (`await ceder()`) antes de cada módulo (2026-10-06, usuario, punto
+ *  5): al llegar datos, el cálculo entero eran ~0,5 s seguidos en escritorio (×4 en un celular) sin que la pantalla
+ *  respondiera; módulo a módulo son tareas de ~50 ms. Mismo resultado (lo fija estado.test.js). */
+export async function estadoPlantaPorPartes(corridasDelMes, ceder) {
+  const { ctx, enMes, desinf } = prepararPlanta(corridasDelMes);
+  const modulos = {};
+  for (const m of LARV) { await ceder(); modulos[m.id] = estadoModulo(ctx, m, desinf, enMes); }
+  return { modulos, resumen: resumenPlanta(modulos) };
+}
+
+function prepararPlanta(corridasDelMes) {
+  const ctx = contextoCompleto();
+  const enMes = Array.isArray(corridasDelMes) ? new Set(corridasDelMes.map(String)) : null;
+  return { ctx, enMes, desinf: enMes ? [] : desinfeccionEnCurso() };
+}
+
+function resumenPlanta(modulos) {
   const resumen = { cultivo: 0, vacio: 0, despachado: 0, fuera: 0, alerta: 0, desinfeccion: 0, total: 0 };
   Object.values(modulos).forEach((mo) => Object.values(mo.tanques).forEach((t) => {
     resumen.total++;
@@ -92,7 +110,7 @@ export function estadoPlanta(corridasDelMes) {
     else resumen.vacio++;
     if (t.alerta) resumen.alerta++;
   }));
-  return { modulos, resumen };
+  return resumen;
 }
 
 function estadoModulo(ctx, m, desinf, enMes) {
