@@ -30,7 +30,8 @@ const EXPORTAR = ['MAD_MOD', 'MAD_HIST_KEY', 'MAD_HIST_PANEL_PRE', 'MAD_DES_LOG_
   '_lsSet', '_purgeMadHistViejo', 'safeSetItem',   // auditoría 2026-10-04 · sin espacio
   '_madHistPdfHTML', 'madHistCorrCancelar', 'madHistGrilla', 'madHistGrillaPdf', '_purgeMadHistPaneles', '_reclaimSpace',
   'madFinReiniciar', 'madFinGuardar', 'madFinGuardarLocal', 'madFinTipoChange',
-  'madDesReiniciar', 'madDesGuardar', 'madDesCorregirGuardar', 'selTab', 'madKey', 'madBorrGuardar', 'madBorrLeer'];
+  'madDesReiniciar', 'madDesGuardar', 'madDesCorregirGuardar', 'selTab', 'madKey', 'madBorrGuardar', 'madBorrLeer',
+  'madHistDia', 'madHistSel', 'madHistSelTodas', 'madHistPdfDia', 'madHistFiltrar'];   // 🖨 PDF de lo elegido (2026-10-07)
 const H = {};
 const envios = [];
 let respuestaVer = null;
@@ -265,6 +266,8 @@ describe('📜 Historial · el cableado en CADA ficha (la lógica se prueba arri
 describe('📜 Historial · cuántos se pueden editar, cuánto dura, y el espacio', () => {
   const entrada = (ficha, i, extra = {}) => ({ id: ficha + i, ficha, ts: Date.now() - (100 - i) * 1000, fecha: '2026-10-0' + (1 + (i % 3)),
     filas: 1, panel: true, payload: { sheetName: 'X', headers: ['ID'], rows: [['r' + i]] }, ...extra });
+  // Desde el 2026-10-07 la lista arranca en el día de HOY (🖨 PDF de lo elegido); estas entradas son de otros días.
+  beforeEach(() => { H.madHistDia(''); });
 
   it('🔴 sólo los ÚLTIMOS 10 de cada ficha guardan copia (Alimentación, 3); las demás se liberan', () => {
     const l = [];
@@ -531,5 +534,122 @@ describe('📜 Historial · Salas y Tanques, de sus propios registros', () => {
     H.madHistGrillaPdf('tanques', d, 'Sala 1');
     expect(ventana).not.toBeNull();
     expect(ventana.html).toContain('Sala 1');
+  });
+});
+
+/* 🖨 PDF CONGLOMERADO DEL DÍA (usuario, 2026-10-07): «escoger de los registros que están en el Historial cuáles quiero que
+   salgan en el PDF». Decidido: casillas en la lista + «Día» (por defecto hoy; vacío = todos), el día es la FECHA del
+   registro, el PDF va seguido y agrupado por ficha en el orden de las pestañas (y por hora de envío), y Salas/Tanques entran
+   como la tabla de lo enviado (buildMadPayload). Datos FICTICIOS. */
+describe('📜 Historial · 🖨 PDF de lo elegido', () => {
+  const hoy = () => { const n = new Date(); return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0'); };
+  const entrada = (id, ficha, fecha, ts, dato) => ({ id, ficha, fecha, ts, filas: 1, resumen: 'Lote ZZ',
+    payload: { sheetName: 'Hoja de ' + ficha, headers: ['Fecha', 'Lote', 'Dato'], rows: [[fecha, 'ZZ', dato]] } });
+  const sembrar = () => {
+    const d = hoy(), ahora = Date.now();
+    H._madHistGuardar([
+      entrada('a', 'alimentacion', d, ahora - 1000, 'alim-uno'),
+      entrada('b', 'ingreso', d, ahora - 5000, 'ing-<b>uno</b>'),
+      entrada('c', 'movimientos', '2026-01-02', ahora - 9000, 'mov-otro-dia'),
+    ]);
+    localStorage.setItem(H.madKey('tanques'), JSON.stringify([
+      { id: 't2', ts: 1, synced: true, syncedAt: ahora - 3000, data: { fecha: d, sala: 'Sala 9', tanque: '2', hembras_muertas: '3', parte: '1' } },
+      { id: 't1', ts: 1, synced: true, syncedAt: ahora - 4000, data: { fecha: d, sala: 'Sala 9', tanque: '1', hembras_muertas: '7', parte: '1' } },
+      { id: 'tx', ts: 1, synced: false, data: { fecha: d, sala: 'Sala 9', tanque: '3', hembras_muertas: '99' } },
+    ]));
+    return d;
+  };
+  const cajas = () => Array.from(document.querySelectorAll('#fp-historial .mh-sel'));
+  const caja = (pred) => cajas().find((c) => pred(c.closest('tr')));
+  const marca = (c) => { c.checked = true; H.madHistSel(c.dataset.k, true); };
+  beforeEach(() => { H.madHistFiltrar(''); H.madHistDia(hoy()); });
+
+  it('🔴 «Día» (hoy por defecto) deja sólo los registros de esa FECHA; vacío, todos', () => {
+    sembrar();
+    H.madHistDia(hoy());
+    const d = filasLista();
+    expect(d.map((tr) => tr.dataset.ficha).sort()).toEqual(['alimentacion', 'ingreso', 'tanques']);
+    expect($('#fp-historial .mh-dia').value).toBe(hoy());
+    H.madHistDia('');
+    expect(filasLista().map((tr) => tr.dataset.ficha).sort()).toEqual(['alimentacion', 'ingreso', 'movimientos', 'tanques']);
+    H.madHistDia('2026-01-02');
+    expect(filasLista().map((tr) => tr.dataset.ficha)).toEqual(['movimientos']);
+  });
+
+  it('🔴 marcar una casilla NO repinta la lista: sólo cambia el contador del botón', () => {
+    sembrar(); H.renderMadHistorial();
+    const tabla = $('#fp-historial table');
+    marca(caja((tr) => tr.dataset.ficha === 'ingreso'));
+    expect($('#fp-historial table')).toBe(tabla);
+    expect($('#fp-historial .mh-pdfsel').textContent).toContain('(1)');
+  });
+
+  it('🔴 el PDF lleva SÓLO lo elegido, agrupado por ficha en el orden de las pestañas, con índice y el texto escapado', () => {
+    sembrar(); H.renderMadHistorial();
+    marca(caja((tr) => tr.dataset.ficha === 'alimentacion'));
+    marca(caja((tr) => tr.dataset.ficha === 'ingreso'));
+    H.madHistPdfDia();
+    expect(ventana).not.toBeNull();
+    const html = ventana.html;
+    expect(html).toContain('Maduración · Historial · ' + hoy());
+    expect(html).toContain('2 registro(s)');
+    expect(html.indexOf('ing-&lt;b&gt;uno')).toBeGreaterThan(-1);
+    expect(html).not.toContain('ing-<b>uno');
+    expect(html.indexOf('ing-&lt;b&gt;uno')).toBeLessThan(html.indexOf('alim-uno'));   // Ingreso va antes que Alimentación
+    expect(html).not.toContain('Hoja de tanques');
+    expect(html).not.toContain('mov-otro-dia');
+    expect((html.match(/<section>/g) || []).length).toBe(2);
+  });
+
+  it('🔴 Salas y Tanques entran como la tabla de lo ENVIADO, por tanque, sin lo que no salió', () => {
+    sembrar(); H.renderMadHistorial();
+    marca(caja((tr) => tr.dataset.ficha === 'tanques'));
+    H.madHistPdfDia();
+    const html = ventana.html;
+    expect(html).toContain('Sala 9');
+    expect(html).toContain('«Maduración Tanques»');
+    expect(html).toContain('2 fila(s)');
+    const filas = html.slice(html.indexOf('<tbody>')).match(/<tr>.*?<\/tr>/g);
+    expect(filas).toHaveLength(2);
+    expect(filas[0]).toContain('<td>7</td>');   // el tanque 1 antes que el 2
+    expect(filas[1]).toContain('<td>3</td>');
+    expect(html).not.toContain('<td>99</td>');  // el registro sin enviar no entra
+  });
+
+  it('sin nada marcado no abre nada y lo dice', () => {
+    sembrar(); H.renderMadHistorial();
+    const avisos = []; H.setToast((m) => avisos.push(String(m)));
+    H.madHistPdfDia();
+    H.setToast(() => {});
+    expect(ventana).toBeNull();
+    expect(avisos.join(' ')).toContain('Marca');
+  });
+
+  it('«☑ Todas / ninguna» marca las VISIBLES y, pulsado otra vez, las desmarca', () => {
+    sembrar(); H.renderMadHistorial();
+    H.madHistSelTodas();
+    expect(cajas().every((c) => c.checked)).toBe(true);
+    expect($('#fp-historial .mh-pdfsel').textContent).toContain('(3)');
+    H.madHistSelTodas();
+    expect(cajas().some((c) => c.checked)).toBe(false);
+    expect($('#fp-historial .mh-pdfsel').textContent).toContain('(0)');
+  });
+
+  it('🔴 cambiar de día VACÍA la elección; cambiar de ficha la CONSERVA', () => {
+    sembrar(); H.renderMadHistorial();
+    marca(caja((tr) => tr.dataset.ficha === 'ingreso'));
+    H.madHistFiltrar('alimentacion');
+    expect($('#fp-historial .mh-pdfsel').textContent).toContain('(1)');
+    H.madHistFiltrar('');
+    expect(caja((tr) => tr.dataset.ficha === 'ingreso').checked).toBe(true);
+    H.madHistDia('2026-01-02'); H.madHistDia(hoy());
+    expect($('#fp-historial .mh-pdfsel').textContent).toContain('(0)');
+  });
+
+  it('lo borrado deja de contar en la elección', () => {
+    sembrar(); H.renderMadHistorial();
+    marca(caja((tr) => tr.dataset.ficha === 'ingreso'));
+    H.madHistBorrar('b');
+    expect($('#fp-historial .mh-pdfsel').textContent).toContain('(0)');
   });
 });

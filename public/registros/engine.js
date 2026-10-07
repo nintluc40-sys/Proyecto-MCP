@@ -9465,6 +9465,91 @@ function madHistGrillaPdf(f, fecha, sala){
 }
 let _madHistFiltro = "";
 function madHistFiltrar(v){ _madHistFiltro=String(v||""); renderMadHistorial(); }
+/* ── 🖨 PDF CONGLOMERADO DEL DÍA (usuario, 2026-10-07) ─────────────────────────────────────────────────────────────────────
+   «En el historial tener la posibilidad de generar un PDF conglomerado del día … escoger de los registros que están en el
+   Historial cuáles quiero que salgan en el PDF.» Decisiones del usuario (las cuatro recomendadas):
+   · una CASILLA por registro en la lista; arriba «Día» (por defecto HOY; vacío = todos los días), «☑ Todas / ninguna» y
+     «🖨 PDF de lo elegido (N)», junto al filtro de ficha que ya había;
+   · el día de un registro es su FECHA (la de la ficha o el parte, la columna «Fecha»), no la de su envío;
+   · el PDF va SEGUIDO, agrupado por ficha en el orden de las pestañas y, dentro de cada una, por hora de envío, con un índice;
+   · Salas y Tanques entran como TABLA DE LO ENVIADO: sus registros enviados de esa fecha (y sala) pasan por buildMadPayload,
+     la misma función del envío. Su 📄 PDF de grilla no cambia.
+   Cambiar de día vacía la elección (el PDF es de un día); cambiar de ficha la conserva. Marcar NO repinta la lista —rehacerla
+   en el «change» se lleva el clic siguiente (reference_fichas-no-repintar-en-change)—: sólo se cuenta. */
+let _madHistDia = null;    // null = sin elegir: hoy
+let _madHistSel = {};
+const MAD_HIST_ORDEN_PDF = ["ingreso","movimientos","salas","tanques","desoves","mortdes","fin","tratamientos","alimentacion"];
+function _madHistDiaActual(){ return _madHistDia===null ? today() : _madHistDia; }
+function madHistDia(v){ const d=String(v||"").trim(); _madHistDia = isValidDate(d) ? d : ""; _madHistSel={}; renderMadHistorial(); }
+function _madHistClave(x){ return x.e ? "e|"+x.e.id : "g|"+x.g.ficha+"|"+x.g.fecha+"|"+x.g.sala; }
+function _madHistItems(){
+  return madHistLeer().map(function(e){ return { e:e, fecha:e.fecha, ts:e.ts, ficha:e.ficha }; })
+    .concat(_madHistGrillas().map(function(g){ return { g:g, fecha:g.fecha, ts:g.ts, ficha:g.ficha }; }));
+}
+function _madHistSelCuenta(){
+  const b=document.querySelector("#fp-historial .mh-pdfsel");
+  if(b) b.textContent="🖨 PDF de lo elegido ("+Object.keys(_madHistSel).length+")";
+}
+function madHistSel(k, on){ if(on) _madHistSel[String(k)]=true; else delete _madHistSel[String(k)]; _madHistSelCuenta(); }
+function madHistSelTodas(){
+  const cajas=Array.from(document.querySelectorAll("#fp-historial .mh-sel"));
+  if(!cajas.length) return;
+  const todas=cajas.every(function(c){ return c.checked; });
+  cajas.forEach(function(c){ c.checked=!todas; if(todas) delete _madHistSel[c.dataset.k]; else _madHistSel[c.dataset.k]=true; });
+  _madHistSelCuenta();
+}
+function _madHistPayloadGrilla(g){
+  const recs=loadMad(g.ficha).filter(function(r){
+    return r && (r.synced || r.syncedAt) && r.data && sanitizeStr(r.data.fecha,10)===g.fecha && (g.ficha!=="tanques" || String(r.data.sala||"")===g.sala);
+  });
+  const n=function(v){ return parseInt(v,10)||0; };
+  if(g.ficha==="tanques") recs.sort(function(a,b){ return (n(a.data.tanque)-n(b.data.tanque)) || (n(a.data.parte)-n(b.data.parte)); });
+  else recs.sort(function(a,b){ return String(a.data.sala||"") < String(b.data.sala||"") ? -1 : String(a.data.sala||"") > String(b.data.sala||"") ? 1 : 0; });
+  return buildMadPayload(g.ficha, recs) || { sheetName:"", headers:[], rows:[] };
+}
+function _madHistPdfDiaHTML(sel){
+  const pos=function(f){ const i=MAD_HIST_ORDEN_PDF.indexOf(f); return i<0 ? 99 : i; };
+  const lista=(sel||[]).slice().sort(function(a,b){ return (pos(a.ficha)-pos(b.ficha)) || ((a.ts||0)-(b.ts||0)); });
+  const cel=function(v){ return escapeHtml(v==null ? "" : String(v)); };
+  const nombre=function(f){ return _madHistNombre(f); };
+  const secciones=lista.map(function(x){
+    let titulo, meta, p;
+    if(x.e){
+      const e=x.e; p=e.payload||{};
+      titulo=nombre(e.ficha)+" · "+e.fecha+(e.resumen ? " · "+e.resumen : "");
+      meta="Enviado el "+_madHistCuando(e.ts)+(e.corregido ? " · corregido el "+_madHistCuando(e.corregido) : "")
+        +(e.reenviado ? " · reenvío (el 1.º, el "+_madHistCuando(e.primero)+")" : "");
+    } else {
+      const g=x.g; p=_madHistPayloadGrilla(g);
+      titulo=nombre(g.ficha)+" · "+(g.sala || "Todas las salas")+" · "+g.fecha;
+      meta="Último envío el "+_madHistCuando(g.ts);
+    }
+    const h=p.headers||[], filas=p.rows||[];
+    return { titulo:titulo, html:'<section><h2>'+cel(titulo)+'</h2><div class="m">'+cel(meta)+' · '+filas.length+' fila(s), tal como se enviaron a la hoja «'+cel(p.sheetName||"")+'».</div>'
+      + '<table><thead><tr>'+h.map(function(c){ return '<th>'+cel(c)+'</th>'; }).join("")+'</tr></thead><tbody>'
+      + filas.map(function(r){ return '<tr>'+h.map(function(_, j){ return '<td>'+cel((r||[])[j])+'</td>'; }).join("")+'</tr>'; }).join("")
+      + '</tbody></table></section>' };
+  });
+  const fechas=lista.map(function(x){ return x.fecha; }).filter(function(f, i, a){ return f && a.indexOf(f)===i; }).sort();
+  const dia=fechas.length<=1 ? (fechas[0]||"") : fechas[0]+" a "+fechas[fechas.length-1];
+  const titulo="Maduración · Historial · "+dia;
+  return '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>'+cel(titulo)+'</title>'
+    + '<style>@page{size:A4 landscape;margin:10mm}body{font-family:Arial,Helvetica,sans-serif;margin:16px;color:#0f172a}h1{font-size:16px;margin:0 0 4px}'
+    + 'h2{font-size:13px;margin:14px 0 2px;break-after:avoid;page-break-after:avoid}.m{font-size:10px;color:#64748b;margin-bottom:4px}'
+    + 'table{border-collapse:collapse;width:100%;font-size:10px}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}'
+    + 'th,td{border:1px solid #cbd5e1;padding:2px 4px;vertical-align:top}th{background:#f1f5f9}</style></head><body>'
+    + '<h1>'+cel(titulo)+'</h1><div style="font-size:11px;color:#64748b;margin-bottom:6px">Lo enviado desde este dispositivo · '+secciones.length+' registro(s): '
+    + cel(secciones.map(function(s){ return s.titulo; }).join(" · "))+' · generado el '+cel(_madHistCuando(Date.now()))+'</div>'
+    + secciones.map(function(s){ return s.html; }).join("")
+    + '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},300);});<\/script></body></html>';
+}
+function madHistPdfDia(){
+  const sel=_madHistItems().filter(function(x){ return _madHistSel[_madHistClave(x)]; });
+  if(!sel.length){ toast("Marca en la lista los registros que quieres en el PDF.","warn",4000); return; }
+  const w=window.open("","_blank","width=1100,height=760");
+  if(!w){ toast("El navegador bloqueó la ventana emergente. Permite pop-ups para este sitio.","warn",6000); return; }
+  w.document.write(_madHistPdfDiaHTML(sel)); w.document.close();
+}
 function renderMadHistorial(){
   const fp=document.getElementById("fp-historial"); if(!fp) return;
   const forms=madHistLeer().sort(function(a,b){ return (b.ts||0)-(a.ts||0); });
@@ -9475,18 +9560,22 @@ function renderMadHistorial(){
     rango[e.ficha]=(rango[e.ficha]||0)+1;
     editable[e.id] = e.ficha==="desoves" ? rango[e.ficha] <= _madHistEditables("desoves") : !!(e.panel && copias[e.id]);
   });
-  const items=forms.map(function(e){ return { e:e, fecha:e.fecha, ts:e.ts, ficha:e.ficha }; })
-    .concat(_madHistGrillas().map(function(g){ return { g:g, fecha:g.fecha, ts:g.ts, ficha:g.ficha }; }))
-    .filter(function(x){ return !_madHistFiltro || x.ficha===_madHistFiltro; })
+  const dia=_madHistDiaActual();
+  const todos=_madHistItems(), existe={};
+  todos.forEach(function(x){ existe[_madHistClave(x)]=true; });
+  Object.keys(_madHistSel).forEach(function(k){ if(!existe[k]) delete _madHistSel[k]; });   // lo borrado o caducado deja de contar
+  const items=todos
+    .filter(function(x){ return (!_madHistFiltro || x.ficha===_madHistFiltro) && (!dia || x.fecha===dia); })
     .sort(function(a,b){ return a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : (b.ts||0)-(a.ts||0); });
   const op=function(v, t){ return '<option value="'+v+'"'+(_madHistFiltro===v ? ' selected' : '')+'>'+escapeHtml(t)+'</option>'; };
   const filtro='<select class="mh-filtro" onchange="madHistFiltrar(this.value)" style="font-size:12px;padding:3px 6px">'+op("","Todas las fichas")
     + MAD_HIST_FICHAS.concat(["salas","tanques"]).map(function(f){ return op(f, _madHistNombre(f)); }).join("")+'</select>';
   const B='<button type="button" style="font-size:11px;white-space:nowrap" class="btn ';
+  const caja=function(x){ const k=_madHistClave(x); return '<td><input type="checkbox" class="mh-sel" data-k="'+escapeHtml(k)+'"'+(_madHistSel[k] ? ' checked' : '')+' onchange="madHistSel(this.dataset.k,this.checked)" title="Incluir en el PDF de lo elegido"></td>'; };
   const filas=items.map(function(x){
     if(x.e){
       const e=x.e, did='data-id="'+escapeHtml(e.id)+'"';
-      return '<tr class="mh-item" data-ficha="'+escapeHtml(e.ficha)+'"><td>'+escapeHtml(e.fecha)+'</td><td>'+escapeHtml(_madHistNombre(e.ficha))+'</td><td>'+escapeHtml(e.resumen||"")+'</td>'
+      return '<tr class="mh-item" data-ficha="'+escapeHtml(e.ficha)+'">'+caja(x)+'<td>'+escapeHtml(e.fecha)+'</td><td>'+escapeHtml(_madHistNombre(e.ficha))+'</td><td>'+escapeHtml(e.resumen||"")+'</td>'
         + '<td style="text-align:right">'+e.filas+'</td><td style="font-size:11px;color:#64748b">'+escapeHtml(_madHistCuando(e.ts))+(e.corregido ? '<br>✏️ corregido '+escapeHtml(_madHistCuando(e.corregido)) : '')+(e.reenviado ? '<br>🔁 reenviado · 1.º envío '+escapeHtml(_madHistCuando(e.primero)) : '')+'</td>'
         + '<td style="white-space:nowrap">'
         + (editable[e.id] ? B+'mh-ed" '+did+' onclick="madHistEditar(this.dataset.id)">✏️ Editar</button>' : '<span title="Sólo se editan los envíos recientes" style="font-size:11px;color:#94a3b8">sin editar</span>')
@@ -9494,17 +9583,24 @@ function renderMadHistorial(){
         + '</td></tr>';
     }
     const g=x.g, da='data-f="'+g.ficha+'" data-fecha="'+escapeHtml(g.fecha)+'" data-sala="'+escapeHtml(g.sala)+'"';
-    return '<tr class="mh-item mh-grilla" data-ficha="'+g.ficha+'"><td>'+escapeHtml(g.fecha)+'</td><td>'+escapeHtml(_madHistNombre(g.ficha))+'</td><td>'+escapeHtml(g.sala || "Todas las salas")+'</td>'
+    return '<tr class="mh-item mh-grilla" data-ficha="'+g.ficha+'">'+caja(x)+'<td>'+escapeHtml(g.fecha)+'</td><td>'+escapeHtml(_madHistNombre(g.ficha))+'</td><td>'+escapeHtml(g.sala || "Todas las salas")+'</td>'
       + '<td style="text-align:right">'+g.n+'</td><td style="font-size:11px;color:#64748b">'+escapeHtml(_madHistCuando(g.ts))+'</td><td style="white-space:nowrap">'
       + B+'mh-ed" '+da+' onclick="madHistGrilla(this.dataset.f,this.dataset.fecha,this.dataset.sala)">✏️ Editar</button> '
       + B+'mh-pdf" '+da+' onclick="madHistGrillaPdf(this.dataset.f,this.dataset.fecha,this.dataset.sala)">📄 PDF</button></td></tr>';
   }).join("");
+  const barra='<div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+filtro
+    + '<label style="font-size:12px;display:inline-flex;gap:4px;align-items:center">Día <input type="date" class="mh-dia" value="'+escapeHtml(dia)+'" onchange="madHistDia(this.value)" title="Vacío: todos los días" style="font-size:12px;padding:2px 4px"></label>'
+    + B+'mh-todas" onclick="madHistSelTodas()">☑ Todas / ninguna</button>'
+    + B+'mh-pdfsel" onclick="madHistPdfDia()">🖨 PDF de lo elegido ('+Object.keys(_madHistSel).length+')</button></div>';
+  const vacio = dia ? 'No hay envíos de Maduración del '+escapeHtml(dia)+' en este dispositivo'+(_madHistFiltro ? ' para esa ficha' : '')+'. Vacía «Día» para ver todos los días.'
+                    : 'Aún no hay envíos de Maduración en este dispositivo'+(_madHistFiltro ? ' para esa ficha' : '')+'.';
   fp.innerHTML='<div class="fc"><div class="fc-h"><div class="fc-t">📜 Historial · Maduración</div><span class="ssp ssp-mt">'+items.length+' envío(s)</span></div><div class="fc-b">'
     + '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af">ℹ️ Lo enviado desde <b>este dispositivo</b> en los últimos 60 días. '
-    + '<b>✏️ Editar</b> abre la ficha tal como se envió para corregirla (los últimos 10 envíos de cada ficha; Alimentación, 3); Salas y Tanques abren su grilla en esa fecha. <b>🗑</b> sólo lo quita de aquí: la hoja no cambia.</div>'
-    + '<div style="margin-bottom:8px">'+filtro+'</div>'
-    + (filas ? '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Fecha</th><th>Ficha</th><th>Detalle</th><th>Filas</th><th>Enviado</th><th></th></tr></thead><tbody>'+filas+'</tbody></table></div>'
-             : '<div class="hist-empty"><span class="hist-empty-ico">📜</span>Aún no hay envíos de Maduración en este dispositivo'+(_madHistFiltro ? ' para esa ficha' : '')+'.</div>')
+    + '<b>✏️ Editar</b> abre la ficha tal como se envió para corregirla (los últimos 10 envíos de cada ficha; Alimentación, 3); Salas y Tanques abren su grilla en esa fecha. <b>🗑</b> sólo lo quita de aquí: la hoja no cambia. '
+    + '<b>🖨 PDF de lo elegido</b>: marca los registros del día que quieras y salen todos en un solo PDF.</div>'
+    + barra
+    + (filas ? '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th title="Incluir en el PDF de lo elegido">🖨</th><th>Fecha</th><th>Ficha</th><th>Detalle</th><th>Filas</th><th>Enviado</th><th></th></tr></thead><tbody>'+filas+'</tbody></table></div>'
+             : '<div class="hist-empty"><span class="hist-empty-ico">📜</span>'+vacio+'</div>')
     + '</div></div>';
 }
 
