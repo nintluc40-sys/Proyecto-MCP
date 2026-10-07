@@ -18,8 +18,9 @@ describe('Tratamientos · la hoja y los catálogos del usuario', () => {
   });
 
   it('🔴 los productos y las áreas, en el orden en que los dio el usuario', () => {
-    expect(MAD_TRAT_PREVENTIVOS).toEqual(['Cooper', 'Formol', 'Bacmil', 'Lactosac', 'Lipofeed', 'Carbonato de Calcio', 'Complex B', 'Vitamina C', 'Full Calcio', 'Prokura']);
-    expect(MAD_TRAT_RAS).toEqual(['Bicarbonato', 'EM-1', 'Full Calcio', 'Prokura']);
+    // 2026-10-07 (usuario): «DB Aqua», al final de Preventivos y de RAS.
+    expect(MAD_TRAT_PREVENTIVOS).toEqual(['Cooper', 'Formol', 'Bacmil', 'Lactosac', 'Lipofeed', 'Carbonato de Calcio', 'Complex B', 'Vitamina C', 'Full Calcio', 'Prokura', 'DB Aqua']);
+    expect(MAD_TRAT_RAS).toEqual(['Bicarbonato', 'EM-1', 'Full Calcio', 'Prokura', 'DB Aqua']);
     /* 2026-09-15 (usuario): Ácido Nítrico, Peróxido y Trilon B al final de la lista; «Reservorio» y
        «Colectores» como áreas propias. «Reservorio» convive con «Líneas de agua y aire, tinas y
        reservorios»: son áreas distintas para el usuario y el ID las separa por su etiqueta. */
@@ -41,7 +42,8 @@ describe('Tratamientos · la hoja y los catálogos del usuario', () => {
 });
 
 describe('Tratamientos · plantillas por estado de la sala (el ejemplo del usuario)', () => {
-  const PROD = { preventivos: ['Bacmil', 'Lactosac', 'Lipofeed', 'Vitamina C', 'Complex B', 'Full Calcio'], ras: ['Bicarbonato', 'EM-1'], desinfeccion: [] };
+  // 2026-10-07 (usuario): «DB Aqua» pre-marcado en Producción, en los preventivos y en el RAS.
+  const PROD = { preventivos: ['Bacmil', 'Lactosac', 'Lipofeed', 'Vitamina C', 'Complex B', 'Full Calcio', 'DB Aqua'], ras: ['Bicarbonato', 'EM-1', 'DB Aqua'], desinfeccion: [] };
   it('🔴 Producción, Cuarentena y Mixto: los preventivos y el RAS; nada de desinfección', () => {
     for (const e of ['Producción', 'Cuarentena', 'Mixto']) expect(plantillaTrat(e), e).toEqual(PROD);
   });

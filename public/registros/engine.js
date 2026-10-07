@@ -11792,8 +11792,9 @@ function renderMadFinCiclo(){
 // en la ficha pre-marca sus productos; un área pre-marca lo suyo si la tarjeta no tiene nada. Hoja por «ID» con MERGE.
 const MAD_TRAT_SHEET = "Maduración Tratamientos";
 const MAD_TRAT_ESTADOS = ["Producción","Cuarentena","Mixto","Desinfección","Desinfección - Producción agrupada"];
-const MAD_TRAT_PREVENTIVOS = ["Cooper","Formol","Bacmil","Lactosac","Lipofeed","Carbonato de Calcio","Complex B","Vitamina C","Full Calcio","Prokura"];
-const MAD_TRAT_RAS = ["Bicarbonato","EM-1","Full Calcio","Prokura"];
+// 2026-10-07 (usuario) · «DB Aqua» al final de Preventivos y de RAS, y pre-marcado en la plantilla de Producción (ver el módulo).
+const MAD_TRAT_PREVENTIVOS = ["Cooper","Formol","Bacmil","Lactosac","Lipofeed","Carbonato de Calcio","Complex B","Vitamina C","Full Calcio","Prokura","DB Aqua"];
+const MAD_TRAT_RAS = ["Bicarbonato","EM-1","Full Calcio","Prokura","DB Aqua"];
 /* 2026-09-15 (usuario) · Ácido Nítrico, Peróxido y Trilon B entran al catálogo, al final, en el
    orden en que los dio. NO se pre-marcan en ninguna área: no dijo dónde se usan, y adivinarlo
    dejaría casillas puestas que nadie pidió — que en una ficha de desinfección es peor que
@@ -11810,7 +11811,7 @@ const _MAD_TRAT_LIMPIEZA = ["Formol","Cloro","Jabón neutro","Virkon","Vitamina 
 const _MAD_TRAT_AREA_PRODUCTOS = { "Salas y tanques":_MAD_TRAT_LIMPIEZA, "RAS y tuberías":["Cloro","Vitamina C","Bicarbonato","Full Calcio","EM-1","Prokura"], "Líneas de agua y aire, tinas y reservorios":_MAD_TRAT_LIMPIEZA, "Desove, Eclosión y Despacho":_MAD_TRAT_LIMPIEZA, "Conos, baldes, tinas y tuberías":_MAD_TRAT_LIMPIEZA,
   /* La limpieza habitual, igual que sus hermanas: era una SUPOSICIÓN y el usuario la CONFIRMÓ el 2026-09-18. */
   "Reservorio":_MAD_TRAT_LIMPIEZA, "Colectores":_MAD_TRAT_LIMPIEZA };
-const _MAD_TRAT_PRODUCCION = { preventivos:["Bacmil","Lactosac","Lipofeed","Vitamina C","Complex B","Full Calcio"], ras:["Bicarbonato","EM-1"], desinfeccion:[] };
+const _MAD_TRAT_PRODUCCION = { preventivos:["Bacmil","Lactosac","Lipofeed","Vitamina C","Complex B","Full Calcio","DB Aqua"], ras:["Bicarbonato","EM-1","DB Aqua"], desinfeccion:[] };
 const _MAD_TRAT_DESINF = { preventivos:[], ras:[], desinfeccion:["Formol","Cooper","Virkon"] };
 const _MAD_TRAT_PLANTILLAS = { "Producción":_MAD_TRAT_PRODUCCION, "Cuarentena":_MAD_TRAT_PRODUCCION, "Mixto":_MAD_TRAT_PRODUCCION, "Desinfección":_MAD_TRAT_DESINF,
   "Desinfección - Producción agrupada":{ preventivos:_MAD_TRAT_PRODUCCION.preventivos, ras:_MAD_TRAT_PRODUCCION.ras, desinfeccion:_MAD_TRAT_DESINF.desinfeccion } };
