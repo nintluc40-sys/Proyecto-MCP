@@ -56,7 +56,9 @@ function crear() {
     enCurso.delete(m.id);
     clearTimeout(p.timer);
     if (!m.ok && m.motivo === 'sin-xlsx') roto = true;
-    p.resolve(m.ok && p.hojas ? { ...m, cambiadas: { ...(m.cambiadas || {}), ...p.hojas } } : m);
+    // una respuesta buena SIEMPRE lleva `cambiadas`, vacía si no cambió ninguna hoja (07-10: sin ella, fundirDelta fallaba
+    // en cada refresco sin cambios y la píldora decía «sin actualizar»; ⟳ sin cambios, un error)
+    p.resolve(m.ok ? { ...m, cambiadas: { ...(m.cambiadas || {}), ...(p.hojas || {}) } } : m);
   };
   w.onerror = (ev) => {
     if (ev && ev.preventDefault) ev.preventDefault();

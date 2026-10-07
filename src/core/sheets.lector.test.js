@@ -13,6 +13,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { lectorDisponible, leerEnWorker, _reiniciarLector } from './sheets.lector.js';
+import { responder } from './sheets.worker.js';
+import { fundirDelta } from './sheets.js';
 import { XLSX_TIMEOUT_MS } from '../config.js';
 
 let creados = [];
@@ -94,6 +96,23 @@ describe('lector del libro · protocolo', () => {
     w.emitir({ id: id2, hoja: 'A', filas: [{ x: 1 }] });
     w.emitir({ id: id2, ok: false, motivo: 'xlsx' });
     expect(await p2).toEqual({ id: id2, ok: false, motivo: 'xlsx' });
+  });
+
+  it('Worker y lector JUNTOS (07-10): sin ninguna hoja cambiada, `cambiadas` llega vacía y se funde con lo aplicado', async () => {
+    // el fallo que dejó pasar el punto 5: cada pieza estaba probada por separado, nunca juntas con cero hojas cambiadas
+    const p = leerEnWorker({ realId: 'R', previas: { A: 'a', B: 'b' } });
+    const w = creados[0], id = w.recibidos[0].id;
+    w.emitir({ vivo: true });
+    responder({ id, ok: true, orden: ['A', 'B'], huellas: { A: 'a', B: 'b' }, cambiadas: {} }, (m) => w.emitir(m));
+    const r = await p;
+    expect(r.cambiadas).toEqual({});
+    const aplicadas = { A: [{ x: 1 }], B: [{ y: 2 }] };
+    expect(fundirDelta(aplicadas, r)).toEqual(aplicadas);
+    // y con UNA cambiada, ésa nueva y la otra la aplicada
+    const p2 = leerEnWorker({ realId: 'R' });
+    const id2 = w.recibidos[1].id;
+    responder({ id: id2, ok: true, orden: ['A', 'B'], huellas: { A: 'a2', B: 'b' }, cambiadas: { A: [{ x: 9 }] } }, (m) => w.emitir(m));
+    expect(fundirDelta(aplicadas, await p2)).toEqual({ A: [{ x: 9 }], B: [{ y: 2 }] });
   });
 
   it('si no llega a ARRANCAR, queda roto: deja de estar disponible', async () => {
