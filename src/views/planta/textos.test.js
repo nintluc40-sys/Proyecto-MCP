@@ -63,7 +63,18 @@ describe('filas, cifras y color', () => {
     const c = cifrasDelPanel(E);
     expect(c.map((x) => x.valor)).toEqual([89, 6, '6.349', 14]);
     expect(c[0].detalle).toBe('de 112 · 79 % de ocupación · 12 vacíos · 11 despachados');
+    expect(c.map((x) => x.titulo)).toEqual(['tanques en cultivo', 'tanques en alerta', 'reproductores', 'alertas de maduración']);
     expect(cifrasDelPanel(null).map((x) => x.valor)).toEqual(['—', '—', '—', '—']);
+  });
+  it('con 1, en singular; y los agrupados o descartados también suman (auditoría C3, 2026-10-07)', () => {
+    const E = { resumen: { cultivo: 1, total: 112, vacio: 1, despachado: 109, fuera: 1, desinfeccion: 0, alerta: 1 },
+      mad: { resumen: { hembras: 1, machos: 0, ocupados: 1, tanques: 1, alertaTanques: 1, alertaSalas: 0 } } };
+    const c = cifrasDelPanel(E);
+    expect(c.map((x) => x.titulo)).toEqual(['tanque en cultivo', 'tanque en alerta', 'reproductor', 'alerta de maduración']);
+    expect(c[0].detalle).toBe('de 112 · 1 % de ocupación · 1 vacío · 109 despachados · 1 agrupado o descartado');
+    expect(c[2].detalle).toBe('1 ♀ · 0 ♂ · 1 de 1 tanque (100 % de ocupación)');
+    expect(c[3].detalle).toBe('1 tanque (H:M o densidad) · 0 salas (temperatura u oxígeno, 7 días)');
+    expect(cifrasDelPanel({ resumen: { ...E.resumen, fuera: 3, vacio: 0 } })[0].detalle).toContain('· 0 vacíos · 109 despachados · 3 agrupados o descartados');
   });
   it('el color: la etapa del módulo y el estado de la sala', () => {
     expect(colorGrupo(modulo(cultivo()))).toBe('#123456');

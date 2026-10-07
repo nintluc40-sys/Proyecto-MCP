@@ -168,14 +168,19 @@ export function textoFila(g, ctx) {
 /* ---------- Cifras: cuatro fichas { valor, titulo, detalle } ---------- */
 export function cifrasDelPanel(E) {
   const r = E && E.resumen, rm = E && E.mad && E.mad.resumen;
+  // singular con 1 (auditoría C3, 2026-10-07: decía «1 tanques», «1 vacíos»); `n` es un número o '—'
+  const pl = (n, uno, varios) => (n === 1 ? uno : varios);
+  const reproductores = rm ? rm.hembras + rm.machos : null, alertasMad = rm ? rm.alertaTanques + rm.alertaSalas : null;
   return [
-    { valor: r ? r.cultivo : '—', titulo: 'tanques en cultivo',
-      detalle: r ? 'de ' + r.total + ' · ' + Math.round(r.cultivo / r.total * 100) + ' % de ocupación · ' + r.vacio + ' vacíos · ' + r.despachado + ' despachados' + (r.desinfeccion ? ' · ' + r.desinfeccion + ' en desinfección' : '') : 'Cargando datos…' },
-    { valor: r ? r.alerta : '—', titulo: 'tanques en alerta', detalle: 'larvicultura · OD, temperatura o supervivencia fuera de rango' },
-    { valor: rm ? ent(rm.hembras + rm.machos) : '—', titulo: 'reproductores',
-      detalle: rm ? ent(rm.hembras) + ' ♀ · ' + ent(rm.machos) + ' ♂ · ' + rm.ocupados + ' de ' + rm.tanques + ' tanques (' + Math.round(rm.ocupados / rm.tanques * 100) + ' % de ocupación)' : (E ? 'Sin datos de maduración' : 'Cargando datos…') },
-    { valor: rm ? rm.alertaTanques + rm.alertaSalas : '—', titulo: 'alertas de maduración',
-      detalle: rm ? rm.alertaTanques + ' tanques (H:M o densidad) · ' + rm.alertaSalas + ' salas (temperatura u oxígeno, 7 días)' : 'H:M, densidad, temperatura u oxígeno' },
+    { valor: r ? r.cultivo : '—', titulo: pl(r && r.cultivo, 'tanque en cultivo', 'tanques en cultivo'),
+      // los agrupados o descartados también cuentan, para que las partes sumen el total
+      detalle: r ? 'de ' + r.total + ' · ' + Math.round(r.cultivo / r.total * 100) + ' % de ocupación · ' + r.vacio + pl(r.vacio, ' vacío', ' vacíos') + ' · ' + r.despachado + pl(r.despachado, ' despachado', ' despachados')
+        + (r.fuera ? ' · ' + r.fuera + pl(r.fuera, ' agrupado o descartado', ' agrupados o descartados') : '') + (r.desinfeccion ? ' · ' + r.desinfeccion + ' en desinfección' : '') : 'Cargando datos…' },
+    { valor: r ? r.alerta : '—', titulo: pl(r && r.alerta, 'tanque en alerta', 'tanques en alerta'), detalle: 'larvicultura · OD, temperatura o supervivencia fuera de rango' },
+    { valor: rm ? ent(reproductores) : '—', titulo: pl(reproductores, 'reproductor', 'reproductores'),
+      detalle: rm ? ent(rm.hembras) + ' ♀ · ' + ent(rm.machos) + ' ♂ · ' + rm.ocupados + ' de ' + rm.tanques + pl(rm.tanques, ' tanque', ' tanques') + ' (' + Math.round(rm.ocupados / rm.tanques * 100) + ' % de ocupación)' : (E ? 'Sin datos de maduración' : 'Cargando datos…') },
+    { valor: rm ? alertasMad : '—', titulo: pl(alertasMad, 'alerta de maduración', 'alertas de maduración'),
+      detalle: rm ? rm.alertaTanques + pl(rm.alertaTanques, ' tanque', ' tanques') + ' (H:M o densidad) · ' + rm.alertaSalas + pl(rm.alertaSalas, ' sala', ' salas') + ' (temperatura u oxígeno, 7 días)' : 'H:M, densidad, temperatura u oxígeno' },
   ];
 }
 
