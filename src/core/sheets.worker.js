@@ -53,7 +53,7 @@ export async function atenderLectura(m, entorno) {
        PC. El libro sólo se GUARDA en el equipo (P4) si llegó completo y todo por XLSX: una hoja por CSV puede venir
        recortada por un filtro, y una que faltara se quedaría así hasta 7 días al abrir. */
     if (!sheets) {
-      const r = await respaldoPorHojas(ids, obtenerXLSX);
+      const r = await respaldoPorHojas(ids, obtenerXLSX, avisar);
       if (Object.keys(r.sheets).length) {
         sheets = r.sheets;
         guardable = !r.porCsv && !r.perdidas && !r.sinPestanas;

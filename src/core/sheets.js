@@ -13,18 +13,23 @@
    Maduracion, Lab_Algas, Morfologia) y se sella el Módulo desde el
    nombre de pestaña cuando aplica.
    ============================================================ */
-import { SHEETS_URL, FETCH_TIMEOUT_MS, XLSX_TIMEOUT_MS } from '../config.js';
+import { SHEETS_URL, FETCH_TIMEOUT_MS, XLSX_TIMEOUT_MS, SIN_DATOS_MS } from '../config.js';
 import { store, emit, EV } from './store.js';
 import { autoCalcMortalidad, getField, F } from './fields.js';
 import { parseAnyDate, clearDateCache } from './dates.js';
 import { isUnsafeKey } from './util.js';
 
 // ---------- utilidades de red ----------
+// Cada respuesta con el control que puede cortarla: su reloj (`ms`) cubre sólo hasta las cabeceras; el cuerpo lo vigila
+// cuerpoDe/textoDe, más abajo (2026-10-07, punto 9).
+const _cortes = new WeakMap();
 function fetchWithTimeout(url, opts = {}, ms = FETCH_TIMEOUT_MS) {
   const ctrl = new AbortController();
   const t = setTimeout(() => { try { ctrl.abort(); } catch (_) {} }, ms);
   opts.signal = ctrl.signal;
-  return fetch(url, opts).finally(() => clearTimeout(t));
+  return fetch(url, opts)
+    .then((r) => { if (r && typeof r === 'object') _cortes.set(r, ctrl); return r; })
+    .finally(() => clearTimeout(t));
 }
 
 export function parseSheetsIds(url) {
@@ -239,30 +244,59 @@ const FILAS_LECTURA = { defval: '', raw: false, dateNF: 'dd/mm/yyyy' };
 
 /* Punto 7 del usuario (2026-10-03) · la PRIMERA carga dice cómo va: `avisar` recibe { fase: 'descarga', bytes } cada
    AVISO_CADA bytes y { fase: 'lectura', bytes } antes de leer (medido: ~8 s de descarga de 13 MB y 16 s de lectura).
-   Google no manda Content-Length (va troceado): se cuenta lo que llega, sin porcentaje. Sin `avisar` —los refrescos—,
-   o sin flujo en la respuesta, el cuerpo se lee de una vez, como siempre. */
+   Google no manda Content-Length (va troceado): se cuenta lo que llega, sin porcentaje.
+   Punto 9 del usuario (2026-10-07) · el cuerpo se lee SIEMPRE por trozos y se corta si pasan SIN_DATOS_MS sin recibir
+   nada: antes el reloj de fetchWithTimeout se apagaba con las cabeceras y una red atascada a mitad dejaba la descarga
+   esperando para siempre (medido el 06-10: «0,5 MB» fijos 14 min). Cortada, falla con NO_AVANZA y entran los reintentos
+   y el respaldo de siempre. Sólo sin flujo en la respuesta (navegadores muy viejos) se lee de una vez, sin vigilar. */
 const AVISO_CADA = 512 * 1024;
-async function cuerpoDe(resp, avisar) {
-  if (!avisar || !resp.body || typeof resp.body.getReader !== 'function') return resp.arrayBuffer();
+const NO_AVANZA = `La red no avanza: ${SIN_DATOS_MS / 1000} s sin recibir datos.`;
+async function cuerpoDe(resp, avisar = null) {
+  if (!resp.body || typeof resp.body.getReader !== 'function') return resp.arrayBuffer();
   const lector = resp.body.getReader();
+  const ctrl = _cortes.get(resp);
+  let vigia = 0, atascada = false;
+  const vigilar = () => {
+    clearTimeout(vigia);
+    vigia = setTimeout(() => { atascada = true; try { if (ctrl) ctrl.abort(); else lector.cancel(); } catch (_) { /* ya terminó */ } }, SIN_DATOS_MS);
+  };
   const trozos = [];
   let bytes = 0, avisado = 0;
-  for (;;) {
-    const { done, value } = await lector.read();
-    if (done) break;
-    trozos.push(value);
-    bytes += value.length;
-    if (bytes - avisado >= AVISO_CADA) { avisado = bytes; avisar({ fase: 'descarga', bytes }); }
+  try {
+    vigilar();
+    for (;;) {
+      const { done, value } = await lector.read();
+      if (done) break;
+      vigilar();
+      trozos.push(value);
+      bytes += value.length;
+      if (avisar && bytes - avisado >= AVISO_CADA) { avisado = bytes; avisar({ fase: 'descarga', bytes }); }
+    }
+  } catch (e) {
+    throw atascada ? new Error(NO_AVANZA) : e;
+  } finally {
+    clearTimeout(vigia);
   }
+  if (atascada) throw new Error(NO_AVANZA);   // cortada con cancel(): la lectura acaba como si terminara
   const todo = new Uint8Array(bytes);
   let o = 0;
   for (const t of trozos) { todo.set(t, o); o += t.length; }
   return todo.buffer;
 }
+/** El cuerpo como texto, con la misma vigilancia (UTF-8, como Response.text()). */
+async function textoDe(resp) {
+  if (!resp.body || typeof resp.body.getReader !== 'function') return resp.text();
+  return new TextDecoder('utf-8').decode(await cuerpoDe(resp));
+}
 const mb = (b) => (b / 1048576).toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' MB';
-/** El rótulo de un aviso de `avisar` (el aviso de carga y la píldora). */
+/** El rótulo de un aviso de `avisar` (el aviso de carga y la píldora). Punto 9 (2026-10-07): también dice cuándo la red
+ *  no avanzó y se reintenta (y en qué intento va la descarga), y cuándo se pasa al respaldo hoja a hoja. */
 export function textoProgreso(p) {
-  return p && p.fase === 'lectura' ? `Leyendo el libro (${mb(p.bytes)})…` : `Descargando el libro… ${mb((p && p.bytes) || 0)}`;
+  if (p && p.fase === 'lectura') return `Leyendo el libro (${mb(p.bytes)})…`;
+  if (p && p.fase === 'reintento') return `Descargando el libro… ${mb(p.bytes || 0)} · ${p.atascada ? 'la red no avanza, ' : ''}reintento ${p.intento} de ${p.de}`;
+  if (p && p.fase === 'respaldo') return 'El libro entero no llegó: probando hoja por hoja…';
+  const intento = p && p.intento > 1 ? ` · intento ${p.intento} de ${p.de}` : '';
+  return `Descargando el libro… ${mb((p && p.bytes) || 0)}${intento}`;
 }
 
 async function fetchWorkbook(ids, obtenerXLSX = getXLSX, avisar = null) {
@@ -364,7 +398,7 @@ async function fetchCSV(url, retries = 2) {
     try {
       const r = await fetchWithTimeout(url, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } });
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      let text = await r.text();
+      let text = await textoDe(r);
       if (/^<!DOCTYPE|^<html/i.test(text.trim())) {
         throw new Error('Documento no accesible. Compártelo como "Cualquier persona con el enlace" o publícalo (Archivo → Compartir → Publicar en la web).');
       }
@@ -436,7 +470,7 @@ export async function discoverGids(ids) {
   if (!realId && ids.type === 'pub') {
     try {
       const r = await fetchWithTimeout(`https://docs.google.com/spreadsheets/d/e/${ids.pubId}/pub`, { cache: 'no-store' });
-      const mm = (await r.text()).match(/spreadsheets\/d\/([a-zA-Z0-9_-]{20,})/);
+      const mm = (await textoDe(r)).match(/spreadsheets\/d\/([a-zA-Z0-9_-]{20,})/);
       if (mm) realId = mm[1];
     } catch (_) {}
   }
@@ -446,7 +480,7 @@ export async function discoverGids(ids) {
     try {
       const r = await fetchWithTimeout(url, { cache: 'no-store' });
       if (!r.ok) return;
-      extractSheetTabs(await r.text()).forEach((t) => { if (!merge.has(t.gid) || (!merge.get(t.gid) && t.title)) merge.set(t.gid, t.title); });
+      extractSheetTabs(await textoDe(r)).forEach((t) => { if (!merge.has(t.gid) || (!merge.get(t.gid) && t.title)) merge.set(t.gid, t.title); });
     } catch (_) {}
   };
   if (realId) await scrape(`https://docs.google.com/spreadsheets/d/${realId}/htmlview`);
@@ -494,7 +528,7 @@ async function filasPorXlsxDeHoja(ids, gid, obtenerXLSX = getXLSX) {
     try {
       const r = await fetchWithTimeout(url, { cache: 'no-store' });
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      const buf = new Uint8Array(await r.arrayBuffer());
+      const buf = new Uint8Array(await cuerpoDe(r));
       if (buf[0] !== 0x50 || buf[1] !== 0x4B) return null;   // un XLSX es un ZIP («PK»); lo demás, al CSV
       const wb = XLSX.read(buf, XLSX_LECTURA);
       const nombre = wb.SheetNames[0] || '';
@@ -512,7 +546,8 @@ async function filasPorXlsxDeHoja(ids, gid, obtenerXLSX = getXLSX) {
  *  recortadas por un filtro); cuántas no llegaron por ningún camino; y si no se pudo saber qué pestañas hay (entonces
  *  sólo se intenta la primera). Lo usan la página (fetchViaCsv) y el Worker (sheets.worker.js), que así lo hace sin
  *  congelar la pantalla: leer una hoja grande por XLSX cuesta ~1,3 s en PC (Control_Tanque M08, 24 743 filas). */
-export async function respaldoPorHojas(ids, obtenerXLSX = getXLSX) {
+export async function respaldoPorHojas(ids, obtenerXLSX = getXLSX, avisar = null) {
+  if (avisar) avisar({ fase: 'respaldo' });   // punto 9: que el aviso de carga no se quede en «reintento 3 de 3»
   const sheets = {};
   let porCsv = 0;
   let perdidas = 0;
@@ -539,8 +574,8 @@ export async function respaldoPorHojas(ids, obtenerXLSX = getXLSX) {
   return { sheets, porCsv, perdidas, sinPestanas: !discovered.length };
 }
 
-async function fetchViaCsv(ids) {
-  return (await respaldoPorHojas(ids)).sheets;
+async function fetchViaCsv(ids, avisar = null) {
+  return (await respaldoPorHojas(ids, getXLSX, avisar)).sheets;
 }
 
 // ---------- pipeline público ----------
@@ -719,7 +754,7 @@ export async function descargarLibro({ alAvanzar } = {}) {
   if (ids.type === 'real' && _lector && _lector.disponible()) {
     const r = await _lector.leer({ realId: ids.realId, previas: _huellasAplicadas, alAvanzar });
     if (r.ok) return { sheets: fundirDelta(_hojasAplicadas, r), huellas: r.huellas, fp: huellaDe(r.huellas, r.orden) };
-    if (r.motivo === 'xlsx') return descargaCompleta(await fetchViaCsv(ids));
+    if (r.motivo === 'xlsx') return descargaCompleta(await fetchViaCsv(ids, alAvanzar));
     if ((r.motivo === 'caido' || r.motivo === 'tiempo') && store.connected) {
       throw new Error('No se pudo leer el libro en segundo plano.');
     }
@@ -757,16 +792,24 @@ export async function fetchXlsxSheets(ids, obtenerXLSX = getXLSX, avisar = null)
   // backoff. El respaldo es ROBUSTO: enumera TODAS las hojas por /htmlview (no requiere
   // publicar el documento) y las baja hoja a hoja por su XLSX, y por CSV sólo la que falle
   // (respaldoPorHojas; por gviz no desde el 2026-10-01: con un filtro en la hoja, recortaba).
+  // Punto 9 (2026-10-07): con `avisar` (la primera carga), cada reintento lo dice —y si fue porque la red no avanzó—, y
+  // los avisos de descarga del intento siguiente llevan en qué intento va.
+  let intento = 1, bytes = 0;
+  const av = avisar ? (p) => { if (p.bytes) bytes = p.bytes; avisar(intento > 1 && p.fase === 'descarga' ? { ...p, intento, de: 3 } : p); } : null;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const wb = await fetchWorkbook(ids, obtenerXLSX, avisar);
+      const wb = await fetchWorkbook(ids, obtenerXLSX, av);
       if (wb) return workbookToSheets(wb, obtenerXLSX());
       break; // wb nulo (sin hojas) no es transitorio: pasa directo al respaldo
     } catch (e) {
       // 401/403: el endpoint de exportación exige autenticación (documento compartido sólo
       // por enlace, no público para /export). Reintentar es inútil → pasa YA al respaldo.
       if (/\b(401|403)\b/.test(String((e && e.message) || ''))) break;
-      if (attempt < 2) await new Promise((r) => setTimeout(r, 600 * 2 ** attempt));
+      if (attempt < 2) {
+        intento = attempt + 2;
+        if (av) av({ fase: 'reintento', intento, de: 3, bytes, atascada: String((e && e.message) || '') === NO_AVANZA });
+        await new Promise((r) => setTimeout(r, 600 * 2 ** attempt));
+      }
     }
   }
   return null;
@@ -776,7 +819,7 @@ export async function fetchXlsxSheets(ids, obtenerXLSX = getXLSX, avisar = null)
 export async function fetchAllSheets(avisar = null) {
   const ids = parseSheetsIds(activeUrl());
   if (!ids) throw new Error('URL de Google Sheets inválida.');
-  return (await fetchXlsxSheets(ids, getXLSX, avisar)) || fetchViaCsv(ids);
+  return (await fetchXlsxSheets(ids, getXLSX, avisar)) || fetchViaCsv(ids, avisar);
 }
 
 /** ¿La descarga recién obtenida trae MENOS hojas que el set bueno ya cargado?

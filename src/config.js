@@ -28,6 +28,10 @@ export const FETCH_TIMEOUT_MS = 20000;
 // está "publicado en la web" → todas las vistas quedan sin datos. Por eso el
 // camino XLSX usa su PROPIO timeout, más generoso que una petición normal.
 export const XLSX_TIMEOUT_MS = 45000;
+// Tiempo máximo SIN RECIBIR NADA mientras llega el CUERPO de una descarga (2026-10-07, usuario, punto 9). Los dos de
+// arriba cubren sólo hasta las cabeceras; con la red atascada a mitad, la descarga esperaba para siempre (medido el
+// 06-10: «0,5 MB» fijos 14 min, sin error ni reintento). Se reinicia con cada trozo: una red LENTA que avanza no se corta.
+export const SIN_DATOS_MS = 30000;
 
 // Intervalo de auto-refresco silencioso (segundos). 5 min (decisión del usuario, 2026-09-24):
 // cada ciclo descarga el libro entero (10–12 MB) y leerlo congela la pantalla; con 60 s eran
