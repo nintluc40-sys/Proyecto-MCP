@@ -18,7 +18,9 @@
      descarga procesada, no descarga («sin cambios»). La marca se lee ANTES de descargar y sólo
      crece, así que la recordada nunca es más nueva que lo que está en pantalla: un retraso de Drive
      cuesta, como mucho, una descarga de más, nunca un cambio perdido. Sin respuesta, se descarga.
-     ⟳ y la primera carga no preguntan.
+     ⟳ y la primera carga no preguntan para SALTAR la descarga (siempre bajan); pero ⟳ y la píldora
+     (2026-10-07, auditoría A2) leen la marca ANTES, esperando como mucho MARCA_MANUAL_MS, y la anotan
+     si lo descargado se aplicó: sin eso, el ciclo siguiente volvía a bajar los ~14 MB sin cambios.
    Portado de silentRefresh + _markInteracting del original; política de refresco del
    2026-09-24 (P2 del plan de carga y refresco).
    ============================================================ */
@@ -170,10 +172,22 @@ function onVisible() {
   if (!timer && !store.refreshing) tick();
 }
 
+// A2: lo más que espera ⟳ a la marca antes de descargar (la consulta tarda ~1,5–4 s; en frío, hasta ~20 s).
+const MARCA_MANUAL_MS = 4000;
+/** La marca del libro, o null si no llega en `ms` (o falla): nunca retrasa más que eso. */
+function marcaConTope(ms) {
+  return new Promise((listo) => {
+    const t = setTimeout(() => listo(null), ms);
+    marcaDelLibro().then((m) => { clearTimeout(t); listo(m); }, () => { clearTimeout(t); listo(null); });
+  });
+}
+
 /** Refresco pedido a mano (⟳ y la píldora): descarga y aplica YA, aunque haya un campo con
  *  el foco —lo pidió el usuario—. No arranca si ya hay una descarga en curso (devuelve
- *  null); descarta el pendiente y reprograma el siguiente ciclo automático. */
-export async function refrescoManual() {
+ *  null); descarta el pendiente y reprograma el siguiente ciclo automático.
+ *  `conMarca` (⟳ y la píldora; la primera carga pasa false): lee la marca ANTES de descargar (ver la cabecera) y la
+ *  anota sólo si lo descargado se APLICÓ —`store.globalData` cambia de referencia—; un set degradado que se descarta no. */
+export async function refrescoManual({ conMarca = true } = {}) {
   if (store.refreshing) return null;
   store.refreshing = true;
   pending = null;
@@ -182,8 +196,13 @@ export async function refrescoManual() {
   clearTimeout(timer);
   timer = null;
   try {
+    const marca = conMarca ? await marcaConTope(MARCA_MANUAL_MS) : null;
+    const datosAntes = store.globalData;
     const ok = await connectSheets();
-    if (ok) datosDe = '';
+    if (ok) {
+      datosDe = '';
+      if (marca !== null && store.globalData !== datosAntes) marcaVista = marca;
+    }
     return ok;
   } finally {
     store.refreshing = false;
@@ -204,7 +223,7 @@ let asegurando = false;
  *  para que ⟳ no pueda lanzar otra a la vez). */
 export function asegurarLibro() {
   if (store.connected || store.refreshing || asegurando) return null;
-  if (!_guardado) return refrescoManual();
+  if (!_guardado) return refrescoManual({ conMarca: false });
   asegurando = true;
   return (async () => {
     let g = null;
@@ -216,7 +235,7 @@ export function asegurarLibro() {
       check();
       return true;
     }
-    return refrescoManual();
+    return refrescoManual({ conMarca: false });
   })();
 }
 

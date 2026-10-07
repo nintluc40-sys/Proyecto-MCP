@@ -486,10 +486,47 @@ describe('auto-refresco · consulta ligera antes de descargar (punto 8, 2026-10-
     expect(valor()).toBe(2);
   });
 
-  it('⟳ no pregunta: descarga siempre', async () => {
-    connectSheets.mockResolvedValue(true);
+  it('⟳ descarga siempre, pero anota la marca leída ANTES: el ciclo siguiente, sin cambios, no baja nada (auditoría A2)', async () => {
+    marcaDelLibro.mockResolvedValue(100);
+    connectSheets.mockImplementation(async () => { aplicarDescarga(descarga(set(3))); return true; });
     await refrescoManual();
-    expect(marcaDelLibro).not.toHaveBeenCalled();
+    expect(marcaDelLibro).toHaveBeenCalledTimes(1);
     expect(connectSheets).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(descargarLibro).not.toHaveBeenCalled();
+    expect(etiquetas.at(-1)).toMatch(/sin cambios/);
+  });
+
+  it('si lo que bajó ⟳ NO se aplicó (set degradado), la marca no se anota: el ciclo siguiente descarga', async () => {
+    marcaDelLibro.mockResolvedValue(100);
+    connectSheets.mockResolvedValue(true);   // «conectado» sin aplicar nada (store.globalData no cambia)
+    descargarLibro.mockResolvedValue(descarga(set(1)));
+    await refrescoManual();
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(descargarLibro).toHaveBeenCalledTimes(1);
+  });
+
+  it('⟳ espera la marca como mucho 4 s: si no llega, descarga igual y no la anota', async () => {
+    marcaDelLibro.mockImplementationOnce(() => new Promise(() => {}));   // la consulta no contesta
+    connectSheets.mockImplementation(async () => { aplicarDescarga(descarga(set(3))); return true; });
+    const p = refrescoManual();
+    await vi.advanceTimersByTimeAsync(3900);
+    expect(connectSheets).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(await p).toBe(true);
+    expect(connectSheets).toHaveBeenCalledTimes(1);
+    marcaDelLibro.mockResolvedValue(100);
+    descargarLibro.mockResolvedValue(descarga(set(3)));
+    await vi.advanceTimersByTimeAsync(5 * MIN);   // sin marca anotada: descarga
+    expect(descargarLibro).toHaveBeenCalledTimes(1);
+  });
+
+  it('la primera carga (asegurarLibro) no lee la marca', async () => {
+    setLibroGuardado(null);
+    store.connected = false;
+    connectSheets.mockResolvedValue(true);
+    await asegurarLibro();
+    expect(connectSheets).toHaveBeenCalledTimes(1);
+    expect(marcaDelLibro).not.toHaveBeenCalled();
   });
 });
