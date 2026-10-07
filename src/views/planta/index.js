@@ -143,18 +143,29 @@ export function plantaView(root) {
     vista.aviso(fallos.length ? 'No se pudo calcular: ' + fallos.join(' · ')
       : 'Datos del MCP · puestos al día a las ' + hora + (pasado ? ' · mostrando ' + pasado.mes + ' (maduración al ' + pasado.cierre.slice(8, 10) + '/' + pasado.cierre.slice(5, 7) + ')' : ''));
   };
-  // Cambiar de modo reemplaza el cuerpo: la escena se libera sola al dejar el documento (escena.js · dispose).
+  // Cada modo vive en su propia caja y NO se destruye al cambiar (2026-10-06, usuario): el que se deja sólo se oculta
+  // —la escena se pausa sola fuera de la vista (escena.js · IntersectionObserver)— y volver a él es inmediato, con su
+  // cámara, lo elegido y los filtros. Medido antes: volver a la Maqueta la reconstruía entera (6,5 s en escritorio y
+  // 8,9 s en celular ×4: texturas, geometría y 26 sombreadores). Todo se libera al salir de Planta (escena.js · dispose).
+  // Un modo que falló o que se dejó mientras cargaba no queda montado: al volver a elegirlo se intenta de nuevo.
+  const montados = {};
   async function montar(nuevo) {
     const mio = ++turno; modo = nuevo; vista = null; guardarModo(nuevo);
     marco.querySelectorAll('[data-modo]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.modo === nuevo)));
-    cuerpo.innerHTML = '<div class="planta planta-carga"><p>' + (nuevo === 'maqueta' ? 'Cargando la maqueta…' : 'Cargando…') + '</p></div>';
+    [...cuerpo.children].forEach((c) => { c.hidden = c.dataset.cuerpo !== nuevo; });
+    if (montados[nuevo]) { vista = montados[nuevo]; pintar(); return; }
+    cuerpo.querySelectorAll('[data-cuerpo="' + nuevo + '"]').forEach((c) => c.remove());
+    const caja = document.createElement('div');
+    caja.className = 'planta-modo'; caja.dataset.cuerpo = nuevo;
+    caja.innerHTML = '<div class="planta planta-carga"><p>' + (nuevo === 'maqueta' ? 'Cargando la maqueta…' : 'Cargando…') + '</p></div>';
+    cuerpo.appendChild(caja);
     let v;
     try {
       if (nuevo === 'maqueta') {
         const { montarPlanta } = await import('./escena.js');
-        if (mio !== turno || !marco.isConnected) return;
-        cuerpo.innerHTML = MAQUETA;
-        const host = cuerpo.querySelector('.planta');
+        if (mio !== turno || !marco.isConnected) { caja.remove(); return; }
+        caja.innerHTML = MAQUETA;
+        const host = caja.querySelector('.planta');
         try { v = montarPlanta(host); } catch (e) {
           host.querySelector('.viewport').innerHTML = '<div class="empty-state" style="padding:48px">No se pudo mostrar la maqueta 3D en este equipo: usa 📊 Análisis.<br>'
             + `<small class="mono">${esc(e.message)}</small></div>`;
@@ -162,15 +173,16 @@ export function plantaView(root) {
         }
       } else {
         const { montarAnalisis } = await import('./analisis.js');
-        if (mio !== turno || !marco.isConnected) return;
-        v = montarAnalisis(cuerpo);
+        if (mio !== turno || !marco.isConnected) { caja.remove(); return; }
+        v = montarAnalisis(caja);
       }
     } catch (e) {
-      if (mio !== turno || !marco.isConnected) return;
+      if (mio !== turno || !marco.isConnected) { caja.remove(); return; }
       console.error('[planta] modo', e);
-      cuerpo.innerHTML = '<div class="planta planta-carga"><p>No se pudo cargar esta vista. Revisa la conexión y vuelve a elegirla.<br>' + `<small class="mono">${esc(e.message)}</small></p></div>`;
+      caja.innerHTML = '<div class="planta planta-carga"><p>No se pudo cargar esta vista. Revisa la conexión y vuelve a elegirla.<br>' + `<small class="mono">${esc(e.message)}</small></p></div>`;
       return;
     }
+    montados[nuevo] = v;
     vista = v;
     vista.alElegirMes((mIdx, esUltimo) => { mesElegido = esUltimo ? null : mIdx; pintar(); });
     pintar();

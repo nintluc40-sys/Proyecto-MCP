@@ -171,8 +171,9 @@
 .planta-modos button[aria-pressed="true"] { background: var(--c-text); color: var(--c-surface); }
 .planta-modos button:focus-visible { outline: 2px solid #d9622b; outline-offset: 2px; }
 .planta.planta-carga { display: grid; place-items: center; text-align: center; padding: 24px; color: var(--muted); }
-/* en escritorio la maqueta deja sitio al selector (≈ 46 px) para no desbordar la pantalla */
-@media (min-width: 901px) { .planta-cuerpo > .planta:not(.planta-an) { height: calc(100vh - 196px); } }
+/* en escritorio la maqueta deja sitio al selector (≈ 46 px) para no desbordar la pantalla; cada modo va en su caja
+   (.planta-modo, index.js), que se oculta y no se destruye al cambiar de modo */
+@media (min-width: 901px) { .planta-cuerpo > .planta-modo > .planta:not(.planta-an) { height: calc(100vh - 196px); } }
 
 /* ---- 📊 Análisis: la misma información sin la maqueta (analisis.js) ---- */
 .planta.planta-an { display: block; height: auto; min-height: 0; overflow: visible; padding: 18px 20px 24px; }
