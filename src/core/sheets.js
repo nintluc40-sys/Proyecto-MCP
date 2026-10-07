@@ -35,7 +35,7 @@ export function parseSheetsIds(url) {
   return null;
 }
 
-function activeUrl() {
+export function activeUrl() {
   return (store.sheetsUrlOverride && store.sheetsUrlOverride.trim()) || SHEETS_URL;
 }
 

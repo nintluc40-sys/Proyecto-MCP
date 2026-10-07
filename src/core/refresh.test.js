@@ -21,12 +21,15 @@ vi.mock('./sheets.js', async (importOriginal) => {
   const real = await importOriginal();
   return { ...real, descargarLibro: vi.fn(), connectSheets: vi.fn(), lecturaEnSegundoPlano: vi.fn(() => false) };
 });
+// Punto 8 (2026-10-07): la consulta ligera, simulada; por defecto «no se sabe» (null) = descargar como siempre.
+vi.mock('./marcaLibro.js', () => ({ marcaDelLibro: vi.fn(async () => null) }));
 
 import {
   descargarLibro, connectSheets, lecturaEnSegundoPlano, aplicarDescarga, huellasPorHoja, dataFingerprint,
   getLastFingerprint,
 } from './sheets.js';
 import { startAutoRefresh, stopAutoRefresh, refrescoManual, asegurarLibro, setLibroGuardado } from './refresh.js';
+import { marcaDelLibro } from './marcaLibro.js';
 import { store, on, EV } from './store.js';
 import { REFRESH_INTERVAL_S } from '../config.js';
 
@@ -62,6 +65,8 @@ beforeEach(() => {
   connectSheets.mockReset();
   lecturaEnSegundoPlano.mockReset();
   lecturaEnSegundoPlano.mockReturnValue(false);
+  marcaDelLibro.mockReset();
+  marcaDelLibro.mockResolvedValue(null);
   // Lo que deja la carga inicial: el set 1 aplicado y su huella (sobre filas recién descargadas).
   store.connected = true;
   store.refreshing = false;
@@ -428,5 +433,63 @@ describe('auto-refresco · ⟳ (refrescoManual)', () => {
     terminar(true);
     await p;
     expect(store.refreshing).toBe(false);
+  });
+});
+
+describe('auto-refresco · consulta ligera antes de descargar (punto 8, 2026-10-07)', () => {
+  it('con la misma marca que la última descarga procesada NO descarga y dice «sin cambios»; con otra, descarga', async () => {
+    marcaDelLibro.mockResolvedValue(100);
+    descargarLibro.mockResolvedValue(descarga(set(1)));
+    await vi.advanceTimersByTimeAsync(5 * MIN);   // 1.er ciclo: aún no hay marca vista → descarga
+    expect(descargarLibro).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(5 * MIN);   // la misma marca → no descarga
+    expect(descargarLibro).toHaveBeenCalledTimes(1);
+    expect(etiquetas.at(-1)).toMatch(/sin cambios/);
+    marcaDelLibro.mockResolvedValue(200);
+    descargarLibro.mockResolvedValue(descarga(set(2)));
+    await vi.advanceTimersByTimeAsync(5 * MIN);   // cambió → descarga y aplica
+    expect(descargarLibro).toHaveBeenCalledTimes(2);
+    expect(valor()).toBe(2);
+  });
+
+  it('sin respuesta (null) descarga siempre, como antes', async () => {
+    descargarLibro.mockResolvedValue(descarga(set(1)));
+    await vi.advanceTimersByTimeAsync(10 * MIN);
+    expect(marcaDelLibro).toHaveBeenCalledTimes(2);
+    expect(descargarLibro).toHaveBeenCalledTimes(2);
+  });
+
+  it('una descarga fallida o degradada NO fija la marca: el ciclo siguiente vuelve a descargar', async () => {
+    marcaDelLibro.mockResolvedValue(100);
+    descargarLibro.mockRejectedValueOnce(new Error('sin red'));
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    descargarLibro.mockResolvedValueOnce(descarga({ 'Larvicultura M01': [{ Fecha: '01/09/2026', Tanque: 'T1', Valor: 7 }] }));
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    descargarLibro.mockResolvedValue(descarga(set(1)));
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(descargarLibro).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(5 * MIN);   // ésta sí se procesó: la marca quedó vista
+    expect(descargarLibro).toHaveBeenCalledTimes(3);
+  });
+
+  it('si al saltar la descarga hay un pendiente, se conserva y la píldora lo sigue diciendo', async () => {
+    marcaDelLibro.mockResolvedValue(100);
+    const el = campo('text');   // un campo con el foco retiene lo nuevo
+    descargarLibro.mockResolvedValue(descarga(set(2)));
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(etiquetas.at(-1)).toMatch(/datos nuevos en espera/);
+    await vi.advanceTimersByTimeAsync(5 * MIN);   // la misma marca: no descarga y el pendiente sigue
+    expect(descargarLibro).toHaveBeenCalledTimes(1);
+    expect(etiquetas.at(-1)).toMatch(/datos nuevos en espera/);
+    el.blur();
+    await vi.advanceTimersByTimeAsync(3 * 1000);
+    expect(valor()).toBe(2);
+  });
+
+  it('⟳ no pregunta: descarga siempre', async () => {
+    connectSheets.mockResolvedValue(true);
+    await refrescoManual();
+    expect(marcaDelLibro).not.toHaveBeenCalled();
+    expect(connectSheets).toHaveBeenCalledTimes(1);
   });
 });

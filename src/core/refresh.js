@@ -13,6 +13,12 @@
    - ⟳ y la píldora usan refrescoManual(): nunca dos descargas a la vez.
    - P4: la primera vez que hace falta el libro, si hay uno GUARDADO en el equipo (y no caducó),
      se enseña YA («datos de las hh:mm · actualizando…») y se revalida en el acto.
+   - Consulta LIGERA (2026-10-07, punto 8): antes de bajar el XLSX (~14 MB) el ciclo pregunta la
+     fecha de modificación del libro (marcaLibro.js, ~1,5 s); si es la misma que la de la última
+     descarga procesada, no descarga («sin cambios»). La marca se lee ANTES de descargar y sólo
+     crece, así que la recordada nunca es más nueva que lo que está en pantalla: un retraso de Drive
+     cuesta, como mucho, una descarga de más, nunca un cambio perdido. Sin respuesta, se descarga.
+     ⟳ y la primera carga no preguntan.
    Portado de silentRefresh + _markInteracting del original; política de refresco del
    2026-09-24 (P2 del plan de carga y refresco).
    ============================================================ */
@@ -22,6 +28,7 @@ import {
   descargarLibro, aplicarDescarga, aplicarLibroGuardado, lecturaEnSegundoPlano, connectSheets, isDegraded,
   getLastFingerprint,
 } from './sheets.js';
+import { marcaDelLibro } from './marcaLibro.js';
 
 const INTERVAL_MS = REFRESH_INTERVAL_S * 1000;
 const APPLY_RETRY_MS = 2000;
@@ -33,6 +40,8 @@ let pending = null;  // { d, ts }: descarga nueva (d = { sheets, huellas, fp }) 
 let started = false;
 // P4: mientras lo que se ve es el libro GUARDADO y aún no se ha confirmado: «de las hh:mm» / «del dd/mm hh:mm».
 let datosDe = '';
+// Punto 8: la marca de modificación leída ANTES de la última descarga procesada (null = ninguna).
+let marcaVista = null;
 
 /** Marca interacción del usuario por `ms` (pausa el refresco). */
 function markInteracting(ms = 12000) { interactingUntil = Date.now() + ms; }
@@ -99,6 +108,13 @@ async function check() {
   store.refreshing = true;
   emit(EV.CONN, { state: 'refreshing', label: datosDe ? etiqueta('datos ' + datosDe, ' · actualizando…') : 'Actualizando…' });
   try {
+    // Punto 8: si Google dice que el libro no cambió desde la última descarga procesada, no se baja.
+    // Un pendiente que espera al reposo se conserva (es de esa misma descarga).
+    const marca = await marcaDelLibro();
+    if (marca !== null && marca === marcaVista) {
+      emit(EV.CONN, { state: 'connected', label: etiqueta(hora(), pending ? ' · datos nuevos en espera' : ' · sin cambios') });
+      return;
+    }
     const d = await descargarLibro();
     const ts = hora();
     // Un libro sin ninguna hoja con filas es una descarga FALLIDA —sin señal, el XLSX y el CSV de
@@ -113,6 +129,7 @@ async function check() {
       emit(EV.CONN, { state: 'connected', label: etiqueta(ts) });
       return;
     }
+    if (marca !== null) marcaVista = marca;   // la de ANTES de bajar: lo descargado es al menos así de nuevo
     if (d.fp === getLastFingerprint()) {
       pending = null; // lo que está en pantalla ya es lo último: un pendiente anterior sobra
       clearTimeout(applyTimer);
@@ -224,6 +241,7 @@ export function stopAutoRefresh() {
   pending = null;
   interactingUntil = 0;
   datosDe = '';
+  marcaVista = null;
   asegurando = false;
   INTERACTION_EVENTS.forEach((ev) => document.removeEventListener(ev, onInteraction, true));
   document.removeEventListener('mousemove', onMouseMove, true);
