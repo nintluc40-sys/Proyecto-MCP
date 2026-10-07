@@ -10,6 +10,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { montarAnalisis } from './analisis.js';
 import { LARV, MAT, OTHERS } from './plano.js';
 import { MAD_HEX } from './textos.js';
+import { guardarMeta } from './meta.js';
 
 const etapa = { key: 'cos', label: 'Cosecha', color: '#123456' };
 const n1 = LARV[0].num(0, 0), n2 = LARV[0].num(0, 1);           // dos tanques del Módulo 1
@@ -167,5 +168,17 @@ describe('📊 Análisis · plano del laboratorio', () => {
     tocar($('.an-pl-otra[data-area="1"]'));
     const [tit, uso] = OTHERS[1][6].split(' · ');
     expect([$('[data-k="plano-ficha-h"]').textContent, $('[data-k="plano-ficha-dl"]').textContent, $('[data-k="plano-ficha-ir"]').hidden]).toEqual([tit, 'Uso' + uso, true]);
+  });
+});
+
+describe('📊 Análisis · la meta compartida con la maqueta', () => {
+  it('cada pintado lee la meta guardada: la que cambió la maqueta mientras Análisis estaba oculto se ve al volver', () => {
+    guardarMeta(400e6);
+    v.pintarEstado(estado());
+    expect($('[data-k="prod-meta"]').textContent).toBe('de 400 M');
+    guardarMeta(500e6);   // como la guarda el ⚙ de la maqueta (los modos ya no se rehacen al cambiar)
+    v.pintarEstado(estado());
+    expect($('[data-k="prod-meta"]').textContent).toBe('de 500 M');
+    guardarMeta(400e6);
   });
 });

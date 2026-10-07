@@ -139,6 +139,7 @@ export function montarAnalisis(host) {
 
   /* ---- Producción del mes ---- */
   function pintarProduccion(C) {
+    meta = leerMeta();   // la pudo cambiar la maqueta mientras Análisis estaba oculto (los modos no se rehacen al cambiar)
     ultimasCifras = C;
     const T = textosProduccion(C, meta, ctx()), M = textoMes(C);
     $('prod-meta').textContent = T.metaTxt;

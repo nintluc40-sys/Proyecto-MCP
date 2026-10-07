@@ -1078,6 +1078,7 @@ pintarCifras(null);
 let meta = leerMeta(), ultimasCifras = null;
 let alertasTotal = null;   // lo que cuenta «Qué atender hoy» (o «Alertas al cierre»): lo repite el resumen de pantalla completa (punto 3)
 function pintarProduccion(C) {
+  meta = leerMeta();   // la pudo cambiar 📊 Análisis mientras la maqueta estaba oculta (los modos no se rehacen al cambiar)
   ultimasCifras = C; pintarResumenFS();
   const T = textosProduccion(C, meta, ctxTextos());
   $('#prod-meta').textContent = T.metaTxt;
