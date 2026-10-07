@@ -20,8 +20,13 @@
      → { id, realId, xlsxUrl, previas, conProgreso }
      ← { vivo: true }                                   al arrancar
      ← { id, progreso: { fase, bytes } }                con conProgreso (la primera carga, punto 7): cómo va
-     ← { id, ok: true, orden, huellas, cambiadas }
+     ← { id, hoja, filas }                              una por cada hoja que cambió (2026-10-06, abajo)
+     ← { id, ok: true, orden, huellas }                 al final; el lector junta las hojas en `cambiadas`
      ← { id, ok: false, motivo: 'sin-xlsx' | 'xlsx', error }
+
+   Hojas de a una (2026-10-06, usuario, punto 5): la página deserializa cada mensaje al leerlo, y con TODAS las hojas
+   en uno solo eran ~600 ms seguidos en escritorio (×4 en un celular) sin que la pantalla respondiera, más lo que venía
+   detrás en la misma tarea. Un mensaje por hoja reparte ese trabajo en tareas cortas (la mayor, la hoja más grande).
    ============================================================ */
 import { fetchXlsxSheets, respaldoPorHojas, planDelta, huellaDe } from './sheets.js';
 import { guardarLibro, almacenIDB } from './libroGuardado.js';
@@ -66,6 +71,15 @@ export async function atenderLectura(m, entorno) {
   }
 }
 
+/** Envía la respuesta de atenderLectura con `post`: si trae hojas, cada una en su mensaje { id, hoja, filas } y al final
+ *  la respuesta sin ellas (ver «Hojas de a una» arriba); si no, tal cual. */
+export function responder(r, post) {
+  if (!r || !r.ok || !r.cambiadas) { post(r); return; }
+  const { cambiadas, ...resto } = r;
+  for (const hoja of Object.keys(cambiadas)) post({ id: r.id, hoja, filas: cambiadas[hoja] });
+  post(resto);
+}
+
 /* global WorkerGlobalScope, importScripts */
 if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope) {
   const almacen = almacenIDB();
@@ -75,6 +89,6 @@ if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScop
     guardar: (libro) => guardarLibro(libro, almacen),
     avisar: (id, progreso) => self.postMessage({ id, progreso }),
   };
-  self.onmessage = async (e) => { self.postMessage(await atenderLectura(e.data || {}, entorno)); };
+  self.onmessage = async (e) => { responder(await atenderLectura(e.data || {}, entorno), (m) => self.postMessage(m)); };
   self.postMessage({ vivo: true });
 }

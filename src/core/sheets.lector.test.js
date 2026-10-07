@@ -77,6 +77,25 @@ describe('lector del libro · protocolo', () => {
     expect(creados.length).toBe(1);
   });
 
+  it('las hojas llegan de a una (2026-10-06) y la respuesta final las entrega juntas en `cambiadas`', async () => {
+    const p = leerEnWorker({ realId: 'R' });
+    const w = creados[0], id = w.recibidos[0].id;
+    w.emitir({ vivo: true });
+    w.emitir({ id, hoja: 'A', filas: [{ x: 1 }] });
+    w.emitir({ id: id + 99, hoja: 'Z', filas: [{ z: 9 }] }); // de otra petición: se ignora
+    w.emitir({ id, hoja: 'B', filas: [] });
+    w.emitir({ id, ok: true, orden: ['A', 'B', 'C'], huellas: { A: 'a', B: 'b', C: 'c' } });
+    const r = await p;
+    expect(r).toMatchObject({ ok: true, orden: ['A', 'B', 'C'] });
+    expect(r.cambiadas).toEqual({ A: [{ x: 1 }], B: [] });
+    // una respuesta final de FALLO tras alguna hoja no entrega hojas
+    const p2 = leerEnWorker({ realId: 'R' });
+    const id2 = w.recibidos[1].id;
+    w.emitir({ id: id2, hoja: 'A', filas: [{ x: 1 }] });
+    w.emitir({ id: id2, ok: false, motivo: 'xlsx' });
+    expect(await p2).toEqual({ id: id2, ok: false, motivo: 'xlsx' });
+  });
+
   it('si no llega a ARRANCAR, queda roto: deja de estar disponible', async () => {
     const p = leerEnWorker({ realId: 'R' });
     creados[0].fallar();

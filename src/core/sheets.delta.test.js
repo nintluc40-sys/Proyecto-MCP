@@ -19,7 +19,7 @@ import {
   XLSX_LECTURA, workbookToSheets, dataFingerprint, huellasPorHoja, huellaDe, planDelta, fundirDelta,
   descargarLibro, aplicarDescarga, setLectorLibro, lecturaEnSegundoPlano, getLastFingerprint,
 } from './sheets.js';
-import { atenderLectura } from './sheets.worker.js';
+import { atenderLectura, responder } from './sheets.worker.js';
 import { store } from './store.js';
 
 const VENDOR = join(process.cwd(), 'public/vendor/xlsx.full.min.js');
@@ -185,6 +185,25 @@ describe('descargarLibro', () => {
     setLectorLibro(lector({ ok: false, motivo: 'caido' }));
     const d = await descargarLibro();
     expect(Object.keys(d.sheets).length).toBe(2);
+  });
+});
+
+describe('Worker · responder (hojas de a una, 2026-10-06)', () => {
+  it('cada hoja cambiada en su mensaje { id, hoja, filas } y al final la respuesta SIN las filas', () => {
+    const enviados = [];
+    const A = [{ x: 1 }], B = [{ y: 2 }];
+    responder({ id: 7, ok: true, orden: ['A', 'B', 'C'], huellas: { A: 'a', B: 'b', C: 'c' }, cambiadas: { A, B } }, (m) => enviados.push(m));
+    expect(enviados).toEqual([
+      { id: 7, hoja: 'A', filas: A },
+      { id: 7, hoja: 'B', filas: B },
+      { id: 7, ok: true, orden: ['A', 'B', 'C'], huellas: { A: 'a', B: 'b', C: 'c' } },
+    ]);
+  });
+  it('sin hojas cambiadas, o con un fallo, un solo mensaje tal cual', () => {
+    const enviados = [];
+    responder({ id: 1, ok: true, orden: ['A'], huellas: { A: 'a' }, cambiadas: {} }, (m) => enviados.push(m));
+    responder({ id: 2, ok: false, motivo: 'xlsx', error: 'x' }, (m) => enviados.push(m));
+    expect(enviados).toEqual([{ id: 1, ok: true, orden: ['A'], huellas: { A: 'a' } }, { id: 2, ok: false, motivo: 'xlsx', error: 'x' }]);
   });
 });
 

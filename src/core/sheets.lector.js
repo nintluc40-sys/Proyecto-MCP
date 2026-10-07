@@ -48,12 +48,15 @@ function crear() {
     if (m.vivo) { vivo = true; return; }
     // un aviso de cómo va (punto 7): no termina la petición
     if (m.progreso) { const q = enCurso.get(m.id); if (q && q.alAvanzar) q.alAvanzar(m.progreso); return; }
+    // una hoja que cambió (2026-10-06, punto 5): llegan de a una —cada una se deserializa en su propia tarea, corta— y
+    // se juntan aquí; la respuesta final las entrega en `cambiadas`, como antes
+    if (m.hoja !== undefined) { const q = enCurso.get(m.id); if (q) (q.hojas || (q.hojas = {}))[m.hoja] = m.filas; return; }
     const p = enCurso.get(m.id);
     if (!p) return;
     enCurso.delete(m.id);
     clearTimeout(p.timer);
     if (!m.ok && m.motivo === 'sin-xlsx') roto = true;
-    p.resolve(m);
+    p.resolve(m.ok && p.hojas ? { ...m, cambiadas: { ...(m.cambiadas || {}), ...p.hojas } } : m);
   };
   w.onerror = (ev) => {
     if (ev && ev.preventDefault) ev.preventDefault();
