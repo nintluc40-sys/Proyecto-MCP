@@ -620,6 +620,12 @@ Dos consecuencias que conviene tener presentes al desplegar:
    aviso de carga y la píldora lo enseñan (`textoProgreso`, en `core/sheets.js`: «Descargando el libro… 7,7 MB» →
    «Leyendo el libro (13,1 MB)…»), con la explicación de que la primera vez en un equipo tarda y después abre al
    instante con lo guardado. Los refrescos no avisan.
+   **Sin congelar al llegar los datos** (2026-10-06): el Worker envía cada hoja que cambió en su PROPIO mensaje
+   (`{ id, hoja, filas }` y al final `{ id, ok, orden, huellas }`; `sheets.worker.js · responder`) y el lector las junta
+   en `cambiadas`: la página deserializa cada mensaje al leerlo, y con todas en uno solo eran ~600 ms seguidos en
+   escritorio (×4 en celular). 🏭 Planta, además, calcula por partes cediendo el turno (producción, cada módulo,
+   maduración, cronograma) y pinta al acabar. Medido: la tarea más larga al llegar los datos, 1,78 → 0,28 s en escritorio
+   y ~8,9 → ~1,2 s en celular ×4.
 1. `connectSheets()` descarga el libro **completo** vía `export?format=xlsx`
    (1 petición, todas las hojas), con reintento y backoff. Si falla, el **respaldo** pide CADA hoja
    por su XLSX (`export?format=xlsx&gid=`; los `gid` salen de `/htmlview`) y sólo la que no llegue,
