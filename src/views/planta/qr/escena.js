@@ -4,8 +4,10 @@
    especies, nauplio, zoea, mysis, postlarva y los logos de Omarsa y Mar Bravo— se reacomodan como módulos de un código
    QR al tocarlas. Aquí el código es FIJO: el enlace exclusivo de Gerencia (ui/accesoRol.js · enlaceGerencia), que entra
    directo a 🏭 Planta. Se quitaron del original el campo para escribir otro enlace, la subida de un logo propio y el
-   guardado por el visor de claude.ai (aquí la imagen se descarga directo). three.js r128 es el mismo del artefacto
-   (three@0.128.0); el codificador, qrcode-generator 1.4.4 (MIT), el mismo que usaba por CDN.
+   guardado por el visor de claude.ai (aquí la imagen se descarga directo); y el 2026-10-07 (usuario) la ficha
+   descriptiva, el enlace escrito (en la página y bajo la imagen descargada, que es sólo el código) y tres de las cinco
+   especies: el color es Blanco o Cocido, éste por defecto (una elección guardada de las retiradas vuelve a Cocido).
+   three.js r128 es el mismo del artefacto (three@0.128.0); el codificador, qrcode-generator 1.4.4 (MIT), el mismo que usaba por CDN.
    Las búsquedas se limitan a `root`; la escena se libera sola (dispose) cuando su contenedor deja el documento.
    ============================================================ */
 import * as THREE from 'three';
@@ -44,19 +46,14 @@ function roundedRect(w, h, r) {
 }
 
 /* ---------- Especies ---------- */
+const ESPECIE_POR_DEFECTO = 'cocido';
 const SPECIES = [
   { id: 'blanco', label: 'Blanco', sci: 'Penaeus vannamei', auth: 'Boone, 1931', common: 'camarón blanco del Pacífico', pattern: 'plain',
     accL: '#8f4a2f', accD: '#e0a07f', body: '#b5b39d', body2: '#8b8b78', belly: '#d2cbad', band: '#77786a', tail: '#bfae86', rim: '#9c4a34', leg: '#cfc19c', antenna: '#a0563a', eye: '#141619', glint: '#8e999e', ink: '#1e2a2c' },
-  { id: 'tigre', label: 'Tigre', sci: 'Penaeus monodon', auth: 'Fabricius, 1798', common: 'camarón tigre gigante', pattern: 'tiger',
-    accL: '#866812', accD: '#e3bd52', body: '#545b4c', body2: '#3b4137', belly: '#b3a57c', band: '#dcc061', stripe: '#191c18', tail: '#3a4d63', rim: '#e0c35e', leg: '#d1aa50', antenna: '#a07f42', eye: '#0e1011', glint: '#7c8a8f', ink: '#191c17' },
-  { id: 'azul', label: 'Azul', sci: 'Penaeus stylirostris', auth: 'Stimpson, 1871', common: 'camarón azul', pattern: 'plain',
-    accL: '#2c5c95', accD: '#8bb5e8', body: '#aac5d9', body2: '#7f9fbd', belly: '#e0eaf0', band: '#6688aa', tail: '#4573a6', rim: '#1f3f6b', leg: '#cddde9', antenna: '#5a83b0', eye: '#111720', glint: '#b9cddb', ink: '#12273e' },
-  { id: 'rosado', label: 'Rosado', sci: 'Penaeus duorarum', auth: 'Burkenroad, 1939', common: 'camarón rosado', pattern: 'plain',
-    accL: '#a5425b', accD: '#ef9cb0', body: '#e7aca5', body2: '#cf8a87', belly: '#f5e0d9', band: '#bf716f', tail: '#b4506a', rim: '#6e2236', leg: '#f1c9c0', antenna: '#c2606f', eye: '#191113', glint: '#d9b9bd', ink: '#46142a' },
   { id: 'cocido', label: 'Cocido', sci: 'Penaeus sp.', auth: 'al ajillo', common: 'listo para servir', pattern: 'cooked',
     accL: '#bd431b', accD: '#f5a074', body: '#ee6233', body2: '#d6461e', belly: '#f9c7aa', band: '#fde3d3', tail: '#cc3a1c', rim: '#8a1d0b', leg: '#f49e78', antenna: '#e2592c', eye: '#1b0e0a', glint: '#c99a8a', ink: '#541306' },
 ];
-const SP = id => SPECIES.find(s => s.id === id) || SPECIES[0];
+const SP = id => SPECIES.find(s => s.id === id) || SPECIES.find(s => s.id === ESPECIE_POR_DEFECTO);
 const C = {};
 SPECIES.forEach(s => { C[s.id] = {}; for (const k in s) if (typeof s[k] === 'string' && s[k][0] === '#') C[s.id][k] = new THREE.Color(s[k]); });
 const LARVA = { amber: new THREE.Color('#cf9a55'), core: new THREE.Color('#b5692e'), pale: new THREE.Color('#eee1c3'), neye: new THREE.Color('#2a0b07'),
@@ -578,10 +575,7 @@ function pieceColor(pc, sid, r, out) {
     case 'body': {
       const dors = Math.cos(pc.a);
       out.copy(c.belly).lerp(c.body, smooth(-.7, .4, dors)).lerp(c.body2, smooth(.25, 1, dors) * .55);
-      if (sp.pattern === 'tiger') {
-        if (pc.seg > 0) { if (pc.f > .7) out.lerp(c.stripe, .85); else if (pc.f > .55) out.lerp(c.band, .7); }
-        else if (Math.sin(pc.u * 70) > .55) out.lerp(c.stripe, .6);
-      } else if (sp.pattern === 'cooked') {
+      if (sp.pattern === 'cooked') {
         if (pc.seg > 0 && pc.f > .74) out.lerp(c.band, .7 - .3 * Math.max(0, dors));
       } else if (pc.seg > 0 && pc.f > .78) out.lerp(c.band, .5);
       break;
@@ -640,8 +634,8 @@ const tileGeo = (() => {
 const tileMat = new THREE.MeshPhysicalMaterial({ roughness: .58, metalness: 0, clearcoat: .22, clearcoatRoughness: .5 });
 
 /* ---------- Estado ---------- */
-let qrDark = [], mesh = null, pieces = [], qrN = 0, darkCount = 0, center = V(0, 0, 0), SCALE = 1;
-let speciesId = 'blanco', formId = 'adulto', colorFade = 1;
+let qrDark = [], mesh = null, pieces = [], qrN = 0, center = V(0, 0, 0), SCALE = 1;
+let speciesId = ESPECIE_POR_DEFECTO, formId = 'adulto', colorFade = 1;
 let phase = 0, target = 0, T = 0, last = performance.now();
 let userYaw = 0, userPitch = 0, currentUrl = '';
 const logos = {}; // por forma: { data, name, src, brand, uploaded }
@@ -669,7 +663,6 @@ function build(text) {
   const cell = CARD / (N + 8), th = cell * .32;
   qrDark = []; for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) qrDark.push(qr.isDark(r, c));
   print.scale.set(N * cell, N * cell, 1);
-  darkCount = 0;
   for (let c = 0, idx = 0; c < N; c++) {
     const size = Math.round((c + 1) * K / N) - Math.round(c * K / N);
     const col = order.slice(idx, idx + size).map(o => ({ i: o.i, k: shape[o.i].p.y + (R() - .5) * .12 })).sort((a, b) => b.k - a.k);
@@ -677,7 +670,6 @@ function build(text) {
     col.forEach((o, j) => {
       const r = Math.floor(j * N / size), primary = j === Math.ceil(r * size / N);
       const pc = shape[o.i], dark = primary && qr.isDark(r, c);
-      if (dark) darkCount++;
       pc.dark = dark;
       pc.qp = V((c - (N - 1) / 2) * cell, ((N - 1) / 2 - r) * cell, th / 2 + .004);
       // 1,02 y no ,95 (2026-10-05): con la junta abierta, el brillo del bisel entre piezas cortaba los patrones de
@@ -859,24 +851,6 @@ radioGroup(forms, FORMS, (b, f) => {
   if (f.code) { const c = document.createElement('span'); c.className = 'code'; c.textContent = f.code; b.append(c); }
 }, id => setForm(id), () => formId);
 
-function hostOf(u) { try { return new URL(u).host.replace(/^www\./, ''); } catch (_) { return u; } }
-function tagText() {
-  const lg = curLogo(); if (lg) return { sci: lg.name || 'Logo', auth: '', common: 'colores tomados de la imagen' };
-  const sp = SP(speciesId);
-  return { sci: sp.sci, auth: sp.auth, common: sp.common };
-}
-function renderTag() {
-  const t = tagText(), sci = $('#sci'); sci.textContent = '';
-  const em = document.createElement('em'); em.textContent = t.sci; sci.append(em);
-  if (t.auth) { const au = document.createElement('span'); au.className = 'auth'; au.textContent = ' ' + t.auth; sci.append(au); }
-  $('#common').textContent = t.common;
-  $('#loc').textContent = hostOf(currentUrl);
-  const fm = FORM(formId); $('#stage-dt').hidden = $('#stage-dd').hidden = !fm.stage; $('#stage-dd').textContent = fm.stage;
-  $('#size-dt').hidden = $('#size-dd').hidden = !fm.size; $('#size-dd').textContent = fm.size;
-  $('#code').textContent = 'v' + ((qrN - 17) / 4) + ' · ' + qrN + ' × ' + qrN + ' · nivel Q';
-  $('#pieces').textContent = pieces.length.toLocaleString('es') + ' · ' + darkCount.toLocaleString('es') + ' forman el código';
-  $('#dest').textContent = '→ ' + hostOf(currentUrl);
-}
 function setAccent(l, d) { root.style.setProperty('--acc-l', l); root.style.setProperty('--acc-d', d); }
 function syncAccent() { const lg = curLogo(); if (lg) setAccent(lg.brand.accL, lg.brand.accD); else { const sp = SP(speciesId); setAccent(sp.accL, sp.accD); } }
 function setSpecies(id, instant) {
@@ -884,7 +858,7 @@ function setSpecies(id, instant) {
   speciesId = SP(id).id;
   markGroup(chips, speciesId); syncAccent();
   if (pieces.length) applyColors(speciesId, instant || reduced);
-  renderTag(); save();
+  save();
 }
 async function setForm(id, opts) {
   const fm = FORM(id);
@@ -897,7 +871,7 @@ async function setForm(id, opts) {
   if (isLogo) markGroup(chips, ''); else markGroup(chips, speciesId);
   syncAccent();
   loading.textContent = 'Armando ' + fm.noun + '…';
-  build(currentUrl); renderTag(); save();
+  build(currentUrl); save();
   if (!(opts && opts.keepPhase)) { phase = 0; setTarget(0); } else setTarget(target);
 }
 
@@ -905,7 +879,7 @@ async function setForm(id, opts) {
 function generate(v, opts) {
   build(v);
   currentUrl = v;
-  renderTag(); save();
+  save();
   if (opts && opts.bloom) { phase = 0; setTarget(0); setTimeout(() => setTarget(1), reduced ? 100 : 450); }
   return true;
 }
@@ -969,21 +943,13 @@ function renderImage() {
   const vis = 2 * camera.position.z * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
   const cardPx = CARD / vis * sh;
   const side = Math.round(Math.min(Math.min(sw, sh), cardPx * (target ? 1.1 : 1.2)));
-  const cap = Math.round(side * .14), out = document.createElement('canvas');
-  out.width = side; out.height = side + cap;
+  // sólo el código: sin especie ni enlace escritos debajo (2026-10-07, usuario)
+  const out = document.createElement('canvas');
+  out.width = side; out.height = side;
   const g = out.getContext('2d');
   g.fillStyle = '#e8eeed'; g.fillRect(0, 0, out.width, out.height);
   g.drawImage(src, (sw - side) / 2, (sh - side) / 2, side, side, 0, 0, side, side);
   renderer.setPixelRatio(pr0); renderer.setSize(W, H, false); draw();
-  const t = tagText(), pad = Math.round(side * .05), title = t.sci + ' · ' + t.common;
-  g.fillStyle = '#13262a'; g.textBaseline = 'alphabetic';
-  let fs = Math.round(cap * .34);
-  do { g.font = 'italic 400 ' + fs + 'px Newsreader, Georgia, serif'; fs = Math.floor(fs * .94); } while (g.measureText(title).width > side - pad * 2 && fs > 8);
-  g.fillText(title, pad, side + cap * .42);
-  g.fillStyle = '#55686b'; g.font = '400 ' + Math.round(cap * .22) + 'px "IBM Plex Mono", Consolas, monospace';
-  let u = currentUrl; while (g.measureText(u).width > side - pad * 2 && u.length > 8) u = u.slice(0, -2);
-  if (u !== currentUrl) u = u.slice(0, -1) + '…';
-  g.fillText(u, pad, side + cap * .78);
   return new Promise(res => out.toBlob(res, 'image/png'));
 }
 
@@ -1004,7 +970,7 @@ $('#save').addEventListener('click', async () => {
 (async function start() {
   const saved = restore() || {};
   const tokens = (location.hash || '').slice(1).toLowerCase().split('-');
-  speciesId = SP(tokens.find(t => SPECIES.some(s => s.id === t)) || saved.species || 'blanco').id;
+  speciesId = SP(tokens.find(t => SPECIES.some(s => s.id === t)) || saved.species || ESPECIE_POR_DEFECTO).id;
   const wantForm = FORM(tokens.find(t => FORMS.some(f => f.id === t)) || saved.form || 'marbravo').id;
   markGroup(chips, speciesId); markGroup(forms, 'adulto'); syncAccent();
   generate(enlace);

@@ -29,7 +29,6 @@
 .qr-acceso .brand { position: absolute; left: 24px; top: 20px; display: grid; gap: 2px; pointer-events: none; }
 .qr-acceso .wordmark { font: 500 30px/1 var(--display); letter-spacing: -.01em; }
 .qr-acceso .wordmark i { font-style: italic; font-weight: 400; color: var(--accent); }
-.qr-acceso .dest { font: 400 12px/1.4 var(--mono); color: var(--muted); max-width: min(60vw, 420px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qr-acceso .hint { position: absolute; left: 16px; right: 16px; bottom: 18px; margin: 0; text-align: center; font: italic 400 19px/1.3 var(--display); color: var(--muted); pointer-events: none; }
 .qr-acceso .loading { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: grid; place-items: center; margin: 0; padding: 0 16px; text-align: center; font: italic 400 22px/1.3 var(--display); color: var(--muted); }
 
@@ -37,9 +36,6 @@
 .qr-acceso .label { display: block; font: 600 11px/1 var(--ui); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
 .qr-acceso .titulo { margin: 0 0 6px; font: 600 22px/1.15 var(--display); }
 .qr-acceso .lede { margin: 0; font-size: 14px; color: var(--muted); }
-.qr-acceso .field { display: flex; gap: 8px; }
-.qr-acceso .field input { flex: 1; min-width: 0; font: 400 13px/1.2 var(--mono); color: var(--ink); background: var(--paper); border: 1px solid var(--line-strong); border-radius: 8px; padding: 10px 12px; }
-.qr-acceso .abrir { display: inline-block; margin-top: 10px; font: 600 13.5px/1.2 var(--ui); color: var(--accent); }
 .qr-acceso .err { margin: 8px 0 0; font-size: 13px; color: var(--accent); }
 .qr-acceso .sub { margin: 8px 0 0; font-size: 12.5px; color: var(--muted); }
 
@@ -58,17 +54,6 @@
 .qr-acceso .chip .code { font: 500 11px/1 var(--mono); color: var(--muted); }
 .qr-acceso .chip[aria-checked="true"] { border-color: var(--accent); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .qr-acceso .chip[aria-checked="true"] .code { color: inherit; }
-
-/* la etiqueta de colección: el único elemento con marco */
-.qr-acceso .tag { background: var(--paper); border: 1px solid var(--line-strong); border-radius: 3px; padding: 4px; }
-.qr-acceso .tag-in { border: 1px solid var(--line); border-radius: 2px; padding: 14px 16px 12px; display: grid; gap: 10px; }
-.qr-acceso .sci { margin: 0; font: 400 22px/1.15 var(--display); }
-.qr-acceso .sci em { font-style: italic; }
-.qr-acceso .sci .auth { font-size: 15px; color: var(--muted); white-space: nowrap; }
-.qr-acceso .common { margin: -6px 0 0; font: italic 400 15px/1.3 var(--display); color: var(--muted); }
-.qr-acceso .rows { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; font: 400 12.5px/1.45 var(--mono); border-top: 1px dashed var(--line-strong); padding-top: 10px; }
-.qr-acceso .rows dt { color: var(--muted); }
-.qr-acceso .rows dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 
 .qr-acceso .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .qr-acceso .note { margin: 0; font-size: 13.5px; color: var(--muted); max-width: 60ch; }
