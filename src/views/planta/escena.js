@@ -24,6 +24,9 @@
    de la tarjeta gráfica (sin ellas, el giro pasaba de ~21 a ~38 cuadros por segundo).
    Nitidez según el ritmo (2026-10-05, usuario, velocidad · 4): si va lenta, la imagen baja de nitidez en 1–2 s hasta la de
    la pantalla normal (1×) y vuelve a subir cuando va holgada (ver «Nitidez según el ritmo», junto al bucle).
+   Aparición progresiva (2026-10-06, usuario): la maqueta se arma por partes —suelo y tanques, naves, entorno, vida— con
+   como mucho UN sombreador nuevo por cuadro, en vez de congelar la pantalla varios segundos al compilar los 26 de golpe
+   (ver «Aparición progresiva», junto al arranque).
    Selector de mes (2026-10-04, usuario): ◀ ▶ y un deslizador como la tabla Producción Omarsa, que mueven TODA la vista:
    en un mes pasado, la maqueta con las corridas de ese mes y maduración a su cierre, y las alertas «al cierre de <mes>».
    Reflejos del cielo (2026-10-04, usuario, opción A): un mapa de entorno generado del propio cielo (PMREM), uno por hora
@@ -1591,9 +1594,73 @@ function frameBody(now) {
   { const fx = controls.target.x - camera.position.x, fz = controls.target.z - camera.position.z, l = Math.hypot(fx, fz) || 1, f = [fx / l, fz / l], r = [-f[1], f[0]];
     needle.style.transform = 'rotate(' + Math.atan2(NORTH.x * r[0] + NORTH.y * r[1], NORTH.x * f[0] + NORTH.y * f[1]) + 'rad)'; }
   nums.forEach(n => place(n.el, n.p));
+  const armando = porRevelar.length > 0;
+  if (armando) revelarPaso();
+  const r0 = armando ? performance.now() : 0, p0 = armando ? renderer.info.programs.length : 0;
   renderer.render(scene, camera);
+  if (armando && cupo === 0) { const n = renderer.info.programs.length - p0; if (n > 0) cupo = (performance.now() - r0) / n < 60 ? 4 : 1; }
 }
 setTod('day'); paintWater(); renderer.shadowMap.needsUpdate = true;
+/* Aparición progresiva (2026-10-06, usuario): three r128 compila cada sombreador la primera vez que dibuja un material y
+   ESPERA el resultado en el hilo principal (getProgramInfoLog); la maqueta usa 26, así que el primer cuadro congelaba la
+   pantalla 5–12 s la primera vez en un equipo (medido en escritorio y celular ×4; después el navegador los guarda). Ahora
+   todo lo dibujable empieza en la capa 1, que la cámara no ve, y cada cuadro pasa a la capa 0 el siguiente bloque: como
+   mucho UN material de sombreador nuevo por cuadro (los que repiten uno ya compilado salen en el mismo cuadro), en el orden
+   que eligió el usuario: 1 suelo y tanques · 2 naves (techos e interior) · 3 entorno (mar, playa, otras áreas, vegetación,
+   faroles y cerco) · 4 vida (personal, vehículos, aves y luces de noche). Se usan capas y no `visible` para no pisar lo que
+   cambian los interruptores de capas ni los datos; lo que nace después (balizas, camiones) sale en la capa 0, sin esperar.
+   El cielo, las estrellas y las luces se ven siempre, y lo invisible por diseño (las cajas de toque) no se toca. La clave
+   imita la del programa de three (tipo, mapas, instancias, color por instancia, cara, transparencia): si dos bloques
+   resultan compartir programa, sólo se ahorra un cuadro. */
+const porRevelar = [], yaVistas = new Set(), hint = $('.hintline'), HINT = hint.textContent;
+{
+  const hijos = scene.children, pos = (o) => hijos.indexOf(o);
+  const tanques = new Set([wallsI, ringI, waterRL, waterRM, waterC, bubI, plI, brI]);
+  const fase = (o, k) => {
+    if (o === sky || o === stars || o === balizas || o.isLight) return 0;
+    if (tanques.has(o)) return 1;
+    if (k < pos(coast)) return o.geometry && o.geometry.type === 'PlaneGeometry' ? 1 : 3;   // terreno y calle; el cerco, con el entorno
+    if (k < pos(roofs)) return 3;    // playa, mar, parches y otras áreas
+    if (k < pos(nature)) return 2;   // naves: techos, estructura e interior
+    if (k < pos(glows)) return 3;    // vegetación, letrero y faroles
+    return 4;                        // luces de noche, personal, vehículos y aves
+  };
+  const clave = (o) => (Array.isArray(o.material) ? o.material : [o.material]).map((m) => [m.type, !!m.map, !!m.normalMap, !!m.envMap,
+    !!m.emissiveMap, !!m.alphaMap, !!m.vertexColors, m.side, !!m.transparent].join()).join('|') + (o.isInstancedMesh ? '|inst' + !!o.instanceColor : '');
+  const lotes = [[], [], [], [], []];
+  hijos.forEach((h, k) => {
+    const f = fase(h, k); if (!f) return;
+    h.traverse((o) => {
+      if (!(o.isMesh || o.isLine || o.isPoints || o.isSprite) || !o.material) return;
+      if ((Array.isArray(o.material) ? o.material : [o.material]).every((m) => m.visible === false)) return;
+      const c = clave(o); let lote = lotes[f].find((l) => l.clave === c);
+      if (!lote) lotes[f].push(lote = { clave: c, objetos: [] });
+      lote.objetos.push(o); o.layers.set(1);
+    });
+  });
+  lotes.forEach((l) => { if (l.length) l[l.length - 1].finDeFase = true; porRevelar.push(...l); });
+}
+const totalLotes = porRevelar.length;
+// Cuántos sombreadores nuevos admite cada paso: se decide UNA vez, con el primer dibujo que crea programas (el cielo y el
+// suelo). Si costaron < 60 ms cada uno, el navegador ya los tenía guardados (2.ª visita) y salen de a 4 (medido: de a
+// uno alargaba el armado 0,6 s en escritorio y ~5 s en celular sin evitar ningún bloqueo); si no, de a uno. Se mira lo
+// que costó CREAR programas (renderer.info.programs), no el cuadro, y una sola vez: un bloque que no se dibuja (las luces
+// de noche de día, algo fuera de cámara) no crea ninguno, y uno muy simple (líneas) compila rápido aunque no esté guardado.
+let cupo = 0;   // 0 = aún sin decidir (el primer paso va de a uno)
+function revelarPaso() {
+  const tope = cupo || 1;
+  let nuevos = 0;
+  while (porRevelar.length) {
+    const l = porRevelar[0];
+    if (!yaVistas.has(l.clave)) { if (nuevos >= tope) break; nuevos++; yaVistas.add(l.clave); }
+    l.objetos.forEach((o) => o.layers.set(0));
+    porRevelar.shift();
+    if (l.finDeFase) renderer.shadowMap.needsUpdate = true;   // lo recién aparecido también proyecta
+  }
+  despertar();        // a ritmo pleno mientras se arma (sin el reposo de ~15 cps)
+  esperarNitidez();   // los cuadros que compilan son del procesador, no de la tarjeta gráfica: no bajan la nitidez
+  hint.textContent = porRevelar.length ? 'Preparando la maqueta… ' + Math.round(100 * (totalLotes - porRevelar.length) / totalLotes) + ' %' : HINT;
+}
 if (reduced) animateLife(0, 0);
 camera.position.set(-30, 150, 175); controls.target.set(0, 0, 0);
 const ro = new ResizeObserver(resize); ro.observe(vp); resize(); frameView('iso'); fly.dur = 1;
