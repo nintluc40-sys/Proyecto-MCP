@@ -91,6 +91,47 @@ describe('📊 Análisis · detalle por tanque', () => {
   });
 });
 
+describe('📊 Análisis · filtros y búsqueda del detalle por tanque (punto 9b, 07-10 noche)', () => {
+  const opciones = (k) => [...$('[data-k="' + k + '"]').querySelectorAll('option')].map((o) => o.textContent);
+  const elegir = (k, v) => { const s = $('[data-k="' + k + '"]'); s.value = v; s.dispatchEvent(new Event('change')); };
+  const buscar = (q) => { const i = $('[data-k="f-buscar"]'); i.value = q; i.dispatchEvent(new Event('input')); };
+  it('las listas dicen lo que hay en el área; elegir recorta; buscar por número; el resumen dice cuántos se ven', () => {
+    expect($('[data-k="filtros"]').hidden).toBe(true);                 // sin datos, sin filtros
+    v.pintarEstado(estado());
+    expect($('[data-k="filtros"]').hidden).toBe(false);
+    expect([$('[data-k="f-grupo-t"]').textContent, $('[data-k="f-etapa-t"]').textContent]).toEqual(['Módulo', 'Estadío']);
+    expect(opciones('f-grupo')).toEqual(['Todos', 'Módulo 1']);
+    expect(opciones('f-etapa')).toEqual(['Todos', 'PL5']);
+    expect(opciones('f-lote')).toEqual(['Todos', '<b>X</b>', 'BN']);   // como texto
+    elegir('f-lote', 'BN');
+    expect(filas()).toEqual(['M1 · ' + n2]);
+    expect($('[data-k="tabla-res"]').textContent).toBe('2 tanques en cultivo · 1 en alerta · se ve 1');
+    elegir('f-lote', '');
+    buscar(String(n1));
+    expect(filas()).toEqual(['M1 · ' + n1]);
+    const input = $('[data-k="f-buscar"]');
+    input.focus(); buscar(String(n1) + ' ');
+    expect(document.activeElement).toBe(input);                        // escribir no pierde el foco
+  });
+  it('cambiar de área deja sólo lo buscado; un refresco conserva los filtros', () => {
+    v.pintarEstado(estado());
+    elegir('f-lote', 'BN'); buscar(String(s1));
+    $('.an-area [data-area="mat"]').click();
+    expect([$('[data-k="f-grupo-t"]').textContent, $('[data-k="f-etapa-t"]').textContent]).toEqual(['Sala', 'Estado']);
+    expect(opciones('f-grupo')).toEqual(['Todas', 'Maduración 1']);
+    expect($('[data-k="f-lote"]').value).toBe('');
+    expect($('[data-k="f-buscar"]').value).toBe(String(s1));
+    expect(filas()).toEqual(['S1 · ' + s1]);
+    elegir('f-etapa', 'Producción');
+    v.pintarEstado(estado());
+    expect([$('[data-k="f-etapa"]').value, $('[data-k="f-buscar"]').value]).toEqual(['Producción', String(s1)]);
+    expect(filas()).toEqual(['S1 · ' + s1]);
+    buscar('S1 99');
+    expect($('[data-k="tabla-vacio"]').textContent).toBe('Ningún tanque con esos filtros.');
+    expect($('[data-k="filtros"]').hidden).toBe(false);                // los filtros siguen a la vista para deshacerlo
+  });
+});
+
 describe('📊 Análisis · evolución de un tanque (punto 9, 07-10 noche)', () => {
   const evoLarv = [
     { fecha: '2026-10-01', pop: 1.1e6, sv: 100, estadio: 'PL3', od: 5.2, tmp: 30 },

@@ -329,11 +329,32 @@ export function ordenarTanques(filas, k, dir) {
     return d ? d * s : a.orden - b.orden;
   });
 }
-/** La tabla de un área ('larv' | 'mat'): { columnas, filas, resumen, vacio, k, dir }. `opc` = { soloAlerta, k, dir }. */
+/* Filtros y búsqueda (punto 9b, 07-10 noche, usuario): además de «sólo en alerta», el módulo o la sala, el estadío
+   (larvicultura) o el estado (maduración), el lote y el número de tanque. Las listas salen de los tanques ACTIVOS del
+   área (sólo lo que hay); un valor elegido que ya no está (otro mes, un refresco) vuelve a «todos». Un lote compuesto
+   («BM+BP+BN») cuenta para cada uno de sus lotes. */
+const SIN_FILTRO = { grupo: '', etapa: '', lote: '', buscar: '' };
+const lotesDe = (st) => [...new Set((st.lotes || []).map((l) => (typeof l === 'string' ? l : l && l.lote) || '')
+  .flatMap((l) => String(l).split('+')).map((l) => l.trim()).filter(Boolean))];
+const etapaDe = (area, st) => (area === 'larv' ? st.estadio || '' : st.estado || '');
+/** ¿El tanque `f` es el buscado? «3» = el tanque 3 de cualquier módulo o sala; «M1» / «S2» = ese grupo; «M1 3», «M1·3» o
+ *  «m1-3» = ese tanque; cualquier otra cosa, si está en su rótulo («M1 · 3»), sin espacios ni mayúsculas. */
+function esBuscado(f, q) {
+  const s = q.toLowerCase().replace(/\s+/g, ' ').trim();
+  const m = /^([ms])?\s*(\d+)?(?:\s*[·.\-/ ]\s*(\d+))?$/.exec(s);
+  const corto = f.g.short.toLowerCase();
+  if (m && m[1] && m[2] && m[3]) return corto === m[1] + m[2] && f.t.num === +m[3];
+  if (m && m[1] && m[2]) return corto === m[1] + m[2];
+  if (m && !m[1] && m[2] && !m[3]) return f.t.num === +m[2];
+  return f.celdas.tq.txt.toLowerCase().replace(/\s+/g, '').includes(s.replace(/\s+/g, ''));
+}
+/** La tabla de un área ('larv' | 'mat'): { columnas, filas, resumen, vacio, k, dir, opciones, filtro }.
+ *  `opc` = { soloAlerta, k, dir, filtro: { grupo, etapa, lote, buscar } }; `opciones` = { grupos: [{ id, nombre }], etapas,
+ *  lotes } para las listas; `filtro`, el que se aplicó (sin los valores que ya no están). */
 export function tablaDeTanques(grupos, area, opc, ctx) {
   const columnas = COLUMNAS_TANQUES[area], col = columnas.find((x) => x.k === opc.k) || columnas[0];
   const k = col.k, dir = col.k === opc.k && opc.dir === 'desc' ? 'desc' : 'asc';   // otra área sin esa columna: por tanque
-  const base = { columnas, filas: [], resumen: '', k, dir };
+  const base = { columnas, filas: [], resumen: '', k, dir, opciones: { grupos: [], etapas: [], lotes: [] }, filtro: { ...SIN_FILTRO, buscar: (opc.filtro && opc.filtro.buscar) || '' } };
   if (!ctx.cargado) return { ...base, vacio: 'Cargando datos de producción…' };
   const activo = area === 'larv' ? (st) => st.estado === 'cultivo' : (st) => st.vivos > 0;
   const todas = [];
@@ -342,9 +363,29 @@ export function tablaDeTanques(grupos, area, opc, ctx) {
   if (!todas.length) return { ...base, vacio: 'Ningún tanque ' + que + (ctx.mesPasado ? ' en ' + ctx.mesPasado.mes : '') + '.' };
   const resumen = ent(todas.length) + (todas.length === 1 ? ' tanque ' : ' tanques ') + que + ' · '
     + (enAlerta ? ent(enAlerta) + ' en alerta' : 'ninguno en alerta') + (ctx.mesPasado ? ' (' + ctx.mesPasado.mes + ')' : '');
-  const visibles = opc.soloAlerta ? todas.filter((f) => f.alerta) : todas;
-  if (!visibles.length) return { ...base, resumen, vacio: 'Ningún tanque en alerta.' };
-  return { ...base, resumen, vacio: '', filas: ordenarTanques(visibles, k, dir) };
+  // las listas: lo que hay entre los activos (grupos en el orden del plano; estadíos en el biológico; lotes y estados, natural)
+  const grupoIds = [...new Set(todas.map((f) => f.g.id))];
+  const opciones = {
+    grupos: grupoIds.map((id) => { const g = todas.find((f) => f.g.id === id).g; return { id, nombre: g.name }; }),
+    etapas: [...new Set(todas.map((f) => etapaDe(area, f.t.st)).filter(Boolean))].sort((a, b) => (area === 'larv'
+      ? (ordenEstadio(a) ?? 999) - (ordenEstadio(b) ?? 999) || a.localeCompare(b) : a.localeCompare(b, 'es'))),
+    lotes: [...new Set(todas.flatMap((f) => lotesDe(f.t.st)))].sort((a, b) => a.localeCompare(b, 'es', { numeric: true })),
+  };
+  const pedido = { ...SIN_FILTRO, ...(opc.filtro || {}) };
+  const filtro = {
+    grupo: grupoIds.includes(pedido.grupo) ? pedido.grupo : '', etapa: opciones.etapas.includes(pedido.etapa) ? pedido.etapa : '',
+    lote: opciones.lotes.includes(pedido.lote) ? pedido.lote : '', buscar: String(pedido.buscar || ''),
+  };
+  let visibles = opc.soloAlerta ? todas.filter((f) => f.alerta) : todas;
+  if (!visibles.length) return { ...base, resumen, opciones, filtro, vacio: 'Ningún tanque en alerta.' };
+  const conFiltro = !!(filtro.grupo || filtro.etapa || filtro.lote || filtro.buscar.trim());
+  if (filtro.grupo) visibles = visibles.filter((f) => f.g.id === filtro.grupo);
+  if (filtro.etapa) visibles = visibles.filter((f) => etapaDe(area, f.t.st) === filtro.etapa);
+  if (filtro.lote) visibles = visibles.filter((f) => lotesDe(f.t.st).includes(filtro.lote));
+  if (filtro.buscar.trim()) visibles = visibles.filter((f) => esBuscado(f, filtro.buscar));
+  const resumenF = conFiltro ? resumen + ' · se ' + (visibles.length === 1 ? 've 1' : 'ven ' + ent(visibles.length)) : resumen;
+  if (!visibles.length) return { ...base, resumen: resumenF, opciones, filtro, vacio: 'Ningún tanque con esos filtros.' };
+  return { ...base, resumen: resumenF, opciones, filtro, vacio: '', filas: ordenarTanques(visibles, k, dir) };
 }
 
 /* ---------- 📊 Evolución de un tanque (punto 9 de la lista del 07-10 noche, usuario) ----------

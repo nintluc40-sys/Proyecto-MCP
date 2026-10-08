@@ -11,7 +11,9 @@
    tanque fija. Lo que dice, tablaDeTanques. Punto 9 (07-10 noche, usuario): tocar una fila despliega DEBAJO la evolución
    del tanque (un tanque a la vez; otra vez, la cierra) con mini-gráficos propios en SVG —larvicultura, la corrida entera;
    maduración, los 7 días—, y «Ver en su módulo →» hace lo que antes hacía tocar la fila (como «Qué atender hoy»). Lo que
-   dice, evolucionParaPintar; el trazo, trazoSerie. Lo abierto sobrevive al refresco, como el área y el orden.
+   dice, evolucionParaPintar; el trazo, trazoSerie. Lo abierto sobrevive al refresco, como el área y el orden. Punto 9b:
+   filtros por módulo o sala, estadío (larvicultura) o estado (maduración) y lote, y búsqueda por número de tanque («3»,
+   «M1 3»); las listas, de lo que hay (tablaDeTanques), y sobreviven al refresco; cambiar de área deja sólo lo buscado.
    Cronograma del ciclo (T3, 2026-10-06, usuario): encima, los 10 módulos en un calendario común, cada uno de su siembra a
    hoy (o al despacho) en tramos por etapa, con 🚚 y rayado desde el despacho, la marca de la desinfección y «día · estadío»;
    tocar un tramo da su detalle (con «Ver módulo»), y el módulo o su etiqueta lo abren. Cálculo: estado.js
@@ -94,6 +96,12 @@ const MARCO = `
       <h2>Detalle por tanque</h2>
       <div class="seg an-area" role="group" aria-label="Área"><button type="button" data-area="larv" aria-pressed="true">Larvicultura</button><button type="button" data-area="mat" aria-pressed="false">Maduración</button></div>
       <label class="an-solo"><input type="checkbox" data-k="solo-alerta"> Sólo en alerta</label>
+    </div>
+    <div class="an-filtros" data-k="filtros" role="group" aria-label="Filtros de la tabla">
+      <label><span data-k="f-grupo-t">Módulo</span><select data-k="f-grupo"></select></label>
+      <label><span data-k="f-etapa-t">Estadío</span><select data-k="f-etapa"></select></label>
+      <label><span>Lote</span><select data-k="f-lote"></select></label>
+      <label class="an-buscar"><span>Tanque</span><input type="search" data-k="f-buscar" placeholder="p. ej. 3 o M1 3" autocomplete="off" spellcheck="false"></label>
     </div>
     <p class="an-tabla-res" data-k="tabla-res" role="status"></p>
     <p class="at-vacio" data-k="tabla-vacio" hidden></p>
@@ -416,7 +424,25 @@ export function montarAnalisis(host) {
   $('crono-det-ir').addEventListener('click', () => { const g = cronoSel && grupos.find((x) => x.id === cronoSel.id); if (g) irA(g); });
 
   /* ---- Detalle por tanque: área, «sólo en alerta» y el orden sobreviven al refresco y al cambio de mes ---- */
-  const tabla = { area: 'larv', soloAlerta: false, k: 'tq', dir: 'asc', filas: [], abierto: null };   // abierto: { area, id, num }
+  const tabla = { area: 'larv', soloAlerta: false, k: 'tq', dir: 'asc', filas: [], abierto: null,   // abierto: { area, id, num }
+    filtro: { grupo: '', etapa: '', lote: '', buscar: '' } };                                       // punto 9b
+  /** Rellena una lista de filtro con «Todos» + `items` ([valor, texto]) y deja elegido `valor`; NO cambia el elemento
+   *  (así no pierde el foco si se está usando). */
+  function llenarLista(sel, todos, items, valor) {
+    sel.textContent = '';
+    [['', todos], ...items].forEach(([v, txt]) => { const o = el('option', '', txt); o.value = v; if (v === valor) o.selected = true; sel.append(o); });
+    sel.value = valor;
+  }
+  function pintarFiltros(T) {
+    const larv = tabla.area === 'larv';
+    $('f-grupo-t').textContent = larv ? 'Módulo' : 'Sala';
+    $('f-etapa-t').textContent = larv ? 'Estadío' : 'Estado';
+    llenarLista($('f-grupo'), larv ? 'Todos' : 'Todas', T.opciones.grupos.map((g) => [g.id, g.nombre]), T.filtro.grupo);
+    llenarLista($('f-etapa'), 'Todos', T.opciones.etapas.map((x) => [x, x]), T.filtro.etapa);
+    llenarLista($('f-lote'), 'Todos', T.opciones.lotes.map((x) => [x, x]), T.filtro.lote);
+    if ($('f-buscar').value !== T.filtro.buscar) $('f-buscar').value = T.filtro.buscar;
+    $('filtros').hidden = !T.opciones.grupos.length;
+  }
   const esAbierto = (f) => !!tabla.abierto && tabla.abierto.area === tabla.area && tabla.abierto.id === f.g.id && tabla.abierto.num === f.t.num;
   /** La fila desplegada con la evolución del tanque de `f` (punto 9): rango, tramos de estadío, un mini-gráfico por cifra
    *  con su primer y último valor, la nota y «Ver en su módulo →». */
@@ -452,7 +478,8 @@ export function montarAnalisis(host) {
   }
   function pintarTabla() {
     const T = tablaDeTanques(grupos, tabla.area, tabla, ctx());
-    tabla.k = T.k; tabla.dir = T.dir; tabla.filas = T.filas;
+    tabla.k = T.k; tabla.dir = T.dir; tabla.filas = T.filas; tabla.filtro = T.filtro;
+    pintarFiltros(T);
     root.querySelectorAll('.an-area [data-area]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.area === tabla.area)));
     $('tabla-res').textContent = T.resumen;
     $('tabla-vacio').textContent = T.vacio; $('tabla-vacio').hidden = !T.vacio; $('tabla-caja').hidden = !!T.vacio;
@@ -485,9 +512,14 @@ export function montarAnalisis(host) {
   }
   root.querySelector('.an-area').addEventListener('click', (e) => {
     const b = e.target.closest('[data-area]'); if (!b || b.dataset.area === tabla.area) return;
-    tabla.area = b.dataset.area; pintarTabla();
+    // el módulo o la sala, el estadío o el estado y el lote son de cada área; lo buscado (un número de tanque) sirve en las dos
+    tabla.area = b.dataset.area; tabla.filtro = { grupo: '', etapa: '', lote: '', buscar: tabla.filtro.buscar }; pintarTabla();
   });
   $('solo-alerta').addEventListener('change', (e) => { tabla.soloAlerta = e.target.checked; pintarTabla(); });
+  [['f-grupo', 'grupo'], ['f-etapa', 'etapa'], ['f-lote', 'lote']].forEach(([k, c]) => {
+    $(k).addEventListener('change', (e) => { tabla.filtro = { ...tabla.filtro, [c]: e.target.value }; pintarTabla(); });
+  });
+  $('f-buscar').addEventListener('input', (e) => { tabla.filtro = { ...tabla.filtro, buscar: e.target.value }; pintarTabla(); });
   $('tabla-cab').addEventListener('click', (e) => {
     const b = e.target.closest('[data-col]'); if (!b) return;
     const c = b.dataset.col;   // la misma columna invierte el sentido; otra empieza en el suyo (⚠: primero las alertas)

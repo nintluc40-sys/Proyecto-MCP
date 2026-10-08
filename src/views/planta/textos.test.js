@@ -185,6 +185,38 @@ describe('detalle por tanque (T2 de Análisis)', () => {
     expect(tablaDeTanques([grupo('M3', 'larv', { 1: larv(1) })], 'larv', { soloAlerta: true }, HOY))
       .toMatchObject({ resumen: '1 tanque en cultivo · ninguno en alerta', filas: [], vacio: 'Ningún tanque en alerta.' });
   });
+
+  /* Punto 9b (07-10 noche): filtros y búsqueda */
+  const LOTES = grupo('M3', 'larv', { 1: larv(1, { lotes: ['BM+BP+BN'] }), 2: larv(2, { lotes: ['BP'] }), 3: larv(3, { lotes: [] }) });
+  it('9b · las listas salen de los ACTIVOS: grupos en el orden del plano, estadíos en el biológico, lotes sueltos', () => {
+    expect(T('larv').opciones).toEqual({ grupos: [{ id: 'M1', nombre: 'M1' }, { id: 'M2', nombre: 'M2' }], etapas: ['Z3', 'PL2', 'PL10'], lotes: ['BN'] });
+    expect(T('mat').opciones).toEqual({ grupos: [{ id: 'S1', nombre: 'S1' }], etapas: ['Cuarentena', 'Producción'], lotes: [] });
+    expect(tablaDeTanques([LOTES], 'larv', {}, HOY).opciones.lotes).toEqual(['BM', 'BN', 'BP']);   // el compuesto, por partes
+  });
+  it('9b · cada filtro recorta, se suman entre sí y con «sólo en alerta», y el resumen dice cuántos se ven', () => {
+    expect(tqs(T('larv', { filtro: { grupo: 'M1' } }))).toEqual(['M1 · 1', 'M1 · 2']);
+    expect(T('larv', { filtro: { grupo: 'M1' } }).resumen).toBe('3 tanques en cultivo · 2 en alerta · se ven 2');
+    expect(tqs(T('larv', { filtro: { etapa: 'PL10' } }))).toEqual(['M1 · 1']);
+    expect(T('larv', { filtro: { etapa: 'PL10' } }).resumen).toBe('3 tanques en cultivo · 2 en alerta · se ve 1');
+    expect(tqs(T('mat', { filtro: { etapa: 'Cuarentena' } }))).toEqual(['S1 · 3']);
+    expect(tqs(T('larv', { soloAlerta: true, filtro: { grupo: 'M2' } }))).toEqual(['M2 · 1']);
+    expect(tqs(tablaDeTanques([LOTES], 'larv', { filtro: { lote: 'BP' } }, HOY))).toEqual(['M3 · 1', 'M3 · 2']);
+    expect(T('larv', { filtro: { grupo: 'M2', etapa: 'PL10' } })).toMatchObject({ filas: [], vacio: 'Ningún tanque con esos filtros.' });
+    expect(T('larv').resumen).toBe('3 tanques en cultivo · 2 en alerta');   // sin filtro, como antes
+  });
+  it('9b · un valor que ya no está vuelve a «todos»; la búsqueda: «1», «M1», «M1 2», «m1·2», «M2-1» y lo demás por su rótulo', () => {
+    const r = T('larv', { filtro: { grupo: 'M9', etapa: 'PL20', lote: 'XX' } });
+    expect([r.filtro, tqs(r)]).toEqual([{ grupo: '', etapa: '', lote: '', buscar: '' }, ['M1 · 1', 'M1 · 2', 'M2 · 1']]);
+    const b = (q) => tqs(T('larv', { filtro: { buscar: q } }));
+    expect(b('1')).toEqual(['M1 · 1', 'M2 · 1']);
+    expect(b('M1')).toEqual(['M1 · 1', 'M1 · 2']);
+    expect(b('M1 2')).toEqual(['M1 · 2']);
+    expect(b(' m1·2 ')).toEqual(['M1 · 2']);
+    expect(b('M2-1')).toEqual(['M2 · 1']);
+    expect(b('·')).toEqual(['M1 · 1', 'M1 · 2', 'M2 · 1']);
+    expect(b('S1')).toEqual([]);
+    expect(b('   ')).toEqual(['M1 · 1', 'M1 · 2', 'M2 · 1']);
+  });
 });
 
 describe('cronograma del ciclo (T3 de Análisis): lo que se dibuja', () => {

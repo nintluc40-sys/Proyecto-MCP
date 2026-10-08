@@ -301,6 +301,12 @@
 .planta-an .an-tq-tabla td.mal { color: #c62828; font-weight: 700; }
 .planta-an .an-tq-tabla td.al { color: #c62828; }
 [data-theme="dark"] .planta-an .an-tq-tabla td.mal, [data-theme="dark"] .planta-an .an-tq-tabla td.al { color: #ff8a80; }
+/* Punto 9b (07-10 noche): filtros de la tabla (módulo o sala, estadío o estado, lote) y búsqueda por número de tanque. */
+.planta-an .an-filtros { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 0 0 8px; }
+.planta-an .an-filtros[hidden] { display: none; }
+.planta-an .an-filtros label { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.planta-an .an-filtros select, .planta-an .an-filtros input { font: 500 13px/1.2 var(--font-sans); color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; min-width: 0; max-width: 100%; }
+.planta-an .an-filtros .an-buscar input { width: 9.5em; }
 /* Punto 9 (07-10 noche): la evolución del tanque, desplegada bajo su fila. La celda abarca la tabla entera (que en el
    celular se desliza): su contenido se queda pegado a la izquierda con el ancho de la CAJA (unidades de contenedor). */
 .planta-an .an-tabla-caja { container-type: inline-size; }
