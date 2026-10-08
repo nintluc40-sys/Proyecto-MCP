@@ -18,7 +18,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fetchAllSheets, workbookToSheets, XLSX_LECTURA } from './sheets.js';
+import { fetchAllSheets, workbookToSheets, XLSX_LECTURA, textoProgreso } from './sheets.js';
 import { atenderLectura } from './sheets.worker.js';
 
 const VENDOR = join(process.cwd(), 'public/vendor/xlsx.full.min.js');
@@ -197,9 +197,22 @@ describe('en el Worker: el respaldo se hace allí, no en la página', () => {
     expect(e.guardar).not.toHaveBeenCalled();
   });
 
-  it('si no llega ninguna hoja: «xlsx» (la página hace su último intento)', async () => {
+  it('si no llega ninguna hoja: «sin-datos» (A1, 2026-10-07: la página ya no lo repite)', async () => {
     xlsxPorGid = { 1111: 404, 2222: 404 };
     gvizCae = true;
-    expect(await atenderLectura({ id: 4, realId: 'X', previas: {} }, entorno())).toMatchObject({ id: 4, ok: false, motivo: 'xlsx' });
+    expect(await atenderLectura({ id: 4, realId: 'X', previas: {} }, entorno())).toMatchObject({ id: 4, ok: false, motivo: 'sin-datos' });
+  });
+
+  it('A1: en la primera carga, el aviso del respaldo cuenta las hojas que terminan (también las que fallan)', async () => {
+    xlsxPorGid[2222] = 404;
+    gvizCae = true;                                          // la 2222 no llega por ningún camino: cuenta igual
+    const avisos = [];
+    const e = { ...entorno(), avisar: (id, p) => avisos.push(p) };
+    await atenderLectura({ id: 6, realId: 'X', previas: {}, conProgreso: true }, e);
+    expect(avisos.filter((p) => p.fase === 'respaldo')).toEqual([
+      { fase: 'respaldo' }, { fase: 'respaldo', hechas: 1, de: 2 }, { fase: 'respaldo', hechas: 2, de: 2 },
+    ]);
+    expect(textoProgreso({ fase: 'respaldo', hechas: 1, de: 2 })).toBe('El libro entero no llegó: probando hoja por hoja… 1 de 2');
+    expect(textoProgreso({ fase: 'respaldo' })).toBe('El libro entero no llegó: probando hoja por hoja…');
   });
 });

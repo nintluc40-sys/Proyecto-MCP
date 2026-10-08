@@ -12,10 +12,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { lectorDisponible, leerEnWorker, _reiniciarLector } from './sheets.lector.js';
+import { lectorDisponible, leerEnWorker, _reiniciarLector, SILENCIO_MS } from './sheets.lector.js';
 import { responder } from './sheets.worker.js';
 import { fundirDelta } from './sheets.js';
-import { XLSX_TIMEOUT_MS } from '../config.js';
 
 let creados = [];
 class FakeWorker {
@@ -145,16 +144,39 @@ describe('lector del libro · protocolo', () => {
     expect(creados.length).toBe(2);
   });
 
-  it('si no contesta a tiempo: «tiempo», se tira el Worker', async () => {
+  it('si CALLA SILENCIO_MS (A1): «tiempo», se tira el Worker', async () => {
     vi.useFakeTimers();
     const p = leerEnWorker({ realId: 'R' });
     const w = creados[0];
     w.emitir({ vivo: true });
-    await vi.advanceTimersByTimeAsync(XLSX_TIMEOUT_MS * 3);
-    expect(w.terminado).toBe(false); // aún dentro del margen (3 intentos)
-    await vi.advanceTimersByTimeAsync(30000);
+    await vi.advanceTimersByTimeAsync(SILENCIO_MS - 1000);
+    expect(w.terminado).toBe(false);
+    await vi.advanceTimersByTimeAsync(1000);
     expect(await p).toMatchObject({ ok: false, motivo: 'tiempo' });
     expect(w.terminado).toBe(true);
     expect(lectorDisponible()).toBe(true);
+  });
+
+  it('🔴 A1: mientras el Worker late, avisa o manda hojas, NO se corta (antes, a los 165 s pasara lo que pasara)', async () => {
+    vi.useFakeTimers();
+    const p = leerEnWorker({ realId: 'R' });
+    const w = creados[0], id = w.recibidos[0].id;
+    w.emitir({ vivo: true });
+    // 10 min de lectura lenta que avanza: cada tipo de mensaje reinicia la cuenta
+    const mensajes = [{ id, latido: true }, { id, progreso: { fase: 'descarga', bytes: 1 } }, { id, hoja: 'A', filas: [] }];
+    for (let i = 0; i < 12; i++) {
+      await vi.advanceTimersByTimeAsync(SILENCIO_MS - 1000);
+      w.emitir(mensajes[i % 3]);
+    }
+    expect(w.terminado).toBe(false);
+    w.emitir({ id, ok: true, orden: ['A'], huellas: { A: 'a' } });
+    expect(await p).toMatchObject({ ok: true, cambiadas: { A: [] } });
+    // el latido de OTRA petición no sostiene ésta
+    const p2 = leerEnWorker({ realId: 'R' });
+    const id2 = w.recibidos[1].id;
+    await vi.advanceTimersByTimeAsync(SILENCIO_MS - 1000);
+    w.emitir({ id: id2 + 99, latido: true });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await p2).toMatchObject({ ok: false, motivo: 'tiempo' });
   });
 });

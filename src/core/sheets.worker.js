@@ -20,9 +20,15 @@
      → { id, realId, xlsxUrl, previas, conProgreso }
      ← { vivo: true }                                   al arrancar
      ← { id, progreso: { fase, bytes } }                con conProgreso (la primera carga, punto 7): cómo va
+     ← { id, latido: true }                             cada LATIDO_MS mientras atiende (A1, abajo)
      ← { id, hoja, filas }                              una por cada hoja que cambió (2026-10-06, abajo)
      ← { id, ok: true, orden, huellas }                 al final; el lector junta las hojas en `cambiadas`
-     ← { id, ok: false, motivo: 'sin-xlsx' | 'xlsx', error }
+     ← { id, ok: false, motivo: 'sin-xlsx' | 'xlsx' | 'sin-datos', error }
+
+   A1 (2026-10-07, usuario) · el lector ya no corta el Worker a los 165 s pase lo que pase, sino cuando lleva
+   SILENCIO_MS sin oír nada de él: mientras atiende, el Worker late (`atender`), así que sólo calla si se queda trabado
+   en algo síncrono (la lectura del XLSX). Con la red colgada, la cadena termina sola —cada petición tiene su tiempo
+   máximo— y, si no llegó NADA (ni el libro ni ninguna hoja del respaldo), contesta «sin-datos»: la página no la repite.
 
    Hojas de a una (2026-10-06, usuario, punto 5): la página deserializa cada mensaje al leerlo, y con TODAS las hojas
    en uno solo eran ~600 ms seguidos en escritorio (×4 en un celular) sin que la pantalla respondiera, más lo que venía
@@ -59,7 +65,8 @@ export async function atenderLectura(m, entorno) {
         guardable = !r.porCsv && !r.perdidas && !r.sinPestanas;
       }
     }
-    if (!sheets) return { id, ok: false, motivo: 'xlsx', error: 'El export XLSX no se pudo leer.' };
+    // A1: ni el libro ni ninguna hoja del respaldo (red caída o sin acceso): repetirlo en la página no traería nada
+    if (!sheets) return { id, ok: false, motivo: 'sin-datos', error: 'No llegó ningún dato de Google.' };
     const d = planDelta(m.previas || {}, sheets);
     if (entorno.guardar && guardable) {
       const libro = { sheets, huellas: d.huellas, orden: d.orden, fp: huellaDe(d.huellas, d.orden), t: Date.now() };
@@ -80,6 +87,20 @@ export function responder(r, post) {
   post(resto);
 }
 
+/** A1: cada cuánto late el Worker mientras atiende una lectura (el lector lo corta tras SILENCIO_MS sin oírlo). */
+export const LATIDO_MS = 10000;
+
+/** Atiende una petición latiendo (`{ id, latido: true }` cada `cada` ms) hasta enviar la respuesta con `post`. */
+export async function atender(m, entorno, post, cada = LATIDO_MS) {
+  const id = m && m.id;
+  const latido = setInterval(() => post({ id, latido: true }), cada);
+  try {
+    responder(await atenderLectura(m, entorno), post);
+  } finally {
+    clearInterval(latido);
+  }
+}
+
 /* global WorkerGlobalScope, importScripts */
 if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope) {
   const almacen = almacenIDB();
@@ -89,6 +110,6 @@ if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScop
     guardar: (libro) => guardarLibro(libro, almacen),
     avisar: (id, progreso) => self.postMessage({ id, progreso }),
   };
-  self.onmessage = async (e) => { responder(await atenderLectura(e.data || {}, entorno), (m) => self.postMessage(m)); };
+  self.onmessage = (e) => atender(e.data || {}, entorno, (m) => self.postMessage(m));
   self.postMessage({ vivo: true });
 }

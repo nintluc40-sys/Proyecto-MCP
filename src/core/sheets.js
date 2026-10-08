@@ -294,7 +294,7 @@ const mb = (b) => (b / 1048576).toLocaleString('es-EC', { minimumFractionDigits:
 export function textoProgreso(p) {
   if (p && p.fase === 'lectura') return `Leyendo el libro (${mb(p.bytes)})…`;
   if (p && p.fase === 'reintento') return `Descargando el libro… ${mb(p.bytes || 0)} · ${p.atascada ? 'la red no avanza, ' : ''}reintento ${p.intento} de ${p.de}`;
-  if (p && p.fase === 'respaldo') return 'El libro entero no llegó: probando hoja por hoja…';
+  if (p && p.fase === 'respaldo') return 'El libro entero no llegó: probando hoja por hoja…' + (p.de ? ` ${p.hechas} de ${p.de}` : '');
   const intento = p && p.intento > 1 ? ` · intento ${p.intento} de ${p.de}` : '';
   return `Descargando el libro… ${mb((p && p.bytes) || 0)}${intento}`;
 }
@@ -555,6 +555,8 @@ export async function respaldoPorHojas(ids, obtenerXLSX = getXLSX, avisar = null
   // Con pestañas descubiertas (o cacheadas) se bajan TODAS por gid; sin ninguna, último
   // recurso: la 1ª hoja (gid 0) para no dejar el sistema completamente vacío.
   const targets = discovered.length ? discovered : [{ gid: 0, title: '' }];
+  // A1 (2026-10-07): el aviso cuenta las hojas que ya terminaron (bien o mal), para que no se quede quieto minutos
+  let hechas = 0;
   const results = await mapLimit(targets, 6, async ({ gid, title }) => {
     try {
       // Su XLSX primero (inmune a los filtros de la hoja); el CSV, sólo si el de ESTA hoja no llega. Una pestaña sin
@@ -564,7 +566,10 @@ export async function respaldoPorHojas(ids, obtenerXLSX = getXLSX, avisar = null
       const rows = parseCSV(await fetchCSV(buildCsvUrl(ids, gid), 1));
       if (!rows.length) return null;
       return { name: title || detectSheetName(rows, gid), rows, csv: true };
-    } catch (_) { perdidas++; return null; }
+    } catch (_) { perdidas++; return null; } finally {
+      hechas++;
+      if (avisar) avisar({ fase: 'respaldo', hechas, de: targets.length });
+    }
   });
   results.forEach((res) => {
     if (!res || sheets[res.name]) return;
@@ -742,24 +747,35 @@ export function lecturaEnSegundoPlano() {
   return !!ids && ids.type === 'real';
 }
 
+/** A1: el aviso cuando no llegó NADA (ni el libro ni ninguna hoja): la culpa es de la conexión, no de las hojas. */
+export const SIN_DATOS_DE_GOOGLE = 'No llegó ningún dato de Google (¿sin conexión?).';
+
 /** Descarga el libro y devuelve { sheets, huellas, fp } con el set COMPLETO. Con el Worker, sólo
  *  viajan las hojas que cambiaron. Si el Worker no puede leer el XLSX, el CSV de siempre; si el
  *  Worker no arranca, el camino de siempre (aquí). Si se CAE con datos ya cargados (p. ej. sin
  *  memoria en un móvil), error: se conservan los datos y se reintenta en el siguiente ciclo, en
- *  vez de leer aquí y congelar (o tumbar) la página. `alAvanzar` (sólo la primera carga, punto 7):
- *  recibe cómo va la descarga y cuándo empieza la lectura. */
+ *  vez de leer aquí y congelar (o tumbar) la página. Si no llegó nada o el Worker calló, error SIEMPRE (A1, dentro).
+ *  `alAvanzar` (sólo la primera carga, punto 7): recibe cómo va la descarga y cuándo empieza la lectura. */
 export async function descargarLibro({ alAvanzar } = {}) {
   const ids = parseSheetsIds(activeUrl());
   if (!ids) throw new Error('URL de Google Sheets inválida.');
+  let sheets;
   if (ids.type === 'real' && _lector && _lector.disponible()) {
     const r = await _lector.leer({ realId: ids.realId, previas: _huellasAplicadas, alAvanzar });
     if (r.ok) return { sheets: fundirDelta(_hojasAplicadas, r), huellas: r.huellas, fp: huellaDe(r.huellas, r.orden) };
-    if (r.motivo === 'xlsx') return descargaCompleta(await fetchViaCsv(ids, alAvanzar));
-    if ((r.motivo === 'caido' || r.motivo === 'tiempo') && store.connected) {
+    /* A1 (2026-10-07, usuario) · NO se repite aquí lo que el Worker ya intentó: si no le llegó nada, o si calló
+       SILENCIO_MS (trabado), la página tampoco lo conseguiría y, en la primera carga, volvía a empezar toda la cadena
+       (7–17 min con la red colgada). Sólo se lee aquí si el Worker no arrancó, o se cayó en la primera carga. */
+    if (r.motivo === 'sin-datos') throw new Error(SIN_DATOS_DE_GOOGLE);
+    if (r.motivo === 'tiempo' || (r.motivo === 'caido' && store.connected)) {
       throw new Error('No se pudo leer el libro en segundo plano.');
     }
+    if (r.motivo === 'xlsx') sheets = await fetchViaCsv(ids, alAvanzar);
   }
-  return descargaCompleta(await fetchAllSheets(alAvanzar));
+  if (!sheets) sheets = await fetchAllSheets(alAvanzar);
+  // Nada por ningún camino (sin Worker o tras su fallo): lo mismo que «sin-datos», no «Sin datos en las hojas.»
+  if (!Object.keys(sheets).length) throw new Error(SIN_DATOS_DE_GOOGLE);
+  return descargaCompleta(sheets);
 }
 
 /** Aplica una descarga al store y la registra como lo APLICADO (hojas, huellas y huella global).

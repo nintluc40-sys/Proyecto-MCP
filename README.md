@@ -656,7 +656,13 @@ Dos consecuencias que conviene tener presentes al desplegar:
    cabeceras; el CUERPO se corta si pasan `SIN_DATOS_MS` (30 s) sin recibir nada (`sheets.js · cuerpoDe/textoDe`) y entran
    los reintentos y el respaldo. Antes, con la red atascada a mitad, la carga esperaba para siempre en «0,5 MB». Una red
    lenta que avanza no se corta. En la primera carga, el aviso dice «la red no avanza, reintento 2 de 3», el intento en
-   curso y «probando hoja por hoja». (El límite de 165 s del Worker no cambia.)
+   curso y «probando hoja por hoja… 12 de 43».
+   **Red colgada en la primera carga** (2026-10-07, A1): el lector ya no corta el Worker a los 165 s pase lo que pase,
+   sino cuando lleva `SILENCIO_MS` (120 s) sin oír nada de él (`sheets.lector.js`); el Worker late cada 10 s mientras
+   atiende (`sheets.worker.js · atender`), así que sólo calla si se traba en algo síncrono. Si no le llegó NADA (ni el
+   libro ni ninguna hoja del respaldo) contesta «sin-datos», y la página NO repite la cadena: el aviso dice «No llegó
+   ningún dato de Google (¿sin conexión?).» con ⟳ para reintentar. Medido con la red colgada y un equipo nuevo: se rinde a
+   los 262 s (antes 7,2 min, ~17 min con las pestañas en caché, y acababa en «Sin datos en las hojas.»).
 1. `connectSheets()` descarga el libro **completo** vía `export?format=xlsx`
    (1 petición, todas las hojas), con reintento y backoff. Si falla, el **respaldo** pide CADA hoja
    por su XLSX (`export?format=xlsx&gid=`; los `gid` salen de `/htmlview`) y sólo la que no llegue,
@@ -667,13 +673,9 @@ Dos consecuencias que conviene tener presentes al desplegar:
    por XLSX congelaba ~1,3 s), y el libro sólo se guarda en el equipo si ninguna hoja vino por CSV
    ni faltó ninguna. Comprobado en Chrome el 2026-10-06 contra lo publicado, con el libro entero
    bloqueado en el Worker: el respaldo pide cada hoja por su XLSX y ninguna por gviz.
-   Límite conocido: el tope del Worker (`LIMITE_MS`, en `sheets.lector.js`, 165 s) cubre la lectura
-   ENTERA, respaldo incluido, no sólo el libro. Si el libro entero falla por tiempo, o si falla al
-   instante pero la red va lenta, el respaldo puede no terminar a tiempo (el 2026-10-06, con la red
-   lenta, leyó 31 de 43 hojas): el Worker se descarta con lo que llevaba leído. En un refresco se
-   conservan los datos que había; en la primera carga la página vuelve a empezar en el hilo
-   principal y puede tardar varios minutos. Es raro: el libro entero falla en torno al 0,05 % de las
-   lecturas.
+   Desde el 2026-10-07 (A1) el Worker no tiene un tope fijo: con la red lenta, el respaldo termina mientras avance (el
+   2026-10-06, con el tope de 165 s, se cortó con 31 de 43 hojas leídas). Si se traba (calla 120 s), en un refresco se
+   conservan los datos que había y en la primera carga sale el error, sin repetir la lectura en la página.
    **El XLSX se descarga y se lee en un Web Worker** (`core/sheets.worker.js`, clásico, con
    `importScripts` del SheetJS de `public/vendor`; lectura `dense`): la pantalla no se
    congela (medido el 2026-10-01 con el libro real: 21 s → 0,9 s al abrir y 12 s → 0 en cada

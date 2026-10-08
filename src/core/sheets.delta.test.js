@@ -17,9 +17,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   XLSX_LECTURA, workbookToSheets, dataFingerprint, huellasPorHoja, huellaDe, planDelta, fundirDelta,
-  descargarLibro, aplicarDescarga, setLectorLibro, lecturaEnSegundoPlano, getLastFingerprint,
+  descargarLibro, aplicarDescarga, setLectorLibro, lecturaEnSegundoPlano, getLastFingerprint, SIN_DATOS_DE_GOOGLE,
 } from './sheets.js';
-import { atenderLectura, responder } from './sheets.worker.js';
+import { atenderLectura, responder, atender, LATIDO_MS } from './sheets.worker.js';
 import { store } from './store.js';
 
 const VENDOR = join(process.cwd(), 'public/vendor/xlsx.full.min.js');
@@ -186,6 +186,30 @@ describe('descargarLibro', () => {
     const d = await descargarLibro();
     expect(Object.keys(d.sheets).length).toBe(2);
   });
+
+  /* A1 (2026-10-07, usuario) · con la red colgada, la primera carga repetía en la página toda la cadena que el Worker
+     ya había intentado (7–17 min) y acababa en «Sin datos en las hojas.». */
+  it('🔴 A1: si al Worker no le llegó nada, la página NO lo repite y dice que no llegó nada (primera carga y con datos)', async () => {
+    for (const conectado of [false, true]) {
+      store.connected = conectado;
+      pedidas.length = 0;
+      setLectorLibro(lector({ ok: false, motivo: 'sin-datos' }));
+      await expect(descargarLibro()).rejects.toThrow(SIN_DATOS_DE_GOOGLE);
+      expect(pedidas).toEqual([]);
+    }
+  });
+
+  it('🔴 A1: si el Worker calló (trabado), tampoco se repite en la primera carga', async () => {
+    setLectorLibro(lector({ ok: false, motivo: 'tiempo' }));
+    await expect(descargarLibro()).rejects.toThrow(/segundo plano/);
+    expect(pedidas).toEqual([]);
+  });
+
+  it('A1: leyendo aquí (sin Worker), si no llega nada, el mismo aviso y no un libro vacío', async () => {
+    servir = null; // Google no contesta nada: ni el libro, ni las pestañas, ni las hojas
+    await expect(descargarLibro()).rejects.toThrow(SIN_DATOS_DE_GOOGLE);
+    expect(pedidas.some((u) => /export\?format=xlsx/.test(u))).toBe(true);   // sí lo intentó aquí
+  });
 });
 
 describe('Worker · responder (hojas de a una, 2026-10-06)', () => {
@@ -256,10 +280,34 @@ describe('Worker · atenderLectura', () => {
     expect(huellaDe(r.huellas, r.orden)).toBe(aqui.fp);
   });
 
-  it('sin SheetJS: «sin-xlsx»; export que no se puede leer: «xlsx»', async () => {
+  it('sin SheetJS: «sin-xlsx»; si no llega nada por ningún camino: «sin-datos» (A1)', async () => {
     const roto = { cargarXLSX: () => { throw new Error('404'); }, obtenerXLSX: () => null };
     expect(await atenderLectura({ id: 4, realId: 'X' }, roto)).toMatchObject({ id: 4, ok: false, motivo: 'sin-xlsx' });
-    servir = null; // 404 → reintenta (pausas de 0,6 y 1,2 s) y se rinde
-    expect(await atenderLectura({ id: 5, realId: 'X' }, entorno())).toMatchObject({ id: 5, ok: false, motivo: 'xlsx' });
+    servir = null; // 404 → reintenta (pausas de 0,6 y 1,2 s), el respaldo tampoco trae nada, y se rinde
+    expect(await atenderLectura({ id: 5, realId: 'X' }, entorno())).toMatchObject({ id: 5, ok: false, motivo: 'sin-datos' });
+  });
+
+  it('A1: mientras atiende, el Worker LATE cada LATIDO_MS; tras la respuesta, ya no', async () => {
+    const fetchAntes = globalThis.fetch;
+    vi.useFakeTimers();
+    try {
+      let soltarLectura = null;
+      const enviados = [];
+      const lento = { cargarXLSX: () => {}, obtenerXLSX: () => ({}) };
+      // la primera petición no contesta hasta que la prueba lo dice; luego, Google sin acceso (403) para todo
+      globalThis.fetch = () => (soltarLectura ? Promise.resolve({ ok: false, status: 403 })
+        : new Promise((r) => { soltarLectura = () => r({ ok: false, status: 403 }); }));
+      let fin = false;
+      const hecho = atender({ id: 9, realId: 'X' }, lento, (m) => enviados.push(m)).then(() => { fin = true; });
+      await vi.advanceTimersByTimeAsync(LATIDO_MS * 3 + 1);
+      expect(enviados).toEqual([{ id: 9, latido: true }, { id: 9, latido: true }, { id: 9, latido: true }]);
+      soltarLectura();
+      for (let i = 0; i < 60 && !fin; i++) await vi.advanceTimersByTimeAsync(1000);
+      await hecho;
+      const tras = enviados.length;
+      expect(enviados.at(-1)).toMatchObject({ id: 9, ok: false, motivo: 'sin-datos' });   // la respuesta final
+      await vi.advanceTimersByTimeAsync(LATIDO_MS * 3);
+      expect(enviados.length).toBe(tras);                                                // y ningún latido después
+    } finally { vi.useRealTimers(); globalThis.fetch = fetchAntes; }
   });
 });
