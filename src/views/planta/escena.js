@@ -1335,11 +1335,20 @@ function irATanque(t) {
   const [x, z] = P(t.cx, t.cz);
   frameView('iso', [x, 0, z], 16);
   (t.g.kind === 'larv' ? fichaTanque : fichaTanqueMad)(t);
-  if (vp.getBoundingClientRect().top < 0) vp.scrollIntoView({ block: 'start' });
+  subirAMaqueta();
 }
 function irAGrupo(g) {
   select(g, true);
-  if (vp.getBoundingClientRect().top < 0) vp.scrollIntoView({ block: 'start' });
+  subirAMaqueta();
+}
+/** Si la maqueta quedó arriba o bajo la cabecera fija de la app (en el celular ocupa dos líneas), la deja justo debajo
+ *  de ella, como Análisis con sus filas (G3.3, 2026-10-07: antes quedaban tapados sus 97 px de arriba). */
+function subirAMaqueta() {
+  const cab = document.querySelector('.app-header');
+  const alto = cab ? cab.getBoundingClientRect().height : 0;
+  if (vp.getBoundingClientRect().top >= alto) return;
+  vp.style.scrollMarginTop = (alto + 8) + 'px';
+  vp.scrollIntoView({ block: 'start' });
 }
 function pintarAtender() {
   const ul = $('#atender'), h = $('#atender-h');
