@@ -14,7 +14,7 @@
    «C### despachada». Un tanque de la corrida que no aparece en los datos está vacío (sin sembrar).
    Módulos del plano M1…M10 ↔ módulos del Sheet M01…M10 (por su número); CIO no está en el plano.
    ============================================================ */
-import { getField, F } from '../../core/fields.js';
+import { getField, parseNum, F } from '../../core/fields.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { STAGE_ORDER } from '../../config.js';
 import { odLevel, tmpLevel } from '../../core/format.js';
@@ -29,8 +29,9 @@ import { mapaDePlanta, normalizarFiltro, periodoDe, alertas, ESTADO_VACIO } from
 import { capasDelMapa, contextoDelMapa, resumenDeTanque } from '../maduracion/operativo.mapa.js';
 import { permanencia } from '../maduracion/operativo.tendencias.js';
 import { UMBRALES_DE_AVISO } from '../maduracion/operativo.umbrales.js';
+import { curvaDeTanque } from '../maduracion/operativo.tanques.js';
 import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
-import { ESTADO_PRODUCCION } from '../registros/lib/mad-libro.js';
+import { ESTADO_PRODUCCION, ubicKey } from '../registros/lib/mad-libro.js';
 
 const numDe = (s) => { const m = String(s || '').match(/\d+/); return m ? +m[0] : null; };
 const esModulo = (s, n) => /^M/i.test(String(s || '').trim()) && numDe(s) === n;
@@ -159,7 +160,8 @@ function estadoModulo(ctx, m, desinf, enMes) {
     if (ts.grouped || ts.discarded) { tanques[k] = { ...comun, estado: ts.grouped ? 'agrupado' : 'descartado' }; continue; }
     if (delaCorrida.some((r) => getField(r, F.tanque) === nombre && isDespachoRow(r))) { tanques[k] = { ...comun, estado: 'despachado' }; continue; }
     const mot = motivos(ts);
-    tanques[k] = { ...comun, estado: 'cultivo', etapa: stageCategory(ts.estadio), alerta: mot.length > 0, motivos: mot };
+    tanques[k] = { ...comun, estado: 'cultivo', etapa: stageCategory(ts.estadio), alerta: mot.length > 0, motivos: mot,
+      evolucion: evolucionLarv(ts.lRows, ts.tRows, nombre) };
   }
   const lista = Object.values(tanques);
   if (despachada) return { id: m.id, mod, estado: 'despachado', corrida, ultimo: s.lastDate, siembra, resultado, tanques };
@@ -179,6 +181,40 @@ function estadoModulo(ctx, m, desinf, enMes) {
     },
     tanques,
   };
+}
+
+/* ---------- Evolución de cada tanque (punto 9 de la lista del 07-10 noche, usuario) ----------
+   Lo que 📊 Análisis despliega al tocar un tanque del «Detalle por tanque»: un registro por DÍA de su corrida, con las
+   mismas reglas que sus cifras (tankStats de supervisor/stats.js): población = la última del día; supervivencia = ésa ÷ la
+   primera población REAL (> 0) × 100, con tope de 100 (`survival`); estadío = el más avanzado registrado ese día (el
+   criterio de getLatestStage; cuentan también las filas del módulo sin tanque, como en tankStats); OD y temperatura = el
+   promedio de las lecturas de Control_Tanque de ese día (la tabla da el de la corrida entera). Sólo los tanques en
+   cultivo (los que enseña la tabla). */
+function evolucionLarv(lRows, tRows, nombre) {
+  const dias = new Map();
+  const dia = (d) => { let e = dias.get(d); if (!e) { e = { fecha: d, pop: null, idx: -1, od: [], tmp: [] }; dias.set(d, e); } return e; };
+  const iso = (r) => { const f = parseAnyDate(getField(r, F.fecha)); return f && !isNaN(f) ? hoyLocal(f) : null; };
+  const orden = (lRows || []).map((r) => [iso(r), r]).filter((x) => x[0]).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  let primera = null;
+  for (const [d, r] of orden) {
+    const e = dia(d);
+    // el más avanzado del día (escrito con Math.max y no como en cronogramaPlanta: el banco mutar-t3 ancla ESA línea)
+    e.idx = Math.max(e.idx, STAGE_ORDER.indexOf(String(getField(r, F.estadio) || '').toUpperCase().replace(/\s+/g, '')));
+    if (getField(r, F.tanque) !== nombre) continue;
+    const p = parseNum(r, F.poblacion);
+    if (p !== null && p >= 0) { e.pop = p; if (primera === null && p > 0) primera = p; }
+  }
+  for (const r of tRows || []) {
+    const d = iso(r); if (!d) continue;
+    const e = dia(d), o = parseNum(r, F.od), t = parseNum(r, F.temp);
+    if (o !== null) e.od.push(o);
+    if (t !== null) e.tmp.push(t);
+  }
+  const prom = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
+  return [...dias.values()].sort((a, b) => (a.fecha < b.fecha ? -1 : 1)).map((e) => ({
+    fecha: e.fecha, pop: e.pop, sv: e.pop !== null && primera ? Math.min(e.pop / primera * 100, 100) : null,
+    estadio: e.idx >= 0 ? STAGE_ORDER[e.idx] : '', od: prom(e.od), tmp: prom(e.tmp),
+  }));
 }
 
 /* ============================================================
@@ -273,6 +309,17 @@ export function estadoMaduracion(filas, hoy = hoyLocal(), fecha) {
   const ctx = contextoDelMapa(mapa, capasDelMapa(M, serie, partes, periodo), M.fecha);
   const al = alertas(M, periodo, F);
   const lecturas = (lista, sala) => lista.porSala.find((x) => x.sala === sala) || null;
+  // Punto 9 (07-10 noche): los partes del período por tanque y día, para la evolución de cada tanque con reproductores
+  const partesDelDia = new Map();
+  for (const d of partes) if (d.fecha >= periodo.desde && d.fecha <= periodo.hasta) partesDelDia.set(ubicKey(d.sala, d.tanque) + '|' + d.fecha, d);
+  const suma2 = (p, a, b) => (p ? (Number(p[a]) || 0) + (Number(p[b]) || 0) : null);
+  /** Un día por fecha del período: ♀ y ♂ vivos al cierre (la curva del tablero, curvaDeTanque) y lo que dicen sus partes
+   *  (null = ese día no hubo parte; no es lo mismo que 0). */
+  const evolucionMad = (t) => curvaDeTanque(serie, t.sala, t.tanque).map((c) => {
+    const p = partesDelDia.get(ubicKey(t.sala, t.tanque) + '|' + c.fecha) || null;
+    return { fecha: c.fecha, hembras: c.hembras, machos: c.machos, bajas: suma2(p, 'machosMuertos', 'hembrasMuertas'),
+      descartes: suma2(p, 'machosDescarte', 'hembrasDescarte'), copulas: p ? Number(p.copulas) || 0 : null };
+  });
 
   const salas = {};
   const resumen = { hembras: 0, machos: 0, ocupados: 0, tanques: 0, alertaTanques: 0, alertaSalas: 0, porEstado: {} };
@@ -289,6 +336,7 @@ export function estadoMaduracion(filas, hoy = hoyLocal(), fecha) {
         hm: t.hm, hmEstado: t.hmEstado, densidad: t.densidad, densidadEstado: t.densidadEstado,
         lotes: r.lotes, periodo: r.periodo, ultimoParte: r.ultimoParte,
         alerta: motivos.length > 0, motivos,
+        ...(t.vivos > 0 ? { evolucion: evolucionMad(t) } : {}),
       };
       resumen.tanques++;
       resumen.porEstado[t.estado] = (resumen.porEstado[t.estado] || 0) + 1;

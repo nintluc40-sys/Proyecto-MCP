@@ -259,7 +259,9 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   ficha con «Ver en su módulo →»), el **cronograma del ciclo** (los 10 módulos en un calendario común, de su siembra a
   hoy o al despacho, en tramos por etapa —la del estadío más avanzado de cada día—, con 🚚 desde el despacho) y el
   **detalle por tanque** (una tabla con los tanques activos de Larvicultura o de Maduración, ordenable por cualquier
-  columna, con «Sólo en alerta» y la causa de la alerta marcada; tocar una fila abre el tanque). Un mes pasado se ve
+  columna, con «Sólo en alerta» y la causa de la alerta marcada; tocar una fila despliega debajo la EVOLUCIÓN del tanque
+  —larvicultura, la corrida entera: supervivencia, población, OD, temperatura y los tramos de estadío; maduración, los 7
+  días: ♀, ♂, bajas y cópulas—, en mini-gráficos propios, con «Ver en su módulo →»). Un mes pasado se ve
   como estaba a su cierre. Los textos de los dos modos salen del mismo módulo puro (`planta/textos.js`), así dicen
   exactamente lo mismo, y three.js sólo se descarga en Maqueta. Cambiar de modo no rehace nada: el que se deja se
   oculta (la maqueta, en pausa) y vuelve al instante con su cámara, lo elegido y el mes. La primera vez, la maqueta se

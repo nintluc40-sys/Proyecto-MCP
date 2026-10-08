@@ -159,3 +159,20 @@ describe('cronograma del ciclo (T3 de 📊 Análisis)', () => {
     expect(cronogramaPlanta(E.modulos, '2026-08-31').modulos.M9).toEqual({ tipo: 'sin', corrida: '890' });
   });
 });
+
+describe('estado · evolución de cada tanque en cultivo (punto 9, 07-10 noche)', () => {
+  it('un registro por día: la población del día, la supervivencia contra la primera REAL, el estadío y OD/temperatura del día', () => {
+    expect(E.modulos.M7.tanques[1].evolucion).toEqual([
+      { fecha: '2026-09-01', pop: 100000, sv: 100, estadio: 'PL6', od: null, tmp: null },
+      { fecha: '2026-09-05', pop: 90000, sv: 90, estadio: 'PL8', od: 5.6, tmp: 32 },
+    ]);
+    // la última supervivencia es la del tanque en la tabla (tankStats)
+    const t2 = E.modulos.M7.tanques[2];
+    expect(t2.evolucion[t2.evolucion.length - 1].sv).toBeCloseTo(t2.sv, 9);
+  });
+  it('sólo los tanques en cultivo la llevan', () => {
+    const t = E.modulos.M7.tanques;
+    expect(t[3].estado).toBe('agrupado'); expect(t[3].evolucion).toBeUndefined();
+    expect(t[4].estado).toBe('despachado'); expect(t[4].evolucion).toBeUndefined();
+  });
+});

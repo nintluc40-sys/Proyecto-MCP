@@ -1,7 +1,7 @@
 /* PLANTA · textos.js: lo que dicen fichas, filas, cifras, producción, «Qué atender hoy» y reproductores (compartido por
    la maqueta y 📊 Análisis). Fixtures mínimos con la forma de estado.js y cifras.js. */
 import { describe, it, expect } from 'vitest';
-import { fichaGrupo, fichaTanque, textoFila, cifrasDelPanel, textosProduccion, textoMes, alertasParaAtender, reproductoresPorDias, colorGrupo, tablaDeTanques, cronogramaParaPintar } from './textos.js';
+import { fichaGrupo, fichaTanque, textoFila, cifrasDelPanel, textosProduccion, textoMes, alertasParaAtender, reproductoresPorDias, colorGrupo, tablaDeTanques, cronogramaParaPintar, evolucionParaPintar, trazoSerie } from './textos.js';
 
 const HOY = { cargado: true, mesPasado: null };
 const PASADO = { cargado: true, mesPasado: { mes: 'Septiembre', cierre: '2026-09-30' } };
@@ -222,5 +222,52 @@ describe('cronograma del ciclo (T3 de Análisis): lo que se dibuja', () => {
     expect([V.desde, V.filas[0].cortada, V.filas[0].tramos[0].left]).toEqual(['2026-08-08', true, 0]);
     expect(V.nota).toContain('Se ven los últimos 60 días.');
     expect(cronogramaParaPintar(G, null, { cargado: false, mesPasado: null }).vacio).toBe('Cargando datos de producción…');
+  });
+});
+
+describe('📊 evolución de un tanque (punto 9, 07-10 noche)', () => {
+  const evo = [
+    { fecha: '2026-09-28', pop: 1e6, sv: 100, estadio: 'PL3', od: 5.2, tmp: 30 },
+    { fecha: '2026-09-29', pop: 0.95e6, sv: 95, estadio: '', od: 5.1, tmp: 30.5 },
+    { fecha: '2026-10-01', pop: 0.9e6, sv: 90, estadio: 'PL5', od: null, tmp: null },
+  ];
+  it('larvicultura: la corrida entera, cada serie con su primer y último dato, tramos de estadío y el corte de Control_Tanque', () => {
+    const E = evolucionParaPintar('larv', { evolucion: evo }, HOY);
+    expect(E).toMatchObject({ vacio: '', desde: '2026-09-28', hasta: '2026-10-01', rango: '28/09 al 01/10 · 4 días' });
+    expect(E.series.map((s) => s.k)).toEqual(['sv', 'pop', 'od', 'tmp']);
+    expect(E.series[0]).toMatchObject({ ini: { fecha: '2026-09-28', txt: '100,0 %' }, fin: { fecha: '2026-10-01', txt: '90,0 %' } });
+    expect(E.series[2].fin).toEqual({ fecha: '2026-09-29', txt: '5,10' });
+    expect(E.estadios).toEqual([{ estadio: 'PL3', desde: '2026-09-28', hasta: '2026-09-29' }, { estadio: 'PL5', desde: '2026-10-01', hasta: '2026-10-01' }]);
+    expect(E.nota).toBe('OD y temperatura: sin lecturas desde el 29/09 (Control_Tanque).');
+  });
+  it('un mes pasado, como estaba a su cierre; sin lecturas de OD, lo dice; sin días, el aviso de cada área', () => {
+    const P = evolucionParaPintar('larv', { evolucion: evo }, PASADO);   // cierre 30/09: el 01/10 no cuenta
+    expect(P.hasta).toBe('2026-09-29');
+    expect(P.nota).toBe('');                                              // al cierre, OD y temperatura estaban al día
+    const sinOd = evo.map((d) => ({ ...d, od: null, tmp: null }));
+    expect(evolucionParaPintar('larv', { evolucion: sinOd }, HOY).nota).toBe('Sin lecturas de OD ni temperatura (Control_Tanque).');
+    expect(evolucionParaPintar('larv', {}, HOY).vacio).toBe('Sin registros diarios de este tanque.');
+    expect(evolucionParaPintar('mat', { evolucion: [] }, HOY).vacio).toBe('Sin datos de los últimos 7 días.');
+  });
+  it('maduración: ♀, ♂, bajas y cópulas; un día sin parte no es 0', () => {
+    const E = evolucionParaPintar('mat', { evolucion: [
+      { fecha: '2026-09-28', hembras: 12, machos: 10, bajas: null, descartes: null, copulas: null },
+      { fecha: '2026-09-29', hembras: 11, machos: 10, bajas: 1, descartes: 0, copulas: 4 },
+    ] }, HOY);
+    expect(E.series.map((s) => [s.titulo, s.fin && s.fin.txt])).toEqual([['♀ vivas', '11'], ['♂ vivos', '10'], ['Bajas', '1'], ['Cópulas', '4']]);
+    expect(E.series[2].puntos.map((p) => p.v)).toEqual([null, 1]);
+    expect(E.estadios).toEqual([]);
+    expect(E.nota).toBe('Un día sin parte queda en blanco: no cuenta como 0.');
+  });
+  it('el trazo: x por la fecha, de mínimo (abajo) a máximo (arriba); hueco por null y por días que faltan; plano, al medio', () => {
+    const p = (fecha, v) => ({ fecha, v });
+    const T = trazoSerie([p('2026-10-01', 10), p('2026-10-02', 20), p('2026-10-03', null), p('2026-10-04', 15)], '2026-10-01', '2026-10-05', 104, 24, 2);
+    expect(T.marcas).toEqual([{ x: 2, y: 22 }, { x: 27, y: 2 }, { x: 77, y: 12 }]);
+    expect(T.d).toBe('M2 22 L27 2 M77 12');
+    const sinNull = trazoSerie([p('2026-10-01', 1), p('2026-10-03', 2)], '2026-10-01', '2026-10-03', 104, 24, 2);
+    expect(sinNull.d).toBe('M2 22 M102 2');                                // falta el 02/10: no se unen
+    expect(trazoSerie([p('2026-10-01', 7), p('2026-10-02', 7)], '2026-10-01', '2026-10-02', 104, 24, 2).marcas.map((m) => m.y)).toEqual([12, 12]);
+    expect(trazoSerie([p('2026-10-01', 7)], '2026-10-01', '2026-10-01', 104, 24, 2)).toEqual({ d: 'M52 12', marcas: [{ x: 52, y: 12 }] });
+    expect(trazoSerie([p('2026-10-01', null)], '2026-10-01', '2026-10-01')).toEqual({ d: '', marcas: [] });
   });
 });

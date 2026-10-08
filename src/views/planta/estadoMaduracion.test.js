@@ -103,6 +103,15 @@ describe('estado de maduración · salas y resumen', () => {
     expect(P.salas.S3.alerta).toBe(false);   // la lectura alta es del 02-10
   });
 
+  it('evolución (punto 9): los 7 días del período con ♀/♂ y lo que dicen los partes; sin parte, null; vacío, sin evolución', () => {
+    const ev = E.salas.S3.tanques[22].evolucion;
+    expect(ev.map((d) => d.fecha)).toEqual(['2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04']);
+    expect(ev.find((d) => d.fecha === '2026-10-03')).toMatchObject({ bajas: 3, descartes: 0, copulas: 0 });
+    expect(ev.find((d) => d.fecha === '2026-10-02')).toMatchObject({ bajas: null, descartes: null, copulas: null });
+    expect(ev[ev.length - 1]).toMatchObject({ hembras: E.salas.S3.tanques[22].hembras, machos: E.salas.S3.tanques[22].machos });
+    expect(E.salas.S2.tanques[17].evolucion).toBeUndefined();
+  });
+
   it('hoyLocal da la fecha del equipo en ISO', () => {
     expect(hoyLocal(new Date(2026, 0, 5, 23, 30))).toBe('2026-01-05');
   });

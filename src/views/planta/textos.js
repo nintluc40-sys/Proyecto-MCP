@@ -347,6 +347,83 @@ export function tablaDeTanques(grupos, area, opc, ctx) {
   return { ...base, resumen, vacio: '', filas: ordenarTanques(visibles, k, dir) };
 }
 
+/* ---------- 📊 Evolución de un tanque (punto 9 de la lista del 07-10 noche, usuario) ----------
+   Lo que se despliega bajo la fila de un tanque del «Detalle por tanque» (los datos, estado.js · `evolucion`): larvicultura,
+   la corrida entera (supervivencia, población, OD, temperatura y los tramos de estadío); maduración, los 7 días de las
+   columnas «7 d» (♀, ♂, bajas y cópulas). Un mes pasado, como estaba a su CIERRE (los días posteriores no cuentan). Cada
+   serie con su primer y último valor; el eje es el CALENDARIO (un día sin registro deja hueco, no se junta). */
+const SERIES_EVO = {
+  larv: [
+    { k: 'sv', titulo: 'Supervivencia', f: pct }, { k: 'pop', titulo: 'Población', f: fmtPop },
+    { k: 'od', titulo: 'OD (mg/L)', f: (v) => num(v, 2, '') }, { k: 'tmp', titulo: 'Temp. (°C)', f: (v) => num(v, 1, '') },
+  ],
+  mat: [
+    { k: 'hembras', titulo: '♀ vivas', f: ent }, { k: 'machos', titulo: '♂ vivos', f: ent },
+    { k: 'bajas', titulo: 'Bajas', f: ent }, { k: 'copulas', titulo: 'Cópulas', f: ent },
+  ],
+};
+const hay = (v) => v !== null && v !== undefined && !isNaN(v);
+/**
+ * { vacio, rango, desde, hasta, series: [{ k, titulo, puntos: [{ fecha, v }], ini, fin }], estadios: [{ estadio, desde,
+ * hasta }], nota } de la evolución del tanque `st` del área `area` (`ini`/`fin`: { fecha, txt } del primer y el último dato).
+ */
+export function evolucionParaPintar(area, st, ctx) {
+  const cierre = ctx && ctx.mesPasado ? ctx.mesPasado.cierre : null;
+  const dias = ((st && st.evolucion) || []).filter((d) => !cierre || d.fecha <= cierre);
+  if (!dias.length) {
+    return { vacio: area === 'larv' ? 'Sin registros diarios de este tanque.' : 'Sin datos de los últimos 7 días.', series: [], estadios: [], nota: '' };
+  }
+  const desde = dias[0].fecha, hasta = dias[dias.length - 1].fecha, n = difDias(desde, hasta) + 1;
+  const series = SERIES_EVO[area].map(({ k, titulo, f }) => {
+    const puntos = dias.map((d) => ({ fecha: d.fecha, v: hay(d[k]) ? Number(d[k]) : null }));
+    const con = puntos.filter((p) => p.v !== null), ext = (p) => (p ? { fecha: p.fecha, txt: f(p.v) } : null);
+    return { k, titulo, puntos, ini: ext(con[0]), fin: ext(con[con.length - 1]) };
+  });
+  const estadios = [];
+  if (area === 'larv') {
+    dias.forEach((d) => {
+      const prev = estadios[estadios.length - 1];
+      if (!d.estadio) { if (prev) prev.hasta = d.fecha; return; }   // un día sin estadío sigue con el anterior
+      if (prev && prev.estadio === d.estadio) prev.hasta = d.fecha;
+      else estadios.push({ estadio: d.estadio, desde: d.fecha, hasta: d.fecha });
+    });
+  }
+  let nota = '';
+  if (area === 'larv') {
+    const od = series.find((s) => s.k === 'od').fin, tmp = series.find((s) => s.k === 'tmp').fin;
+    const ult = [od, tmp].filter(Boolean).map((x) => x.fecha).sort().pop();
+    nota = !ult ? 'Sin lecturas de OD ni temperatura (Control_Tanque).'
+      : ult < hasta ? 'OD y temperatura: sin lecturas desde el ' + dm(ult) + ' (Control_Tanque).' : '';
+  } else if (dias.some((d) => d.bajas === null)) nota = 'Un día sin parte queda en blanco: no cuenta como 0.';
+  return { vacio: '', desde, hasta, rango: dm(desde) + ' al ' + dm(hasta) + ' · ' + n + (n === 1 ? ' día' : ' días'), series, estadios, nota };
+}
+const r1 = (v) => Math.round(v * 10) / 10;
+/**
+ * El trazo de una serie en un lienzo de `ancho` × `alto` (unidades del SVG): x por la FECHA entre `desde` y `hasta`, y
+ * de su mínimo (abajo) a su máximo (arriba); una serie plana va por el medio. `d` corta en los huecos (null) y
+ * `marcas` son los puntos con dato. Puro.
+ */
+export function trazoSerie(puntos, desde, hasta, ancho = 160, alto = 40, margen = 4) {
+  const vals = puntos.filter((p) => p.v !== null).map((p) => p.v);
+  if (!vals.length) return { d: '', marcas: [] };
+  let min = Math.min(...vals), max = Math.max(...vals);
+  if (min === max) { min -= 1; max += 1; }
+  const total = difDias(desde, hasta);
+  const x = (f) => (total ? margen + difDias(desde, f) / total * (ancho - 2 * margen) : ancho / 2);
+  const y = (v) => margen + (max - v) / (max - min) * (alto - 2 * margen);
+  let d = '', abierto = false, previa = null;
+  const marcas = [];
+  puntos.forEach((p) => {
+    if (p.v === null) { abierto = false; return; }
+    if (previa && difDias(previa, p.fecha) > 1) abierto = false;   // faltan días entre los dos: hueco
+    const X = r1(x(p.fecha)), Y = r1(y(p.v));
+    d += (abierto ? ' L' : (d ? ' M' : 'M')) + X + ' ' + Y;
+    abierto = true; previa = p.fecha;
+    marcas.push({ x: X, y: Y });
+  });
+  return { d, marcas };
+}
+
 /* ---------- 📊 Cronograma del ciclo (T3 de Análisis, 2026-10-06, usuario) ----------
    Lo que se dibuja del cronograma (estado.js · cronogramaPlanta): un eje de fechas COMÚN —de la siembra más antigua de lo
    que se ve hasta hoy (o el cierre del mes elegido), como mucho los últimos VENTANA_CRONO días— y una fila por módulo (los

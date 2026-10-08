@@ -73,7 +73,7 @@ describe('📊 Análisis · detalle por tanque', () => {
     expect($('[data-k="tabla-res"]').textContent).toBe('2 tanques con reproductores · 1 en alerta');
     expect($('tbody td.mal').textContent).toBe('2,50');
   });
-  it('un refresco conserva área, filtro y orden; tocar una fila abre el tanque en su sala', () => {
+  it('un refresco conserva área, filtro y orden; tocar una fila despliega su evolución y «Ver en su módulo →» abre el tanque en su sala', () => {
     v.pintarEstado(estado());
     $('.an-area [data-area="mat"]').click();
     ordenar('H:M'); ordenar('H:M');
@@ -81,10 +81,72 @@ describe('📊 Análisis · detalle por tanque', () => {
     v.pintarEstado(estado());
     expect($('.an-area [data-area="mat"]').getAttribute('aria-pressed')).toBe('true');
     expect(filas()).toEqual(['S1 · ' + s1, 'S1 · ' + s2]);
-    host.querySelectorAll('.an-tq-tabla tbody tr')[1].querySelector('td').click();
+    host.querySelectorAll('.an-tq-tabla tbody tr[data-i]')[1].querySelector('td').click();
+    expect($('.an-fila[data-id="S1"] .an-det').hidden).toBe(true);   // ya no salta a la sala: despliega
+    expect($('tr.an-evo')).not.toBe(null);
+    $('tr.an-evo [data-evo-ir]').click();
     const fila = $('.an-fila[data-id="S1"]');
     expect(fila.querySelector('.an-det').hidden).toBe(false);
     expect(fila.querySelector('.an-tq-ficha h4').textContent).toBe('Maduración 1 · tanque ' + s2);
+  });
+});
+
+describe('📊 Análisis · evolución de un tanque (punto 9, 07-10 noche)', () => {
+  const evoLarv = [
+    { fecha: '2026-10-01', pop: 1.1e6, sv: 100, estadio: 'PL3', od: 5.2, tmp: 30 },
+    { fecha: '2026-10-02', pop: 1e6, sv: 90.9, estadio: '', od: null, tmp: null },
+    { fecha: '2026-10-04', pop: 0.9e6, sv: 81.8, estadio: 'PL5', od: null, tmp: null },
+  ];
+  const conEvo = () => {
+    const E = estado();
+    E.modulos.M1.tanques[n1].evolucion = evoLarv;
+    E.mad.salas.S1.tanques[s1].evolucion = [
+      { fecha: '2026-09-29', hembras: 10, machos: 10, bajas: null, descartes: null, copulas: null },
+      { fecha: '2026-09-30', hembras: 10, machos: 9, bajas: 1, descartes: 0, copulas: 3 },
+    ];
+    return E;
+  };
+  const fila = (txt) => [...host.querySelectorAll('.an-tq-tabla tbody tr[data-i]')].find((tr) => tr.querySelector('th').textContent === txt);
+
+  it('🔴 tocar un tanque despliega DEBAJO su evolución; otra vez, la cierra; uno a la vez', () => {
+    v.pintarEstado(conEvo());
+    expect($('tr.an-evo')).toBe(null);
+    fila('M1 · ' + n1).querySelector('td').click();
+    const evo = $('tr.an-evo');
+    expect(evo.previousElementSibling.querySelector('th').textContent).toBe('M1 · ' + n1);   // justo debajo de su fila
+    expect(fila('M1 · ' + n1).querySelector('th button').getAttribute('aria-expanded')).toBe('true');
+    expect(evo.querySelector('td').colSpan).toBe(8);
+    expect(evo.querySelector('.an-evo-rango').textContent).toBe('01/10 al 04/10 · 4 días');
+    expect([...evo.querySelectorAll('.an-evo-est span')].map((s) => s.textContent)).toEqual(['PL3 · 01/10–02/10', 'PL5 · 04/10']);
+    const graf = [...evo.querySelectorAll('.an-evo-s')];
+    expect(graf.map((g) => g.querySelector('b').textContent)).toEqual(['Supervivencia', 'Población', 'OD (mg/L)', 'Temp. (°C)']);
+    expect(graf[0].querySelector('span').textContent).toBe('100,0 % (01/10) → 81,8 % (04/10)');
+    expect(graf[0].querySelectorAll('circle').length).toBe(3);
+    expect(graf[0].querySelector('path').getAttribute('d')).toMatch(/^M\S+ \S+ L\S+ \S+ M\S+ \S+$/);   // el 03/10 falta: hueco
+    expect(graf[2].querySelector('span').textContent).toBe('5,20 (01/10)');
+    expect(evo.querySelector('.an-evo-nota').textContent).toBe('OD y temperatura: sin lecturas desde el 01/10 (Control_Tanque).');
+    fila('M1 · ' + n2).querySelector('td').click();                          // otro tanque: se cierra el primero
+    expect(host.querySelectorAll('tr.an-evo').length).toBe(1);
+    expect($('tr.an-evo').querySelector('.an-evo-rango').textContent).toBe('Sin registros diarios de este tanque.');
+    fila('M1 · ' + n2).querySelector('td').click();                          // el mismo: se cierra
+    expect($('tr.an-evo')).toBe(null);
+  });
+
+  it('lo abierto sobrevive al refresco; en otra área no se ve; maduración, sus 7 días con la nota de los días sin parte', () => {
+    v.pintarEstado(conEvo());
+    fila('M1 · ' + n1).querySelector('td').click();
+    v.pintarEstado(conEvo());
+    expect($('tr.an-evo').previousElementSibling.querySelector('th').textContent).toBe('M1 · ' + n1);
+    $('.an-area [data-area="mat"]').click();
+    expect($('tr.an-evo')).toBe(null);
+    fila('S1 · ' + s1).querySelector('td').click();
+    const evo = $('tr.an-evo');
+    expect(evo.classList.contains('mat')).toBe(true);
+    expect([...evo.querySelectorAll('.an-evo-s b')].map((b) => b.textContent)).toEqual(['♀ vivas', '♂ vivos', 'Bajas', 'Cópulas']);
+    expect(evo.querySelectorAll('.an-evo-s')[2].querySelector('span').textContent).toBe('1 (30/09)');
+    expect(evo.querySelector('.an-evo-nota').textContent).toBe('Un día sin parte queda en blanco: no cuenta como 0.');
+    $('.an-area [data-area="larv"]').click();
+    expect($('tr.an-evo')).toBe(null);
   });
 });
 

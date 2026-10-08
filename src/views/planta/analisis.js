@@ -7,8 +7,11 @@
    desplegables; los textos los arma textos.js —compartido con la maqueta—, así ambas dicen exactamente lo mismo.
    La monta index.js con la misma interfaz que la escena: { pintarEstado(E|null), aviso(texto), alElegirMes(fn) }.
    Detalle por tanque (T2, 2026-10-06, usuario): al final, una tabla con TODOS los tanques activos (Larvicultura |
-   Maduración), «sólo en alerta», ordenable tocando un encabezado; tocar una fila abre ese tanque en su módulo o sala, como
-   «Qué atender hoy». En el celular se desliza a los lados con la columna del tanque fija. Lo que dice, tablaDeTanques.
+   Maduración), «sólo en alerta», ordenable tocando un encabezado. En el celular se desliza a los lados con la columna del
+   tanque fija. Lo que dice, tablaDeTanques. Punto 9 (07-10 noche, usuario): tocar una fila despliega DEBAJO la evolución
+   del tanque (un tanque a la vez; otra vez, la cierra) con mini-gráficos propios en SVG —larvicultura, la corrida entera;
+   maduración, los 7 días—, y «Ver en su módulo →» hace lo que antes hacía tocar la fila (como «Qué atender hoy»). Lo que
+   dice, evolucionParaPintar; el trazo, trazoSerie. Lo abierto sobrevive al refresco, como el área y el orden.
    Cronograma del ciclo (T3, 2026-10-06, usuario): encima, los 10 módulos en un calendario común, cada uno de su siembra a
    hoy (o al despacho) en tramos por etapa, con 🚚 y rayado desde el despacho, la marca de la desinfección y «día · estadío»;
    tocar un tramo da su detalle (con «Ver módulo»), y el módulo o su etiqueta lo abren. Cálculo: estado.js
@@ -24,7 +27,8 @@ import { STAGE_CATS } from '../supervisor/etapas.js';
 import { META_POR_DEFECTO, normalizarMeta } from './cifras.js';
 import { leerMeta, guardarMeta } from './meta.js';
 import { dm, MAD_HEX, colorGrupo, colorTanque, fichaGrupo, fichaTanque, textoFila, cifrasDelPanel, textosProduccion, textoMes,
-  alertasParaAtender, reproductoresPorDias, tablaDeTanques, COLUMNAS_TANQUES, cronogramaParaPintar } from './textos.js';
+  alertasParaAtender, reproductoresPorDias, tablaDeTanques, COLUMNAS_TANQUES, cronogramaParaPintar, evolucionParaPintar,
+  trazoSerie } from './textos.js';
 
 const MARCO = `
 <div class="planta planta-an">
@@ -93,7 +97,7 @@ const MARCO = `
     </div>
     <p class="an-tabla-res" data-k="tabla-res" role="status"></p>
     <p class="at-vacio" data-k="tabla-vacio" hidden></p>
-    <div class="an-tabla-caja" data-k="tabla-caja" tabindex="0" role="region" aria-label="Tabla de tanques: toca un encabezado para ordenar y una fila para ver el tanque">
+    <div class="an-tabla-caja" data-k="tabla-caja" tabindex="0" role="region" aria-label="Tabla de tanques: toca un encabezado para ordenar y una fila para ver la evolución del tanque">
       <table class="an-tq-tabla"><thead data-k="tabla-cab"></thead><tbody data-k="tabla-filas"></tbody></table>
     </div>
   </section>
@@ -412,7 +416,40 @@ export function montarAnalisis(host) {
   $('crono-det-ir').addEventListener('click', () => { const g = cronoSel && grupos.find((x) => x.id === cronoSel.id); if (g) irA(g); });
 
   /* ---- Detalle por tanque: área, «sólo en alerta» y el orden sobreviven al refresco y al cambio de mes ---- */
-  const tabla = { area: 'larv', soloAlerta: false, k: 'tq', dir: 'asc', filas: [] };
+  const tabla = { area: 'larv', soloAlerta: false, k: 'tq', dir: 'asc', filas: [], abierto: null };   // abierto: { area, id, num }
+  const esAbierto = (f) => !!tabla.abierto && tabla.abierto.area === tabla.area && tabla.abierto.id === f.g.id && tabla.abierto.num === f.t.num;
+  /** La fila desplegada con la evolución del tanque de `f` (punto 9): rango, tramos de estadío, un mini-gráfico por cifra
+   *  con su primer y último valor, la nota y «Ver en su módulo →». */
+  function filaEvolucion(f, columnas) {
+    const E = evolucionParaPintar(tabla.area, f.t.st, ctx());
+    const tr = el('tr', 'an-evo ' + tabla.area), td = el('td'), caja = el('div', 'an-evo-caja');
+    td.colSpan = columnas; tr.append(td); td.append(caja);
+    caja.append(el('p', 'an-evo-rango', E.vacio || E.rango));
+    if (E.estadios.length) {
+      const est = el('p', 'an-evo-est');
+      E.estadios.forEach((x) => est.append(el('span', '', x.estadio + ' · ' + (x.desde === x.hasta ? dm(x.desde) : dm(x.desde) + '–' + dm(x.hasta)))));
+      caja.append(est);
+    }
+    if (E.series.length) {
+      const graf = el('div', 'an-evo-graf');
+      E.series.forEach((s) => {
+        const c = el('div', 'an-evo-s'), cab = el('p', 'an-evo-t');
+        const ext = !s.ini ? 'sin datos' : s.ini.fecha === s.fin.fecha ? s.fin.txt + ' (' + dm(s.fin.fecha) + ')'
+          : s.ini.txt + ' (' + dm(s.ini.fecha) + ') → ' + s.fin.txt + ' (' + dm(s.fin.fecha) + ')';
+        cab.append(el('b', '', s.titulo), el('span', '', ext));
+        const T = trazoSerie(s.puntos, E.desde, E.hasta);
+        const svg = sv('svg', { viewBox: '0 0 160 40', role: 'img', 'aria-label': s.titulo + ': ' + ext }, 'an-evo-svg');
+        if (T.d) svg.append(sv('path', { d: T.d }, 'an-evo-linea'));
+        T.marcas.forEach((m) => svg.append(sv('circle', { cx: m.x, cy: m.y, r: 1.6 }, 'an-evo-punto')));
+        c.append(cab, svg); graf.append(c);
+      });
+      caja.append(graf);
+    }
+    if (E.nota) caja.append(el('p', 'an-evo-nota', E.nota));
+    const ir = el('button', 'an-evo-ir', 'Ver en su módulo →'); ir.type = 'button'; ir.dataset.evoIr = '1';
+    caja.append(ir);
+    return tr;
+  }
   function pintarTabla() {
     const T = tablaDeTanques(grupos, tabla.area, tabla, ctx());
     tabla.k = T.k; tabla.dir = T.dir; tabla.filas = T.filas;
@@ -431,13 +468,19 @@ export function montarAnalisis(host) {
     });
     cab.append(tr);
     T.filas.forEach((f, i) => {
-      const fila = el('tr', f.alerta ? 'alerta' : ''); fila.dataset.i = String(i);
+      const abierta = esAbierto(f);
+      const fila = el('tr', [f.alerta ? 'alerta' : '', abierta ? 'abierta' : ''].filter(Boolean).join(' ')); fila.dataset.i = String(i);
       T.columnas.forEach((c, j) => {
         const v = f.celdas[c.k];
-        if (!j) { const th = el('th'), b = el('button', '', v.txt); th.scope = 'row'; b.type = 'button'; b.setAttribute('aria-label', 'Ver ' + fichaTanque(f.t, ctx()).name); th.append(b); fila.append(th); return; }
+        if (!j) {
+          const th = el('th'), b = el('button', '', v.txt); th.scope = 'row'; b.type = 'button';
+          b.setAttribute('aria-label', 'Ver la evolución de ' + fichaTanque(f.t, ctx()).name); b.setAttribute('aria-expanded', String(abierta));
+          th.append(b); fila.append(th); return;
+        }
         fila.append(el('td', [c.num ? 'an-num' : '', v.mal ? 'mal' : '', c.k === 'alerta' && v.txt ? 'al' : ''].filter(Boolean).join(' '), v.txt));
       });
       cuerpo.append(fila);
+      if (abierta) cuerpo.append(filaEvolucion(f, T.columnas.length));
     });
   }
   root.querySelector('.an-area').addEventListener('click', (e) => {
@@ -453,8 +496,15 @@ export function montarAnalisis(host) {
     pintarTabla();
   });
   $('tabla-filas').addEventListener('click', (e) => {
+    // «Ver en su módulo →» de la evolución abierta: lo que antes hacía tocar la fila
+    if (e.target.closest('[data-evo-ir]')) { const f = tabla.filas.find(esAbierto); if (f) irA(f.g, f.t); return; }
     const tr = e.target.closest('tr[data-i]'), f = tr && tabla.filas[+tr.dataset.i];
-    if (f) irA(f.g, f.t);
+    if (!f) return;
+    tabla.abierto = esAbierto(f) ? null : { area: tabla.area, id: f.g.id, num: f.t.num };
+    pintarTabla();
+    // el repintado cambia la fila: el foco vuelve a su tanque (el orden no cambia), sin mover la página
+    const b = $('tabla-filas').querySelector('tr[data-i="' + tr.dataset.i + '"] th button');
+    if (b) b.focus({ preventScroll: true });
   });
 
   /* ---- Colores (los de la maqueta) ---- */
