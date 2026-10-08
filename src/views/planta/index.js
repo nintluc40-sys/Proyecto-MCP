@@ -82,6 +82,7 @@ const MAQUETA = `
       </div>
       <small class="prod-nota" id="prod-nota"></small>
     </section>
+    <section class="n5" id="n5" aria-label="Nauplios N5 de maduración"></section>
     <section class="atender" aria-label="Qué atender hoy"><h2 id="atender-h">Qué atender hoy</h2><ul class="at-list" id="atender"></ul></section>
     <div class="stats" id="stats"></div>
     <section aria-label="Hora del día"><h2>Hora del día</h2>

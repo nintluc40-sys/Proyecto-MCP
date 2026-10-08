@@ -10,7 +10,7 @@
    ============================================================ */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { store } from '../../core/store.js';
-import { cifrasGerencia, normalizarMeta, META_POR_DEFECTO } from './cifras.js';
+import { cifrasGerencia, normalizarMeta, META_POR_DEFECTO, META_N5_DIA, DIAS_PRODUCCION_N5 } from './cifras.js';
 
 const larv = (mod, cor, tq, fecha, pob, extra = {}) => ({ _SheetOrigin: 'Larvicultura', Fecha: fecha, Corrida: cor, 'Módulo': mod, Tanque: tq, 'Población': pob, ...extra });
 const DES = (fecha, lote, desoves, n5) => ({ _SheetOrigin: 'Maduracion', Fecha: fecha, Lote: lote, 'Código genético': 'CA',
@@ -122,5 +122,15 @@ describe('cifras de gerencia · nauplios y meta', () => {
     for (const v of [null, undefined, '', 'abc', 0, -5]) expect(normalizarMeta(v)).toBe(400e6);
     expect(normalizarMeta('450000000')).toBe(450e6);
     expect(normalizarMeta(380e6)).toBe(380e6);
+  });
+
+  it('punto 10: cada día del mes con su N5 (los de Visitante), hasta hoy, que suman el del mes; la meta N5 es 65 M × 26 días', () => {
+    const d = C.nauplios.dias;
+    expect(d.map((x) => x.fecha)).toEqual(Array.from({ length: 20 }, (_, i) => '2030-09-' + String(i + 1).padStart(2, '0')));
+    expect(d.reduce((a, x) => a + x.n5, 0)).toBe(C.nauplios.n5);
+    expect(d.find((x) => x.fecha === '2030-09-05')).toMatchObject({ desoves: 10, n5: 4000000, lotes: [{ lote: 'LA', n5: 4000000 }] });
+    expect([META_N5_DIA, DIAS_PRODUCCION_N5, META_N5_DIA * DIAS_PRODUCCION_N5]).toEqual([65e6, 26, 1690e6]);
+    expect(normalizarMeta('', META_N5_DIA)).toBe(65e6);
+    expect(normalizarMeta('70000000', META_N5_DIA)).toBe(70e6);
   });
 });

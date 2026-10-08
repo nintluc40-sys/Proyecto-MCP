@@ -68,6 +68,31 @@
 .planta .prod-mini b { font: 700 17px/1.1 var(--font-sans); font-variant-numeric: tabular-nums; }
 .planta .prod-mini span { font-size: 11.5px; color: var(--muted); line-height: 1.25; }
 .planta .prod-nota { font: 400 11px/1.35 var(--font-mono); color: var(--muted); }
+/* Punto 10 (07-10 noche): «Nauplios N5 · maduración», bajo Producción en los dos modos (nauplios.js). Toma de la tarjeta
+   de producción la cabecera con ⚙, la cifra grande y la barra; aquí, lo suyo: la barra en el verde de maduración, una
+   barra por día con la línea de la meta diaria y el desglose del día. */
+.planta .n5 { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px; }
+.planta .n5 .prod-bar i.d { background: var(--mat); border-radius: 6px; }
+.planta .n5-sub { font: 400 11.5px/1.3 var(--font-mono); color: var(--muted); }
+.planta .n5-graf { position: relative; height: 72px; margin-top: 4px; }
+.planta .n5-graf[hidden], .planta .n5-eje[hidden], .planta .n5-dia[hidden] { display: none; }
+.planta .n5-barras { display: flex; align-items: flex-end; gap: 2px; height: 100%; }
+.planta .n5-b { flex: 1 1 0; min-width: 4px; height: 100%; padding: 0; margin: 0; border: 0; background: none; display: flex; align-items: flex-end; cursor: pointer; }
+.planta .n5-b i { display: block; width: 100%; min-height: 1px; border-radius: 3px 3px 0 0; background: color-mix(in srgb, var(--mat) 75%, transparent); }
+.planta .n5-b.pend i { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--mat) 60%, transparent) 0 3px, color-mix(in srgb, var(--mat) 25%, transparent) 3px 6px); }
+.planta .n5-b.sin { cursor: default; }
+.planta .n5-b[aria-pressed="true"] i { background: var(--sel); }
+.planta .n5-linea { position: absolute; left: 0; right: 0; height: 0; border-top: 2px dashed var(--ink); opacity: .5; pointer-events: none; }
+.planta .n5-eje { display: flex; justify-content: space-between; font: 400 11px/1 var(--font-mono); color: var(--muted); }
+.planta .n5-dia { border-top: 1px solid var(--line); padding-top: 8px; display: grid; gap: 6px; }
+.planta .n5-dia-t { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 13px; }
+.planta .n5-dia-t span { font: 600 13px/1.2 var(--font-mono); font-variant-numeric: tabular-nums; }
+.planta .n5-dia-t em { font: 600 12px/1 var(--font-sans); font-style: normal; color: var(--sel); margin-left: auto; }
+.planta .n5-dia-t em.ok { color: var(--mat); }
+.planta .n5-lotes { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.planta .n5-lotes li { display: inline-flex; align-items: baseline; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 4px 9px; font: 500 12px/1 var(--font-mono); }
+.planta .n5-dia-nota { color: var(--muted); font-size: 12px; }
+.planta .n5-dia-nota:empty, .planta .n5 .prod-nota:empty { display: none; }
 .planta .atender h2 { color: #c62828; }
 .planta .at-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .planta .at { border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px 8px; display: grid; gap: 6px; }

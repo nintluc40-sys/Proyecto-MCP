@@ -91,6 +91,66 @@ describe('📊 Análisis · detalle por tanque', () => {
   });
 });
 
+describe('📊 Análisis · Nauplios N5 de maduración (punto 10, 07-10 noche)', () => {
+  const lote = (l, n5, pend = 0) => ({ lote: l, desoves: 10, n5, pendientes: pend });
+  const conN5 = () => {
+    const E = estado();
+    E.cifras = { mes: 'Octubre', mIdx: 1, pos: 0, meses: [{ mIdx: 1, mes: 'Octubre' }], corridas: ['597'], actual: true, cierre: '2026-10-06',
+      total: 1e8, despachado: 0, enCultivo: 1e8, despachadoCorridas: 0, siembra: 2e8, supervivencia: 50, modulos: 1, modulosDespachados: 0,
+      nauplios: { n5: 110e6, desoves: 460, desde: '2026-10-01', hasta: '2026-10-04', dias: [
+        { fecha: '2026-10-01', desoves: 200, n5: 40e6, pendientes: 0, lotes: [lote('BN', 30e6), lote('BP', 10e6)] },
+        { fecha: '2026-10-02', desoves: 0, n5: 0, pendientes: 0, lotes: [] },
+        { fecha: '2026-10-03', desoves: 210, n5: 70e6, pendientes: 0, lotes: [lote('BN', 70e6)] },
+        { fecha: '2026-10-04', desoves: 50, n5: 0, pendientes: 2, lotes: [lote('BN', 0, 2)] },
+      ] } };
+    return E;
+  };
+  const n5 = (k) => $('[data-k="n5"] [data-n5="' + k + '"]');
+  beforeEach(() => { try { localStorage.removeItem('planta_meta_n5_dia'); } catch (_) { /* sin almacenamiento */ } });
+
+  it('🔴 bajo Producción: el mes frente a 1.690 M, una barra por día y el último día completo con sus lotes', () => {
+    expect($('[data-k="n5"]').previousElementSibling.classList.contains('prod')).toBe(true);
+    expect(n5('nota').textContent).toBe('Cargando datos…');
+    v.pintarEstado(conN5());
+    expect([n5('mes').textContent, n5('mes-meta').textContent, n5('mes-pct').textContent]).toEqual(['110,0 M', 'de 1.690 M', '7 % de la meta del mes']);
+    const barras = [...n5('barras').querySelectorAll('button')];
+    expect(barras.map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'true', 'false']);
+    expect(barras[1].disabled).toBe(true);
+    expect(barras[3].classList.contains('pend')).toBe(true);
+    expect(n5('dia-t').textContent).toBe('03/10 · último día completo');
+    expect(n5('dia-v').textContent).toBe('70,0 M de 65 M');
+    expect([...n5('lotes').querySelectorAll('li')].map((li) => li.textContent)).toEqual(['BN70,0 M']);
+    expect(n5('nota').textContent).toBe('Con el N5 pendiente: 04/10 (2 desoves).');
+  });
+  it('tocar un día da sus lotes (y el foco sigue en él); el refresco lo conserva; otra vez, vuelve al último completo', () => {
+    v.pintarEstado(conN5());
+    n5('barras').querySelectorAll('button')[0].click();
+    expect(n5('dia-t').textContent).toBe('01/10');
+    expect([...n5('lotes').querySelectorAll('li')].map((li) => li.textContent)).toEqual(['BN30,0 M', 'BP10,0 M']);
+    expect(document.activeElement).toBe(n5('barras').querySelectorAll('button')[0]);
+    v.pintarEstado(conN5());
+    expect(n5('dia-t').textContent).toBe('01/10');
+    n5('barras').querySelectorAll('button')[0].click();
+    expect(n5('dia-t').textContent).toBe('03/10 · último día completo');
+  });
+  it('⚙ la meta diaria: se guarda en el equipo, la del mes es × 26; «Volver a 65»; y se relee al pintar (la cambia el otro modo)', () => {
+    v.pintarEstado(conN5());
+    n5('meta-btn').click();
+    expect(n5('meta-form').hidden).toBe(false);
+    expect(n5('meta-in').value).toBe('65');
+    n5('meta-in').value = '70';
+    n5('meta-form').dispatchEvent(new Event('submit', { cancelable: true }));
+    expect(localStorage.getItem('planta_meta_n5_dia')).toBe('70000000');
+    expect([n5('mes-meta').textContent, n5('dia-v').textContent]).toEqual(['de 1.820 M', '70,0 M de 70 M']);
+    n5('meta-btn').click(); n5('meta-reset').click();
+    expect(localStorage.getItem('planta_meta_n5_dia')).toBe(null);
+    expect(n5('mes-meta').textContent).toBe('de 1.690 M');
+    localStorage.setItem('planta_meta_n5_dia', '50000000');   // como si la cambiara la maqueta
+    v.pintarEstado(conN5());
+    expect(n5('mes-meta').textContent).toBe('de 1.300 M');
+  });
+});
+
 describe('📊 Análisis · filtros y búsqueda del detalle por tanque (punto 9b, 07-10 noche)', () => {
   const opciones = (k) => [...$('[data-k="' + k + '"]').querySelectorAll('option')].map((o) => o.textContent);
   const elegir = (k, v) => { const s = $('[data-k="' + k + '"]'); s.value = v; s.dispatchEvent(new Event('change')); };

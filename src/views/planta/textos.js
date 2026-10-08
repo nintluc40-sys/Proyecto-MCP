@@ -213,6 +213,52 @@ export function textosProduccion(C, meta, ctx) {
     ].filter(Boolean).join(' '),
   };
 }
+/* ---------- Nauplios N5 de maduración (punto 10 de la lista del 07-10 noche, usuario) ----------
+   La sección bajo «Producción del mes», en los dos modos: el N5 del mes frente a la meta del mes (la diaria × los días de
+   producción), una barra por cada día del mes con la línea de la meta diaria, y el desglose por lote de un día —el último
+   COMPLETO (con desoves y sin N5 pendiente; el N5 se cuenta días después del desove) o el que se toque—. Los datos, los
+   de Visitante por día (cifras.js · nauplios.dias): el N5 va en la fecha de su desove; un día con N5 pendiente se marca. */
+const mill = (v) => millones(v, v % 1e6 ? 1 : 0);
+/**
+ * Lo que dice la sección N5: { vacia, nota, mes: { txt, metaTxt, pct, ok, ancho, sub }, barras: [{ fecha, alto, sin,
+ * pendiente, sel, aria }], metaAlto, eje: [desde, hasta], dia: { fecha, titulo, txt, metaTxt, pct, ok, lotes: [{ lote, txt }],
+ * nota } | null, pendientes }. `N` = cifras.nauplios; `elegido` = la fecha tocada (o null).
+ */
+export function textosNauplios(N, metaDia, diasProduccion, ctx, elegido) {
+  const metaMes = metaDia * diasProduccion;
+  const metaTxt = 'de ' + mill(metaMes);
+  const sub = 'meta del mes: ' + mill(metaDia) + ' por día × ' + diasProduccion + ' días de producción';
+  const dias = (N && N.dias) || [];
+  if (!ctx.cargado || !N) return { vacia: true, nota: ctx.cargado ? 'Sin datos de maduración en el mes.' : 'Cargando datos…', mes: { txt: '—', metaTxt, pct: '', ok: false, ancho: '0%', sub }, barras: [], metaAlto: '0%', eje: ['', ''], dia: null, pendientes: '' };
+  const p = N.n5 / metaMes * 100;
+  const mes = { txt: millones(N.n5), metaTxt, pct: fmt(p, 0) + ' % de la meta del mes', ok: p >= 100, ancho: Math.min(p, 100) + '%', sub };
+  const conDesove = dias.filter((d) => d.desoves > 0);
+  const completos = conDesove.filter((d) => !d.pendientes);
+  const ultimo = completos[completos.length - 1] || null;
+  const dia = conDesove.find((d) => d.fecha === elegido) || ultimo || conDesove[conDesove.length - 1] || null;
+  const escala = Math.max(metaDia, ...dias.map((d) => d.n5));
+  const barras = dias.map((d) => ({
+    fecha: d.fecha, alto: (d.n5 / escala * 100) + '%', sin: !d.desoves, pendiente: d.pendientes > 0, sel: !!dia && d.fecha === dia.fecha,
+    aria: dm(d.fecha) + ': ' + (!d.desoves ? 'sin desoves' : millones(d.n5) + (d.pendientes ? ' (' + d.pendientes + ' con N5 pendiente)' : '')),
+  }));
+  const pend = conDesove.filter((d) => d.pendientes > 0);
+  const pendientes = pend.length ? 'Con el N5 pendiente: ' + pend.map((d) => dm(d.fecha) + ' (' + d.pendientes + (d.pendientes === 1 ? ' desove)' : ' desoves)')).join(', ') + '.' : '';
+  let D = null;
+  if (dia) {
+    const q = dia.n5 / metaDia * 100;
+    D = {
+      fecha: dia.fecha, titulo: dm(dia.fecha) + (dia === ultimo && dia.fecha !== elegido ? ' · último día completo' : ''),
+      txt: millones(dia.n5), metaTxt: 'de ' + mill(metaDia), pct: fmt(q, 0) + ' % de la meta diaria', ok: q >= 100,
+      lotes: dia.lotes.map((l) => ({ lote: l.lote, txt: millones(l.n5) + (l.pendientes ? ' · ' + l.pendientes + ' pendiente' + (l.pendientes === 1 ? '' : 's') : '') })),
+      nota: dia.pendientes ? 'Este día aún tiene ' + dia.pendientes + (dia.pendientes === 1 ? ' desove' : ' desoves') + ' sin contar su N5.' : '',
+    };
+  }
+  return {
+    vacia: false, nota: conDesove.length ? '' : 'Sin desoves en el mes.', mes, barras, metaAlto: (metaDia / escala * 100) + '%',
+    eje: dias.length ? [dm(dias[0].fecha), dm(dias[dias.length - 1].fecha)] : ['', ''], dia: D, pendientes,
+  };
+}
+
 /** El rótulo del mes: «Octubre» y «corridas 597–601». */
 export function textoMes(C) {
   if (!C) return { mes: '—', corridas: '' };

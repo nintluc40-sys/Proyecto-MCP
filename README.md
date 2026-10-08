@@ -249,7 +249,11 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   es su estado —larvicultura con las reglas de la Vista Ejecutiva (`supervisor/etapas.js`, compartido), maduración con
   el «Estado» del mapa de salas—, con su ficha al tocarlo, balizas de alerta y «Qué atender hoy»; las cifras del mes
   (producción de «Producción Omarsa» frente a una **meta de 400 M editable** con ⚙, guardada en el equipo,
-  supervivencia, nauplios y desoves) y el reemplazo de reproductores a los 60 días. El selector de mes mueve TODA la
+  supervivencia, nauplios y desoves) y el reemplazo de reproductores a los 60 días. Debajo de la producción, en los dos
+  modos, **«Nauplios N5 · maduración»** (`planta/nauplios.js`, 2026-10-07): el N5 del mes frente a su meta —la diaria
+  (**65 M editable** con ⚙, guardada en el equipo) × 26 días de producción—, una barra por día con la línea de la meta
+  diaria y el desglose por lote del último día completo (o del que se toque); el N5 de cada día lo da la misma función
+  de Visitante (`produccionDelMes` con `porDia`), en la fecha de su desove. El selector de mes mueve TODA la
   vista (un mes pasado, con las corridas de ese mes); un mes ya visitado no se recalcula mientras no cambien el libro
   ni el día. Un selector **«🏭 Maqueta | 📊 Análisis»**, que el equipo recuerda, cambia la maqueta por una página
   analítica SIN 3D (`planta/analisis.js`) con lo mismo: producción con su selector de mes y su meta, las cifras, «Qué

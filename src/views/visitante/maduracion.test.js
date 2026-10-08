@@ -194,6 +194,21 @@ describe('Visitante · 🥚 la fertilidad (sólo de los desoves con N2 y huevos 
     expect(acumularDesoves(fuentes.desoves.filter((r) => fechaDeFila('desoves', r).startsWith('2026-09'))).fertilidad).toBe(T.fertilidad);
     expect(Math.round(s.total.fertilidad * 10) / 10).toBe(33.9);
   });
+
+  it('🏭 porDia (Planta, punto 10): cada día con su N5, desoves y pendientes, en total y por lote; los días suman el mes; sin la opción, nada nuevo', async () => {
+    const { produccionDelMes } = await import('./maduracion.produccion.js');
+    const SEP = { desde: '2026-09-01', hasta: '2026-09-30' };
+    const filasMad = [...PLANTA(), ...SIN_HUEVOS()];
+    expect('dias' in produccionDelMes(filasMad, SEP, '2026-10-01')).toBe(false);   // Visitante no lo pide: igual que antes
+    const s = produccionDelMes(filasMad, SEP, '2026-10-01', { porDia: true });
+    expect(s.dias.map((d) => d.fecha)).toEqual(Array.from({ length: 30 }, (_, i) => '2026-09-' + String(i + 1).padStart(2, '0')));
+    expect(s.dias.find((d) => d.fecha === '2026-09-05')).toEqual({ fecha: '2026-09-05', desoves: 20, n5: 800000, pendientes: 0,
+      lotes: [{ lote: 'LA', desoves: 20, n5: 800000, pendientes: 0 }] });
+    expect(s.dias.find((d) => d.fecha === '2026-09-20')).toMatchObject({ desoves: 5, n5: 0, pendientes: 1 });     // su N5 aún no se contó
+    expect(s.dias.find((d) => d.fecha === '2026-09-02')).toEqual({ fecha: '2026-09-02', desoves: 0, n5: 0, pendientes: 0, lotes: [] });
+    const suma = (k) => s.dias.reduce((a, d) => a + d[k], 0);
+    expect([suma('n5'), suma('desoves'), suma('pendientes')]).toEqual([s.total.n5, s.total.desoves, s.total.pendientes]);
+  });
 });
 
 describe('Visitante · 🥚 la PRIMERA carga (módulos frescos)', () => {

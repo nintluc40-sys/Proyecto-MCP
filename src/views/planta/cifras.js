@@ -14,7 +14,8 @@
      selector de la tarjeta (2026-10-04, usuario), cualquiera de los meses con datos (`presentMonths`, los de la tabla).
    · La supervivencia es la de la fila Total de la tabla: Σ población actual ÷ Σ siembra × 100, con tope de 100.
    · Los nauplios (N5) y los desoves son los de Visitante (`produccionDelMes` de visitante/maduracion.produccion.js):
-     el mes de CALENDARIO que corresponde al de producción (`calendarRangeOfMonth`), recortado a hoy.
+     el mes de CALENDARIO que corresponde al de producción (`calendarRangeOfMonth`), recortado a hoy. Con cada DÍA del
+     mes (`porDia`, punto 10 del 07-10 noche: el N5 diario por lote frente a su meta, en la sección «Nauplios N5»).
    · La meta es de 400 millones al mes y se edita en la vista (⚙), guardada en el equipo: aquí sólo su valor por
      defecto y su validación; guardarla es cosa de la vista.
    Nada se recalcula con otra fórmula: si la tabla del Supervisor o Visitante cambian su regla, esto la sigue.
@@ -26,10 +27,15 @@ import { produccionDelMes } from '../visitante/maduracion.produccion.js';
 export const META_POR_DEFECTO = 400e6;
 
 /** Una meta válida es un número positivo; cualquier otra cosa (vacío, texto, 0, negativo) vuelve a la de por defecto. */
-export function normalizarMeta(v) {
+export function normalizarMeta(v, porDefecto = META_POR_DEFECTO) {
   const n = typeof v === 'number' ? v : (v === null || v === undefined || String(v).trim() === '' ? NaN : Number(v));
-  return Number.isFinite(n) && n > 0 ? n : META_POR_DEFECTO;
+  return Number.isFinite(n) && n > 0 ? n : porDefecto;
 }
+
+/** Punto 10 (07-10 noche, usuario): la meta de nauplios N5 de maduración es de 65 millones al DÍA, editable en la vista
+ *  (⚙, guardada en el equipo), y la del mes es la diaria × los 26 días de producción (1 690 millones por defecto). */
+export const META_N5_DIA = 65e6;
+export const DIAS_PRODUCCION_N5 = 26;
 
 /**
  * Las cifras de un mes de producción: `mIdx` si es uno de los meses con datos; si no (o sin él), el último.
@@ -56,7 +62,7 @@ export function cifrasGerencia(filas, hoy, mIdxElegido) {
     if (modsCor && entera) despachadoCorridas += cosechaCor;   // B1: el criterio del «Subtotal actual» de la tabla
   }
   const rango = calendarRangeOfMonth(mIdx);
-  const mad = rango ? produccionDelMes(filas, rango, hoy) : null;
+  const mad = rango ? produccionDelMes(filas, rango, hoy, { porDia: true }) : null;   // porDia: punto 10 (N5 de cada día)
   return {
     mes: monthLabelAt(mIdx), mIdx, pos, meses: meses.map((m) => ({ mIdx: m, mes: monthLabelAt(m) })), corridas,
     // el mes en curso (el último) es HOY; uno pasado se pinta al cierre de su mes de calendario, sin pasar de hoy
@@ -66,6 +72,7 @@ export function cifrasGerencia(filas, hoy, mIdxElegido) {
     supervivencia: siembra > 0 ? Math.min(total / siembra * 100, 100) : null,
     modulos, modulosDespachados,
     nauplios: { n5: mad ? mad.total.n5 : 0, desoves: mad ? mad.total.desoves : 0,
-      desde: mad ? mad.periodo.desde : rango ? rango.desde : '', hasta: mad ? mad.periodo.hasta : rango ? rango.hasta : '' },
+      desde: mad ? mad.periodo.desde : rango ? rango.desde : '', hasta: mad ? mad.periodo.hasta : rango ? rango.hasta : '',
+      dias: mad ? mad.dias : [] },
   };
 }

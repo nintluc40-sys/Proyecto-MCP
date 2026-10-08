@@ -6,6 +6,7 @@
    Decisiones del usuario: selector «🏭 Maqueta | 📊 Análisis» dentro de Planta (index.js), que el equipo recuerda; filas
    desplegables; los textos los arma textos.js —compartido con la maqueta—, así ambas dicen exactamente lo mismo.
    La monta index.js con la misma interfaz que la escena: { pintarEstado(E|null), aviso(texto), alElegirMes(fn) }.
+   Nauplios N5 (punto 10, 07-10 noche, usuario): bajo la producción, la sección compartida con la maqueta (nauplios.js).
    Detalle por tanque (T2, 2026-10-06, usuario): al final, una tabla con TODOS los tanques activos (Larvicultura |
    Maduración), «sólo en alerta», ordenable tocando un encabezado. En el celular se desliza a los lados con la columna del
    tanque fija. Lo que dice, tablaDeTanques. Punto 9 (07-10 noche, usuario): tocar una fila despliega DEBAJO la evolución
@@ -28,6 +29,7 @@ import { LARV, MAT, tanquesDeSala, formasDelPlano } from './plano.js';
 import { STAGE_CATS } from '../supervisor/etapas.js';
 import { META_POR_DEFECTO, normalizarMeta } from './cifras.js';
 import { leerMeta, guardarMeta } from './meta.js';
+import { montarNauplios } from './nauplios.js';
 import { dm, MAD_HEX, colorGrupo, colorTanque, fichaGrupo, fichaTanque, textoFila, cifrasDelPanel, textosProduccion, textoMes,
   alertasParaAtender, reproductoresPorDias, tablaDeTanques, COLUMNAS_TANQUES, cronogramaParaPintar, evolucionParaPintar,
   trazoSerie } from './textos.js';
@@ -68,6 +70,7 @@ const MARCO = `
         </div>
         <small class="prod-nota" data-k="prod-nota"></small>
       </section>
+      <section class="n5" data-k="n5" aria-label="Nauplios N5 de maduración"></section>
       <div class="stats" data-k="stats"></div>
       <section class="atender" data-k="atender-sec" aria-label="Qué atender hoy"><h2 data-k="atender-h">Qué atender hoy</h2><ul class="at-list" data-k="atender"></ul></section>
       <section class="repro" aria-label="Reproductores: días en producción"><h2 data-k="repro-h">Reproductores · días en producción</h2><ul class="repro-list" data-k="repro"></ul></section>
@@ -150,9 +153,11 @@ export function montarAnalisis(host) {
   const ctx = () => ({ cargado, mesPasado });
 
   /* ---- Producción del mes ---- */
+  const n5 = montarNauplios($('n5'));   // punto 10 (07-10 noche): «Nauplios N5 · maduración», el mismo componente que la maqueta
   function pintarProduccion(C) {
     meta = leerMeta();   // la pudo cambiar la maqueta mientras Análisis estaba oculto (los modos no se rehacen al cambiar)
     ultimasCifras = C;
+    n5.pintar(C ? C.nauplios : null, ctx());
     const T = textosProduccion(C, meta, ctx()), M = textoMes(C);
     $('prod-meta').textContent = T.metaTxt;
     $('prod-mes').textContent = M.mes; $('prod-cor').textContent = M.corridas;

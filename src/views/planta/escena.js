@@ -72,6 +72,7 @@ import { STAGE_CATS } from '../supervisor/etapas.js';
 import { fmtPop } from '../../core/format.js';
 import { META_POR_DEFECTO, normalizarMeta } from './cifras.js';
 import { leerMeta, guardarMeta } from './meta.js';
+import { montarNauplios } from './nauplios.js';
 import { fmt, pct, num, ent, dec, dm, millones, ESTADO_TXT, MAD_HEX, colorGrupo, fichaGrupo, fichaTanque as textoFichaTanque, textoFila, cifrasDelPanel,
   textosProduccion, textoMes, alertasParaAtender, reproductoresPorDias } from './textos.js';
 
@@ -1077,9 +1078,12 @@ pintarCifras(null);
 // La meta vive en ESTE equipo (decisión del usuario, como ⚙️ Rangos de Microbiología): sin ella, la de por defecto.
 let meta = leerMeta(), ultimasCifras = null;
 let alertasTotal = null;   // lo que cuenta «Qué atender hoy» (o «Alertas al cierre»): lo repite el resumen de pantalla completa (punto 3)
+// Punto 10 (07-10 noche): «Nauplios N5 · maduración», bajo Producción (el mismo componente que 📊 Análisis)
+const n5 = montarNauplios($('#n5'));
 function pintarProduccion(C) {
   meta = leerMeta();   // la pudo cambiar 📊 Análisis mientras la maqueta estaba oculta (los modos no se rehacen al cambiar)
   ultimasCifras = C; pintarResumenFS();
+  n5.pintar(C ? C.nauplios : null, ctxTextos());
   const T = textosProduccion(C, meta, ctxTextos());
   $('#prod-meta').textContent = T.metaTxt;
   pintarSelectorMes(C);

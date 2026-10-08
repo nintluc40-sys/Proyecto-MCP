@@ -31,8 +31,11 @@ const porNombre = (a, b) => a.localeCompare(b, 'es', { numeric: true });
 /**
  * La producción de Maduración de un período `{ desde, hasta }` (`aaaa-mm-dd`). `hoy` recorta el final: un desove con
  * fecha posterior sólo puede ser una errata, y la foto del tablero tampoco lo incluye. null si no hay desoves.
+ * `opc.porDia` (🏭 Planta, punto 10 del 07-10 noche; Visitante no lo pide): además, `dias` = cada día del período con su
+ * N5, sus desoves y sus pendientes, en total y por lote, con las MISMAS funciones sobre un período de un día (el N5 va en
+ * la fecha de su desove, como en 🥚 Reproducción) y sin volver a construir las fuentes.
  */
-export function produccionDelMes(filas, periodo, hoy) {
+export function produccionDelMes(filas, periodo, hoy, opc = {}) {
   if (!periodo || !esIso(periodo.desde) || !esIso(periodo.hasta)) return null;
   const p = { desde: periodo.desde, hasta: esIso(hoy) && hoy < periodo.hasta ? hoy : periodo.hasta };
   if (p.desde > p.hasta) return null;
@@ -73,5 +76,20 @@ export function produccionDelMes(filas, periodo, hoy) {
     lotes: lotes.map((x) => ({ lote: x.lote, desoves: x.desoves, n5: x.n5, naupliosPorHembra: x.naupliosPorHembra, pendientes: x.pendientes,
       fertilidad: x.fertilidad })),
     salas, enVarias, sinSala,
+    ...(opc && opc.porDia ? { dias: diasDelPeriodo(M, p, F) } : {}),
   };
+}
+
+/** Cada día de `p` (ver `opc.porDia`): { fecha, desoves, n5, pendientes, lotes: [{ lote, desoves, n5, pendientes }] }. */
+function diasDelPeriodo(M, p, F) {
+  const out = [];
+  for (let d = p.desde; d <= p.hasta; d = sumarDias(d, 1)) {
+    const dia = { desde: d, hasta: d };
+    const lotes = tablaDeReproduccion(M, dia, F);
+    if (!lotes.length) { out.push({ fecha: d, desoves: 0, n5: 0, pendientes: 0, lotes: [] }); continue; }
+    const T = totalesDeReproduccion(M, dia, F);
+    out.push({ fecha: d, desoves: T.desoves, n5: T.n5, pendientes: T.pendientes,
+      lotes: lotes.map((x) => ({ lote: x.lote, desoves: x.desoves, n5: x.n5, pendientes: x.pendientes })) });
+  }
+  return out;
 }

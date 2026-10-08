@@ -1,7 +1,7 @@
 /* PLANTA · textos.js: lo que dicen fichas, filas, cifras, producción, «Qué atender hoy» y reproductores (compartido por
    la maqueta y 📊 Análisis). Fixtures mínimos con la forma de estado.js y cifras.js. */
 import { describe, it, expect } from 'vitest';
-import { fichaGrupo, fichaTanque, textoFila, cifrasDelPanel, textosProduccion, textoMes, alertasParaAtender, reproductoresPorDias, colorGrupo, tablaDeTanques, cronogramaParaPintar, evolucionParaPintar, trazoSerie } from './textos.js';
+import { fichaGrupo, fichaTanque, textoFila, cifrasDelPanel, textosProduccion, textoMes, alertasParaAtender, reproductoresPorDias, colorGrupo, tablaDeTanques, cronogramaParaPintar, evolucionParaPintar, trazoSerie, textosNauplios } from './textos.js';
 
 const HOY = { cargado: true, mesPasado: null };
 const PASADO = { cargado: true, mesPasado: { mes: 'Septiembre', cierre: '2026-09-30' } };
@@ -301,5 +301,45 @@ describe('📊 evolución de un tanque (punto 9, 07-10 noche)', () => {
     expect(trazoSerie([p('2026-10-01', 7), p('2026-10-02', 7)], '2026-10-01', '2026-10-02', 104, 24, 2).marcas.map((m) => m.y)).toEqual([12, 12]);
     expect(trazoSerie([p('2026-10-01', 7)], '2026-10-01', '2026-10-01', 104, 24, 2)).toEqual({ d: 'M52 12', marcas: [{ x: 52, y: 12 }] });
     expect(trazoSerie([p('2026-10-01', null)], '2026-10-01', '2026-10-01')).toEqual({ d: '', marcas: [] });
+  });
+});
+
+describe('🦐 nauplios N5 de maduración (punto 10, 07-10 noche)', () => {
+  const lote = (l, n5, pend = 0) => ({ lote: l, desoves: 10, n5, pendientes: pend });
+  const dias = [
+    { fecha: '2026-10-01', desoves: 200, n5: 40e6, pendientes: 0, lotes: [lote('BN', 30e6), lote('BP', 10e6)] },
+    { fecha: '2026-10-02', desoves: 0, n5: 0, pendientes: 0, lotes: [] },
+    { fecha: '2026-10-03', desoves: 210, n5: 70e6, pendientes: 0, lotes: [lote('BN', 70e6)] },
+    { fecha: '2026-10-04', desoves: 50, n5: 0, pendientes: 2, lotes: [lote('BN', 0, 2)] },
+  ];
+  const N = { n5: 110e6, dias };
+  it('el mes frente a la meta diaria × los días de producción; el día, el último COMPLETO; lo pendiente se dice', () => {
+    const T = textosNauplios(N, 65e6, 26, HOY, null);
+    expect(T.mes).toEqual({ txt: '110,0 M', metaTxt: 'de 1.690 M', pct: '7 % de la meta del mes', ok: false, ancho: (110 / 1690 * 100) + '%',
+      sub: 'meta del mes: 65 M por día × 26 días de producción' });
+    expect(T.dia).toEqual({ fecha: '2026-10-03', titulo: '03/10 · último día completo', txt: '70,0 M', metaTxt: 'de 65 M', pct: '108 % de la meta diaria',
+      ok: true, lotes: [{ lote: 'BN', txt: '70,0 M' }], nota: '' });
+    expect(T.pendientes).toBe('Con el N5 pendiente: 04/10 (2 desoves).');
+    expect(T.barras.map((b) => [b.fecha, b.alto, b.sin, b.pendiente, b.sel])).toEqual([
+      ['2026-10-01', (40 / 70 * 100) + '%', false, false, false], ['2026-10-02', '0%', true, false, false],
+      ['2026-10-03', '100%', false, false, true], ['2026-10-04', '0%', false, true, false],
+    ]);
+    expect(T.barras[3].aria).toBe('04/10: 0,0 M (2 con N5 pendiente)');
+    expect([T.metaAlto, T.eje]).toEqual([(65 / 70 * 100) + '%', ['01/10', '04/10']]);
+  });
+  it('el día tocado manda (si tiene desoves); uno pendiente lo avisa; otra meta cambia la del mes', () => {
+    expect(textosNauplios(N, 65e6, 26, HOY, '2026-10-01').dia).toMatchObject({ titulo: '01/10', pct: '62 % de la meta diaria', ok: false,
+      lotes: [{ lote: 'BN', txt: '30,0 M' }, { lote: 'BP', txt: '10,0 M' }] });
+    expect(textosNauplios(N, 65e6, 26, HOY, '2026-10-04').dia).toMatchObject({ lotes: [{ lote: 'BN', txt: '0,0 M · 2 pendientes' }],
+      nota: 'Este día aún tiene 2 desoves sin contar su N5.' });
+    expect(textosNauplios(N, 65e6, 26, HOY, '2026-10-02').dia.fecha).toBe('2026-10-03');   // sin desoves: el último completo
+    const O = textosNauplios(N, 70e6, 26, HOY, null);
+    expect([O.mes.metaTxt, O.mes.sub, O.dia.metaTxt]).toEqual(['de 1.820 M', 'meta del mes: 70 M por día × 26 días de producción', 'de 70 M']);
+  });
+  it('cargando, sin datos y un mes sin desoves', () => {
+    expect(textosNauplios(null, 65e6, 26, { cargado: false, mesPasado: null }, null)).toMatchObject({ vacia: true, nota: 'Cargando datos…', dia: null, barras: [] });
+    expect(textosNauplios(null, 65e6, 26, HOY, null)).toMatchObject({ vacia: true, nota: 'Sin datos de maduración en el mes.' });
+    const S = textosNauplios({ n5: 0, dias: [dias[1]] }, 65e6, 26, HOY, null);
+    expect([S.vacia, S.dia, S.nota, S.barras.length]).toEqual([false, null, 'Sin desoves en el mes.', 1]);
   });
 });
