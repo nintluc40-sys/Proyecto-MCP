@@ -7,6 +7,9 @@
      las corridas del mes de producción (`corridasOfMonth`), módulo a módulo con `modCorStats`, CIO INCLUIDO (como la
      tabla). Se separa en despachado (módulos con todos sus tanques despachados, `despachadoFull`, el criterio de la
      tabla) y en cultivo (el resto: lo que sigue en el agua, despachándose o no).
+   · B1 (2026-10-07, usuario): el «despachado» sigue siendo por MÓDULO; el «Subtotal actual» de la tabla sólo suma
+     CORRIDAS con todos sus módulos despachados, así que a mitad de una corrida (o con un módulo sin despacho, como el CIO)
+     las dos cifras difieren. `despachadoCorridas` es la de la tabla, sólo para que la tarjeta lo diga.
    · El mes es el de PRODUCCIÓN (por corridas): por defecto el último con datos, el mismo que abre la tabla; con el
      selector de la tarjeta (2026-10-04, usuario), cualquiera de los meses con datos (`presentMonths`, los de la tabla).
    · La supervivencia es la de la fila Total de la tabla: Σ población actual ÷ Σ siembra × 100, con tope de 100.
@@ -40,15 +43,17 @@ export function cifrasGerencia(filas, hoy, mIdxElegido) {
   const pos = meses.includes(mIdxElegido) ? meses.indexOf(mIdxElegido) : meses.length - 1;
   const mIdx = meses[pos];
   const corridas = corridasOfMonth(mIdx);
-  let siembra = 0, total = 0, despachado = 0, modulos = 0, modulosDespachados = 0;
+  let siembra = 0, total = 0, despachado = 0, despachadoCorridas = 0, modulos = 0, modulosDespachados = 0;
   for (const cor of corridas) {
+    let cosechaCor = 0, modsCor = 0, entera = true;
     for (const mod of modulesOfCorrida(cor)) {
       const s = modCorStats(mod, cor);
       if (s.siembra) siembra += s.siembra;
-      if (s.cosecha) total += s.cosecha;
-      modulos++;
-      if (s.despachadoFull) { modulosDespachados++; if (s.cosecha) despachado += s.cosecha; }
+      if (s.cosecha) { total += s.cosecha; cosechaCor += s.cosecha; }
+      modulos++; modsCor++;
+      if (s.despachadoFull) { modulosDespachados++; if (s.cosecha) despachado += s.cosecha; } else entera = false;
     }
+    if (modsCor && entera) despachadoCorridas += cosechaCor;   // B1: el criterio del «Subtotal actual» de la tabla
   }
   const rango = calendarRangeOfMonth(mIdx);
   const mad = rango ? produccionDelMes(filas, rango, hoy) : null;
@@ -57,7 +62,7 @@ export function cifrasGerencia(filas, hoy, mIdxElegido) {
     // el mes en curso (el último) es HOY; uno pasado se pinta al cierre de su mes de calendario, sin pasar de hoy
     actual: pos === meses.length - 1,
     cierre: pos === meses.length - 1 || !rango ? hoy : (rango.hasta < hoy ? rango.hasta : hoy),
-    total, despachado, enCultivo: total - despachado, siembra,
+    total, despachado, enCultivo: total - despachado, despachadoCorridas, siembra,
     supervivencia: siembra > 0 ? Math.min(total / siembra * 100, 100) : null,
     modulos, modulosDespachados,
     nauplios: { n5: mad ? mad.total.n5 : 0, desoves: mad ? mad.total.desoves : 0,

@@ -53,6 +53,26 @@ describe('cifras de gerencia · producción del mes', () => {
     expect(C.despachado).toBe(110000);
     expect(C.enCultivo).toBe(80000 + 40000 + 160000);
     expect(C.modulosDespachados).toBe(1);
+    expect(C.despachadoCorridas).toBe(110000);   // aquí cada corrida tiene un solo módulo: el criterio de la tabla coincide
+  });
+
+  it('B1: con una corrida a medio despachar, el módulo terminado cuenta como despachado y la corrida no (el Subtotal de la tabla)', () => {
+    const antes = store.globalData;
+    store.globalData = [
+      // (el mes de producción sale del número de corrida: 880 y 882 son de septiembre, como arriba)
+      // 880: M05 terminado, CIO sin despacho → la corrida NO está terminada
+      larv('M05', '880', 'TQ 1', '02/09/2030', 100000), larv('M05', '880', 'TQ 1', '19/09/2030', 70000, { Destino: 'P1' }),
+      larv('CIO', '880', 'TQ 1', '02/09/2030', 50000), larv('CIO', '880', 'TQ 1', '19/09/2030', 30000),
+      // 882: un solo módulo, terminado
+      larv('M06', '882', 'TQ 1', '03/09/2030', 100000), larv('M06', '882', 'TQ 1', '19/09/2030', 60000, { Destino: 'P2' }),
+    ];
+    try {
+      const B = cifrasGerencia(store.globalData, '2030-09-20');
+      expect(B.corridas).toEqual(['880', '882']);
+      expect(B.despachado).toBe(70000 + 60000);
+      expect(B.despachadoCorridas).toBe(60000);
+      expect(B.enCultivo).toBe(30000);
+    } finally { store.globalData = antes; }
   });
 
   it('supervivencia = Σ población actual ÷ Σ siembra × 100', () => {

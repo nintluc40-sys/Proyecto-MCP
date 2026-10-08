@@ -93,6 +93,16 @@ describe('producción del mes', () => {
     expect(textosProduccion({ ...C, total: 200e6, enCultivo: 200e6 }, 400e6, HOY).ok).toBe(false);
     expect(textosProduccion(C, 450.5e6, HOY).metaTxt).toBe('de 450,5 M');
   });
+  it('B1: la nota dice el Subtotal de la tabla SÓLO cuando no coincide con el despachado por módulo', () => {
+    const conDesp = { ...C, despachado: 344.51e6, enCultivo: 51.62e6, total: 396.13e6 };
+    expect(textosProduccion({ ...conDesp, despachadoCorridas: 344.51e6 }, 400e6, HOY).nota)
+      .toBe('Lo que sigue en cultivo aún puede bajar con la supervivencia.');
+    expect(textosProduccion({ ...conDesp, despachadoCorridas: 255.99e6 }, 400e6, HOY).nota)
+      .toBe('Lo que sigue en cultivo aún puede bajar con la supervivencia. Despachado cuenta cada módulo terminado; '
+        + 'el Subtotal de Producción Omarsa sólo suma corridas terminadas: 256,0 M.');
+    expect(textosProduccion({ ...conDesp, enCultivo: 0, despachadoCorridas: 0 }, 400e6, HOY).nota)
+      .toBe('Despachado cuenta cada módulo terminado; el Subtotal de Producción Omarsa sólo suma corridas terminadas: 0,0 M.');
+  });
   it('sin cifras: cargando o sin corridas; el rótulo del mes', () => {
     expect(textosProduccion(null, 400e6, { cargado: false }).nota).toBe('Cargando datos…');
     expect(textosProduccion(null, 400e6, HOY).nota).toBe('Sin corridas con mes de producción');

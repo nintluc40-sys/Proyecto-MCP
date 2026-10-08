@@ -203,7 +203,14 @@ export function textosProduccion(C, meta, ctx) {
     n5: millones(C.nauplios.n5),
     n5sub: 'nauplios N5' + (C.nauplios.desde ? ' · ' + dm(C.nauplios.desde) + ' al ' + dm(C.nauplios.hasta) : ''),
     des: ent(C.nauplios.desoves),
-    nota: C.enCultivo > 0 ? 'Lo que sigue en cultivo aún puede bajar con la supervivencia.' : '',
+    nota: [
+      C.enCultivo > 0 ? 'Lo que sigue en cultivo aún puede bajar con la supervivencia.' : '',
+      // B1 (2026-10-07, usuario): sólo cuando la tabla del Supervisor da otra cifra (corridas a medio despachar)
+      C.despachadoCorridas !== undefined && C.despachadoCorridas !== C.despachado
+        ? 'Despachado cuenta cada módulo terminado; el Subtotal de Producción Omarsa sólo suma corridas terminadas: '
+          + millones(C.despachadoCorridas) + '.'
+        : '',
+    ].filter(Boolean).join(' '),
   };
 }
 /** El rótulo del mes: «Octubre» y «corridas 597–601». */
