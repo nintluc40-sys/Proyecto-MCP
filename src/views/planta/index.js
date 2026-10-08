@@ -261,9 +261,12 @@ export function plantaView(root) {
   montar(leerModo());
   if (!store.connected) asegurarLibro();
   // Se desuscribe solo cuando la vista ya no está en el documento (el router no avisa al salir; su contenedor sigue). UNA
-  // limpieza para las dos vías (2026-10-07, auditoría C1): la de EV.CONN no quitaba la escucha de scroll de la ventana y
+  // limpieza para las tres vías (2026-10-07, auditoría C1): la de EV.CONN no quitaba la escucha de scroll de la ventana y
   // ésta retenía la vista entera —su DOM y su escena— hasta el siguiente desplazamiento.
-  const soltar = () => { offData(); offConn(); removeEventListener('scroll', alDesplazar); };
+  const soltar = () => { offData(); offConn(); offView(); removeEventListener('scroll', alDesplazar); };
+  // C2 (2026-10-07, usuario): también al cambiar de vista, sin esperar al siguiente EV.DATA/EV.CONN (hasta 5 min con la
+  // vista entera retenida). EV.VIEW llega ANTES de que el router pinte la vista nueva: se mira después.
+  const offView = on(EV.VIEW, () => setTimeout(() => { if (!marco.isConnected) soltar(); }, 0));
   const offData = on(EV.DATA, (d) => {
     if (!marco.isConnected) { soltar(); return; }
     const guardado = !!(d && d.guardado);

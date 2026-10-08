@@ -199,6 +199,28 @@ describe('🏭 Planta · datos nuevos: se avisan y se actualizan al tocar (2026-
     } finally { add.mockRestore(); quitar.mockRestore(); }
   });
 
+  it('al cambiar de vista lo suelta TODO en ese momento, sin esperar al siguiente aviso (C2, 2026-10-07)', async () => {
+    const puestas = [];
+    const add = vi.spyOn(window, 'addEventListener').mockImplementation((t, fn) => { if (t === 'scroll') puestas.push(fn); });
+    const quitar = vi.spyOn(window, 'removeEventListener').mockImplementation(() => {});
+    try {
+      const maqueta = await conLibroPintado(false);
+      emit(EV.VIEW, 'planta');                        // un cambio de vista que la deja en el documento: sigue escuchando
+      await espera();
+      expect(quitar).not.toHaveBeenCalledWith('scroll', puestas[0]);
+      emit(EV.VIEW, 'supervisor');                    // el router avisa ANTES de pintar la otra vista…
+      expect(quitar).not.toHaveBeenCalledWith('scroll', puestas[0]);
+      document.body.innerHTML = '';                   // …la pinta, y Planta deja el documento
+      await espera();
+      expect(quitar).toHaveBeenCalledWith('scroll', puestas[0]);
+      const antes = maqueta.pintarEstado.mock.calls.length;
+      store.globalData = [{ a: 9 }]; emit(EV.DATA, { firstLoad: false });   // ya no escucha
+      await espera(); await espera();
+      expect(maqueta.pintarEstado.mock.calls.length).toBe(antes);
+      expect(calculos).toHaveLength(1);
+    } finally { add.mockRestore(); quitar.mockRestore(); }
+  });
+
   it('cambiar de modo no recalcula el que ya enseña lo aceptado (sigue el aviso); cambiar de mes acepta lo nuevo', async () => {
     const maqueta = await conLibroPintado(false);
     elegir('analisis'); await espera();
