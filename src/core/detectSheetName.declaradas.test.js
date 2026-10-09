@@ -115,18 +115,16 @@ describe('detectSheetName · las hojas de Maduración cuya cabecera declara el c
       .toHaveLength(0);
   });
 
-  /* ⚠ La firma de Fin de Ciclo era SÓLO «metabisulfito», que vale mientras siga siendo SUYA.
-     D14 (2026-09-14) le dio una columna «Sala», y con «Machos» ya la alcanza la regla general de
-     Maduración: ahora tiene DOS firmas. Se fija que cada una la sostiene sola y que sin las dos
-     se cae — quitar las dos del esquema tiene que poner esta prueba en rojo, no dejar que la hoja
-     vuelva a «Hoja<N>» sin avisar. */
-  it('Fin de Ciclo se sostiene por «metabisulfito» y por «Sala»+«Machos», cada una sola; sin las dos se cae', () => {
+  /* ⚠ La firma de Fin de Ciclo es «metabisulfito», que vale mientras siga siendo SUYA. D14 (2026-09-14) le dio
+     una columna «Sala» y con «Machos» la alcanzaba también la regla general de Maduración; el 2026-10-09 (usuario)
+     «Sala» se QUITÓ y vuelve a tener UNA sola firma. Se fija que la sostiene y que sin ella se cae: quitarla del
+     esquema tiene que poner esta prueba en rojo, no dejar que la hoja vuelva a «Hoja<N>» sin avisar. */
+  it('Fin de Ciclo se sostiene por «metabisulfito» (ya sin «Sala»); sin ella se cae', () => {
     const cab = (fuera) => MAD_FIN_HEADERS.filter((h) => !fuera.some((f) => h.toLowerCase().includes(f)));
     expect(MAD_FIN_HEADERS.some((h) => h.toLowerCase().includes('metabisulfito'))).toBe(true);
-    expect(MAD_FIN_HEADERS).toContain('Sala');
-    expect(detectSheetName([filaDe(cab(['metabisulfito']))], 0)).toBe('Maduracion');
-    expect(detectSheetName([filaDe(cab(['sala']))], 0)).toBe('Maduracion');
-    expect(detectSheetName([filaDe(cab(['metabisulfito', 'sala']))], 0)).not.toBe('Maduracion');
+    expect(MAD_FIN_HEADERS).not.toContain('Sala');
+    expect(detectSheetName([filaDe(MAD_FIN_HEADERS)], 0)).toBe('Maduracion');
+    expect(detectSheetName([filaDe(cab(['metabisulfito']))], 0)).not.toBe('Maduracion');
   });
 
   /* 2026-09-24 (punto 6) · con «Código genético» la hoja gana la SEGUNDA firma de Maduración —la de Lotes e Ingreso,

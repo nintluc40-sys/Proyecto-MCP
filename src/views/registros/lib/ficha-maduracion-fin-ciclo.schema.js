@@ -55,7 +55,6 @@
 
 import { sanitizeStr } from '../../../core/trovan.js';
 import { normLote } from './ficha-maduracion-desoves.schema.js';
-import { salaTag, MAD_TANQUES_POR_SALA } from './ficha-maduracion-ingreso.schema.js';
 
 /** Hoja destino. Ya está en el `ALLOWED` del GAS desde `f66a3c4` y va por `isMadId`, así
  *  que no hace falta otro re-despliegue. */
@@ -78,10 +77,10 @@ export const MAD_FIN_COLUMNS = [
   { h: 'Lote', k: 'lote', grain: 'evento' },
   { h: 'Tipo', k: 'tipo', grain: 'evento' },
   { h: 'Motivo', k: 'motivo', grain: 'evento' },
-  /* D14 (2026-09-14, usuario): un lote puede estar en varias salas, y un cierre PARCIAL puede decir de
-     cuál salen los animales. Vacía = el lote entero. Un cierre Total es siempre del lote entero. Va en la
-     llave cuando se dice. 0t·9 (2026-09-29): es un DATO del registro; el libro ya no descuenta de esa sala. */
-  { h: 'Sala', k: 'sala', grain: 'evento' },
+  /* 🔴 2026-10-09 (usuario) · SE QUITA «Sala» (la puso D14 el 2026-09-14 para que un Parcial dijera de qué sala
+     salían): «no es necesaria porque un lote puede estar en distintas salas y al final se agrupan». El cierre vuelve
+     a ser del LOTE entero, también en la llave. Se pudo quitar sin migrar porque la hoja aún NO EXISTÍA (0 cierres,
+     medido ese día); el GAS cambió su firma en el mismo cambio (ver MAD_ESQUEMA_FIRMA en Code.gs). */
   /* ⚠ El orden es libre: la llave la da la columna `ID`, que el GAS localiza POR SU
      CABECERA. Lo que NO es libre es el nombre de esa columna. */
   { h: 'Metabisulfito (kg)', k: 'metabisulfito', grain: 'evento', num: true },
@@ -126,13 +125,10 @@ const kg = (v) => {
  *  lote el mismo día compartirían ID y el segundo borraría al primero. */
 export const motivoTag = (s) => sanitizeStr(s, 60).toUpperCase().replace(/[^A-ZÁÉÍÓÚÑ0-9]+/g, '');
 
-/** La sala entra en la llave SÓLO si se dice: sin ella el ID es el de siempre. */
-export function finRowId(fecha, lote, motivo, sala) {
-  const s = sanitizeStr(sala, 30);
-  return sanitizeStr(fecha, 10) + '-' + normLote(lote) + '-' + motivoTag(motivo) + (s ? '-' + salaTag(s) : '');
+/** La llave del cierre: fecha, lote y motivo (sin sala desde el 2026-10-09: el cierre es del lote entero). */
+export function finRowId(fecha, lote, motivo) {
+  return sanitizeStr(fecha, 10) + '-' + normLote(lote) + '-' + motivoTag(motivo);
 }
-/** Sala de un cierre: la de un Parcial; un Total es del lote entero y nunca la lleva. */
-const salaDeCierre = (x) => (sanitizeStr(x.tipo, 20) === 'Total' ? '' : sanitizeStr(x.sala, 30));
 
 /** Una fila por cierre. */
 export function buildFinRows(model) {
@@ -145,13 +141,11 @@ export function buildFinRows(model) {
     const lote = normLote(x.lote);
     const motivo = sanitizeStr(x.motivo, 60);
     if (lote === '' || motivo === '') return;   // sin llave completa no hay fila
-    const sala = salaDeCierre(x);
     const valores = Object.assign({
       fecha,
       lote,
       tipo: sanitizeStr(x.tipo, 20),
       motivo,
-      sala,
       metabisulfito: kg(x.metabisulfito),
       /* PE1.6 (2026-09-16, usuario): «la fecha de aplicación sale por defecto igual que la fecha del registro». Sólo
          se escribe CON su dosis —una fecha sola, como la que la ficha trae de salida, no dice nada— y una dosis sin
@@ -163,7 +157,7 @@ export function buildFinRows(model) {
       pesoPromMachos: kg(x.pesoPromMachos),
       pesoPromHembras: kg(x.pesoPromHembras),
       observaciones: sanitizeStr(x.observaciones, 300),
-      id: finRowId(fecha, lote, motivo, sala),
+      id: finRowId(fecha, lote, motivo),
     }, pesos);
     filas.push(MAD_FIN_COLUMNS.map((col) => valores[col.k]));
   });
@@ -201,16 +195,12 @@ export function validarFinCiclo(model) {
     if (motivo === '') errores.push('Falta el motivo del cierre ' + (i + 1) + '. Va en la llave: sin él, un pedido y un descarte del mismo día se pisarían.');
     if (tipo === '') errores.push('Falta decir si ' + et + ' es Total o Parcial.');
     else if (MAD_FIN_TIPOS.indexOf(tipo) === -1) avisos.push('«' + tipo + '» no es un tipo conocido de cierre.');
-    const salaDicha = sanitizeStr(x.sala, 30);
-    if (salaDicha !== '' && tipo === 'Total') errores.push('Un cierre Total cierra ' + (lote || 'el lote') + ' ENTERO, en todas sus salas: deja la sala vacía o regístralo como Parcial.');
-    if (salaDicha !== '' && !MAD_TANQUES_POR_SALA[salaDicha]) avisos.push('«' + salaDicha + '» no es una sala conocida (' + et + ').');
     if (lote === '' || motivo === '') return;
 
-    const sala = salaDeCierre(x);
-    const llave = lote + '|' + motivoTag(motivo) + '|' + (sala ? salaTag(sala) : '');
+    const llave = lote + '|' + motivoTag(motivo);
     if (vistos.has(llave)) {
       errores.push(
-        'El lote ' + lote + ' se cierra dos veces por «' + motivo + '»' + (sala ? ' en ' + sala : '') + ' en esta fecha. ' +
+        'El lote ' + lote + ' se cierra dos veces por «' + motivo + '» en esta fecha. ' +
         'Los dos escribirían la misma fila y el segundo borraría al primero: regístralos sumados.'
       );
     }

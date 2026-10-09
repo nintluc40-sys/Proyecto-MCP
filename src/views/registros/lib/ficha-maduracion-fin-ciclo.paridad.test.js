@@ -124,9 +124,9 @@ const MODELOS = {
   },
   'sin cierres': { fecha: '2026-09-08', cierres: [] },
   'fecha inválida': { fecha: '8-9-2026', cierres: [{ lote: 'AB', tipo: 'Total', motivo: 'Pedido', machos: 1, hembras: 1 }] },
-  /* D14 + pesos (2026-09-14): la sala en llave y fila, el Total que la ignora, la duplicada POR sala,
-     la sala desconocida, y los cuatro pesos del registro con decimales, uno inválido y uno sin sexo. */
-  'D14: salas, Total con sala y duplicado en la misma sala': {
+  /* D14 (2026-09-14) le dio sala al Parcial; el 2026-10-09 (usuario) se QUITÓ. Este modelo es el de un borrador de
+     antes: trae salas, y los dos tienen que ignorarlas igual (ni en la fila, ni en el ID, ni en la validación). */
+  'modelo con salas (de antes del 2026-10-09): se ignoran': {
     fecha: '2026-09-08',
     cierres: [
       { lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', sala: 'Sala 1', machos: 10, hembras: 0 },
@@ -215,11 +215,14 @@ describe('Fin de Ciclo · el mismo veredicto', () => {
     expect(validarFinCiclo(MODELOS['sin llave completa y tipo desconocido']).avisos.length).toBeGreaterThan(0);
     // Y el caso que SÍ tiene que pasar: dos motivos distintos el mismo día conviven.
     expect(validarFinCiclo(MODELOS['mismo lote, dos motivos el mismo día']).errores).toEqual([]);
-    const d14 = validarFinCiclo(MODELOS['D14: salas, Total con sala y duplicado en la misma sala']);
-    expect(d14.errores).toHaveLength(2);   // el duplicado en Sala 2 y el Total con sala
-    expect(d14.avisos).toHaveLength(1);    // Sala 9
-    expect(buildFinRows(MODELOS['D14: salas, Total con sala y duplicado en la misma sala']).map((f) => f[f.length - 1]))
-      .toEqual(['2026-09-08-AB-PEDIDO-S1', '2026-09-08-AB-PEDIDO-S2', '2026-09-08-AB-PEDIDO-S2', '2026-09-08-AB-PEDIDO', '2026-09-08-BC-FINDEVIDAÚTIL', '2026-09-08-CD-OTRO-S9']);
+    // 2026-10-09 · las salas de un modelo viejo no cuentan: AB·Pedido sale CUATRO veces (tres duplicados), sin el error
+    // del Total con sala ni el aviso de la sala desconocida, y ningún ID lleva sala.
+    const conSalas = validarFinCiclo(MODELOS['modelo con salas (de antes del 2026-10-09): se ignoran']);
+    expect(conSalas.errores).toHaveLength(3);
+    expect(conSalas.errores.every((e) => /se cierra dos veces por «Pedido» en esta fecha/.test(e))).toBe(true);
+    expect(conSalas.avisos).toEqual([]);
+    expect(buildFinRows(MODELOS['modelo con salas (de antes del 2026-10-09): se ignoran']).map((f) => f[f.length - 1]))
+      .toEqual(['2026-09-08-AB-PEDIDO', '2026-09-08-AB-PEDIDO', '2026-09-08-AB-PEDIDO', '2026-09-08-AB-PEDIDO', '2026-09-08-BC-FINDEVIDAÚTIL', '2026-09-08-CD-OTRO']);
     expect(validarFinCiclo(MODELOS['rojos y pesos por lote, peso total: decimales, inválido, sexo que no sale y rojos de más']).avisos).toHaveLength(3);
     expect(validarFinCiclo(MODELOS['peso total inválido']).avisos).toContain('El peso total no es una cifra válida y no se guardará.');
   });

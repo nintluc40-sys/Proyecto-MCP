@@ -183,8 +183,10 @@ const tq = (Fecha, Sala, Tanque, extra = {}) => Object.assign({
   'Cópulas': 0,
 }, extra);
 
+// 2026-10-09 (usuario): la hoja ya NO lleva «Sala» (la tuvo un Parcial con D14); sólo la trae el escenario que la simula
+// escrita a mano, para fijar que las dos copias del libro la ignoran igual.
 const fin = (Fecha, Lote, Tipo, Machos, Hembras, Sala) => ({
-  Fecha, Lote, Tipo, Motivo: 'Pedido', Sala: Sala || '', Machos, Hembras, Observaciones: '',
+  Fecha, Lote, Tipo, Motivo: 'Pedido', ...(Sala ? { Sala } : {}), Machos, Hembras, Observaciones: '',
 });
 
 const mov = (Fecha, sO, tO, sD, tD, Machos, Hembras) => ({
@@ -344,9 +346,9 @@ const ESCENARIOS = {
     ],
     tanques: [],
   },
-  /* D14 (2026-09-14): Parcial con sala (desde 0t·9 es sólo dato: no descuenta de ella), Parcial en una
-     sala donde el lote no está, y un Total con sala escrita, que la ignora. */
-  'D14: cierres por SALA': {
+  /* D14 (2026-09-14) le dio sala al Parcial y el 2026-10-09 (usuario) se quitó: el cierre es del lote entero. Aquí la
+     sala viene escrita a mano —una donde el lote está, otra donde no, y en un Total— y las dos copias la ignoran. */
+  'cierres con una «Sala» escrita a mano (no cuenta)': {
     ingresos: [
       ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 150, 0),
       ing('2026-01-01', 'AB', 'CG1', 'Sala 2', 16, 50, 0),
@@ -551,11 +553,11 @@ describe('Libro · el mismo saldo, posición a posición', () => {
     const mas = construirLibro(ESCENARIOS['cierre que declara más de lo vivo (sin déficit) y otro de un lote que no existe'], { hoy: HOY });
     expect(mas.avisos.map((a) => a.tipo)).toEqual(['cierre-sin-lote']);
     expect(mas.tanques.get('Sala 1|1').machos).toBe(10);
-    const d14 = construirLibro(ESCENARIOS['D14: cierres por SALA'], { hoy: HOY });
+    const d14 = construirLibro(ESCENARIOS['cierres con una «Sala» escrita a mano (no cuenta)'], { hoy: HOY });
     expect(d14.tanques.get('Sala 1|1').machos).toBe(150);
     expect(d14.tanques.get('Sala 2|16').machos).toBe(50);
     expect(d14.tanques.get('Sala 3|22').machos).toBe(0);
-    expect(d14.avisos.map((a) => a.tipo)).toEqual(['cierre-sin-lote', 'diferencia-cierre', 'diferencia-cierre']);
+    expect(d14.avisos.map((a) => a.tipo)).toEqual(['diferencia-cierre', 'diferencia-cierre']);   // la «Sala 4» ya no avisa
 
     /* 2026-09-09: sin esto, el escenario del re-ingreso podría compararse en verde con las
        DOS copias dejando el lote cerrado, que es justo el defecto que vino a fijar. */

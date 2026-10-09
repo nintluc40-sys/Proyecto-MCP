@@ -487,6 +487,10 @@ describe('GAS · lo que la guarda NO puede romper (V3)', () => {
 const FIN_6DF4B3A = ['Fecha', 'Lote', 'Tipo', 'Motivo', 'Metabisulfito (kg)', 'Fecha aplicación', 'Machos', 'Hembras', 'Observaciones', 'ID'];
 const FIN_E955C72 = ['Fecha', 'Lote', 'Tipo', 'Motivo', 'Sala', 'Metabisulfito (kg)', 'Fecha aplicación', 'Machos', 'Hembras', 'Registro',
   'Peso promedio machos (g)', 'Peso promedio hembras (g)', 'Peso total machos (kg)', 'Peso total hembras (kg)', 'Observaciones', 'ID'];
+/* La de D14 (2026-09-14 → 2026-10-09): con «Sala» en la 5 y «Rojos» en la 10. Es la que llevan los equipos y Pages hasta
+   que se reparta y publique la versión sin «Sala» (usuario, 2026-10-09). */
+const FIN_D14 = ['Fecha', 'Lote', 'Tipo', 'Motivo', 'Sala', 'Metabisulfito (kg)', 'Fecha aplicación', 'Machos', 'Hembras', 'Rojos',
+  'Peso promedio machos (g)', 'Peso promedio hembras (g)', 'Registro', 'Peso total (kg)', 'Observaciones', 'ID'];
 const INGRESO_6DF4B3A_PREVIO = ['Fecha', 'Lote', 'Código genético', 'Piscina Broodstock', 'Camaronera origen', 'Grupo', 'Sala', 'Tanque',
   'Machos', 'Hembras', 'Peso promedio machos (g)', 'Peso promedio hembras (g)', 'Supervivencia piscina (%)', 'Camarones por m2',
   'Densidad de siembra', 'Agua', 'ID'];
@@ -499,9 +503,10 @@ describe('GAS · A4 · una app vieja no fija la cabecera vieja en una hoja vací
       rows: [['2026-09-15', 'BP', 'Total', 'Pedido', '', '', 10, 12, '', '2026-09-15-BP-Pedido']] });
     expect(r.status).toBe('error');
     expect(r.message).toContain('Esquema desactualizado');
-    expect(r.message).toContain('columna 5');
-    expect(r.message).toContain('«Sala»');
-    expect(r.message).not.toContain('Metabisulfito');                  // no echa en cara lo que mandó
+    // 2026-10-09 · sin «Sala», la 5 vuelve a ser el metabisulfito (la casa); la delata la 9, donde lleva «Observaciones»
+    expect(r.message).toContain('columna 9');
+    expect(r.message).toContain('«Rojos»');
+    expect(r.message).not.toContain('Observaciones');                  // no echa en cara lo que mandó
     expect(hojas['Maduración Fin de Ciclo']).toBeUndefined();
     expect(g.candado.soltado).toBe(g.candado.tomado);
     expect([...g.cache.keys()].some((k) => k.startsWith('idem_'))).toBe(false);
@@ -516,12 +521,23 @@ describe('GAS · A4 · una app vieja no fija la cabecera vieja en una hoja vací
     expect(hoja.escrituras).toEqual([]);
   });
 
-  it('🔴 Fin de Ciclo con Sala pero sin «Rojos» (esquema de e955c72) se rechaza por la columna 10', () => {
+  it('🔴 Fin de Ciclo con Sala y sin «Rojos» (esquema de e955c72) se rechaza por la columna 5', () => {
     const g = gas({});
     const r = g.post({ sheetName: 'Maduración Fin de Ciclo', headers: FIN_E955C72, rows: [filaVacia(FIN_E955C72)] });
     expect(r.status).toBe('error');
-    expect(r.message).toContain('columna 10');
-    expect(r.message).toContain('«Rojos»');
+    expect(r.message).toContain('columna 5');
+    expect(r.message).toContain('«Metabisulfito (kg)»');
+  });
+
+  /* 2026-10-09 (usuario) · se quita «Sala». Un cliente de D14 (la copia de los equipos hasta el reparto) crearía la hoja
+     con la columna vieja y desde ahí la guarda V3 rechazaría a todos los clientes al día: la firma lo impide. */
+  it('🔴 Fin de Ciclo de D14 (con «Sala» y «Rojos»), con la hoja SIN crear: se rechaza por la columna 5 y la hoja NO nace', () => {
+    const hojas = {};
+    const r = gas(hojas).post({ sheetName: 'Maduración Fin de Ciclo', headers: FIN_D14, rows: [filaVacia(FIN_D14)] });
+    expect(r.status).toBe('error');
+    expect(r.message).toContain('columna 5');
+    expect(r.message).toContain('«Metabisulfito (kg)»');
+    expect(hojas['Maduración Fin de Ciclo']).toBeUndefined();
   });
 
   it('🔴 Ingreso con «Camarones por m2» y Lotes con «Total de nauplios», en hojas vacías, se rechazan', () => {

@@ -350,7 +350,7 @@ del módulo se quede sin contraparte en el monolito.
 | 🔄 **Movimientos** | `Maduración Movimientos` | el **tramo** origen → destino |
 | 🥚 **Desoves** | `Maduración Lotes` | (fecha, lote, código genético) |
 | 📋 **Inf. Supervisor** | `Maduración Mortalidad Desove` | (fecha, lote, código genético): mortalidad ♀ + una fila por revisión de nauplios |
-| 🏁 **Fin de Ciclo** | `Maduración Fin de Ciclo` | (fecha, lote, motivo, sala si es Parcial) · Registro y sus pesos |
+| 🏁 **Fin de Ciclo** | `Maduración Fin de Ciclo` | (fecha, lote, motivo) · Registro y sus pesos |
 | 🧪 **Tratamientos** | `Maduración Tratamientos` | una fila por tarjeta: preventivo por lote o desinfección por área |
 | 🍤 **Alimentación** | `Maduración Alimentación` | (fecha, sala, tanque): agenda de tomas y ración calculada |
 | 📈 **Broodstock** | `Maduración Broodstock` | (fecha de corte, piscina): la carga SEMANAL del Excel del área |
@@ -493,8 +493,10 @@ bloquea (va en ámbar, avisado); y sin referencia o con el libro incompleto no s
   el libro leído, Ingreso marca en ámbar los tanques con otro lote vivo y Revisar/Guardar lo avisan,
   igual que Movimientos con un tramo de tipo Transferencia hacia un tanque con otro lote (aviso, no error;
   al corregir una Transferencia ya guardada no cuenta la fila que el envío reemplaza).
-  **Un cierre Parcial puede indicar la sala (D14)**, que queda como dato de dónde salieron; un Total
-  es siempre del lote entero. **Ningún cierre resta lo que declara**: el Total cierra el lote y anota
+  **Un cierre es siempre del lote entero**, esté en una o en varias salas: la columna «Sala» que D14
+  le dio al Parcial (2026-09-14) se quitó el 2026-10-09 (usuario: «un lote puede estar en distintas
+  salas y al final se agrupan»), de la ficha, de la llave, del libro y de la firma del GAS, antes de
+  que la hoja existiera. **Ningún cierre resta lo que declara**: el Total cierra el lote y anota
   como **diferencia** lo que el libro aún tenga tras los partes del día, y el cuadre de 🧬 Lotes lo
   enseña aparte («Registrado en Fin de Ciclo», fuera de la resta). Los **pesos** (promedio y total de machos y hembras) son del registro entero —se
   pesan juntos todos los lotes— y se escriben iguales en cada fila con el mismo **«Registro»** (un
@@ -796,7 +798,7 @@ vacía o no exista**, que es justo cuando el daño se hace.
 |---|---|
 | Maduración Ingreso | 14 `Crecimiento semanal promedio` |
 | Maduración Lotes (Desoves) | 7 `Hembras no viables` |
-| Maduración Fin de Ciclo | 5 `Sala` · 10 `Rojos` |
+| Maduración Fin de Ciclo | 5 `Metabisulfito (kg)` · 9 `Rojos` |
 | Maduración Mortalidad Desove | 13 `Fototropismo` · 17 `Área` · 18 `Alcalinidad día` |
 | Maduración Tratamientos | 8 `Productos RAS` |
 | Maduración Alimentación | 9 `Fuente del peso` |

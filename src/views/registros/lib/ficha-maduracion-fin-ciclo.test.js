@@ -31,14 +31,16 @@ describe('Fin de Ciclo · la hoja y sus columnas', () => {
     expect(MAD_FIN_HEADERS).toEqual(MAD_FIN_COLUMNS.map((c) => c.h));
   });
 
-  it('NO lleva tanque: se cierra el LOTE (y un Parcial puede decir su SALA · D14)', () => {
+  it('🔴 NO lleva tanque NI sala: se cierra el LOTE entero (2026-10-09 se quitó la «Sala» de D14)', () => {
     /* Decisión del usuario: el cierre es del lote. Pedir el tanque obligaría a enumerar dónde
-       está, que es justo lo que el libro ya sabe. D14 (2026-09-14): un lote vive en varias
-       salas, y un Parcial puede decir de cuál salen; vacía = el lote entero. (Desde 0t·9 lo
-       declarado es sólo registro: el libro ya no lo descuenta.) */
-    expect(MAD_FIN_HEADERS).toContain('Sala');
+       está, que es justo lo que el libro ya sabe. D14 (2026-09-14) le dio al Parcial una «Sala»;
+       el 2026-10-09 el usuario la quitó: «un lote puede estar en distintas salas y al final se
+       agrupan». La 5.ª columna vuelve a ser el metabisulfito. */
+    expect(MAD_FIN_HEADERS).not.toContain('Sala');
     expect(MAD_FIN_HEADERS).not.toContain('Tanque');
     expect(MAD_FIN_HEADERS).toContain('Lote');
+    expect(MAD_FIN_HEADERS).toHaveLength(15);
+    expect(MAD_FIN_HEADERS.slice(0, 5)).toEqual(['Fecha', 'Lote', 'Tipo', 'Motivo', 'Metabisulfito (kg)']);
   });
 
   it('2026-09-15 · Rojos y pesos promedio por lote, y UN peso total (sin total por sexo)', () => {
@@ -121,22 +123,16 @@ describe('Fin de Ciclo · la llave', () => {
     expect(buildFinRows(base())[0][col('ID')]).toBe('2026-09-08-AB-PEDIDO');
   });
 
-  /* D14: la sala entra en la llave SÓLO si se dice, así que los IDs de siempre no cambian; y dos
-     Parciales del mismo lote y motivo en salas distintas son dos filas, no una encima de otra. */
-  it('D14 · la sala va en la llave sólo cuando se dice', () => {
-    expect(finRowId('2026-09-08', 'AB', 'Pedido', '')).toBe('2026-09-08-AB-PEDIDO');
-    expect(finRowId('2026-09-08', 'AB', 'Pedido', 'Sala 2')).toBe('2026-09-08-AB-PEDIDO-S2');
-  });
-
-  it('D14 · un Parcial con sala la escribe y la lleva en el ID; un Total nunca', () => {
+  /* 2026-10-09 (usuario): sin «Sala», la llave vuelve a ser (fecha, lote, motivo). Un modelo que aún traiga una sala
+     —un borrador o un envío guardado antes del cambio— no la escribe en ninguna columna ni la mete en el ID. */
+  it('🔴 la sala ya no va en la llave ni en la fila, aunque el modelo la traiga', () => {
     const m = base();
     m.cierres[0].sala = 'Sala 2';
     m.cierres.push({ lote: 'BC', tipo: 'Total', motivo: 'Fin de vida útil', sala: 'Sala 3', machos: 1 });
-    const [parcial, total] = buildFinRows(m);
-    expect(parcial[col('Sala')]).toBe('Sala 2');
-    expect(parcial[col('ID')]).toBe('2026-09-08-AB-PEDIDO-S2');
-    expect(total[col('Sala')]).toBe('');
-    expect(total[col('ID')]).toBe('2026-09-08-BC-FINDEVIDAÚTIL');
+    const filas = buildFinRows(m);
+    expect(filas.map((f) => f[col('ID')])).toEqual(['2026-09-08-AB-PEDIDO', '2026-09-08-BC-FINDEVIDAÚTIL']);
+    expect(filas.every((f) => f.length === MAD_FIN_HEADERS.length && !f.includes('Sala 2') && !f.includes('Sala 3'))).toBe(true);
+    expect(filas[0][col('Metabisulfito (kg)')]).toBe(12.5);   // nada se corrió de sitio
   });
 });
 
@@ -341,25 +337,22 @@ describe('Fin de Ciclo · validación', () => {
     expect(validarFinCiclo(m).avisos.some((a) => /no es un tipo conocido/.test(a))).toBe(true);
   });
 
-  it('D14 · ERROR si un cierre Total dice sala: cierra el lote en TODAS', () => {
+  /* 2026-10-09 (usuario): sin «Sala», una sala que traiga el modelo (un borrador viejo) ya no se valida: ni el error
+     del Total con sala ni el aviso de sala desconocida. */
+  it('🔴 una sala en el modelo ya no da error ni aviso', () => {
     const m = base();
-    Object.assign(m.cierres[0], { tipo: 'Total', sala: 'Sala 2' });
-    expect(validarFinCiclo(m).errores).toEqual(['Un cierre Total cierra AB ENTERO, en todas sus salas: deja la sala vacía o regístralo como Parcial.']);
+    Object.assign(m.cierres[0], { tipo: 'Total', sala: 'Sala 9' });
+    const r = validarFinCiclo(m);
+    expect(r.errores).toEqual([]);
+    expect(r.avisos.some((a) => /sala/i.test(a))).toBe(false);
   });
 
-  it('D14 · AVISO si la sala no es conocida', () => {
-    const m = base();
-    m.cierres[0].sala = 'Sala 9';
-    expect(validarFinCiclo(m).avisos).toEqual(['«Sala 9» no es una sala conocida (el cierre de AB).']);
-  });
-
-  it('D14 · el mismo lote y motivo en salas DISTINTAS vale; en la MISMA sala, no', () => {
+  /* Con la sala fuera de la llave, el mismo lote y motivo el mismo día es UNA fila: dos cierres así —aunque vinieran
+     de salas distintas— se pisarían, y se registran sumados (es lo que D14 había abierto y el usuario cerró). */
+  it('🔴 el mismo lote y motivo dos veces es ERROR, aunque traigan salas distintas', () => {
     const m = base();
     m.cierres[0].sala = 'Sala 1';
-    m.cierres.push({ lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', sala: 'Sala 2', machos: 5 });
-    m.cierres.push({ lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', machos: 5 });   // sin sala: el lote entero, otro ID
-    expect(validarFinCiclo(m).errores).toEqual([]);
-    m.cierres.push({ lote: 'ab', tipo: 'Parcial', motivo: 'Pedido', sala: 'Sala 2', machos: 1 });
-    expect(validarFinCiclo(m).errores).toEqual(['El lote AB se cierra dos veces por «Pedido» en Sala 2 en esta fecha. Los dos escribirían la misma fila y el segundo borraría al primero: regístralos sumados.']);
+    m.cierres.push({ lote: 'ab', tipo: 'Parcial', motivo: 'Pedido', sala: 'Sala 2', machos: 5 });
+    expect(validarFinCiclo(m).errores).toEqual(['El lote AB se cierra dos veces por «Pedido» en esta fecha. Los dos escribirían la misma fila y el segundo borraría al primero: regístralos sumados.']);
   });
 });

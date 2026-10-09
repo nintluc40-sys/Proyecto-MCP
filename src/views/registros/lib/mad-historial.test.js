@@ -98,7 +98,7 @@ const llenarFin = (lote = 'BP', machos = '5') => {
   const c = document.querySelector('#fp-fin .mf-cierre');
   H.madFinTipoChange(pon(c.querySelector('.mf-tipo'), 'Parcial'));
   pon(c.querySelector('.mf-lote'), lote); pon(c.querySelector('.mf-motivo'), 'Pedido');
-  pon(c.querySelector('.mf-sala'), 'Sala 2'); pon(c.querySelector('.mf-machos'), machos);
+  pon(c.querySelector('.mf-machos'), machos);   // 2026-10-09: sin «Sala» (el cierre es del lote entero)
 };
 const col = (p, h) => p.headers.indexOf(h);
 const hist = () => H.madHistLeer();
@@ -164,6 +164,27 @@ describe('📜 Historial · ✏️ Editar reescribe las MISMAS filas', () => {
     selectsComoNavegador($('#fp-fin'));
     return e;
   };
+
+  /* 2026-10-09 (usuario) · Fin de Ciclo pierde «Sala». Un envío guardado ANTES trae en su copia de la ficha el campo
+     viejo: al abrirlo para corregir se retira (no se lee), y el reenvío sale sin sala y con el ID sin ella. */
+  it('🔴 un envío de antes del 2026-10-09 abre SIN la «Sala» vieja y se reenvía sin ella', async () => {
+    llenarFin();
+    await H.madFinGuardar();
+    const e = hist()[0];
+    const clave = H.MAD_HIST_PANEL_PRE + e.id;
+    const viejo = localStorage.getItem(clave).replace('<input class="mf-mbs"',
+      '<label>Sala (sólo Parcial)<select class="mf-sala"><option value="Sala 2" selected>Sala 2</option></select></label><input class="mf-mbs"');
+    expect(viejo, 'el fixture no inyectó la sala vieja').toContain('mf-sala');
+    localStorage.setItem(clave, viejo);
+    H.madHistEditar(e.id);
+    selectsComoNavegador($('#fp-fin'));
+    expect($('#fp-fin .mf-sala')).toBeNull();
+    expect($('#fp-fin').textContent).not.toContain('Sala (sólo Parcial)');
+    await H.madFinGuardar();
+    const p = envios[envios.length - 1];
+    expect(p.headers).not.toContain('Sala');
+    expect(p.rows[0][col(p, 'ID')]).toBe(envios[0].rows[0][col(envios[0], 'ID')]);
+  });
 
   it('🔴 abre la ficha tal como se envió, con el aviso y la fecha FIJA', async () => {
     const e = await abrir();

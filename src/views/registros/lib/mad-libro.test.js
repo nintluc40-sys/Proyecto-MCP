@@ -53,7 +53,9 @@ const mov = (Fecha, sO, tO, sD, tD, Machos, Hembras) => ({
    2026-09-08 —ningún reproductor vuelve a camaronera— y en su sitio entró el proceso de
    metabisulfito. Un fixture que dice ser «la forma REAL» y no lo es engaña dos veces. */
 const fin = (Fecha, Lote, Tipo, Machos, Hembras, Motivo, Sala) => ({
-  Fecha, Lote, Tipo, Motivo: Motivo || 'Pedido', Sala: Sala || '',   // D14 (2026-09-14): Sala de un Parcial
+  // 2026-10-09 (usuario): la hoja ya NO lleva «Sala» (la tuvo un Parcial con D14). Sólo la trae un caso que la simula
+  // escrita a mano, para fijar que el libro no la mira.
+  Fecha, Lote, Tipo, Motivo: Motivo || 'Pedido', ...(Sala ? { Sala } : {}),
   'Metabisulfito (kg)': '', 'Fecha aplicación': '',
   Machos, Hembras,
   'Peso promedio machos (g)': '', 'Peso promedio hembras (g)': '', 'Rojos': '', 'Peso total (kg)': '',
@@ -561,12 +563,19 @@ describe('Libro · el FIN DE CICLO (Fase 4B)', () => {
     expect(l.avisos).toEqual([]);   // antes: deficit-cierre de 30 en Sala 2
   });
 
-  it('D14 · un Parcial en una sala donde el lote no está se AVISA y no toca las otras', () => {
+  /* 2026-10-09 (usuario): el cierre es del LOTE entero —«un lote puede estar en distintas salas y al final se agrupan»—
+     y la hoja ya no lleva «Sala». Una escrita a mano en otra sala no cuenta: el lote está en Sala 1 y 2, y basta. */
+  it('🔴 una «Sala» escrita a mano en el cierre ya no cuenta: si el lote está en alguna sala, no avisa', () => {
     const l = construirLibro({ ingresos: dosSalas(), cierres: [fin('2026-01-05', 'AB', 'Parcial', 10, 0, 'Pedido', 'Sala 3')], tanques: [] }, { hoy: '2026-01-10' });
     expect(saldo(l, 'Sala 1', 1).machos).toBe(150);
     expect(saldo(l, 'Sala 2', 16).machos).toBe(50);
+    expect(l.avisos).toEqual([]);   // antes (D14): cierre-sin-lote «en Sala 3»
+  });
+
+  it('un cierre de un lote que no está en ninguna sala se AVISA, sin sala', () => {
+    const l = construirLibro({ ingresos: dosSalas(), cierres: [fin('2026-01-05', 'ZZ', 'Parcial', 10, 0, 'Pedido')], tanques: [] }, { hoy: '2026-01-10' });
     expect(l.avisos.map((a) => [a.tipo, a.texto, a.sala])).toEqual([
-      ['cierre-sin-lote', 'Se cerró el lote AB en Sala 3 y ningún ingreso explica que estuviera allí.', 'Sala 3']]);
+      ['cierre-sin-lote', 'Se cerró el lote ZZ y ningún ingreso explica dónde estaba.', undefined]]);
   });
 
   it('D14 · un TOTAL ignora la sala (si alguien la escribe en la hoja): cierra el lote entero', () => {

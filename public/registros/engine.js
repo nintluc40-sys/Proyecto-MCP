@@ -6587,12 +6587,10 @@ function madConstruirLibro(fuentes, opts){
       const esTotal=madLibroTxt(r.Tipo)==="Total";
       const pedido={ machos: madLibroEnt(r.Machos), hembras: madLibroEnt(r.Hembras) };
       if(!lote){ anota(fecha,"cierre-incompleto","Un cierre sin lote no entra en el libro."); return; }
-      // D14: la sala de un Parcial es un dato (0t·9: ya no descuenta de ella); un Total es del lote entero. Ver el módulo.
-      const salaCierre=esTotal ? "" : madLibroTxt(r.Sala);
-      const enSala=function(o){ if(salaCierre) o.sala=salaCierre; return o; };
-      const posLote=Object.keys(pos).map(function(k){ return pos[k]; }).filter(function(p){ return p.lote===lote && (!salaCierre || p.sala===salaCierre); });
+      // 2026-10-09 (usuario): el cierre es del LOTE entero, en todas sus salas (la hoja ya no lleva «Sala»). Ver el módulo.
+      const posLote=Object.keys(pos).map(function(k){ return pos[k]; }).filter(function(p){ return p.lote===lote; });
       if(!posLote.length){
-        anota(fecha,"cierre-sin-lote",salaCierre ? "Se cerró el lote "+lote+" en "+salaCierre+" y ningún ingreso explica que estuviera allí." : "Se cerró el lote "+lote+" y ningún ingreso explica dónde estaba.",enSala({ lote:lote, machos:pedido.machos, hembras:pedido.hembras }));
+        anota(fecha,"cierre-sin-lote","Se cerró el lote "+lote+" y ningún ingreso explica dónde estaba.",{ lote:lote, machos:pedido.machos, hembras:pedido.hembras });
         return;
       }
       if(esTotal){
@@ -9836,6 +9834,8 @@ function _madBorrAdaptar(ficha, fp, dia){
   if(ficha === "fin"){
     const f=fp.querySelector("#mf-fecha"), reg=f ? f.value : "";
     fp.querySelectorAll(".mf-mbsf").forEach(function(el){ if(el.value && el.value!==reg && el.getAttribute("data-fijo")!=="1"){ el.setAttribute("data-fijo","1"); el.style.background="#fef9c3"; } });
+    // · 2026-10-09 (usuario): sin «Sala». Un borrador (o un envío del 📜 Historial) de antes la trae: fuera, que no se lee.
+    fp.querySelectorAll(".mf-sala").forEach(function(el){ const l=el.closest("label"); (l || el).remove(); });
   }
 }
 /** Asa del campo Fecha. Sin nada tecleado, guarda el día que se deja y trae el que se elige (2026-09-15). Con algo
@@ -11481,8 +11481,7 @@ const MAD_FIN_COLUMNS = [
   { h:"Lote", k:"lote" },
   { h:"Tipo", k:"tipo" },
   { h:"Motivo", k:"motivo" },
-  // D14 (2026-09-14): la sala de un cierre PARCIAL (vacía = el lote entero). Ver el módulo.
-  { h:"Sala", k:"sala" },
+  // 🔴 2026-10-09 (usuario): se QUITA «Sala» (D14): el cierre es del lote entero, también en la llave. Ver el módulo.
   { h:"Metabisulfito (kg)", k:"metabisulfito" },
   { h:"Fecha aplicación", k:"fechaMetabisulfito" },
   { h:"Machos", k:"machos" },
@@ -11503,13 +11502,10 @@ const MAD_FIN_HEADERS = MAD_FIN_COLUMNS.map(function(c){ return c.h; });
 // El motivo, compacto, para la llave. Sin él un pedido y un descarte del mismo lote el
 // mismo día compartirían ID y el segundo borraría al primero — y con él su registro.
 function madFinMotivoTag(s){ return sanitizeStr(s,60).toUpperCase().replace(/[^A-ZÁÉÍÓÚÑ0-9]+/g,""); }
-// La sala entra en la llave SÓLO si se dice: sin ella el ID es el de siempre.
-function madFinRowId(fecha, lote, motivo, sala){
-  const s = sanitizeStr(sala,30);
-  return sanitizeStr(fecha,10)+"-"+madDesNormLote(lote)+"-"+madFinMotivoTag(motivo)+(s ? "-"+madIngSalaTag(s) : "");
+// La llave del cierre: fecha, lote y motivo (sin sala desde el 2026-10-09: el cierre es del lote entero).
+function madFinRowId(fecha, lote, motivo){
+  return sanitizeStr(fecha,10)+"-"+madDesNormLote(lote)+"-"+madFinMotivoTag(motivo);
 }
-// Sala de un cierre: la de un Parcial; un Total es del lote entero y nunca la lleva.
-function madFinSalaDeCierre(x){ return sanitizeStr(x.tipo,20)==="Total" ? "" : sanitizeStr(x.sala,30); }
 // Dosis en kg: admite decimales, al revés que los conteos. Devuelve "" cuando no hay cifra
 // —no 0— para que el MERGE del GAS conserve la celda: un 0 por descuido borraría una dosis
 // real. Mismo criterio que el ×1000 de Desoves.
@@ -11526,9 +11522,8 @@ function madFinBuildRows(model){
     const x = c||{};
     const lote = madDesNormLote(x.lote), motivo = sanitizeStr(x.motivo,60);
     if(lote===""||motivo==="") return;   // sin llave completa no hay fila
-    const sala = madFinSalaDeCierre(x);
     const v = {
-      fecha: fecha, lote: lote, tipo: sanitizeStr(x.tipo,20), motivo: motivo, sala: sala,
+      fecha: fecha, lote: lote, tipo: sanitizeStr(x.tipo,20), motivo: motivo,
       metabisulfito: madFinKg(x.metabisulfito),
       // PE1.6 (2026-09-16, usuario): por defecto la fecha del registro, y sólo con su dosis. Ver el módulo.
       fechaMetabisulfito: madFinKg(x.metabisulfito)==="" ? "" : (sanitizeStr(x.fechaMetabisulfito,10) || fecha),
@@ -11537,7 +11532,7 @@ function madFinBuildRows(model){
       pesoTotal: madFinKg(m.pesoTotal),
       registro: sanitizeStr(m.registro,40),
       observaciones: sanitizeStr(x.observaciones,300),
-      id: madFinRowId(fecha, lote, motivo, sala)
+      id: madFinRowId(fecha, lote, motivo)
     };
     filas.push(MAD_FIN_COLUMNS.map(function(col){ return v[col.k]; }));
   });
@@ -11563,13 +11558,9 @@ function madFinValidar(model){
     if(motivo==="") errores.push("Falta el motivo del cierre "+(i+1)+". Va en la llave: sin él, un pedido y un descarte del mismo día se pisarían.");
     if(tipo==="") errores.push("Falta decir si "+et+" es Total o Parcial.");
     else if(MAD_FIN_TIPOS.indexOf(tipo)===-1) avisos.push("«"+tipo+"» no es un tipo conocido de cierre.");
-    const salaDicha = sanitizeStr(x.sala,30);
-    if(salaDicha!=="" && tipo==="Total") errores.push("Un cierre Total cierra "+(lote||"el lote")+" ENTERO, en todas sus salas: deja la sala vacía o regístralo como Parcial.");
-    if(salaDicha!=="" && !MAD_TANQUES_POR_SALA[salaDicha]) avisos.push("«"+salaDicha+"» no es una sala conocida ("+et+").");
     if(lote===""||motivo==="") return;
-    const sala = madFinSalaDeCierre(x);
-    const llave = lote+"|"+madFinMotivoTag(motivo)+"|"+(sala ? madIngSalaTag(sala) : "");
-    if(vistos[llave]) errores.push("El lote "+lote+" se cierra dos veces por «"+motivo+"»"+(sala ? " en "+sala : "")+" en esta fecha. Los dos escribirían la misma fila y el segundo borraría al primero: regístralos sumados.");
+    const llave = lote+"|"+madFinMotivoTag(motivo);
+    if(vistos[llave]) errores.push("El lote "+lote+" se cierra dos veces por «"+motivo+"» en esta fecha. Los dos escribirían la misma fila y el segundo borraría al primero: regístralos sumados.");
     vistos[llave]=1;
     const mach = madIngInt(x.machos), hemb = madIngInt(x.hembras);
     if((mach===""||mach===0) && (hemb===""||hemb===0)){
@@ -11617,7 +11608,6 @@ function _madFinCardHTML(fecha){
     +   '<label style="'+_MAD_ING_LBL+'">Lote<input class="mf-lote" style="'+_MAD_ING_INP+';width:100px;text-transform:uppercase"></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Tipo<select class="mf-tipo" onchange="madFinTipoChange(this)" style="'+_MAD_ING_INP+';width:120px">'+madFinTipoOpts("Parcial")+'</select></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Motivo<select class="mf-motivo" style="'+_MAD_ING_INP+';width:190px">'+madFinMotivoOpts("")+'</select></label>'
-    +   '<label style="'+_MAD_ING_LBL+'" title="Sólo en un cierre Parcial: de qué sala salen. Es un dato del registro: el libro no lo descuenta. Vacía = de todas las salas donde esté el lote.">Sala (sólo Parcial)<select class="mf-sala" style="'+_MAD_ING_INP+';width:120px">'+madIngSalaOpts("")+'</select></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Metabisulfito (kg)<input class="mf-mbs" type="number" min="0" step="0.01" inputmode="decimal" style="'+_MAD_ING_INP+';width:130px"></label>'
     +   '<label style="'+_MAD_ING_LBL+'" title="Por defecto, la fecha del registro; si la cambias, se queda la tuya">Fecha aplicación<input class="mf-mbsf" type="date"'+(isValidDate(fecha) ? ' value="'+escapeHtml(fecha)+'"' : '')+' oninput="madFinFechaAplFija(this)" style="'+_MAD_ING_INP+';width:145px"></label>'
     +   '<button class="btn" type="button" onclick="madFinDelCard(this)" style="font-size:11px">✕ Quitar</button>'
@@ -11637,13 +11627,10 @@ function _madFinCardHTML(fecha){
 // leer dos palabras en un desplegable: se dice al lado, en el momento de elegir.
 function madFinTipoChange(sel){
   const c = sel.closest(".mf-cierre"); if(!c) return;
-  // D14: un Total es del lote ENTERO, en todas sus salas; la sala sólo la lleva un Parcial.
-  const s = c.querySelector(".mf-sala");
-  if(s){ s.disabled = sel.value==="Total"; if(s.disabled) s.value=""; }
   const n = c.querySelector(".mf-nota"); if(!n) return;
   n.innerHTML = sel.value==="Total"
     ? '<b>Total:</b> el lote quedará cerrado en todas sus salas; lo que el libro aún tenga vivo tras los partes del día se anotará como <b>diferencia</b>. Los animales que declares se registran, no se restan.'
-    : (sel.value==="Parcial" ? '<b>Parcial:</b> registra lo que sale —y de qué sala, si la indicas—; no se resta del libro. El lote sigue vivo.' : '');
+    : (sel.value==="Parcial" ? '<b>Parcial:</b> registra lo que sale del lote; no se resta del libro. El lote sigue vivo.' : '');
 }
 function madFinAddCard(){
   const c=document.getElementById("mf-cards");
@@ -11673,7 +11660,7 @@ function madFinCollect(){
   const cierres=[];
   document.querySelectorAll("#mf-cards .mf-cierre").forEach(function(c){
     cierres.push({
-      lote:g(c,".mf-lote"), tipo:g(c,".mf-tipo"), motivo:g(c,".mf-motivo"), sala:g(c,".mf-sala"),
+      lote:g(c,".mf-lote"), tipo:g(c,".mf-tipo"), motivo:g(c,".mf-motivo"),
       metabisulfito:g(c,".mf-mbs"), fechaMetabisulfito:g(c,".mf-mbsf"),
       machos:g(c,".mf-machos"), hembras:g(c,".mf-hembras"), rojos:g(c,".mf-rojos"),
       pesoPromMachos:g(c,".mf-ppm"), pesoPromHembras:g(c,".mf-pph"), observaciones:g(c,".mf-obs")
@@ -11816,7 +11803,7 @@ function renderMadFinCiclo(){
     + '<div class="fc-h"><div class="fc-t">🏁 Maduración · Fin de Ciclo</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
     + '<div class="fc-b">'
     +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:flex-start;gap:8px">'
-    +     '<span style="font-size:16px">ℹ️</span><span>Registra las <b>salidas</b> del departamento: un pedido a otra camaronera, un descarte, el fin de la vida útil. Los movimientos entre tanques van en 🔄 Movimientos.<br>Los animales que declaras aquí <b>no se restan</b> del libro: salen por la mortalidad y el descarte de 🛢 Tanques. Se cierra el <b>lote entero</b>; un cierre <b>Parcial</b> puede indicar de qué <b>sala</b> salen. Y un cierre <b>Total</b> cierra el lote: lo que el libro aún tenga vivo se anota como <b>diferencia</b>: no se esconde.</span>'
+    +     '<span style="font-size:16px">ℹ️</span><span>Registra las <b>salidas</b> del departamento: un pedido a otra camaronera, un descarte, el fin de la vida útil. Los movimientos entre tanques van en 🔄 Movimientos.<br>Los animales que declaras aquí <b>no se restan</b> del libro: salen por la mortalidad y el descarte de 🛢 Tanques. Se cierra el <b>lote entero</b>, esté en una o en varias salas. Y un cierre <b>Total</b> cierra el lote: lo que el libro aún tenga vivo se anota como <b>diferencia</b>: no se esconde.</span>'
     +   '</div>'
     +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
     +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha<input type="date" id="mf-fecha" value="'+escapeHtml(todayStr)+'" onchange="madBorrFechaChange(&quot;fin&quot;);madFinFechaAplSigue()" style="'+_MAD_ING_INP+'"></label>'
@@ -26462,7 +26449,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "7c0373808616";
+const GAS_VERSION = "29b386ac8876";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -27452,7 +27439,9 @@ var MAD_ESQUEMA_FIRMA = {
   //   GAS() de engine.js, y una sola la cerraría (pasó ese mismo día; lo cazó la suite).
   "Maduración Ingreso":      [[14, "Crecimiento semanal promedio"]],
   "Maduración Lotes":        [[7, "Hembras no viables"]],
-  "Maduración Fin de Ciclo": [[5, "Sala"], [10, "Rojos"]],
+  "Maduración Fin de Ciclo": [[5, "Metabisulfito (kg)"], [9, "Rojos"]],
+  // Fin de Ciclo (2026-10-09, usuario): sale «Sala» (la 5, de D14) y todo lo de detrás sube una. Un cliente
+  // anterior lleva «Sala» en la 5 y «Hembras» en la 9, así que no puede crear la hoja con la columna vieja.
   // 11 y 15 son justo las dos inserciones: el cliente de 14 columnas lleva «Salinidad» en la 11.
   // 16 (PE1.5, 2026-09-16): la alcalinidad pasó a ser de día y de noche; el cliente de 18 columnas lleva ahí «Alcalinidad».
   // +2 (2026-09-24, punto 6): «Código genético» y «Piscina Broodstock» entran detrás de «Lote» y corren todo lo que va

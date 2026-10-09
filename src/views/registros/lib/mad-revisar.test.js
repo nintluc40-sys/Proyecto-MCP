@@ -221,26 +221,28 @@ describe.each(FICHAS)('«🔍 Revisar» · $nombre', (F) => {
   }
 });
 
-/* D14 + pesos (2026-09-14): la sala de un Parcial y los pesos del REGISTRO llegan al envío. */
-describe('Fin de Ciclo · la sala del Parcial y los pesos del registro, en el envío', () => {
+/* Pesos (2026-09-14): los pesos del REGISTRO llegan al envío. La sala del Parcial (D14) se QUITÓ el 2026-10-09 (usuario):
+   el cierre es del lote entero. */
+describe('Fin de Ciclo · sin sala, y los pesos del registro, en el envío', () => {
   beforeEach(() => { H.madFinReiniciar(); });
   const cols = () => document.querySelectorAll('#fp-fin .mf-cierre');
 
-  it('un Total deshabilita y vacía la sala; un Parcial la devuelve', () => {
+  it('🔴 la ficha ya no pide sala, y ni el Total ni el Parcial hablan de ella', () => {
     const c = cols()[0];
-    pon(c.querySelector('.mf-sala'), 'Sala 2');
-    H.madFinTipoChange(pon(c.querySelector('.mf-tipo'), 'Total'));
-    expect(c.querySelector('.mf-sala').disabled).toBe(true);
-    expect(c.querySelector('.mf-sala').value).toBe('');
+    expect(c.querySelector('.mf-sala')).toBeNull();
+    expect(document.getElementById('fp-fin').textContent).not.toMatch(/de qué sala|Sala \(sólo Parcial\)/);
     H.madFinTipoChange(pon(c.querySelector('.mf-tipo'), 'Parcial'));
-    expect(c.querySelector('.mf-sala').disabled).toBe(false);
+    expect(c.querySelector('.mf-nota').textContent).toContain('registra lo que sale del lote');
+    expect(c.querySelector('.mf-nota').textContent).not.toMatch(/sala/i);
+    H.madFinTipoChange(pon(c.querySelector('.mf-tipo'), 'Total'));
+    expect(c.querySelector('.mf-nota').textContent).toContain('cerrado en todas sus salas');
   });
 
-  it('🔴 Guardar manda la sala, los rojos y los pesos promedio de CADA lote, y el MISMO peso total en cada fila', async () => {
+  it('🔴 Guardar manda los rojos y los pesos promedio de CADA lote, el MISMO peso total en cada fila, y ninguna sala', async () => {
     H.madFinAddCard();
     const [a, b] = cols();
     for (const c of [a, b]) pon(c.querySelector('.mf-tipo'), 'Parcial');   // happy-dom no respeta el `selected` de las opciones
-    pon(a.querySelector('.mf-lote'), 'BP'); pon(a.querySelector('.mf-motivo'), 'Pedido'); pon(a.querySelector('.mf-sala'), 'Sala 2');
+    pon(a.querySelector('.mf-lote'), 'BP'); pon(a.querySelector('.mf-motivo'), 'Pedido');
     pon(a.querySelector('.mf-machos'), '5'); pon(a.querySelector('.mf-rojos'), '1'); pon(a.querySelector('.mf-ppm'), '45.5');
     pon(b.querySelector('.mf-lote'), 'BQ'); pon(b.querySelector('.mf-motivo'), 'Pedido'); pon(b.querySelector('.mf-hembras'), '4'); pon(b.querySelector('.mf-pph'), '60');
     pon($('fp-fin', '#mf-ptotal'), '0.47');
@@ -251,8 +253,9 @@ describe('Fin de Ciclo · la sala del Parcial y los pesos del registro, en el en
     expect(envios).toHaveLength(1);
     const { headers, rows } = envios[0];
     const v = (f, h) => f[headers.indexOf(h)];
-    expect(rows.map((f) => v(f, 'Sala'))).toEqual(['Sala 2', '']);
-    expect(v(rows[0], 'ID')).toMatch(/-BP-PEDIDO-S2$/);
+    expect(headers).not.toContain('Sala');
+    expect(headers.slice(4, 6)).toEqual(['Metabisulfito (kg)', 'Fecha aplicación']);
+    expect(v(rows[0], 'ID')).toMatch(/-BP-PEDIDO$/);
     expect(rows.map((f) => [v(f, 'Rojos'), v(f, 'Peso promedio machos (g)'), v(f, 'Peso promedio hembras (g)'), v(f, 'Peso total (kg)')]))
       .toEqual([[1, 45.5, '', 0.47], ['', '', 60, 0.47]]);
     // A3: el MISMO registro en todas las filas del envío, y uno NUEVO para el siguiente formulario.

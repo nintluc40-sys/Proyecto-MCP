@@ -377,8 +377,8 @@ export function construirLibro(fuentes, opts) {
        🔑🔑 Un cierre TOTAL sigue CERRANDO el lote: lo que el libro aún tiene vivo tras las
        bajas del día es LA DIFERENCIA, se anota con su fecha y el lote se pone a cero. No se
        esconde ni se bloquea — «la diferencia ES el producto», que es la regla del módulo
-       entero. La sala de un Parcial es un dato del registro: sólo se comprueba que el
-       lote esté allí. */
+       entero. Sólo se comprueba que el lote esté en el libro (desde el 2026-10-09 el cierre
+       ya no lleva sala). */
     if (tipo === 'fin') {
       const lote = txt(r.Lote);
       const esTotal = txt(r.Tipo) === 'Total';
@@ -387,17 +387,12 @@ export function construirLibro(fuentes, opts) {
         anota(fecha, 'cierre-incompleto', 'Un cierre sin lote no entra en el libro.');
         continue;
       }
-      /* D14 (2026-09-14): un cierre PARCIAL puede decir su sala; desde 0t·9 es un dato (de dónde salieron) y
-         sólo se comprueba que el lote esté allí. Un Total es siempre del lote entero: su sala, si la hubiera, no cuenta. */
-      const salaCierre = esTotal ? '' : txt(r.Sala);
-      const enSala = salaCierre ? { sala: salaCierre } : {};
-      const posLote = [...pos.values()].filter((p) => p.lote === lote && (!salaCierre || p.sala === salaCierre));
+      /* 2026-10-09 (usuario): el cierre es del LOTE entero, en todas sus salas —la hoja ya no lleva «Sala» (la
+         tuvo un Parcial con D14, 2026-09-14)—, así que se comprueba que el lote esté en alguna. */
+      const posLote = [...pos.values()].filter((p) => p.lote === lote);
       if (!posLote.length) {
-        anota(fecha, 'cierre-sin-lote',
-          salaCierre
-            ? 'Se cerró el lote ' + lote + ' en ' + salaCierre + ' y ningún ingreso explica que estuviera allí.'
-            : 'Se cerró el lote ' + lote + ' y ningún ingreso explica dónde estaba.',
-          { lote, ...enSala, machos: pedido.machos, hembras: pedido.hembras });
+        anota(fecha, 'cierre-sin-lote', 'Se cerró el lote ' + lote + ' y ningún ingreso explica dónde estaba.',
+          { lote, machos: pedido.machos, hembras: pedido.hembras });
         continue;
       }
       if (esTotal) {

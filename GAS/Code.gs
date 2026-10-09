@@ -22,7 +22,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "7c0373808616";
+const GAS_VERSION = "29b386ac8876";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -1012,7 +1012,9 @@ var MAD_ESQUEMA_FIRMA = {
   //   GAS() de engine.js, y una sola la cerraría (pasó ese mismo día; lo cazó la suite).
   "Maduración Ingreso":      [[14, "Crecimiento semanal promedio"]],
   "Maduración Lotes":        [[7, "Hembras no viables"]],
-  "Maduración Fin de Ciclo": [[5, "Sala"], [10, "Rojos"]],
+  "Maduración Fin de Ciclo": [[5, "Metabisulfito (kg)"], [9, "Rojos"]],
+  // Fin de Ciclo (2026-10-09, usuario): sale «Sala» (la 5, de D14) y todo lo de detrás sube una. Un cliente
+  // anterior lleva «Sala» en la 5 y «Hembras» en la 9, así que no puede crear la hoja con la columna vieja.
   // 11 y 15 son justo las dos inserciones: el cliente de 14 columnas lleva «Salinidad» en la 11.
   // 16 (PE1.5, 2026-09-16): la alcalinidad pasó a ser de día y de noche; el cliente de 18 columnas lleva ahí «Alcalinidad».
   // +2 (2026-09-24, punto 6): «Código genético» y «Piscina Broodstock» entran detrás de «Lote» y corren todo lo que va
