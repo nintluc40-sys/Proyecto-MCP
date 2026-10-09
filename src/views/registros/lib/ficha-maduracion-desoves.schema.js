@@ -332,8 +332,9 @@ export function desoveDesdeHoja(fila) {
   return r;
 }
 
-/** Lo pendiente (sin N5): la hoja con lo de este dispositivo encima. Más reciente primero. */
-export function desovesPendientes(filasHoja, locales) {
+/** La hoja con lo de este dispositivo encima: un registro por llave, SIN filtrar. La comparten la lista de pendientes y
+ *  los totales del día (2026-10-09), para que los dos fusionen igual. */
+export function desovesFundidos(filasHoja, locales) {
   const porLlave = new Map();
   (filasHoja || []).forEach((fila) => {
     const d = desoveDesdeHoja(fila);
@@ -356,13 +357,61 @@ export function desovesPendientes(filasHoja, locales) {
       else if (d[c] === undefined) d[c] = c === 'despacho' ? [] : '';
     });
   });
-  return [...porLlave.values()]
+  return [...porLlave.values()];
+}
+
+/** Lo pendiente (sin N5): la hoja con lo de este dispositivo encima. Más reciente primero. */
+export function desovesPendientes(filasHoja, locales) {
+  return desovesFundidos(filasHoja, locales)
     .filter((d) => !desoveCompleto(d))
     .sort((a, b) => {
       const ka = desoveLlave(a);
       const kb = desoveLlave(b);
       return ka < kb ? 1 : ka > kb ? -1 : 0;
     });
+}
+
+/* ── Totales del día (2026-10-09, usuario) ──
+   «En Desoves pendientes, al leer la hoja, una sumatoria entre lotes de desoves, huevos, hembras no viables, N2 y N5
+   del día», para revisar las cantidades finales. Decisiones del usuario:
+   · una fila por FECHA DE DESOVE con TODOS sus lotes, también los ya completos: un pendiente no tiene N5, y sumar sólo
+     la lista daría siempre el N5 vacío;
+   · los días que aún tienen algún lote sin N5 y, además, el más reciente ya completo (su total final);
+   · la hoja con lo de este dispositivo encima, como la lista (lo ocultado con 🗑 cuenta: sigue en la hoja), y se cuenta
+     cuántos lotes de cada día llevan una cifra que la hoja aún no tiene (`deEsteEquipo`).
+   Huevos, N2 y N5 en MILES, como el formulario. Una suma sin ninguna cifra queda '' (no 0): «—», no «0». */
+const CAMPOS_SUMA = ['desoves', 'huevos', 'hembrasNoViables', 'n2', 'n5'];
+const cifra = (v) => {
+  const t = txt(v);
+  const n = Number(t);
+  return t === '' || !Number.isFinite(n) ? '' : n;
+};
+
+/** Totales por fecha de desove (ver arriba). Más reciente primero. */
+export function desovesTotalesPorDia(filasHoja, locales) {
+  const soloHoja = new Map(desovesFundidos(filasHoja, []).map((d) => [desoveLlave(d), d]));
+  const porDia = new Map();
+  desovesFundidos(filasHoja, locales).forEach((d) => {
+    let t = porDia.get(d.fecha);
+    if (!t) {
+      t = { fecha: d.fecha, lotes: 0, sinN2: 0, sinN5: 0, deEsteEquipo: 0 };
+      CAMPOS_SUMA.forEach((c) => { t[c] = ''; });
+      porDia.set(d.fecha, t);
+    }
+    t.lotes += 1;
+    CAMPOS_SUMA.forEach((c) => {
+      const n = cifra(d[c]);
+      // redondeo a la milésima: de la hoja llegan miles con decimales (1 333 333 → 1333.333) y la suma no debe arrastrar ruido
+      if (n !== '') t[c] = Math.round(((t[c] === '' ? 0 : t[c]) + n) * 1000) / 1000;
+    });
+    if (cifra(d.n2) === '') t.sinN2 += 1;
+    if (!desoveCompleto(d)) t.sinN5 += 1;
+    const h = soloHoja.get(desoveLlave(d));
+    if (!h || CAMPOS_SUMA.some((c) => cifra(h[c]) !== cifra(d[c]))) t.deEsteEquipo += 1;
+  });
+  const dias = [...porDia.values()].sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0));
+  const ultimoCompleto = dias.find((t) => t.sinN5 === 0);
+  return dias.filter((t) => t.sinN5 > 0 || t === ultimoCompleto);
 }
 
 /** Tras guardar (o dejar en cola) desde este dispositivo: anota cada desove fusionado sobre lo que ya

@@ -30,6 +30,8 @@ import {
   desoveCompleto,
   desoveDesdeHoja,
   desovesPendientes,
+  desovesFundidos,
+  desovesTotalesPorDia,
   anotarDesovesLocales,
   podarDesovesLocales,
   fechasNauplios,
@@ -63,7 +65,7 @@ function motorDesoves() {
     + ' madDesMiles, MAD_DESOVE_HEADERS, MAD_DESOVE_SHEET, MAD_DESOVE_COLUMNS,'
     + ' MAD_DESOVE_KEY_COLS, MAD_DESOVE_MIL, MAD_DESOVE_DESPACHO_OPTS, madDesDespachoLista, madDesDespachoTexto,'
     + ' madDesLlave, madDesCompleto, madDesDesdeHoja, madDesPendientes, madDesLocalesAnota, madDesLocalesPoda,'
-    + ' madDesFechasNauplios };',
+    + ' madDesFechasNauplios, madDesFundidos, madDesTotalesDia };',
   ).runInContext(ctx);
   return ctx.__api;
 }
@@ -273,6 +275,19 @@ describe('Desoves · Despacho y pendientes: el monolito y el módulo dicen lo mi
     expect(api.madDesPendientes(FILAS, LOCALES)).toEqual(esperado);
     expect(api.madDesPendientes([], LOCALES)).toEqual(desovesPendientes([], LOCALES));
     expect(api.madDesPendientes(FILAS, [])).toEqual(desovesPendientes(FILAS, []));
+  });
+
+  /* 2026-10-09 (usuario) · los totales del día de «Desoves pendientes»: la misma fusión y las mismas sumas en los dos. */
+  it('la misma fusión y los mismos totales del día', () => {
+    const filas = FILAS.concat([HOJA({ Fecha: '2026-09-05', N5: 1000000 }), HOJA({ Fecha: '2026-09-11', 'Total de huevos': 1333333, N2: '', N5: 5000 })]);
+    const esperado = desovesTotalesPorDia(filas, LOCALES);
+    // el fixture ejerce algo: un día pendiente, el último completo, uno completo que sale y un lote de este equipo
+    expect(esperado.map((t) => t.fecha)).toEqual(['2026-09-12', '2026-09-11', '2026-09-07']);
+    expect(esperado.some((t) => t.deEsteEquipo > 0)).toBe(true);
+    expect(api.madDesTotalesDia(filas, LOCALES)).toEqual(esperado);
+    expect(api.madDesTotalesDia(filas, [])).toEqual(desovesTotalesPorDia(filas, []));
+    expect(api.madDesTotalesDia([], LOCALES)).toEqual(desovesTotalesPorDia([], LOCALES));
+    expect(api.madDesFundidos(filas, LOCALES)).toEqual(desovesFundidos(filas, LOCALES));
   });
 
   it('lo mismo al anotar y al podar', () => {

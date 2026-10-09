@@ -16,6 +16,8 @@ import {
   desoveCompleto,
   desoveDesdeHoja,
   desovesPendientes,
+  desovesFundidos,
+  desovesTotalesPorDia,
   anotarDesovesLocales,
   podarDesovesLocales,
   fechasNauplios,
@@ -526,5 +528,67 @@ describe('Desoves · pendientes: guardar hoy y completar N2/N5 otro día (2026-0
 
   it('la llave es la del GAS: fecha, lote y código normalizados', () => {
     expect(desoveLlave({ fecha: '2026-09-07', lote: ' b p ', codigoGenetico: 'olf5.f2' })).toBe('2026-09-07|BP|OLF5.F2');
+  });
+});
+
+/* 2026-10-09 (usuario) · «al leer la hoja, una sumatoria entre lotes de desoves, huevos, hembras no viables, N2 y N5 del
+   día», para revisar las cantidades finales. Una fila por fecha de desove con TODOS sus lotes (también los completos);
+   los días con algún lote sin N5 y el más reciente ya completo; la hoja con lo de este equipo encima. */
+describe('Desoves · totales del día en «Desoves pendientes» (2026-10-09, usuario)', () => {
+  const FILA = (fecha, lote, o) => Object.assign({ Fecha: fecha, Lote: lote, 'Código genético': 'CG-' + lote, 'Piscina Broodstock': 558,
+    Desoves: '', 'Total de huevos': '', 'Hembras no viables': '', 'Fecha N2': '', N2: '', 'Fecha N5': '', N5: '', Despacho: '', Observaciones: '' }, o);
+  // Cifras FICTICIAS (el repo es público: nada de datos reales en las pruebas)
+  const HOJA = [
+    FILA('2026-10-05', 'BQ', { Desoves: 50, 'Total de huevos': 10000000, 'Hembras no viables': 1, N2: 9000000, N5: 8000000 }),   // completo y más viejo: fuera
+    FILA('2026-10-06', 'BQ', { Desoves: 40, 'Total de huevos': 12000000, 'Hembras no viables': 2, N2: 11000000, N5: 10000000 }),
+    FILA('2026-10-06', 'BP', { Desoves: 30, 'Total de huevos': 9000000, 'Hembras no viables': 1, N2: 8000000, N5: 7000000 }),
+    FILA('2026-10-07', 'BQ', { Desoves: 60, 'Total de huevos': 15000000, 'Hembras no viables': 3, N2: 14000000 }),
+    FILA('2026-10-07', 'BP', { Desoves: 45, 'Total de huevos': 11000000, 'Hembras no viables': 2, N2: 10000000 }),
+    FILA('2026-10-07', 'BO', { Desoves: 5, 'Total de huevos': 2000000, N2: 1200000, N5: 1100000 }),   // completo en un día pendiente
+    FILA('2026-10-08', 'BQ', { Desoves: 55, 'Total de huevos': 13000000, 'Hembras no viables': 4 }),
+  ];
+  const dia = (r, f) => r.find((t) => t.fecha === f);
+
+  it('🔴 suma TODOS los lotes del día, también los ya completos: el N5 no sale vacío', () => {
+    const t = dia(desovesTotalesPorDia(HOJA, []), '2026-10-07');
+    expect(t).toEqual({ fecha: '2026-10-07', lotes: 3, desoves: 110, huevos: 28000, hembrasNoViables: 5, n2: 25200, n5: 1100,
+      sinN2: 0, sinN5: 2, deEsteEquipo: 0 });
+  });
+
+  it('🔴 los días con algún lote sin N5 y el más reciente ya completo; lo completo más viejo, no. Más reciente primero', () => {
+    expect(desovesTotalesPorDia(HOJA, []).map((t) => t.fecha)).toEqual(['2026-10-08', '2026-10-07', '2026-10-06']);
+    expect(dia(desovesTotalesPorDia(HOJA, []), '2026-10-06')).toMatchObject({ lotes: 2, n5: 17000, sinN5: 0 });
+  });
+
+  it('🔴 una suma sin ninguna cifra queda vacía (no 0) y se cuentan los lotes que aún no la tienen', () => {
+    expect(dia(desovesTotalesPorDia(HOJA, []), '2026-10-08')).toMatchObject({ lotes: 1, desoves: 55, n2: '', n5: '', sinN2: 1, sinN5: 1 });
+  });
+
+  it('🔴 lo de este equipo va encima, como en la lista, y se cuenta qué lotes llevan algo que la hoja aún no tiene', () => {
+    const locales = [
+      { fecha: '2026-10-07', lote: 'BQ', codigoGenetico: 'CG-BQ', n5: '13000' },                  // N5 aún sin llegar a la hoja
+      { fecha: '2026-10-07', lote: 'BP', codigoGenetico: 'CG-BP', n2: '10000', huevos: '11000' },  // lo mismo que la hoja: no cuenta
+      { fecha: '2026-10-08', lote: 'BN', codigoGenetico: 'CG-BN', desoves: '20', huevos: '6000' }, // sólo en este equipo
+    ];
+    const r = desovesTotalesPorDia(HOJA, locales);
+    expect(dia(r, '2026-10-07')).toMatchObject({ n5: 14100, sinN5: 1, deEsteEquipo: 1 });
+    expect(dia(r, '2026-10-08')).toMatchObject({ lotes: 2, desoves: 75, huevos: 19000, deEsteEquipo: 1 });
+  });
+
+  it('un día que se completa en este equipo pasa a ser el «último completo» y el anterior completo sale', () => {
+    const locales = [{ fecha: '2026-10-07', lote: 'BQ', codigoGenetico: 'CG-BQ', n5: '13000' }, { fecha: '2026-10-07', lote: 'BP', codigoGenetico: 'CG-BP', n5: '9000' }];
+    expect(desovesTotalesPorDia(HOJA, locales).map((t) => [t.fecha, t.sinN5])).toEqual([['2026-10-08', 1], ['2026-10-07', 0]]);
+  });
+
+  it('los miles con decimales de la hoja se suman sin arrastrar ruido', () => {
+    const r = desovesTotalesPorDia([FILA('2026-10-01', 'BO', { N2: 1333333 }), FILA('2026-10-01', 'BN', { N2: 1333333 }), FILA('2026-10-01', 'BP', { N2: 100 })], []);
+    expect(r[0].n2).toBe(2666.766);
+  });
+
+  it('sin hoja ni nada guardado no hay totales; la fusión es la misma que usa la lista de pendientes', () => {
+    expect(desovesTotalesPorDia([], [])).toEqual([]);
+    const fundidos = desovesFundidos(HOJA, [{ fecha: '2026-10-08', lote: 'BN', codigoGenetico: 'CG-BN', desoves: '26' }]);
+    expect(fundidos).toHaveLength(HOJA.length + 1);
+    expect(desovesPendientes(HOJA, []).map((d) => d.fecha + ' ' + d.lote)).toEqual(['2026-10-08 BQ', '2026-10-07 BQ', '2026-10-07 BP']);
   });
 });

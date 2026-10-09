@@ -1006,6 +1006,16 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   Pide confirmación; «👁 Mostrar ocultos (N)» y «↩ Volver a mostrar» lo recuperan (lo que aún no estaba en
   la hoja leída no se puede recuperar desde aquí, y se avisa). Volver a guardar ese desove en este equipo lo
   des-oculta. Los ocultos se podan solos cuando la hoja trae ese desove completo. Sólo interfaz: el cálculo de pendientes (motor y gemelo) no cambia.
+- **Desoves · pendientes (sin N5) · totales del día** (usuario, 2026-10-09): al pulsar «🔄 Leer la hoja», encima
+  de la lista (en `#md-pend-tot`, aparte de `#md-pend`) sale «Totales del día (todos los lotes)»: una fila por
+  **fecha de desove** con la suma de sus lotes —desoves, huevos, hembras no viables, N2 y N5; huevos, N2 y N5 en
+  miles— para revisar las cantidades finales del día. Suma **todos** los lotes de ese día, también los ya
+  completos (un pendiente no tiene N5: sumar sólo la lista daría el N5 siempre vacío). Días: los que aún tienen
+  algún lote sin N5 («⏳ N5 en n» / «⏳ N2/N5 en n») y el más reciente ya completo («✅»). Es la hoja con lo de
+  este dispositivo encima, como la lista (lo ocultado con 🗑 cuenta: sigue en la hoja), y «📱 n» dice cuántos lotes
+  del día llevan una cifra que la hoja leída aún no tiene. Sin la hoja leída (o si la relectura falla) no sale: le
+  faltarían los lotes de los demás equipos. Motor `madDesTotalesDia` y gemelo `desovesTotalesPorDia`; los dos
+  fusionan con la misma función que la lista (`madDesFundidos` / `desovesFundidos`).
 - **Desoves · «📥 Cargar»** (usuario, 2026-09-24), al lado de «✕ Quitar»: lista lo que está en
   **producción** a la fecha del desove —cada composición del Ingreso con vivos en una sala donde su
   lote produce— y un toque rellena lote, código genético y piscina **a la vez**, para que no se

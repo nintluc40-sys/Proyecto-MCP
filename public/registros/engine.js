@@ -8916,7 +8916,7 @@ function _madLocCfg(ficha){
   if(ficha==="desoves") return { sello:true, cab:function(){ return MAD_DESOVE_HEADERS; }, hoja:MAD_DESOVE_SHEET, loc:"md-loc", log:"md-log", html:madDesLogHTML, error:"No se pudo registrar el desove",
     anota:function(e, st){ madDesLogAnota({ fecha:e.fecha, desoves:e.info.desoves||[] }, e.filas, st, e.id); },
     // Como al enviar desde pantalla: entregado o en cola, el desove pasa a «pendientes» (sin N5) de este dispositivo.
-    alEnviar:function(e){ madDesLocalesGuardar(madDesLocalesAnota(madDesLocalesLeer(), { fecha:e.fecha, desoves:e.info.desoves||[] }, Date.now())); _madDesDesocultar({ fecha:e.fecha, desoves:e.info.desoves||[] }); const b=document.getElementById("md-pend"); if(b) b.innerHTML=madDesPendTablaHTML(); },
+    alEnviar:function(e){ madDesLocalesGuardar(madDesLocalesAnota(madDesLocalesLeer(), { fecha:e.fecha, desoves:e.info.desoves||[] }, Date.now())); _madDesDesocultar({ fecha:e.fecha, desoves:e.info.desoves||[] }); _madDesPendRepinta(); },
     resumen:function(e){ return (e.info.desoves||[]).map(function(x){ return madDesNormLote(x.lote)+" · "+madDesNormCG(x.codigoGenetico); }).join(", "); } };
   if(ficha==="mortdes") return { sello:true, cab:function(){ return MAD_MORT_HEADERS; }, hoja:MAD_MORT_SHEET, loc:"mm-loc", log:"mm-log", html:madMortLogHTML, error:"No se pudo registrar el Inf. Supervisor",
     anota:function(e, st){ madMortLogAnota(e.fecha, e.filas, st, e.id); } };
@@ -10503,7 +10503,9 @@ function madDesDesdeHoja(fila){
   r.despacho=madDesDespachoLista(r.despacho);
   return r;
 }
-function madDesPendientes(filasHoja, locales){
+// La hoja con lo de este dispositivo encima, un registro por llave y SIN filtrar: la comparten la lista de pendientes
+// y los totales del día (2026-10-09), para que fusionen igual. Ver el módulo (desovesFundidos).
+function madDesFundidos(filasHoja, locales){
   const porLlave={}, orden=[];
   (filasHoja||[]).forEach(function(fila){
     const d=madDesDesdeHoja(fila);
@@ -10525,9 +10527,40 @@ function madDesPendientes(filasHoja, locales){
       else if(d[c]===undefined) d[c] = c==="despacho" ? [] : "";
     });
   });
-  return orden.map(function(k){ return porLlave[k]; })
+  return orden.map(function(k){ return porLlave[k]; });
+}
+function madDesPendientes(filasHoja, locales){
+  return madDesFundidos(filasHoja, locales)
     .filter(function(d){ return !madDesCompleto(d); })
     .sort(function(a,b){ const ka=madDesLlave(a), kb=madDesLlave(b); return ka<kb ? 1 : (ka>kb ? -1 : 0); });
+}
+// ── Totales del día (2026-10-09, usuario): por FECHA DE DESOVE y con TODOS sus lotes (también los completos: un
+// pendiente no tiene N5); los días con algún lote sin N5 y el más reciente ya completo; la hoja con lo de este
+// dispositivo encima (lo ocultado con 🗑 cuenta) y `deEsteEquipo` = lotes con una cifra que la hoja aún no tiene.
+// Huevos, N2 y N5 en miles; una suma sin cifras queda "" («—», no «0»). Ver el módulo (desovesTotalesPorDia).
+const MAD_DES_CAMPOS_SUMA = ["desoves", "huevos", "hembrasNoViables", "n2", "n5"];   // con espacios: así no casa con las anclas H08/N06 de los bancos
+function _madDesCifra(v){ const t=_madDesTxt(v), n=Number(t); return (t===""||!isFinite(n)) ? "" : n; }
+function madDesTotalesDia(filasHoja, locales){
+  const soloHoja={}, porDia={}, dias=[];
+  madDesFundidos(filasHoja, []).forEach(function(d){ soloHoja[madDesLlave(d)]=d; });
+  madDesFundidos(filasHoja, locales).forEach(function(d){
+    let t=porDia[d.fecha];
+    if(!t){
+      t={ fecha:d.fecha, lotes:0, sinN2:0, sinN5:0, deEsteEquipo:0 };
+      MAD_DES_CAMPOS_SUMA.forEach(function(c){ t[c]=""; });
+      porDia[d.fecha]=t; dias.push(t);
+    }
+    t.lotes++;
+    // redondeo a la milésima: de la hoja llegan miles con decimales y la suma no debe arrastrar ruido
+    MAD_DES_CAMPOS_SUMA.forEach(function(c){ const n=_madDesCifra(d[c]); if(n!=="") t[c]=Math.round(((t[c]==="" ? 0 : t[c])+n)*1000)/1000; });
+    if(_madDesCifra(d.n2)==="") t.sinN2++;
+    if(!madDesCompleto(d)) t.sinN5++;
+    const h=soloHoja[madDesLlave(d)];
+    if(!h || MAD_DES_CAMPOS_SUMA.some(function(c){ return _madDesCifra(h[c])!==_madDesCifra(d[c]); })) t.deEsteEquipo++;
+  });
+  dias.sort(function(a,b){ return a.fecha<b.fecha ? 1 : (a.fecha>b.fecha ? -1 : 0); });
+  const ultimoCompleto=dias.filter(function(t){ return t.sinN5===0; })[0];
+  return dias.filter(function(t){ return t.sinN5>0 || t===ultimoCompleto; });
 }
 function madDesLocalesAnota(locales, model, ahora){
   const m=model||{}, fecha=sanitizeStr(m.fecha,10);
@@ -11021,7 +11054,12 @@ function madDesOcultosLeer(){
 function madDesOcultosGuardar(list){
   try{ localStorage.setItem(MAD_DES_OCULTOS_KEY, JSON.stringify((list||[]).slice(-MAD_DES_OCULTOS_MAX))); }catch(_){}
 }
-function _madDesPendRepinta(){ const box=document.getElementById("md-pend"); if(box) box.innerHTML=madDesPendTablaHTML(); }
+// La lista y, encima, los totales del día (#md-pend-tot, 2026-10-09: aparte, para que las filas de #md-pend sigan
+// siendo sólo las de la lista). Todo repintado de la lista pasa por aquí.
+function _madDesPendRepinta(){
+  const tot=document.getElementById("md-pend-tot"); if(tot) tot.innerHTML=madDesTotalesHTML();
+  const box=document.getElementById("md-pend"); if(box) box.innerHTML=madDesPendTablaHTML();
+}
 function madDesPendEliminar(k){
   const d=(_madDesPendUltimos||[]).filter(function(x){ return madDesLlave(x)===k; })[0];
   if(!d){ toast("Ese desove ya no está en la lista: pulsa 🔄 Leer la hoja.","warn",4000); return; }
@@ -11048,6 +11086,25 @@ function madDesPendRecuperar(k){
   _madDesPendRepinta();
 }
 function madDesPendVerOcultos(){ _madDesVerOcultos=!_madDesVerOcultos; _madDesPendRepinta(); }
+/* ── Totales del día (usuario, 2026-10-09) · encima de la lista y SÓLO con la hoja leída: sin ella faltan los lotes de
+   los demás equipos y el total engañaría. Se repinta con la lista (leer, enviar, 🗑, ↩). Ver madDesTotalesDia. */
+function madDesTotalesHTML(){
+  if(!_madDesHoja) return "";
+  const dias=madDesTotalesDia(_madDesHoja, madDesLocalesLeer());
+  if(!dias.length) return "";
+  const num=function(v){ return v==="" ? "—" : Number(v).toLocaleString("es-EC",{maximumFractionDigits:3}); };
+  const mil=function(v){ return v==="" ? "—" : num(v)+" mil"; };
+  const filas=dias.map(function(t){
+    const falta = !t.sinN5 ? '<span title="Todos sus lotes tienen N5">✅</span>'
+      : '<span title="Lotes de ese día que aún no tienen esa cifra">⏳ '+(t.sinN2===t.sinN5 ? 'N2/N5 en '+t.sinN5 : (t.sinN2 ? 'N2 en '+t.sinN2+' · ' : '')+'N5 en '+t.sinN5)+'</span>';
+    const aqui = t.deEsteEquipo ? ' <span title="Lotes con cifras guardadas en este dispositivo que la hoja leída aún no tiene" style="background:#e0f2fe;color:#075985;padding:1px 6px;border-radius:4px;white-space:nowrap">📱 '+t.deEsteEquipo+'</span>' : '';
+    return '<tr><td>'+escapeHtml(t.fecha)+'</td><td style="text-align:right">'+t.lotes+'</td><td style="text-align:right">'+num(t.desoves)+'</td>'
+      + '<td style="text-align:right">'+mil(t.huevos)+'</td><td style="text-align:right">'+num(t.hembrasNoViables)+'</td>'
+      + '<td style="text-align:right">'+mil(t.n2)+'</td><td style="text-align:right">'+mil(t.n5)+'</td><td style="white-space:nowrap">'+falta+aqui+'</td></tr>';
+  }).join("");
+  return '<div class="md-pend-tot" style="margin-bottom:8px"><div style="font-size:11px;font-weight:600;margin-bottom:2px">Totales del día (todos los lotes) · hoja leída</div>'
+    + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Desove</th><th>Lotes</th><th>Desoves</th><th>Huevos</th><th>H. no viables</th><th>N2</th><th>N5</th><th></th></tr></thead><tbody>'+filas+'</tbody></table></div></div>';
+}
 function madDesPendTablaHTML(){
   const todos=madDesPendientes(_madDesHoja||[], madDesLocalesLeer());
   _madDesPendUltimos=todos;
@@ -11095,7 +11152,7 @@ async function madDesPendVer(){
     if(btn) btn.disabled=false;
   }
   const n=document.getElementById("md-pend-nota"); if(n) n.innerHTML=msg;
-  const box=document.getElementById("md-pend"); if(box) box.innerHTML=madDesPendTablaHTML();
+  _madDesPendRepinta();
 }
 function _madDesHayTecleado(){
   return Array.prototype.some.call(document.querySelectorAll("#md-cards input"), function(i){
@@ -11394,6 +11451,7 @@ function renderMadDesoves(d, corr){
     +     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px"><h3 style="margin:0;font-size:13px">📋 Desoves pendientes (sin N5)</h3>'
     +       '<button class="btn" type="button" id="md-pend-btn" onclick="madDesPendVer()" style="font-size:11px">🔄 Leer la hoja</button></div>'
     +     '<div id="md-pend-nota" style="font-size:11px;color:#64748b;margin-bottom:5px">'+(_madDesHoja ? 'Hoja leída en esta sesión, con lo guardado desde este dispositivo. Pulsa 🔄 para releerla.' : 'Lo guardado desde este dispositivo. Pulsa 🔄 para ver también lo de los demás.')+'</div>'
+    +     '<div id="md-pend-tot">'+madDesTotalesHTML()+'</div>'
     +     '<div id="md-pend">'+madDesPendTablaHTML()+'</div>'
     +   '</div>'
     +   '<div id="md-loc">'+_madLocHTML("desoves")+'</div>'

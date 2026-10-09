@@ -485,6 +485,40 @@ describe('Desoves · pendientes: guardar el N2 hoy y completar el N5 otro día (
     expect(document.getElementById('md-pend-nota').textContent).toContain('No se pudo leer la hoja');
     expect(pendientes()).toHaveLength(0);
   });
+
+  /* 2026-10-09 (usuario) · «al leer la hoja, una sumatoria entre lotes de desoves, huevos, hembras no viables, N2 y N5 del
+     día». Va en #md-pend-tot, ENCIMA de la lista y aparte: las filas de #md-pend siguen siendo sólo las de la lista. */
+  it('🔴 al leer la hoja salen los totales del día encima de la lista, y se van si la relectura falla', async () => {
+    const totales = () => [...document.querySelectorAll('#md-pend-tot tbody tr')].map((tr) => [...tr.cells].map((c) => c.textContent));
+    const F = (fecha, cg, o) => ({ Fecha: fecha, Lote: 'BP', 'Código genético': cg, 'Piscina Broodstock': 558, Desoves: 64, 'Total de huevos': 14440000,
+      'Hembras no viables': 3, 'Fecha N2': '', N2: 9000000, 'Fecha N5': '', N5: '', Despacho: '', Observaciones: '', ...o });
+    respuestaRows = { ok: true, headers: MAD_DESOVE_HEADERS, rows: [
+      F('2026-09-04', 'CG1', { N5: 1000000 }),                                   // completo y más viejo: no sale
+      F('2026-09-05', 'CG1', { N5: 8500000 }), F('2026-09-05', 'CG2', { N5: 8000000 }),
+      F('2026-09-07', 'CG1'), F('2026-09-07', 'CG2', { Desoves: 36, 'Total de huevos': 10000000, N5: 9000000 }),
+      F('2026-09-08', 'CG1', { N2: '' }),                                        // recién desovado: sin N2 ni N5
+    ] };
+    expect(document.getElementById('md-pend-tot').textContent, 'sin leer la hoja no hay totales').toBe('');
+    await H.madDesPendVer();
+    expect(totales()).toEqual([
+      ['2026-09-08', '1', '64', '14.440 mil', '3', '—', '—', '⏳ N2/N5 en 1'],
+      ['2026-09-07', '2', '100', '24.440 mil', '6', '18.000 mil', '9.000 mil', '⏳ N5 en 1'],
+      ['2026-09-05', '2', '128', '28.880 mil', '6', '18.000 mil', '16.500 mil', '✅'],
+    ]);
+    expect(pendientes(), 'la lista no cambia: sólo los dos pendientes').toHaveLength(2);
+
+    const del07 = pendientes().find((tr) => tr.textContent.includes('2026-09-07'));
+    H.madDesEditar(del07.querySelector('.md-pend-ed').dataset.k);              // se completa desde este equipo
+    q('.md-n5').value = '8200';
+    await H.madDesGuardar();
+    expect(totales()[1], 'el día pasa a completo con el N5 de este equipo, y se avisa').toEqual(
+      ['2026-09-07', '2', '100', '24.440 mil', '6', '18.000 mil', '17.200 mil', '✅ 📱 1']);
+    expect(totales().map((r) => r[0]), 'el 07 es ya el último completo: el 05 sale').toEqual(['2026-09-08', '2026-09-07']);
+
+    respuestaRows = 'red';
+    await H.madDesPendVer();
+    expect(document.getElementById('md-pend-tot').textContent, 'una lectura fallida no deja totales viejos').toBe('');
+  });
 });
 
 /* 2026-10-04 (usuario) · «adicional del botón de completar, otro denominado eliminar, que borra dicho registro del
