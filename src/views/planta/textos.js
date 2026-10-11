@@ -75,7 +75,10 @@ export function fichaGrupo(g, ctx) {
     return f([['Estado', ctx.mesPasado ? 'Corrida despachada' : 'Vacío · corrida despachada'], ['Corrida', 'C' + st.corrida + ' despachada por completo'], ['Siembra', txtSiembra(st.siembra)],
       ['Población final', fmtPop(r.poblacion)], ['Supervivencia', pct(r.superv)], ['PL/g (manual)', num(r.plg, 1, '')], ['Último dato', st.ultimo ? fmtShort(st.ultimo) : '—']]);
   }
-  const c = st.cuenta, partes = [c.cultivo + ' en cultivo', c.vacio && c.vacio + ' vacíos', c.despachado && c.despachado + ' despachados', c.fuera && c.fuera + ' agrupados o descartados'].filter(Boolean);
+  // singular con 1 (2026-10-11, usuario: decía «1 vacíos · 1 despachados», como el panel antes de C3)
+  const c = st.cuenta, partes = [c.cultivo + ' en cultivo', c.vacio && c.vacio + (c.vacio === 1 ? ' vacío' : ' vacíos'),
+    c.despachado && c.despachado + (c.despachado === 1 ? ' despachado' : ' despachados'),
+    c.fuera && c.fuera + (c.fuera === 1 ? ' agrupado o descartado' : ' agrupados o descartados')].filter(Boolean);
   return f([
     ['Corrida', 'C' + st.corrida + (st.despachando ? ' · despachando' : '')],
     ['Siembra', txtSiembra(st.siembra)],

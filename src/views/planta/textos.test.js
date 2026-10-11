@@ -31,9 +31,15 @@ describe('fichas', () => {
     const r = Object.fromEntries(f.rows);
     expect(r['Estadío']).toBe('PL13 · día 20 · Cosecha');
     expect(r['Supervivencia']).toBe('34,6 %');
-    expect(r['Tanques']).toBe('2 en cultivo · 1 vacíos');
+    expect(r['Tanques']).toBe('2 en cultivo · 1 vacío');
     expect(r['Alertas']).toBe('2 tanques');
     expect(r['Siembra']).toMatch(/· 3 tanques · 9,6 M nauplios$/);
+  });
+  it('módulo: «Tanques» en singular con 1 y en plural con varios (2026-10-11; decía «1 vacíos · 1 despachados»)', () => {
+    const tanques = (cuenta) => Object.fromEntries(fichaGrupo(modulo(cultivo({ cuenta: { alerta: 0, ...cuenta } })), HOY).rows)['Tanques'];
+    expect(tanques({ cultivo: 1, vacio: 1, despachado: 1, fuera: 1 })).toBe('1 en cultivo · 1 vacío · 1 despachado · 1 agrupado o descartado');
+    expect(tanques({ cultivo: 8, vacio: 2, despachado: 3, fuera: 2 })).toBe('8 en cultivo · 2 vacíos · 3 despachados · 2 agrupados o descartados');
+    expect(tanques({ cultivo: 12, vacio: 0, despachado: 0, fuera: 0 })).toBe('12 en cultivo');
   });
   it('sala y tanques (larvicultura, maduración y desove)', () => {
     const g = { id: 'S1', kind: 'mat', name: 'Maduración 1', short: 'S1', st: sala(), tanks: [], desove: [{ num: 1, desove: true }] };
