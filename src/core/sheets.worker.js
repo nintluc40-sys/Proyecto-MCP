@@ -30,11 +30,15 @@
    en algo síncrono (la lectura del XLSX). Con la red colgada, la cadena termina sola —cada petición tiene su tiempo
    máximo— y, si no llegó NADA (ni el libro ni ninguna hoja del respaldo), contesta «sin-datos»: la página no la repite.
 
+   4.2-B (2026-10-11, usuario) · PRIMERO cada hoja por su CSV de exportación (sheets.js · hojasPorCsv): ~1,4 MB y ~2 s de
+   lectura frente a los 14,5 MB y 12–16 s del XLSX entero, mismas filas. Si ese camino no sirve (sin pestañas, formato
+   regional distinto, nada llega) o queda INCOMPLETO, se sigue como antes: el libro entero y, si no llega, el respaldo.
+
    Hojas de a una (2026-10-06, usuario, punto 5): la página deserializa cada mensaje al leerlo, y con TODAS las hojas
    en uno solo eran ~600 ms seguidos en escritorio (×4 en un celular) sin que la pantalla respondiera, más lo que venía
    detrás en la misma tarea. Un mensaje por hoja reparte ese trabajo en tareas cortas (la mayor, la hoja más grande).
    ============================================================ */
-import { fetchXlsxSheets, respaldoPorHojas, planDelta, huellaDe } from './sheets.js';
+import { fetchXlsxSheets, respaldoPorHojas, hojasPorCsv, planDelta, huellaDe } from './sheets.js';
 import { guardarLibro, almacenIDB } from './libroGuardado.js';
 
 /** Atiende una petición. `entorno` da cómo cargar SheetJS y cómo obtenerlo (en el Worker:
@@ -52,7 +56,9 @@ export async function atenderLectura(m, entorno) {
   try {
     const ids = { type: 'real', realId: m.realId };
     const avisar = m.conProgreso && entorno.avisar ? (p) => entorno.avisar(id, p) : null;
-    let sheets = await fetchXlsxSheets(ids, obtenerXLSX, avisar);
+    // 4.2-B: cada hoja por su CSV; completo, vale (y se guarda: el CSV de exportación no recorta por filtros)
+    const porCsv = await hojasPorCsv(ids, obtenerXLSX, avisar, m.previas || {});
+    let sheets = porCsv && porCsv.completo ? porCsv.sheets : await fetchXlsxSheets(ids, obtenerXLSX, avisar);
     let guardable = !!sheets;
     // A4 (2026-10-11, usuario): ¿la lista de hojas es la de verdad? El libro entero, sí; el respaldo, si llegaron TODAS sus
     // pestañas (por XLSX o CSV). Completa, una hoja que falta se vació o se borró; si no, puede que sólo no llegara.
@@ -69,6 +75,8 @@ export async function atenderLectura(m, entorno) {
         completo = !r.perdidas && !r.sinPestanas;
       }
     }
+    // 4.2-B: sin libro ni respaldo, lo que llegó por CSV (incompleto: isDegraded no lo deja pisar un set mayor)
+    if (!sheets && porCsv && Object.keys(porCsv.sheets).length) { sheets = porCsv.sheets; guardable = false; completo = false; }
     // A1: ni el libro ni ninguna hoja del respaldo (red caída o sin acceso): repetirlo en la página no traería nada
     if (!sheets) return { id, ok: false, motivo: 'sin-datos', error: 'No llegó ningún dato de Google.' };
     const d = planDelta(m.previas || {}, sheets);

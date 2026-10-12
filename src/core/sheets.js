@@ -294,6 +294,7 @@ const mb = (b) => (b / 1048576).toLocaleString('es-EC', { minimumFractionDigits:
 export function textoProgreso(p) {
   if (p && p.fase === 'lectura') return `Leyendo el libro (${mb(p.bytes)})…`;
   if (p && p.fase === 'reintento') return `Descargando el libro… ${mb(p.bytes || 0)} · ${p.atascada ? 'la red no avanza, ' : ''}reintento ${p.intento} de ${p.de}`;
+  if (p && p.fase === 'hojas') return `Descargando las hojas… ${p.hechas} de ${p.de}`;   // 4.2-B: cada hoja por su CSV
   if (p && p.fase === 'respaldo') return 'El libro entero no llegó: probando hoja por hoja…' + (p.de ? ` ${p.hechas} de ${p.de}` : '');
   const intento = p && p.intento > 1 ? ` · intento ${p.intento} de ${p.de}` : '';
   return `Descargando el libro… ${mb((p && p.bytes) || 0)}${intento}`;
@@ -511,8 +512,9 @@ export async function discoverGids(ids) {
 }
 
 /** 2026-10-01 (usuario) · EL RESPALDO LEE CADA HOJA POR SU XLSX, NO POR gviz. Con un FILTRO puesto en la hoja
- *  —el laboratorio los deja a menudo— gviz y el CSV de exportación sólo dan las filas VISIBLES (medido en producción:
- *  Datos M03, 20 de 1 579; Control_Tanque M10, 806 de 14 777), y ese set recortado pisaba en silencio el bueno
+ *  —el laboratorio los deja a menudo— gviz sólo da las filas VISIBLES (medido en producción: Datos M03, 20 de 1 579;
+ *  Control_Tanque M10, 806 de 14 777; el CSV de EXPORTACIÓN, `export?format=csv`, NO recorta: medido el 09 y el 11-10, y
+ *  por eso lo usa hojasPorCsv; aquí antes decía que también), y ese set recortado pisaba en silencio el bueno
  *  (`isDegraded` sólo cuenta hojas). El XLSX de la hoja las da TODAS (lo mismo que hace Registros desde el 0v·2) y se
  *  lee con las mismas opciones que el libro entero: las filas salen iguales que por el camino principal.
  *  Devuelve { nombre, filas } (`nombre`: el de la pestaña dentro del XLSX), o null si no se puede (documento
@@ -577,6 +579,103 @@ export async function respaldoPorHojas(ids, obtenerXLSX = getXLSX, avisar = null
     if (res.csv) porCsv++;
   });
   return { sheets, porCsv, perdidas, sinPestanas: !discovered.length };
+}
+
+/* ---------- B · cada hoja por su CSV de EXPORTACIÓN (2026-10-11, usuario, punto 4.2-B) ----------
+   El libro entero en XLSX pesaba 14,5 MB y leerlo costaba 12–16 s de CPU (el XML); en un celular, más de un minuto.
+   `export?format=csv&gid=` (no gviz: ése recorta por filtros) trae TODAS las filas de cada hoja, ~1,4 MB comprimidos las
+   44, y leerlas cuesta ~2 s. Medido con el libro real el 11-10: mismas filas y mismas columnas en las 44 hojas y el
+   99,998 % de las celdas idénticas al camino del XLSX; difieren 32 celdas con separador de miles que el XLSX deja como
+   «7,400,000.0» y la app leía 7,4 (ahora se leen bien, decidido por el usuario) y 24 redondeos en los que el CSV da lo que
+   se ve en Sheets (pH 8,475 → «8,48»; SheetJS daba 8.47). Se lee con SheetJS (`raw`: sin adivinar tipos) y las MISMAS
+   opciones de filas que el XLSX, así que cabeceras, columnas sin nombre y filas en blanco salen igual. */
+const CSV_DECIMAL = /^-?\d+,\d+(E[+-]?\d+)?%?$/;
+const CSV_MILES = /^-?\d{1,3}(\.\d{3})+(,\d+)?%?$/;
+/** Un valor del CSV, que sale con el formato regional del libro (es: coma decimal, punto de miles), en la forma en que
+ *  lo da el camino del XLSX (punto decimal, sin separador de miles). Lo demás —textos, fechas, horas— no se toca. */
+export function valorDeCsv(s) {
+  if (CSV_DECIMAL.test(s)) return s.replace(',', '.');
+  if (CSV_MILES.test(s)) return s.replace(/\./g, '').replace(',', '.');
+  return s;
+}
+// Señales del formato regional: «8,48» sólo puede ser es; «8.48» (1–2 decimales) sólo en-US. Las de miles no deciden.
+const SENAL_ES = /^-?\d+,\d{1,2}$/;
+const SENAL_EN = /^-?\d+\.\d{1,2}$/;
+/** Las filas de una hoja a partir del texto de su CSV, como las da sheet_to_json del XLSX (FILAS_LECTURA), con los
+ *  valores ya convertidos. `senales` (opcional) cuenta cuántos valores parecen es y cuántos en-US. */
+export function filasDeCsv(texto, XLSX, senales = null) {
+  const t = texto.charCodeAt(0) === 0xFEFF ? texto.slice(1) : texto;
+  const wb = XLSX.read(t, { type: 'string', raw: true, dense: true });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const filas = ws ? XLSX.utils.sheet_to_json(ws, FILAS_LECTURA) : [];
+  for (const f of filas) {
+    for (const k in f) {
+      const v = f[k];
+      if (typeof v !== 'string' || !v) continue;
+      if (senales) { if (SENAL_ES.test(v)) senales.es++; else if (SENAL_EN.test(v)) senales.en++; }
+      f[k] = valorDeCsv(v);
+    }
+  }
+  return filas;
+}
+/** Las filas de la hoja `nombre` según su huella aplicada ('nombre:filas:hash;'), o -1 si no hay. */
+function filasAplicadas(previas, nombre) {
+  const h = previas && previas[nombre];
+  if (!h) return -1;
+  const p = String(h).replace(/;$/, '').split(':');
+  return p.length >= 3 ? Number(p[p.length - 2]) : -1;
+}
+async function csvDeHoja(ids, gid) {
+  const url = `https://docs.google.com/spreadsheets/d/${ids.realId}/export?format=csv&gid=${gid}&_cb=${Math.floor(Date.now() / 30000)}`;
+  const r = await fetchWithTimeout(url, { cache: 'no-store' }, XLSX_TIMEOUT_MS);   // Google genera el CSV: margen del XLSX
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const t = await textoDe(r);
+  if (/^\s*<(!DOCTYPE|html)/i.test(t.slice(0, 300))) throw new Error('No llegó un CSV (¿página de acceso?).');
+  return t;
+}
+// Si los primeros 6 intentos fallan sin que llegue NINGUNA hoja (sin red, o el CSV bloqueado), se deja el camino del CSV:
+// con la red colgada, cada intento espera su tiempo máximo y 44 hojas lo multiplicarían (A1 del 07-10).
+const CSV_FALLOS_SIN_EXITO = 6;
+/** Todas las hojas por su CSV: { sheets, completo, porXlsx } o null si este camino no sirve (sin pestanas o alguna sin
+ *  nombre, formato regional que no es el esperado, o nada llega): entonces se lee el libro entero, como antes. Cada hoja
+ *  cuyo CSV no llega —o trae MENOS filas que lo aplicado— se pide por su XLSX (`filasPorXlsxDeHoja`); `completo`: todas
+ *  llegaron. Lo usa el Worker (sheets.worker.js · atenderLectura). `previas`: las huellas aplicadas. */
+export async function hojasPorCsv(ids, obtenerXLSX = getXLSX, avisar = null, previas = {}) {
+  if (!ids || ids.type !== 'real') return null;
+  let XLSX;
+  try { XLSX = obtenerXLSX(); } catch (_) { return null; }
+  if (!XLSX) return null;
+  const pestanas = await discoverGids(ids);
+  if (!pestanas.length || pestanas.some((p) => !p.title)) return null;
+  const senales = { es: 0, en: 0 };
+  let exitos = 0, fallos = 0, perdidas = 0, porXlsx = 0, hechas = 0, abandonado = false;
+  const leidas = await mapLimit(pestanas, 6, async ({ gid, title }) => {
+    try {
+      let filas = null;
+      for (let intento = 0; intento < 2 && !filas && !abandonado; intento++) {
+        try { filas = filasDeCsv(await csvDeHoja(ids, gid), XLSX, senales); exitos++; } catch (_) {
+          fallos++;
+          if (!exitos && fallos >= CSV_FALLOS_SIN_EXITO) abandonado = true;
+          else if (intento < 1) await new Promise((res) => setTimeout(res, 600));
+        }
+      }
+      if (abandonado) return null;
+      // sin CSV, o con MENOS filas que lo aplicado (el CSV de exportación no recorta por filtros, pero por si acaso), su XLSX
+      if (!filas || filas.length < filasAplicadas(previas, title)) {
+        const x = await filasPorXlsxDeHoja(ids, gid, obtenerXLSX);
+        if (x) { filas = x.filas; porXlsx++; } else if (!filas) { perdidas++; return null; }
+      }
+      return { title, filas };
+    } finally {
+      hechas++;
+      if (avisar) avisar({ fase: 'hojas', hechas, de: pestanas.length });
+    }
+  });
+  if (abandonado || !exitos) return null;
+  if (senales.en > senales.es) return null;   // el libro ya no está en formato es: la conversión no valdría
+  const sheets = {};
+  leidas.forEach((h) => { if (h && h.filas.length && !sheets[h.title]) sheets[h.title] = stampRows(h.filas, h.title); });
+  return { sheets, completo: !perdidas, porXlsx };
 }
 
 /** El respaldo leído aquí: { sheets, completo } (A4, 2026-10-11: `completo` = llegaron TODAS sus pestañas). */
