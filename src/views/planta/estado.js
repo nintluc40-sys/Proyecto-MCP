@@ -32,9 +32,33 @@ import { UMBRALES_DE_AVISO } from '../maduracion/operativo.umbrales.js';
 import { curvaDeTanque } from '../maduracion/operativo.tanques.js';
 import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { ESTADO_PRODUCCION, ubicKey } from '../registros/lib/mad-libro.js';
+import { isTrasladoRow } from '../supervisor/traslado.data.js';
+import { store } from '../../core/store.js';
 
 const numDe = (s) => { const m = String(s || '').match(/\d+/); return m ? +m[0] : null; };
-const esModulo = (s, n) => /^M/i.test(String(s || '').trim()) && numDe(s) === n;
+const esModulo =(s, n) => /^M/i.test(String(s || '').trim()) && numDe(s) === n;
+
+// Traslado sin despacho (2026-10-11, usuario, punto 4.1): la 597 (M06/M07) y M01·598 se trasladaron sin registrar su
+// despacho, y Planta las seguía dando en cultivo sin decir nada. El despacho sigue saliendo SÓLO de la ficha de Despacho
+// (core/prodCalendar.js, la regla de las tres vistas): esto sólo AVISA. Los días con viajes de cada «módulo|corrida» de
+// `Registro_Traslado` (la hoja no trae tanque ni cantidad), agrupados una vez por libro.
+const _traslados = new WeakMap();
+function trasladosPorModulo(filas) {
+  let m = _traslados.get(filas);
+  if (!m) {
+    m = new Map();
+    for (const r of filas) {
+      if (!isTrasladoRow(r)) continue;
+      const k = getField(r, F.modulo) + '|' + getField(r, F.corrida), f = parseAnyDate(getField(r, F.fecha));
+      if (!f || isNaN(f)) continue;
+      const dia = hoyLocal(f), e = m.get(k);
+      if (!e) m.set(k, { desde: dia, hasta: dia });
+      else { if (dia < e.desde) e.desde = dia; if (dia > e.hasta) e.hasta = dia; }
+    }
+    _traslados.set(filas, m);
+  }
+  return m;
+}
 
 // Contexto SIN la ventana de fecha (el de la Vista Ejecutiva), memoizado por identidad: así el memo
 // de modStats/tankStats sirve entre refrescos sin cambios.
@@ -78,9 +102,9 @@ function motivos({ od, tmp, sv }) {
  * @returns {{ modulos: Object<string, object>, resumen: { cultivo, vacio, despachado, fuera, alerta, desinfeccion, total } }}
  */
 export function estadoPlanta(corridasDelMes) {
-  const { ctx, enMes, desinf } = prepararPlanta(corridasDelMes);
+  const { ctx, enMes, desinf, tras } = prepararPlanta(corridasDelMes);
   const modulos = {};
-  LARV.forEach((m) => { modulos[m.id] = estadoModulo(ctx, m, desinf, enMes); });
+  LARV.forEach((m) => { modulos[m.id] = estadoModulo(ctx, m, desinf, enMes, tras); });
   return { modulos, resumen: resumenPlanta(modulos) };
 }
 
@@ -88,16 +112,17 @@ export function estadoPlanta(corridasDelMes) {
  *  5): al llegar datos, el cálculo entero eran ~0,5 s seguidos en escritorio (×4 en un celular) sin que la pantalla
  *  respondiera; módulo a módulo son tareas de ~50 ms. Mismo resultado (lo fija estado.test.js). */
 export async function estadoPlantaPorPartes(corridasDelMes, ceder) {
-  const { ctx, enMes, desinf } = prepararPlanta(corridasDelMes);
+  const { ctx, enMes, desinf, tras } = prepararPlanta(corridasDelMes);
   const modulos = {};
-  for (const m of LARV) { await ceder(); modulos[m.id] = estadoModulo(ctx, m, desinf, enMes); }
+  for (const m of LARV) { await ceder(); modulos[m.id] = estadoModulo(ctx, m, desinf, enMes, tras); }
   return { modulos, resumen: resumenPlanta(modulos) };
 }
 
 function prepararPlanta(corridasDelMes) {
   const ctx = contextoCompleto();
   const enMes = Array.isArray(corridasDelMes) ? new Set(corridasDelMes.map(String)) : null;
-  return { ctx, enMes, desinf: enMes ? [] : desinfeccionEnCurso() };
+  // el aviso de traslado sin despacho es del estado de HOY: un mes pasado se ve como estaba a su cierre (punto 4.1)
+  return { ctx, enMes, desinf: enMes ? [] : desinfeccionEnCurso(), tras: enMes ? null : trasladosPorModulo(store.globalData) };
 }
 
 function resumenPlanta(modulos) {
@@ -114,7 +139,7 @@ function resumenPlanta(modulos) {
   return resumen;
 }
 
-function estadoModulo(ctx, m, desinf, enMes) {
+function estadoModulo(ctx, m, desinf, enMes, tras) {
   const nT = m.rows.length * m.cols.length;
   const vacios = (estado) => Object.fromEntries(Array.from({ length: nT }, (_, i) => [i + 1, { estado }]));
   const mod = ctx.allMods.find((x) => esModulo(x, m.n)) || null;
@@ -165,8 +190,11 @@ function estadoModulo(ctx, m, desinf, enMes) {
   }
   const lista = Object.values(tanques);
   if (despachada) return { id: m.id, mod, estado: 'despachado', corrida, ultimo: s.lastDate, siembra, resultado, tanques };
+  // punto 4.1: con viajes de traslado de ESTA corrida, los tanques que siguen en cultivo son los que no tienen despacho
+  const tr = tras && tras.get(mod + '|' + corrida), sinDespacho = lista.filter((t) => t.estado === 'cultivo').length;
   return {
     id: m.id, mod, estado: 'cultivo', corrida, siembra, resultado,
+    traslado: tr && sinDespacho ? { desde: tr.desde, hasta: tr.hasta, sinDespacho } : null,
     estadio: s.estadio, dias: s.dias, etapa: stageCategory(s.estadio),
     sv: s.sv, mort: s.mort, pop: s.pop, od: s.od, tmp: s.tmp, plg: s.plgManual,
     tecnicos: s.tecnicos, lotes: s.lotes, fresco: freshness(s.lastDate), ultimo: s.lastDate,

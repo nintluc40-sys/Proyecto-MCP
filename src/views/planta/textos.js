@@ -61,6 +61,12 @@ function txtSiembra(sb) {
   if (!sb || !sb.fecha) return '—';
   return fmtShort(sb.fecha) + ' · ' + sb.tanques + (sb.tanques === 1 ? ' tanque' : ' tanques') + (sb.nauplios ? ' · ' + fmt(sb.nauplios / 1e6, 1) + ' M nauplios' : '');
 }
+/** Traslado sin despacho (2026-10-11, usuario, punto 4.1; `st.traslado` de estado.js): los días con viajes y cuántos
+ *  tanques siguen sin su despacho. Sólo avisa: las cifras siguen saliendo de la ficha de Despacho. */
+function txtTraslado(tr) {
+  return (tr.desde === tr.hasta ? 'el ' + dm(tr.desde) : 'del ' + dm(tr.desde) + ' al ' + dm(tr.hasta))
+    + ' · falta registrar el despacho de ' + tr.sinDespacho + (tr.sinDespacho === 1 ? ' tanque' : ' tanques');
+}
 /** La ficha de un módulo (las cifras de su tarjeta en la Vista Ejecutiva) o, si es una sala, la de la sala. */
 export function fichaGrupo(g, ctx) {
   if (g.kind !== 'larv') return fichaSala(g, ctx);
@@ -81,6 +87,7 @@ export function fichaGrupo(g, ctx) {
     c.fuera && c.fuera + (c.fuera === 1 ? ' agrupado o descartado' : ' agrupados o descartados')].filter(Boolean);
   return f([
     ['Corrida', 'C' + st.corrida + (st.despachando ? ' · despachando' : '')],
+    ...(st.traslado ? [['🚚 Trasladada', txtTraslado(st.traslado)]] : []),
     ['Siembra', txtSiembra(st.siembra)],
     ['Estadío', st.estadio + ' · día ' + st.dias + (st.etapa ? ' · ' + st.etapa.label : '')],
     ['Supervivencia', pct(st.sv)], ['Mortalidad', pct(st.mort)], ['Población', fmtPop(st.pop)],
@@ -165,7 +172,8 @@ export function textoFila(g, ctx) {
   if (!st || st.estado === 'sin-datos') return { sub: 'Sin datos', ct: '' };
   if (st.estado === 'desinfeccion') return { sub: 'Desinfección · C' + st.corrida, ct: '' };
   if (st.estado === 'despachado') return { sub: (ctx.mesPasado ? '' : 'Vacío · ') + 'C' + st.corrida + ' despachada' + (ctx.mesPasado && st.resultado && st.resultado.superv !== null ? ' · ' + pct(st.resultado.superv) : ''), ct: '' };
-  return { sub: 'C' + st.corrida + ' · ' + st.estadio + ' · día ' + st.dias + (st.despachando ? ' · despachando' : ''), ct: st.cuenta.alerta ? '⚠ ' + st.cuenta.alerta : st.cuenta.cultivo + '/' + g.tanks.length };
+  return { sub: 'C' + st.corrida + ' · ' + st.estadio + ' · día ' + st.dias + (st.traslado ? ' · 🚚 trasladada sin despacho' : st.despachando ? ' · despachando' : ''),
+    ct: st.cuenta.alerta ? '⚠ ' + st.cuenta.alerta : st.cuenta.cultivo + '/' + g.tanks.length };
 }
 
 /* ---------- Cifras: cuatro fichas { valor, titulo, detalle } ---------- */
@@ -286,12 +294,14 @@ export function alertasParaAtender(grupos, reemplazo, ctx) {
   grupos.forEach((g) => {
     const enAlerta = g.tanks.filter((t) => t.st && t.st.alerta);
     const sala = g.kind === 'mat' && g.st && g.st.alerta ? g.st.motivos : [];
-    if (!enAlerta.length && !sala.length) return;
-    total += enAlerta.length + (sala.length ? 1 : 0);
+    const tras = g.kind === 'larv' && g.st && g.st.traslado;   // punto 4.1: traslado sin despacho, en el renglón del módulo
+    if (!enAlerta.length && !sala.length && !tras) return;
+    total += enAlerta.length + (sala.length ? 1 : 0) + (tras ? 1 : 0);
     // si todos sus tanques tienen el mismo motivo, va en el renglón; si no, junto a cada número
     const firmas = new Set(enAlerta.map((t) => t.st.motivos.join('|')));
     const comun = firmas.size === 1 ? enAlerta[0].st.motivos : null;
     const partes = [];
+    if (tras) partes.push('🚚 trasladada ' + txtTraslado(tras));
     if (sala.length) partes.push(motivosTxt(sala) + ' de la sala');
     if (enAlerta.length) partes.push(enAlerta.length + (enAlerta.length === 1 ? ' tanque' : ' tanques') + (comun ? ' · ' + motivosTxt(comun) : ''));
     items.push({ tipo: 'grupo', g, color: colorGrupo(g), nombre: g.name, detalle: partes.join(' · '),

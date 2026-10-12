@@ -349,3 +349,27 @@ describe('🦐 nauplios N5 de maduración (punto 10, 07-10 noche)', () => {
     expect([S.vacia, S.dia, S.nota, S.barras.length]).toEqual([false, null, 'Sin desoves en el mes.', 1]);
   });
 });
+
+describe('traslado sin despacho (punto 4.1, 2026-10-11)', () => {
+  const conTraslado = (traslado, over = {}) => modulo(cultivo({ traslado, ...over }));
+  it('la ficha y la fila del módulo lo dicen; un solo día y un tanque en singular', () => {
+    const r = Object.fromEntries(fichaGrupo(conTraslado({ desde: '2026-10-04', hasta: '2026-10-06', sinDespacho: 2 }), HOY).rows);
+    expect(r['🚚 Trasladada']).toBe('del 04/10 al 06/10 · falta registrar el despacho de 2 tanques');
+    const uno = Object.fromEntries(fichaGrupo(conTraslado({ desde: '2026-10-10', hasta: '2026-10-10', sinDespacho: 1 }), HOY).rows);
+    expect(uno['🚚 Trasladada']).toBe('el 10/10 · falta registrar el despacho de 1 tanque');
+    expect(Object.keys(Object.fromEntries(fichaGrupo(modulo(cultivo()), HOY).rows))).not.toContain('🚚 Trasladada');
+    expect(textoFila(conTraslado({ desde: '2026-10-10', hasta: '2026-10-10', sinDespacho: 1 }, { despachando: true }), HOY).sub)
+      .toBe('C597 · PL13 · día 20 · 🚚 trasladada sin despacho');
+  });
+  it('«Qué atender»: en el renglón del módulo, junto a sus tanques en alerta, y suma uno', () => {
+    const tr = { desde: '2026-10-10', hasta: '2026-10-10', sinDespacho: 12 };
+    const solo = alertasParaAtender([conTraslado(tr, { tanques: {} })], null, HOY);
+    expect(solo.total).toBe(1);
+    expect(solo.items).toHaveLength(1);
+    expect(solo.items[0]).toMatchObject({ tipo: 'grupo', nombre: 'Módulo 7', detalle: '🚚 trasladada el 10/10 · falta registrar el despacho de 12 tanques', tanques: [] });
+    const conAlertas = alertasParaAtender([conTraslado(tr)], null, HOY);
+    expect(conAlertas.total).toBe(3);   // 2 tanques en alerta + el aviso
+    expect(conAlertas.items).toHaveLength(1);
+    expect(conAlertas.items[0].detalle).toBe('🚚 trasladada el 10/10 · falta registrar el despacho de 12 tanques · 2 tanques · supervivencia');
+  });
+});

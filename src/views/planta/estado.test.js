@@ -176,3 +176,29 @@ describe('estado · evolución de cada tanque en cultivo (punto 9, 07-10 noche)'
     expect(t[4].estado).toBe('despachado'); expect(t[4].evolucion).toBeUndefined();
   });
 });
+
+describe('estado · traslado sin despacho (punto 4.1, 2026-10-11): sólo avisa, las cifras siguen saliendo del despacho', () => {
+  const TR = (mod, cor, fecha) => ({ _SheetOrigin: 'Registro_Traslado', Fecha: fecha, Viaje: 'v-' + fecha, Corrida: cor, 'Módulo': mod, Placa: 'AAA-0000', 'Revisión': '1', Tina: '1' });
+  it('con viajes de SU corrida y tanques sin despacho: días del traslado y cuántos faltan; nada en lo demás ni en un mes pasado', () => {
+    const antes = store.globalData;
+    try {
+      store.globalData = [
+        // M05 · corrida 902 trasladada del 04 al 06/10 con un tanque ya despachado y dos sin despacho
+        larv('M05', '902', 'TQ 1', '01/10/2026', 100000, 'PL10'), larv('M05', '902', 'TQ 2', '01/10/2026', 100000, 'PL10'),
+        larv('M05', '902', 'TQ 3', '01/10/2026', 100000, 'PL10', { Destino: 'Piscina 3' }),
+        TR('M05', '902', '06/10/2026'), TR('M05', '902', '04/10/2026'), TR('M05', '902', '05/10/2026'),
+        // M07 · en cultivo con un traslado de su corrida VIEJA (880): no cuenta
+        larv('M07', '900', 'TQ 1', '01/10/2026', 100000, 'PL6'), TR('M07', '880', '01/06/2026'),
+        // M09 · despachada entera y trasladada: ya está despachada, sin aviso
+        larv('M09', '890', 'TQ 1', '01/10/2026', 1000, 'PL12', { Destino: 'Piscina 2' }), TR('M09', '890', '02/10/2026'),
+      ];
+      const H = estadoPlanta();
+      expect(H.modulos.M5.estado).toBe('cultivo');
+      expect(H.modulos.M5.traslado).toEqual({ desde: '2026-10-04', hasta: '2026-10-06', sinDespacho: 2 });
+      expect(H.modulos.M5.cuenta).toMatchObject({ cultivo: 2, despachado: 1 });   // las cifras, como sin el aviso
+      expect(H.modulos.M7.traslado).toBe(null);
+      expect(H.modulos.M9.estado).toBe('despachado'); expect(H.modulos.M9.traslado).toBeUndefined();
+      expect(estadoPlanta(['902']).modulos.M5.traslado).toBe(null);                // mes pasado: como a su cierre
+    } finally { store.globalData = antes; }
+  });
+});

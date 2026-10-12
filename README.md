@@ -247,7 +247,10 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
 - **Planta** (🏭, 2026-10-04/06): el tablero de producción de **Gerencia** sobre la maqueta 3D del laboratorio
   (los módulos de larvicultura y las salas de maduración a escala del plano, en su entorno). El color de cada tanque
   es su estado —larvicultura con las reglas de la Vista Ejecutiva (`supervisor/etapas.js`, compartido), maduración con
-  el «Estado» del mapa de salas—, con su ficha al tocarlo, balizas de alerta y «Qué atender hoy»; las cifras del mes
+  el «Estado» del mapa de salas—, con su ficha al tocarlo, balizas de alerta y «Qué atender hoy» (que también avisa,
+  como la ficha y la fila del módulo, de una corrida con viajes en `Registro_Traslado` y tanques sin su despacho:
+  «🚚 trasladada … · falta registrar el despacho de N tanques», 2026-10-11; sólo avisa, el despacho sigue saliendo de
+  su ficha); las cifras del mes
   (producción de «Producción Omarsa» frente a una **meta de 400 M editable** con ⚙, guardada en el equipo,
   supervivencia, nauplios y desoves) y el reemplazo de reproductores a los 60 días. Debajo de la producción, en los dos
   modos, **«Nauplios N5 · maduración»** (`planta/nauplios.js`, 2026-10-07): el N5 del mes frente a su meta —la diaria
