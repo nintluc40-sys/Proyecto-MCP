@@ -579,8 +579,10 @@ export async function respaldoPorHojas(ids, obtenerXLSX = getXLSX, avisar = null
   return { sheets, porCsv, perdidas, sinPestanas: !discovered.length };
 }
 
+/** El respaldo leído aquí: { sheets, completo } (A4, 2026-10-11: `completo` = llegaron TODAS sus pestañas). */
 async function fetchViaCsv(ids, avisar = null) {
-  return (await respaldoPorHojas(ids, getXLSX, avisar)).sheets;
+  const r = await respaldoPorHojas(ids, getXLSX, avisar);
+  return { sheets: r.sheets, completo: !r.perdidas && !r.sinPestanas };
 }
 
 // ---------- pipeline público ----------
@@ -616,7 +618,7 @@ export function applySheets(sheets) {
 function commit(d, firstLoad) {
   // No pisar un set bueno con uno degradado (p.ej. reconexión manual que cae al
   // fallback CSV y sólo trae 1 hoja). En la primera carga no hay con qué comparar.
-  if (!firstLoad && isDegraded(d.sheets)) return 'degradado';
+  if (!firstLoad && isDegraded(d.sheets, d.completo)) return 'degradado';
   // A2 (2026-10-11, usuario): si lo descargado es EXACTAMENTE lo aplicado, ni se aplica ni se avisa —«sin cambios», como
   // en el refresco automático—. Antes cada ⟳ emitía EV.DATA igual y Planta sacaba «Hay datos nuevos» sin haberlos.
   if (!firstLoad && d.fp === _lastFingerprint) return 'sin-cambios';
@@ -731,9 +733,9 @@ export function fundirDelta(aplicadas, { orden, cambiadas }) {
 }
 
 /** { sheets, huellas, fp } de un set leído entero (camino sin Worker o CSV). */
-function descargaCompleta(sheets) {
+function descargaCompleta(sheets, completo = false) {
   const huellas = huellasPorHoja(sheets);
-  return { sheets, huellas, fp: huellaDe(huellas) };
+  return { sheets, huellas, fp: huellaDe(huellas), completo };
 }
 
 // Lo último APLICADO, por hoja: contra eso compara el Worker y de ahí salen las hojas sin cambios.
@@ -763,10 +765,12 @@ export const SIN_DATOS_DE_GOOGLE = 'No llegó ningún dato de Google (¿sin cone
 export async function descargarLibro({ alAvanzar } = {}) {
   const ids = parseSheetsIds(activeUrl());
   if (!ids) throw new Error('URL de Google Sheets inválida.');
-  let sheets;
+  // A4 (2026-10-11, usuario): `completo` = la lista de hojas es la de verdad (el libro entero, o el respaldo con TODAS sus
+  // pestañas): entonces una hoja que falta se vació o se borró y se aplica; si no, isDegraded la descarta (ver allí).
+  let sheets, completo = false;
   if (ids.type === 'real' && _lector && _lector.disponible()) {
     const r = await _lector.leer({ realId: ids.realId, previas: _huellasAplicadas, alAvanzar });
-    if (r.ok) return { sheets: fundirDelta(_hojasAplicadas, r), huellas: r.huellas, fp: huellaDe(r.huellas, r.orden) };
+    if (r.ok) return { sheets: fundirDelta(_hojasAplicadas, r), huellas: r.huellas, fp: huellaDe(r.huellas, r.orden), completo: r.completo === true };
     /* A1 (2026-10-07, usuario) · NO se repite aquí lo que el Worker ya intentó: si no le llegó nada, o si calló
        SILENCIO_MS (trabado), la página tampoco lo conseguiría y, en la primera carga, volvía a empezar toda la cadena
        (7–17 min con la red colgada). Sólo se lee aquí si el Worker no arrancó, o se cayó en la primera carga. */
@@ -774,12 +778,12 @@ export async function descargarLibro({ alAvanzar } = {}) {
     if (r.motivo === 'tiempo' || (r.motivo === 'caido' && store.connected)) {
       throw new Error('No se pudo leer el libro en segundo plano.');
     }
-    if (r.motivo === 'xlsx') sheets = await fetchViaCsv(ids, alAvanzar);
+    if (r.motivo === 'xlsx') ({ sheets, completo } = await fetchViaCsv(ids, alAvanzar));
   }
-  if (!sheets) sheets = await fetchAllSheets(alAvanzar);
+  if (!sheets) ({ sheets, completo } = await leerTodoAqui(alAvanzar));
   // Nada por ningún camino (sin Worker o tras su fallo): lo mismo que «sin-datos», no «Sin datos en las hojas.»
   if (!Object.keys(sheets).length) throw new Error(SIN_DATOS_DE_GOOGLE);
-  return descargaCompleta(sheets);
+  return descargaCompleta(sheets, completo);
 }
 
 /** Aplica una descarga al store y la registra como lo APLICADO (hojas, huellas y huella global).
@@ -837,9 +841,14 @@ export async function fetchXlsxSheets(ids, obtenerXLSX = getXLSX, avisar = null)
 
 /** Descarga las hojas (XLSX-first; si no, el respaldo hoja a hoja) y devuelve { name: rows }. */
 export async function fetchAllSheets(avisar = null) {
+  return (await leerTodoAqui(avisar)).sheets;
+}
+/** fetchAllSheets con `completo` (A4, 2026-10-11): el libro entero lo es; el respaldo, si llegaron todas sus pestañas. */
+async function leerTodoAqui(avisar = null) {
   const ids = parseSheetsIds(activeUrl());
   if (!ids) throw new Error('URL de Google Sheets inválida.');
-  return (await fetchXlsxSheets(ids, getXLSX, avisar)) || fetchViaCsv(ids, avisar);
+  const libro = await fetchXlsxSheets(ids, getXLSX, avisar);
+  return libro ? { sheets: libro, completo: true } : fetchViaCsv(ids, avisar);
 }
 
 /** ¿La descarga recién obtenida trae MENOS hojas que el set bueno ya cargado?
@@ -847,10 +856,26 @@ export async function fetchAllSheets(avisar = null) {
  *  bajar la 1ª hoja). Evita pisar datos buenos con un parcial transitorio: el
  *  auto-refresco recupera el set completo en el siguiente ciclo, sin que el
  *  usuario tenga que refrescar a mano. Sólo aplica si YA estábamos conectados
- *  (en la primera carga no hay set previo con el que comparar). */
-export function isDegraded(sheets) {
+ *  (en la primera carga no hay set previo con el que comparar).
+ *  A4 (2026-10-11, usuario): con `completo` (la lista de hojas es la de verdad: el libro entero o el respaldo con todas
+ *  sus pestañas) NO es degradada: la hoja que falta se vació o se borró, y descartarla dejaba cada refresco descartado
+ *  hasta recargar. Lo que se descarta, y lo que se aplica con hojas de menos, lo dice la píldora (textoFaltan). */
+export function isDegraded(sheets, completo = false) {
   const incoming = Object.keys(sheets || {}).length;
-  return store.connected && incoming > 0 && incoming < store.sheetNames.length;
+  return store.connected && incoming > 0 && incoming < store.sheetNames.length && !completo;
+}
+
+/** A4: las hojas aplicadas que no trae `sheets`. */
+export function hojasQueFaltan(sheets) {
+  return store.sheetNames.filter((n) => !(sheets && sheets[n]));
+}
+
+/** A4: lo que añade la píldora por las hojas que faltan: aplicada (se vaciaron o se borraron) o descartada (no llegaron). */
+export function textoFaltan(faltan, aplicada) {
+  const n = faltan.length;
+  if (!n) return '';
+  if (aplicada) return n === 1 ? ' · 1 hoja vacía o borrada' : ` · ${n} hojas vacías o borradas`;
+  return n === 1 ? ' · faltó 1 hoja (se reintenta)' : ` · faltaron ${n} hojas (se reintenta)`;
 }
 
 /** Conexión inicial: descarga + commit + emisión de estado. */
@@ -860,9 +885,12 @@ export async function connectSheets() {
     const firstLoad = !store.connected;
     // Punto 7 (2026-10-03): la PRIMERA carga dice cómo va (el aviso de carga y la píldora); los refrescos, no.
     const alAvanzar = firstLoad ? (p) => emit(EV.CONN, { state: 'connecting', label: textoProgreso(p) }) : undefined;
-    const resultado = commit(await descargarLibro({ alAvanzar }), firstLoad);
+    const d = await descargarLibro({ alAvanzar });
+    const faltan = firstLoad ? [] : hojasQueFaltan(d.sheets);   // A4: antes de aplicar, contra lo que había
+    const resultado = commit(d, firstLoad);
     const n = store.sheetNames.length;
-    const ts = new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' }) + (resultado === 'sin-cambios' ? ' · sin cambios' : '');
+    const ts = new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' })
+      + (resultado === 'sin-cambios' ? ' · sin cambios' : '') + textoFaltan(faltan, resultado === 'aplicado');
     // Señal de carga DEGRADADA: si tras conectar solo hay 1 hoja, casi siempre es
     // que el camino XLSX (todas las hojas) falló y se cayó al fallback CSV, que sin
     // el documento "publicado en la web" solo recupera la 1ª pestaña → la mayoría de

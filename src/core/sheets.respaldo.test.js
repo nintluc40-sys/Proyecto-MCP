@@ -157,7 +157,7 @@ describe('en el Worker: el respaldo se hace allí, no en la página', () => {
   it('si el libro entero no llega, el Worker lee las hojas una a una por XLSX, contesta con TODAS y guarda el libro', async () => {
     const e = entorno();
     const r = await atenderLectura({ id: 1, realId: 'X', previas: {} }, e);
-    expect(r).toMatchObject({ id: 1, ok: true });
+    expect(r).toMatchObject({ id: 1, ok: true, completo: true });   // A4: llegaron todas sus pestañas
     expect(r.orden).toEqual([H1, H2]);
     expect(r.cambiadas[H1]).toHaveLength(3);                 // entera, aunque gviz la diera recortada
     expect(gvizDe(1111)).toEqual([]);
@@ -169,7 +169,7 @@ describe('en el Worker: el respaldo se hace allí, no en la página', () => {
     xlsxPorGid[1111] = 404;
     const e = entorno();
     const r = await atenderLectura({ id: 2, realId: 'X', previas: {} }, e);
-    expect(r).toMatchObject({ id: 2, ok: true });
+    expect(r).toMatchObject({ id: 2, ok: true, completo: true });   // A4: llegó (recortada o no): la lista vale
     expect(r.cambiadas[H1]).toHaveLength(1);
     await tic();
     expect(e.guardar).not.toHaveBeenCalled();
@@ -180,7 +180,7 @@ describe('en el Worker: el respaldo se hace allí, no en la página', () => {
     gvizCae = true;
     const e = entorno();
     const r = await atenderLectura({ id: 3, realId: 'X', previas: {} }, e);
-    expect(r).toMatchObject({ id: 3, ok: true });
+    expect(r).toMatchObject({ id: 3, ok: true, completo: false });  // A4: una NO llegó: no se sabe si existe
     expect(r.orden).toEqual([H1]);
     await tic();
     expect(e.guardar).not.toHaveBeenCalled();
@@ -191,7 +191,7 @@ describe('en el Worker: el respaldo se hace allí, no en la página', () => {
     xlsxPorGid[0] = xlsxDe(H1, hoja1());
     const e = entorno();
     const r = await atenderLectura({ id: 5, realId: 'X', previas: {} }, e);
-    expect(r).toMatchObject({ id: 5, ok: true });
+    expect(r).toMatchObject({ id: 5, ok: true, completo: false });  // A4: sin pestañas, la lista no vale
     expect(r.orden).toEqual([H1]);                           // el nombre de su XLSX, no una adivinanza por columnas
     await tic();
     expect(e.guardar).not.toHaveBeenCalled();

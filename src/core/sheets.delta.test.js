@@ -242,6 +242,7 @@ describe('Worker · atenderLectura', () => {
     const r1 = await atenderLectura({ id: 1, realId: 'X', xlsxUrl: 'vendor/xlsx.full.min.js', previas: {} }, e);
     expect(r1.ok).toBe(true);
     expect(r1.id).toBe(1);
+    expect(r1.completo).toBe(true);   // A4 (2026-10-11): el libro entero trae la lista de hojas de verdad
     expect(e.cargarXLSX).toHaveBeenCalledWith('vendor/xlsx.full.min.js');
     expect(Object.keys(r1.cambiadas)).toEqual(['Larvicultura M01', 'Control_Tanque M01']);
     servir = libroDificil(70);

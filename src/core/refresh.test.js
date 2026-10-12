@@ -291,6 +291,16 @@ describe('auto-refresco · aplicar sólo en reposo', () => {
     expect(datos).toBe(0);
     expect(valor()).toBe(1);
     expect(getLastFingerprint()).toBe(huella);
+    expect(etiquetas.at(-1)).toMatch(/· faltó 1 hoja \(se reintenta\)$/);   // A4: ya no en silencio
+  });
+
+  it('A4 (2026-10-11): con la lista de hojas COMPLETA, la hoja que falta se vació o se borró: se aplica y se dice', async () => {
+    descargarLibro.mockResolvedValue({ ...descarga({ 'Larvicultura M01': [{ Fecha: '01/09/2026', Tanque: 'T1', Valor: 7 }] }), completo: true });
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(datos).toBe(1);
+    expect(valor()).toBe(7);
+    expect(store.sheetNames).toEqual(['Larvicultura M01']);
+    expect(etiquetas.at(-1)).toMatch(/^1 hojas · .* · 1 hoja vacía o borrada$/);
   });
 });
 

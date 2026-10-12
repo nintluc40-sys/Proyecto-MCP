@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { parseSheetsIds, dataFingerprint, isDegraded, classifyOrigin, extractSheetTabs, parseCSV } from './sheets.js';
+import { parseSheetsIds, dataFingerprint, isDegraded, hojasQueFaltan, textoFaltan, classifyOrigin, extractSheetTabs, parseCSV } from './sheets.js';
 import { store } from './store.js';
 
 describe('parseSheetsIds', () => {
@@ -113,6 +113,27 @@ describe('isDegraded (guarda contra "se cargó 1 sola hoja")', () => {
     store.connected = true;
     store.sheetNames = ['A', 'B'];
     expect(isDegraded({})).toBe(false);
+  });
+
+  it('A4 (2026-10-11): con la lista de hojas COMPLETA no es degradada (la que falta se vació o se borró)', () => {
+    store.connected = true;
+    store.sheetNames = ['A', 'B', 'C'];
+    expect(isDegraded({ A: [{}], B: [{}] }, true)).toBe(false);
+    expect(isDegraded({ A: [{}], B: [{}] }, false)).toBe(true);
+    expect(isDegraded({ A: [{}], B: [{}] })).toBe(true);   // sin saberlo, como antes
+  });
+});
+
+describe('A4 · lo que dice la píldora de las hojas que faltan', () => {
+  it('las aplicadas que no trae la descarga; aplicada (vacías o borradas) o descartada (no llegaron), en singular con 1', () => {
+    store.sheetNames = ['A', 'B', 'C'];
+    expect(hojasQueFaltan({ A: [{}] })).toEqual(['B', 'C']);
+    expect(hojasQueFaltan({ A: [{}], B: [{}], C: [{}] })).toEqual([]);
+    expect(textoFaltan([], true)).toBe('');
+    expect(textoFaltan(['B'], true)).toBe(' · 1 hoja vacía o borrada');
+    expect(textoFaltan(['B', 'C'], true)).toBe(' · 2 hojas vacías o borradas');
+    expect(textoFaltan(['B'], false)).toBe(' · faltó 1 hoja (se reintenta)');
+    expect(textoFaltan(['B', 'C'], false)).toBe(' · faltaron 2 hojas (se reintenta)');
   });
 });
 

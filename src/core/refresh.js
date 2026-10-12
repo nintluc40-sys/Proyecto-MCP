@@ -28,7 +28,7 @@ import { REFRESH_INTERVAL_S } from '../config.js';
 import { store, emit, EV } from './store.js';
 import {
   descargarLibro, aplicarDescarga, aplicarLibroGuardado, lecturaEnSegundoPlano, connectSheets, isDegraded,
-  getLastFingerprint,
+  getLastFingerprint, hojasQueFaltan, textoFaltan,
 } from './sheets.js';
 import { marcaDelLibro } from './marcaLibro.js';
 
@@ -94,7 +94,7 @@ function tryApply() {
     applyTimer = setTimeout(tryApply, APPLY_RETRY_MS);
     return false;
   }
-  const { d, ts } = pending;
+  const { d, ts, extra = '' } = pending;
   pending = null;
   // aplicarDescarga fija la huella (y las de cada hoja) al APLICAR: el siguiente ciclo se
   // compara con lo que de verdad está en pantalla, no con un pendiente que quizá nunca llegó
@@ -102,7 +102,7 @@ function tryApply() {
   if (!aplicarDescarga(d)) return false;
   datosDe = '';
   emit(EV.DATA, { firstLoad: false });
-  emit(EV.CONN, { state: 'connected', label: etiqueta(ts) });
+  emit(EV.CONN, { state: 'connected', label: etiqueta(ts, extra) });
   return true;
 }
 
@@ -127,8 +127,11 @@ async function check() {
     // datos previos y NO actualiza la huella, para reintentar el set completo en el
     // próximo ciclo. Sin esto, un refresco transitorio dejaba la UI en 1 sola hoja
     // hasta que el usuario refrescaba a mano.
-    if (isDegraded(d.sheets)) {
-      emit(EV.CONN, { state: 'connected', label: etiqueta(ts) });
+    // A4 (2026-10-11, usuario): sólo si alguna hoja NO LLEGÓ (descarga incompleta); con la lista de hojas completa, la
+    // que falta se vació o se borró y se aplica. Las dos cosas las dice la píldora (antes, el descarte era en silencio).
+    const faltan = hojasQueFaltan(d.sheets);
+    if (isDegraded(d.sheets, d.completo)) {
+      emit(EV.CONN, { state: 'connected', label: etiqueta(ts, textoFaltan(faltan, false)) });
       return;
     }
     if (marca !== null) marcaVista = marca;   // la de ANTES de bajar: lo descargado es al menos así de nuevo
@@ -139,7 +142,7 @@ async function check() {
       datosDe = ''; // lo guardado ERA lo último
       emit(EV.CONN, { state: 'connected', label: etiqueta(ts, ' · sin cambios') });
     } else {
-      pending = { d, ts };
+      pending = { d, ts, extra: textoFaltan(faltan, true) };
       if (!tryApply()) emit(EV.CONN, { state: 'connected', label: etiqueta(ts, ' · datos nuevos en espera') });
     }
   } catch (_) {

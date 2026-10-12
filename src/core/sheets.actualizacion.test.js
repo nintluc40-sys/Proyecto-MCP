@@ -60,3 +60,31 @@ describe('A2 · ⟳ con lo mismo que ya está aplicado', () => {
     expect(etiquetas.at(-1)).not.toMatch(/sin cambios/);
   });
 });
+
+/* 🔴 A4 · LO QUE PASABA. Una descarga con MENOS hojas que las aplicadas se descartaba siempre y en silencio: si una
+   pestaña se vaciaba o se borraba, cada refresco quedaba descartado (la píldora en «N hojas · hh:mm») hasta recargar. */
+describe('A4 · ⟳ con hojas de menos', () => {
+  it('con el libro ENTERO (lista completa), la que falta se vació o se borró: se aplica y la píldora lo dice', async () => {
+    bytes = libro(1, ['Larvicultura M01']);
+    expect(await connectSheets()).toBe(true);
+    expect(datos).toHaveLength(1);
+    expect(store.sheetNames).toEqual(['Larvicultura M01']);
+    expect(etiquetas.at(-1)).toMatch(/^1 hoja · .* · 1 hoja vacía o borrada$/);
+  });
+
+  it('con una descarga INCOMPLETA (alguna hoja no llegó) no se aplica, y la píldora lo dice; completa, se aplica', async () => {
+    const soloM01 = (completo) => ({ disponible: () => true, leer: async ({ previas }) => ({
+      ok: true, orden: ['Larvicultura M01'], huellas: { 'Larvicultura M01': previas['Larvicultura M01'] }, cambiadas: {}, completo }) });
+    try {
+      setLectorLibro(soloM01(false));
+      expect(await connectSheets()).toBe(true);
+      expect(datos).toEqual([]);
+      expect(store.sheetNames).toHaveLength(2);
+      expect(etiquetas.at(-1)).toMatch(/· faltó 1 hoja \(se reintenta\)$/);
+      setLectorLibro(soloM01(true));
+      expect(await connectSheets()).toBe(true);
+      expect(datos).toHaveLength(1);
+      expect(store.sheetNames).toEqual(['Larvicultura M01']);
+    } finally { setLectorLibro(null); }
+  });
+});
