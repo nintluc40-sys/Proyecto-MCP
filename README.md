@@ -627,14 +627,14 @@ Dos consecuencias que conviene tener presentes al desplegar:
    Mientras se ve la entrada no hay pestaña ☰ ni menú lateral (`.app.is-entry`, en `shell.js`).
    **Libro guardado en el equipo** (P4, 2026-10-01): el Worker deja el último libro leído en
    IndexedDB (`core/libroGuardado.js`: sólo las hojas que cambiaron, meta en la misma
-   transacción; sólo un libro que llegó COMPLETO y todo por XLSX, ver el paso 1) y la primera
+   transacción; sólo un libro que llegó COMPLETO —por el CSV de exportación de cada hoja o todo por XLSX—, ver el paso 1) y la primera
    vista que lo necesita lo enseña AL INSTANTE —medido: 0,6 s en vez de
    23 s, también sin señal— con «datos de las hh:mm · actualizando…», y se revalida en el acto
    (aplica en reposo). **Caduca a los 7 días** (decisión del usuario): más viejo, no se usa y se
    borra. Una descarga que llega vacía (sin señal) cuenta como fallo: se conservan los datos.
    **La primera carga dice cómo va** (2026-10-03): el Worker cuenta lo que baja y avisa cuando empieza a leer, y el
-   aviso de carga y la píldora lo enseñan (`textoProgreso`, en `core/sheets.js`: «Descargando el libro… 7,7 MB» →
-   «Leyendo el libro (13,1 MB)…»), con la explicación de que la primera vez en un equipo tarda y después abre al
+   aviso de carga y la píldora lo enseñan (`textoProgreso`, en `core/sheets.js`: «Descargando las hojas… 12 de 44» por el
+   CSV de cada hoja —desde el 2026-10-11— o, por el XLSX entero, «Descargando el libro… 7,7 MB» → «Leyendo el libro (13,1 MB)…»), con la explicación de que la primera vez en un equipo tarda y después abre al
    instante con lo guardado. Los refrescos no avisan.
    **Sin congelar al llegar los datos** (2026-10-06): el Worker envía cada hoja que cambió en su PROPIO mensaje
    (`{ id, hoja, filas }` y al final `{ id, ok, orden, huellas }`; `sheets.worker.js · responder`) y el lector las junta
@@ -676,11 +676,22 @@ Dos consecuencias que conviene tener presentes al desplegar:
    libro ni ninguna hoja del respaldo) contesta «sin-datos», y la página NO repite la cadena: el aviso dice «No llegó
    ningún dato de Google (¿sin conexión?).» con ⟳ para reintentar. Medido con la red colgada y un equipo nuevo: se rinde a
    los 262 s (antes 7,2 min, ~17 min con las pestañas en caché, y acababa en «Sin datos en las hojas.»).
-1. `connectSheets()` descarga el libro **completo** vía `export?format=xlsx`
+1. **Cada hoja por su CSV de exportación** (2026-10-11, punto 4.2-B; `sheets.js · hojasPorCsv`, en el Worker): las
+   pestañas salen de `/htmlview` y cada hoja se pide por `export?format=csv&gid=` (6 a la vez; ~1,4 MB comprimidos las
+   44 frente a los 14,5 MB del XLSX), se lee con SheetJS sin adivinar tipos y con las MISMAS opciones de filas que el
+   XLSX, y `valorDeCsv` pasa el formato regional del libro (coma decimal, punto de miles) a la forma del XLSX. Medido con
+   el libro real: mismas filas y claves en las 44 hojas, 99,998 % de celdas idénticas (difieren 32 celdas con separador
+   de miles, que el XLSX dejaba como «7,400,000.0» y se leían 7,4, y 24 redondeos en los que el CSV da lo que se ve en
+   Sheets); lectura ~2 s frente a 12–16 s; primera carga en PC 17,7 s frente a 32,7 s. La hoja cuyo CSV no llega (o trae
+   menos filas que lo aplicado) va por su XLSX; sin pestañas, con alguna sin nombre, con el formato regional cambiado o
+   si los 6 primeros intentos fallan sin ninguna hoja, se lee el libro entero como antes; y sólo se usa si llegó
+   COMPLETO (si no, el libro entero y el respaldo; como último recurso, lo parcial).
+   Si no, `connectSheets()` descarga el libro **completo** vía `export?format=xlsx`
    (1 petición, todas las hojas), con reintento y backoff. Si falla, el **respaldo** pide CADA hoja
    por su XLSX (`export?format=xlsx&gid=`; los `gid` salen de `/htmlview`) y sólo la que no llegue,
    por su CSV (`respaldoPorHojas`). 🔴 **No va por gviz desde el 2026-10-01**: con un FILTRO puesto en
-   la hoja —el laboratorio los deja a menudo—, gviz y el CSV dan sólo las filas visibles (medido:
+   la hoja —el laboratorio los deja a menudo—, gviz da sólo las filas visibles (el CSV de EXPORTACIÓN no: medido el 09 y
+   el 11-10; medido en gviz:
    Datos M03, 20 de 1 579), y ese recorte pisaba el libro bueno sin avisar; el XLSX de una hoja las
    da todas, igual que el libro entero. El respaldo lo hace el Worker (en la página, cada hoja grande
    por XLSX congelaba ~1,3 s), y el libro sólo se guarda en el equipo si ninguna hoja vino por CSV
