@@ -449,8 +449,8 @@ describe('auto-refresco · ⟳ (refrescoManual)', () => {
 describe('auto-refresco · consulta ligera antes de descargar (punto 8, 2026-10-07)', () => {
   it('con la misma marca que la última descarga procesada NO descarga y dice «sin cambios»; con otra, descarga', async () => {
     marcaDelLibro.mockResolvedValue(100);
-    descargarLibro.mockResolvedValue(descarga(set(1)));
-    await vi.advanceTimersByTimeAsync(5 * MIN);   // 1.er ciclo: aún no hay marca vista → descarga
+    descargarLibro.mockResolvedValue(descarga(set(4)));
+    await vi.advanceTimersByTimeAsync(5 * MIN);   // 1.er ciclo: aún no hay marca vista → descarga (con cambios: A5)
     expect(descargarLibro).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(5 * MIN);   // la misma marca → no descarga
     expect(descargarLibro).toHaveBeenCalledTimes(1);
@@ -475,10 +475,24 @@ describe('auto-refresco · consulta ligera antes de descargar (punto 8, 2026-10-
     await vi.advanceTimersByTimeAsync(5 * MIN);
     descargarLibro.mockResolvedValueOnce(descarga({ 'Larvicultura M01': [{ Fecha: '01/09/2026', Tanque: 'T1', Valor: 7 }] }));
     await vi.advanceTimersByTimeAsync(5 * MIN);
-    descargarLibro.mockResolvedValue(descarga(set(1)));
+    descargarLibro.mockResolvedValue(descarga(set(2)));
     await vi.advanceTimersByTimeAsync(5 * MIN);
     expect(descargarLibro).toHaveBeenCalledTimes(3);
-    await vi.advanceTimersByTimeAsync(5 * MIN);   // ésta sí se procesó: la marca quedó vista
+    await vi.advanceTimersByTimeAsync(5 * MIN);   // ésta sí se procesó (y trajo cambios: A5): la marca quedó vista
+    expect(descargarLibro).toHaveBeenCalledTimes(3);
+  });
+
+  it('A5 (2026-10-11): una descarga SIN cambios no anota la marca (exportación atrasada): se vuelve a descargar hasta que lleguen', async () => {
+    marcaDelLibro.mockResolvedValue(100);
+    descargarLibro.mockResolvedValue(descarga(set(1)));   // la marca se movió, pero lo exportado aún es lo aplicado
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(etiquetas.at(-1)).toMatch(/sin cambios/);
+    await vi.advanceTimersByTimeAsync(5 * MIN);           // la misma marca: como no se anotó, descarga otra vez
+    expect(descargarLibro).toHaveBeenCalledTimes(2);
+    descargarLibro.mockResolvedValue(descarga(set(2)));   // ya llegó lo escrito
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(valor()).toBe(2);
+    await vi.advanceTimersByTimeAsync(5 * MIN);           // ahora sí, anotada: no descarga
     expect(descargarLibro).toHaveBeenCalledTimes(3);
   });
 
