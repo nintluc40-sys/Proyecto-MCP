@@ -45,6 +45,11 @@ let started = false;
 let datosDe = '';
 // Punto 8: la marca de modificación leída ANTES de la última descarga procesada (null = ninguna).
 let marcaVista = null;
+// A3 (2026-10-11, usuario): el refresco automático en curso (la promesa de check), si se pulsó ⟳ durante él y si llegó
+// a bajar el libro (si no —marca sin cambios o fallo—, ⟳ descarga al terminar).
+let ciclo = null;
+let pedidoManual = false;
+let cicloDescargo = false;
 
 /** Marca interacción del usuario por `ms` (pausa el refresco). */
 function markInteracting(ms = 12000) { interactingUntil = Date.now() + ms; }
@@ -85,13 +90,13 @@ function cuando(t) {
 }
 const etiqueta = (ts, extra = '') => `${store.sheetNames.length} hojas · ${ts}${extra}`;
 
-/** Aplica el set pendiente si hay reposo. Devuelve true si lo aplicó. */
-function tryApply() {
+/** Aplica el set pendiente si hay reposo —o ya, con `forzar`: lo pidió ⟳ (A3)—. Devuelve true si lo aplicó. */
+function tryApply(forzar = false) {
   clearTimeout(applyTimer);
   applyTimer = null;
   if (!pending) return false;
   if (document.hidden) return false; // al volver a la pestaña lo reintenta onVisible()
-  if (isBusy() || hasTextFocus()) {
+  if (!forzar && (isBusy() || hasTextFocus())) {
     applyTimer = setTimeout(tryApply, APPLY_RETRY_MS);
     return false;
   }
@@ -109,6 +114,7 @@ function tryApply() {
 
 async function check() {
   store.refreshing = true;
+  cicloDescargo = false;
   emit(EV.CONN, { state: 'refreshing', label: datosDe ? etiqueta('datos ' + datosDe, ' · actualizando…') : 'Actualizando…' });
   try {
     // Punto 8: si Google dice que el libro no cambió desde la última descarga procesada, no se baja.
@@ -124,6 +130,7 @@ async function check() {
     // respaldo no traen nada—: se conservan los datos y se dice, como cualquier otro fallo (antes
     // entraba como «datos nuevos en espera» y la píldora se quedaba diciéndolo; medido el 01-10).
     if (!Object.keys(d.huellas || {}).length) throw new Error('El libro llegó vacío.');
+    cicloDescargo = true;   // A3: un ⟳ pulsado durante el ciclo se responde con ESTA descarga
     // Descarga degradada (menos hojas que el set bueno ya cargado): conserva los
     // datos previos y NO actualiza la huella, para reintentar el set completo en el
     // próximo ciclo. Sin esto, un refresco transitorio dejaba la UI en 1 sola hoja
@@ -147,13 +154,15 @@ async function check() {
     } else {
       if (marca !== null) marcaVista = marca;   // A5: trae cambios: lo descargado es al menos así de nuevo
       pending = { d, ts, extra: textoFaltan(faltan, true) };
-      if (!tryApply()) emit(EV.CONN, { state: 'connected', label: etiqueta(ts, ' · datos nuevos en espera') });
+      if (!tryApply(pedidoManual)) emit(EV.CONN, { state: 'connected', label: etiqueta(ts, ' · datos nuevos en espera') });
     }
   } catch (_) {
     // Conserva los datos previos y lo dice (antes la píldora se quedaba en «Actualizando…»).
     emit(EV.CONN, { state: 'connected', label: `${store.sheetNames.length} hojas · ${datosDe ? 'datos ' + datosDe + ' · ' : ''}sin actualizar (se reintenta)` });
   } finally {
     store.refreshing = false;
+    pedidoManual = false;
+    ciclo = null;
     schedule();
   }
 }
@@ -162,7 +171,7 @@ function tick() {
   timer = null;
   if (document.hidden) return; // el bucle se para; onVisible() lo reanuda
   if (!store.connected || store.refreshing || (isBusy() && !lecturaEnSegundoPlano())) { schedule(); return; }
-  check();
+  ciclo = check();
 }
 
 function schedule(ms = INTERVAL_MS) {
@@ -195,7 +204,17 @@ function marcaConTope(ms) {
  *  `conMarca` (⟳ y la píldora; la primera carga pasa false): lee la marca ANTES de descargar (ver la cabecera) y la
  *  anota sólo si lo descargado se APLICÓ —`store.globalData` cambia de referencia—; un set degradado que se descarta no. */
 export async function refrescoManual({ conMarca = true } = {}) {
-  if (store.refreshing) return null;
+  if (store.refreshing) {
+    // A3 (2026-10-11, usuario): ⟳ durante el refresco AUTOMÁTICO ya no se pierde en silencio (antes shell.js lo ignoraba):
+    // la píldora lo dice, lo que traiga ese ciclo se aplica al terminar SIN esperar al reposo y, si el ciclo no llegó a
+    // bajar el libro (marca sin cambios o fallo), se descarga entonces como cualquier ⟳. Con otra descarga a mano en
+    // curso, nada (null): nunca dos a la vez.
+    if (!ciclo) return null;
+    pedidoManual = true;
+    emit(EV.CONN, { state: 'refreshing', label: 'Actualizando… · tu ⟳ se atiende al terminar' });
+    await ciclo;
+    return cicloDescargo ? true : refrescoManual({ conMarca });
+  }
   store.refreshing = true;
   pending = null;
   clearTimeout(applyTimer);
@@ -239,7 +258,7 @@ export function asegurarLibro() {
     if (store.connected || store.refreshing) return null;
     if (g && aplicarLibroGuardado(g)) {
       datosDe = cuando(g.t);
-      check();
+      ciclo = check();
       return true;
     }
     return refrescoManual({ conMarca: false });
@@ -269,6 +288,9 @@ export function stopAutoRefresh() {
   datosDe = '';
   marcaVista = null;
   asegurando = false;
+  ciclo = null;
+  pedidoManual = false;
+  cicloDescargo = false;
   INTERACTION_EVENTS.forEach((ev) => document.removeEventListener(ev, onInteraction, true));
   document.removeEventListener('mousemove', onMouseMove, true);
   document.removeEventListener('visibilitychange', onVisible);

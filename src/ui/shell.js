@@ -259,9 +259,9 @@ function bindEvents(appEl) {
   });
   // «Cambiar rol» también olvida el rol que el equipo recordaba por el enlace de Gerencia (accesoRol.js)
   appEl.querySelector('#changeRole').addEventListener('click', () => { olvidarRol(); closeDrawer(); showEntry(); });
-  // ⟳ y la píldora: refresco a mano. Si ya hay una descarga en curso no lanza otra.
+  // ⟳ y la píldora: refresco a mano. Nunca lanza dos descargas a la vez; durante el refresco automático, refrescoManual
+  // lo atiende al terminar ese ciclo (A3, 2026-10-11, usuario: antes aquí se ignoraba en silencio).
   const manual = async () => {
-    if (store.refreshing) return;
     showLoader(true);
     try { await refrescoManual(); } finally { showLoader(false); }
   };

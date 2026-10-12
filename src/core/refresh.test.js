@@ -402,12 +402,52 @@ describe('asegurarLibro (P3: la primera descarga, al entrar en una vista que lo 
 });
 
 describe('auto-refresco · ⟳ (refrescoManual)', () => {
-  it('con una descarga en curso no lanza otra', async () => {
-    descargarLibro.mockImplementation(() => new Promise(() => {}));
+  it('con una descarga en curso no lanza otra: durante el ciclo automático lo espera y lo dice (A3); con otra a mano, nada', async () => {
+    let soltar;
+    descargarLibro.mockImplementation(() => new Promise((r) => { soltar = r; }));
     await vi.advanceTimersByTimeAsync(5 * MIN);
     expect(store.refreshing).toBe(true);
-    expect(await refrescoManual()).toBeNull();
+    const p = refrescoManual();
+    await vi.advanceTimersByTimeAsync(0);
     expect(connectSheets).not.toHaveBeenCalled();
+    expect(etiquetas.at(-1)).toMatch(/tu ⟳ se atiende al terminar/);
+    soltar(descarga(set(1)));
+    expect(await p).toBe(true);
+    expect(connectSheets).not.toHaveBeenCalled();   // le respondió la descarga del ciclo
+    connectSheets.mockImplementation(() => new Promise(() => {}));
+    refrescoManual();                               // una a mano que no termina
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await refrescoManual()).toBeNull();
+    expect(connectSheets).toHaveBeenCalledTimes(1);
+  });
+
+  it('A3 (2026-10-11): ⟳ durante el ciclo automático con cambios: se aplican al terminar SIN esperar al reposo', async () => {
+    let soltar;
+    descargarLibro.mockImplementation(() => new Promise((r) => { soltar = r; }));
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    campo('text');                                  // un campo con el foco retendría lo nuevo en un ciclo normal
+    const p = refrescoManual();
+    await vi.advanceTimersByTimeAsync(0);
+    soltar(descarga(set(2)));
+    expect(await p).toBe(true);
+    expect(valor()).toBe(2);
+    expect(datos).toBe(1);
+  });
+
+  it('A3: si ese ciclo no llegó a bajar el libro (misma marca), al terminar descarga como cualquier ⟳', async () => {
+    marcaDelLibro.mockResolvedValue(100);
+    descargarLibro.mockResolvedValue(descarga(set(2)));
+    await vi.advanceTimersByTimeAsync(5 * MIN);       // con cambios: la marca 100 queda vista (A5)
+    let contestar;
+    marcaDelLibro.mockImplementationOnce(() => new Promise((r) => { contestar = r; }));
+    await vi.advanceTimersByTimeAsync(5 * MIN);       // el ciclo siguiente espera a la consulta
+    connectSheets.mockResolvedValue(true);
+    const p = refrescoManual();
+    await vi.advanceTimersByTimeAsync(0);
+    contestar(100);                                   // la misma marca: el ciclo no descarga
+    expect(await p).toBe(true);
+    expect(descargarLibro).toHaveBeenCalledTimes(1);
+    expect(connectSheets).toHaveBeenCalledTimes(1);   // lo descargó ⟳
   });
 
   it('descarta el pendiente, descarga YA aunque haya foco y reprograma el ciclo', async () => {
