@@ -127,7 +127,9 @@
 .planta .list button[aria-current="true"] { border-color: var(--sel); background: var(--chip); }
 .planta .list .tag { font: 600 12px/1 var(--font-mono); width: 34px; height: 26px; display: grid; place-items: center; border-radius: 6px; color: #fff; }
 .planta .list .nm { font-weight: 600; min-width: 0; }
-.planta .list .nm small { display: block; font: 400 12px/1.3 var(--font-mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* la línea de la fila pasa a una segunda si no cabe (2026-10-11, auditoría de Gerencia): con «· 🚚 trasladada sin despacho» el celular la
+   cortaba en «🚚 tras…»; las filas de siempre caben en una y no cambian */
+.planta .list .nm small { display: block; font: 400 12px/1.3 var(--font-mono); color: var(--muted); overflow-wrap: anywhere; }
 .planta .list .ct { font: 500 12.5px/1 var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
 .planta .seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); border-radius: 9px; padding: 3px; gap: 3px; }
 .planta .seg button { font: 500 13px/1 var(--font-sans); color: var(--ink); background: transparent; border: 0; border-radius: 6px; padding: 8px 6px; cursor: pointer; }
@@ -218,7 +220,7 @@
 .planta-an .an-cabeza:hover, .planta-an .an-cabeza[aria-expanded="true"] { background: var(--chip); }
 .planta-an .tag { font: 600 12px/1 var(--font-mono); width: 34px; height: 26px; display: grid; place-items: center; border-radius: 6px; color: #fff; }
 .planta-an .nm { font-weight: 600; min-width: 0; }
-.planta-an .nm small { display: block; font: 400 12px/1.3 var(--font-mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.planta-an .nm small { display: block; font: 400 12px/1.3 var(--font-mono); color: var(--muted); overflow-wrap: anywhere;   /* ídem: a una segunda línea si no cabe */ }
 .planta-an .ct { font: 500 12.5px/1 var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
 .planta-an .chev { color: var(--muted); font-size: 12px; width: 12px; text-align: center; }
 .planta-an .an-det { padding: 4px 12px 12px; border-top: 1px solid var(--line); display: grid; gap: 10px; }
