@@ -95,8 +95,12 @@ export default defineConfig(({ command }) => ({
          y cuatro. Es el coste de happy-dom acumulado en un solo archivo. Se le da
          holgura al pool en vez de recortar la cobertura, que es justo lo que protege
          esta ficha. Si algún día se vuelve a quedar corto, lo que toca es PARTIR ese
-         archivo, no seguir subiendo el número. */
-      forks: { execArgv: ['--max-old-space-size=4096'] },
+         archivo, no seguir subiendo el número.
+         `--no-experimental-webstorage` (2026-10-11, usuario, punto 4.4): desde Node 25 el proceso trae su PROPIO
+         `localStorage` global (sin `--localstorage-file`, undefined) y tapa el de happy-dom: con el Node 26 del equipo,
+         13 pruebas de Planta (las que usan localStorage) fallaban y con el 24 de la CI pasaban. La bandera lo quita
+         (Node 24 también la acepta), así que las dos versiones prueban lo mismo. */
+      forks: { execArgv: ['--max-old-space-size=4096', '--no-experimental-webstorage'] },
     },
   },
   build: {
