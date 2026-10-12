@@ -106,8 +106,11 @@ describe('auto-refresco · intervalo', () => {
 
   it('con cambios y en reposo los aplica UNA vez y fija la huella de lo aplicado', async () => {
     descargarLibro.mockResolvedValue(descarga(set(2)));
+    const cargas = [];
+    offs.push(on(EV.DATA, (d) => cargas.push(d)));
     await vi.advanceTimersByTimeAsync(5 * MIN);
     expect(datos).toBe(1);
+    expect(cargas).toEqual([{ firstLoad: false, manual: false }]);   // A1: el automático no es «a mano» (Planta avisa)
     expect(valor()).toBe(2);
     expect(getLastFingerprint()).toBe(dataFingerprint(set(2)));
     await vi.advanceTimersByTimeAsync(30 * 1000);
@@ -426,12 +429,15 @@ describe('auto-refresco · ⟳ (refrescoManual)', () => {
     descargarLibro.mockImplementation(() => new Promise((r) => { soltar = r; }));
     await vi.advanceTimersByTimeAsync(5 * MIN);
     campo('text');                                  // un campo con el foco retendría lo nuevo en un ciclo normal
+    const cargas = [];
+    offs.push(on(EV.DATA, (d) => cargas.push(d)));
     const p = refrescoManual();
     await vi.advanceTimersByTimeAsync(0);
     soltar(descarga(set(2)));
     expect(await p).toBe(true);
     expect(valor()).toBe(2);
     expect(datos).toBe(1);
+    expect(cargas).toEqual([{ firstLoad: false, manual: true }]);   // A1: Planta lo pinta ya
   });
 
   it('A3: si ese ciclo no llegó a bajar el libro (misma marca), al terminar descarga como cualquier ⟳', async () => {

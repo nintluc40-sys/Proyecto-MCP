@@ -159,6 +159,23 @@ describe('🏭 Planta · datos nuevos: se avisan y se actualizan al tocar (2026-
     expect(y).toBe(900);
   });
 
+  it('A1 (2026-10-11): lo pedido a mano (⟳, la píldora) se pinta YA, sin aviso, y repone el desplazamiento', async () => {
+    const maqueta = await conLibroPintado(false);
+    let y = 700;
+    Object.defineProperty(window, 'scrollY', { configurable: true, get: () => y });
+    Object.defineProperty(window, 'scrollX', { configurable: true, get: () => 0 });
+    window.scrollTo = vi.fn((x0, y0) => { y = y0; });
+    maqueta.pintarEstado.mockImplementation((E) => { if (E) y = 0; });
+    store.globalData = [{ a: 2 }]; emit(EV.DATA, { firstLoad: false, manual: true });
+    expect(aviso().hidden).toBe(true);
+    await vi.waitFor(() => expect(calculos).toHaveLength(2));
+    calculos[1]({ modulos: { m: 2 }, resumen: null });
+    await vi.waitFor(() => expect(conDatos(maqueta)).toHaveLength(2));
+    expect(conDatos(maqueta)[1][0].modulos).toEqual({ m: 2 });
+    expect(y).toBe(700);
+    expect(aviso().hidden).toBe(true);
+  });
+
   it('al abrir con el libro GUARDADO, su puesta al día se aplica sola si la vista no se usó; desde ahí, aviso', async () => {
     const maqueta = await conLibroPintado(true);
     store.globalData = [{ g: 2 }]; emit(EV.DATA, { firstLoad: false });   // la revalidación

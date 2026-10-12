@@ -56,6 +56,7 @@ describe('A2 · ⟳ con lo mismo que ya está aplicado', () => {
     bytes = libro(2);
     expect(await connectSheets()).toBe(true);
     expect(datos).toHaveLength(1);
+    expect(datos[0]).toMatchObject({ firstLoad: false, manual: true });   // A1: lo pidió el usuario (Planta lo pinta ya)
     expect(store.globalData.find((r) => r.Tanque === 'T1').Valor).toBe('2');
     expect(etiquetas.at(-1)).not.toMatch(/sin cambios/);
   });

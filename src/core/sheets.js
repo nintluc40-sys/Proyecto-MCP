@@ -635,7 +635,9 @@ function commit(d, firstLoad) {
   if (!aplicarDescarga(d)) throw new Error('Sin datos en las hojas.');
 
   store.connected = true;
-  emit(EV.DATA, { firstLoad });
+  // A1 (2026-10-11, usuario): `manual` = lo pidió el usuario —commit sólo llega por refrescoManual (⟳, la píldora o la
+  // primera carga)—; Planta lo pinta ya en vez de avisar (planta/index.js).
+  emit(EV.DATA, { firstLoad, manual: true });
   return 'aplicado';
 }
 

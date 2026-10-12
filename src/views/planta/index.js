@@ -119,7 +119,8 @@ const MARCO = `
    recalculaba y repintaba la vista sola: en un celular eran ~4 s de pantalla congelada (medido con CPU ×4) en mitad de
    lo que se estaba mirando. Ahora, con datos a la vista, lo nuevo sólo se ANUNCIA; se recalcula al tocar «Actualizar»
    (o al cambiar de mes, que ya obliga a recalcular), y el desplazamiento —la página y las cajas con scroll propio— se
-   guarda antes y se repone después. Se pinta solo: lo primero que llega, un cálculo ya en marcha (se rehace con lo
+   guarda antes y se repone después. A1 (2026-10-11, usuario): lo pedido con ⟳ o la píldora se pinta ya, igual que
+   «Actualizar»; el aviso queda para el refresco automático (los 5 min, volver a la app). Se pinta solo: lo primero que llega, un cálculo ya en marcha (se rehace con lo
    último) y, al abrir con el libro GUARDADO del equipo (puede tener días), su puesta al día si la vista aún no se usó. */
 const DESPLAZABLES = '.panel, .an-tabla-caja, .an-plano-caja';
 
@@ -273,7 +274,11 @@ export function plantaView(root) {
     const guardado = !!(d && d.guardado);
     const solo = !yaPintado || !!enCurso || guardado || (deGuardado && !usada);
     deGuardado = guardado;
-    if (solo) pintar(); else avisarNuevos();
+    // A1 (2026-10-11, usuario; cambia EN PARTE la decisión del 07-10): lo pedido a mano (⟳, la píldora: `manual`) se
+    // pinta YA, conservando la posición como «Actualizar»; el aviso queda para el refresco automático.
+    if (solo) pintar();
+    else if (d && d.manual) { guardarPosicion(); pintar(); }
+    else avisarNuevos();
   });
   const offConn = on(EV.CONN, (c) => {
     if (!marco.isConnected) { soltar(); return; }

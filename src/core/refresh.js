@@ -107,7 +107,7 @@ function tryApply(forzar = false) {
   // a aplicarse.
   if (!aplicarDescarga(d)) return false;
   datosDe = '';
-  emit(EV.DATA, { firstLoad: false });
+  emit(EV.DATA, { firstLoad: false, manual: forzar });   // A1: forzado = lo pidió ⟳ (A3)
   emit(EV.CONN, { state: 'connected', label: etiqueta(ts, extra) });
   return true;
 }
