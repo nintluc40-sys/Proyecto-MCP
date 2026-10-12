@@ -612,10 +612,14 @@ export function applySheets(sheets) {
   return rows.length;
 }
 
+/** Devuelve qué pasó con la descarga: 'aplicado', 'sin-cambios' o 'degradado' (connectSheets lo dice en la píldora). */
 function commit(d, firstLoad) {
   // No pisar un set bueno con uno degradado (p.ej. reconexión manual que cae al
   // fallback CSV y sólo trae 1 hoja). En la primera carga no hay con qué comparar.
-  if (!firstLoad && isDegraded(d.sheets)) return false;
+  if (!firstLoad && isDegraded(d.sheets)) return 'degradado';
+  // A2 (2026-10-11, usuario): si lo descargado es EXACTAMENTE lo aplicado, ni se aplica ni se avisa —«sin cambios», como
+  // en el refresco automático—. Antes cada ⟳ emitía EV.DATA igual y Planta sacaba «Hay datos nuevos» sin haberlos.
+  if (!firstLoad && d.fp === _lastFingerprint) return 'sin-cambios';
 
   // Cachea la huella del set recién comprometido para sembrar el auto-refresco SIN
   // re-descargar el workbook completo en el arranque (antes boot() hacía una 2ª
@@ -630,7 +634,7 @@ function commit(d, firstLoad) {
 
   store.connected = true;
   emit(EV.DATA, { firstLoad });
-  return true;
+  return 'aplicado';
 }
 
 // Huella del último set comprometido (por commit() o por el auto-refresco).
@@ -856,9 +860,9 @@ export async function connectSheets() {
     const firstLoad = !store.connected;
     // Punto 7 (2026-10-03): la PRIMERA carga dice cómo va (el aviso de carga y la píldora); los refrescos, no.
     const alAvanzar = firstLoad ? (p) => emit(EV.CONN, { state: 'connecting', label: textoProgreso(p) }) : undefined;
-    commit(await descargarLibro({ alAvanzar }), firstLoad);
+    const resultado = commit(await descargarLibro({ alAvanzar }), firstLoad);
     const n = store.sheetNames.length;
-    const ts = new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
+    const ts = new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' }) + (resultado === 'sin-cambios' ? ' · sin cambios' : '');
     // Señal de carga DEGRADADA: si tras conectar solo hay 1 hoja, casi siempre es
     // que el camino XLSX (todas las hojas) falló y se cayó al fallback CSV, que sin
     // el documento "publicado en la web" solo recupera la 1ª pestaña → la mayoría de
