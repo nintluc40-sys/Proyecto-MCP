@@ -275,9 +275,10 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   oculta (la maqueta, en pausa) y vuelve al instante con su cámara, lo elegido y el mes. La primera vez, la maqueta se
   arma por partes —suelo y tanques, naves, entorno, vida— con «Preparando la maqueta… %», sin congelar la pantalla al
   compilar sus sombreadores. La maqueta baja su nitidez cuando va lenta, hasta la de la pantalla normal (1×), y la recupera
-  cuando va holgada. Con datos a la vista, un refresco no la repinta sola: sale «Hay datos nuevos (hh:mm) ·
+  cuando va holgada. Con datos a la vista, el refresco AUTOMÁTICO no la repinta sola: sale «Hay datos nuevos (hh:mm) ·
   🔄 Actualizar» y se recalcula al tocarlo (o al cambiar de mes), con el desplazamiento y lo abierto en su sitio; al
-  abrir con el libro guardado del equipo, su puesta al día se aplica sola si la vista aún no se usó (2026-10-07).
+  abrir con el libro guardado del equipo, su puesta al día se aplica sola si la vista aún no se usó (2026-10-07). Lo
+  pedido con ⟳ o la píldora se pinta ya, igual que «Actualizar» (A1, 2026-10-11).
   Es del **rol Gerencia**, sin clave, que sólo ve esta vista; el
   enlace `…/?rol=gerencia` entra directo y el equipo lo **recuerda** hasta «Cambiar rol» (`ui/accesoRol.js`), y
   `…/?qr=gerencia` es la página con su **QR de acceso** («🔗 Compartir acceso»). Vive SÓLO en la web: **no va a
@@ -712,7 +713,13 @@ Dos consecuencias que conviene tener presentes al desplegar:
    reciente, sin modal y sin un campo de texto con el foco; hasta entonces quedan pendientes
    («datos nuevos en espera» en la píldora). Registros no se repinta nunca por un refresco
    (`repintaConDatos: false`). ⟳ y la píldora refrescan a mano y nunca lanzan dos descargas
-   a la vez (`refrescoManual`).
+   a la vez (`refrescoManual`). Correcciones del 2026-10-11 (punto 4.2-A): ⟳ con lo mismo que ya está aplicado no aplica
+   ni emite `EV.DATA` («· sin cambios», A2); ⟳ durante el refresco automático lo espera, lo dice («tu ⟳ se atiende al
+   terminar») y aplica lo que traiga sin esperar al reposo —si ese ciclo no bajó el libro, descarga— (A3); una descarga
+   con hojas de menos sólo se descarta si alguna NO LLEGÓ (`isDegraded(sheets, completo)`: el libro entero, o el respaldo
+   con todas sus pestañas, es la lista de verdad, y la hoja que falta se vació o se borró y se aplica); las dos cosas las
+   dice la píldora (A4); la marca de la consulta ligera sólo se anota tras una descarga CON cambios (A5); y `EV.DATA` lleva
+   `manual` (⟳, la píldora) para que Planta lo pinte ya (A1).
    Al aplicar datos nuevos, la vista **se queda donde estaba** (2026-10-03, `router.js · renderCurrentView({
    conservarPosicion })`): el contenedor sostiene su alto mientras se repinta —si el `render` devuelve una promesa, como
    Maduración o Biología Molecular con su segundo paso, hasta que se cumple— y el desplazamiento vuelve a su sitio; antes
