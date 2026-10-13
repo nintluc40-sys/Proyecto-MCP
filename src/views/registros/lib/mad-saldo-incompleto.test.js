@@ -251,57 +251,50 @@ describe('Maduración · el libro RECOGE el aviso de recorte al construirse', ()
   });
 });
 
-/* ── 2026-09-15 · A2: 🔄 Recalcular pregunta a ?p=ver UNA vez ─────────────────────────────
-   Antes el libro y las hojas extra del resumen preguntaban cada uno (4–11 s por pregunta, medido).
-   Las hojas nuevas (Mortalidad Desove, Tratamientos) FALLAN al leerse, como con un GAS viejo: así
-   se distingue si la respuesta que se pasa llega de verdad a los dos sitios, y no sólo se cuenta.
-
-   ⚠ 2026-09-15 · EL FALLO DEL FIXTURE ERA «Hoja no permitida», y desde A1 ese mensaje ya no es un
-   fallo: significa «el GAS desplegado aún no conoce esta hoja» y la hoja se da por VACÍA. Con él,
-   estas pruebas habrían pasado a medir lo contrario de lo que dicen. Se cambia por un fallo de
-   VERDAD (HTTP 500), que es lo que siempre quisieron ejercer; «Hoja no permitida» tiene su propio
-   bloque más abajo. */
-describe('Maduración · A2 · el resumen reutiliza la respuesta de ?p=ver', () => {
-  let preguntas = 0;
-  const red = (respuesta, error) => {
-    preguntas = 0;
+/* ── 2026-09-15 · A2 → 2026-10-12 · 3.15 (b): LAS LECTURAS DEL SALDO NO DEPENDEN DEL SELLO ────────────
+   A2 hacía que 🔄 Recalcular preguntara a ?p=ver UNA vez y pasara la respuesta al libro y al resumen; con
+   «otro GAS», Mortalidad Desove se daba por vacía SIN pedirla y Tratamientos no se pedía. Pero un sello
+   distinto no es un GAS sin la hoja: el 09-10 (app 29b3, GAS 7c03) la hoja tenía filas y el Saldo daba
+   +2 ♀. Desde el 12-10 nadie pregunta: las hojas se leen siempre y sólo «Hoja no permitida» (el GAS aún no
+   la conoce, A1) las da por vacías.
+   ?p=ver contesta aquí «otro GAS» (false): si alguien volviera a atar la lectura al sello, se notaría.
+   ⚠ El fallo de los fixtures es un fallo de VERDAD salvo donde se dice: «Hoja no permitida» NO es un fallo
+   (A1), y con él estas pruebas medirían lo contrario de lo que dicen. */
+describe('Maduración · 3.15 (b) · el Saldo lee sin mirar el sello', () => {
+  let preguntas = 0, hojas = {}, pedidas = [];
+  const fila = { Fecha: '2026-10-09', Lote: 'AB', 'Tipo de tanque': 'Desove', 'Hembras que entran': 10, 'Hembras muertas': 2 };
+  const red = (error) => {
+    preguntas = 0; hojas = {}; pedidas = [];
     const nuevas = [H.MAD_LIBRO_SHEETS.mortDesove, H.MAD_TRAT_SHEET];
-    H.setLecturas({}, {});
-    H.setRed(async () => { preguntas++; return respuesta; },
-      async (hoja) => { if (nuevas.includes(hoja)) throw new Error(error || 'Google respondió HTTP 500'); return []; });
+    H.setLecturas(hojas, {});
+    H.setRed(async () => { preguntas++; return false; },
+      async (hoja) => {
+        pedidas.push(hoja);
+        if (!nuevas.includes(hoja)) return [];
+        if (error) throw new Error(error);
+        return hoja === H.MAD_LIBRO_SHEETS.mortDesove ? [fila] : [];
+      });
   };
   const originales = {};
   beforeAll(() => { originales.gas = H._madIngGasAlDia; originales.leer = H._reproFetchSheet; });
   afterAll(() => H.setRed(originales.gas, originales.leer));
 
-  it('🔴 con el GAS viejo: una sola pregunta, y las dos hojas nuevas se tratan como tal', async () => {
-    red(false);
+  it('🔴 con OTRO GAS que sí tiene las hojas nuevas, se leen: sus filas llegan al libro y el resumen no avisa', async () => {
+    red();
     await H.madSaldoRefrescar();
     const R = H.getResumen();
-    expect(preguntas).toBe(1);
+    expect(preguntas, 'el Saldo volvió a preguntar a ?p=ver').toBe(0);
+    expect(hojas[H.MAD_LIBRO_SHEETS.mortDesove], 'Mortalidad Desove se dio por vacía').toEqual([fila]);
+    expect(pedidas).toContain(H.MAD_TRAT_SHEET);
     expect(R.libro.fallos).toEqual([]);
-    expect(R.faltan).toContain(H.MAD_TRAT_SHEET + ' (el GAS publicado aún no la tiene)');
+    expect(R.faltan).toEqual([]);
   });
 
-  it('🔴 con el GAS nuevo: una sola pregunta, y las dos hojas nuevas se leen (y aquí fallan)', async () => {
-    red(true);
-    await H.madSaldoRefrescar();
-    const R = H.getResumen();
-    expect(preguntas).toBe(1);
-    expect(R.libro.fallos).toEqual([H.MAD_LIBRO_SHEETS.mortDesove]);
-    expect(R.faltan).toEqual([H.MAD_TRAT_SHEET]);
-  });
-
-  it('sin respuesta del GAS (null) tampoco se repite la pregunta: serían otros 6 s de espera', async () => {
-    red(null);
-    await H.madSaldoRefrescar();
-    expect(preguntas).toBe(1);
-  });
-
-  it('los demás llamadores, sin respuesta previa, siguen preguntando ellos', async () => {
-    red(false);
+  it('🔴 los demás llamadores del libro tampoco preguntan, y leen la quinta hoja', async () => {
+    red();
     const libro = await H.madSaldoCargar(true);
-    expect(preguntas).toBe(1);
+    expect(preguntas).toBe(0);
+    expect(hojas[H.MAD_LIBRO_SHEETS.mortDesove]).toEqual([fila]);
     expect(libro.fallos).toEqual([]);
   });
 
@@ -312,23 +305,24 @@ describe('Maduración · A2 · el resumen reutiliza la respuesta de ?p=ver', () 
      la señal que esta vista existe para dar. Es seguro darla por vacía porque las fichas de esas
      hojas se niegan a enviar contra un GAS que no las conoce: no puede tener filas de esta app.
      ⚠ Lo que NO se relaja: cualquier otro error sigue contando como fallo — lo fija la última. */
-  it('🔴 sin respuesta de ?p=ver, «Hoja no permitida» NO deja el libro incompleto', async () => {
-    red(null, 'Hoja no permitida');
+  it('🔴 «Hoja no permitida» NO deja el libro incompleto: la hoja queda leída y vacía', async () => {
+    red('Hoja no permitida');
     await H.madSaldoRefrescar();
     const R = H.getResumen();
     expect(R.libro.fallos).toEqual([]);
+    expect(hojas[H.MAD_LIBRO_SHEETS.mortDesove]).toEqual([]);
   });
 
-  it('🔴 y el resumen da el MISMO motivo que si lo hubiera dicho ?p=ver, no «no se pudo leer»', async () => {
-    red(null, 'Hoja no permitida');
+  it('🔴 y el resumen da su motivo («aún no la tiene»), no «no se pudo leer»', async () => {
+    red('Hoja no permitida');
     await H.madSaldoRefrescar();
     const R = H.getResumen();
     expect(R.faltan).toContain(H.MAD_TRAT_SHEET + ' (el GAS publicado aún no la tiene)');
     expect(R.faltan).not.toContain(H.MAD_TRAT_SHEET);
   });
 
-  it('un fallo de VERDAD sin respuesta de ?p=ver sigue dejando el libro incompleto', async () => {
-    red(null, 'Google devolvió una página de error, no datos');
+  it('un fallo de VERDAD sigue dejando el libro incompleto', async () => {
+    red('Google devolvió una página de error, no datos');
     await H.madSaldoRefrescar();
     const R = H.getResumen();
     expect(R.libro.fallos).toEqual([H.MAD_LIBRO_SHEETS.mortDesove]);
@@ -381,17 +375,19 @@ describe('Maduración · las hojas se piden en paralelo', () => {
     expect(est.pico, 'el resumen esperó a que terminara el libro').toBe(9);
   });
 
-  it('con el GAS viejo son cuatro: la hoja nueva no se pide, se da por vacía', async () => {
+  // 3.15 (b) (2026-10-12) · eran CUATRO: con otro GAS la hoja nueva no se pedía. Ya no depende del sello.
+  it('🔴 con OTRO GAS siguen siendo cinco: la hoja nueva se pide igual', async () => {
     const est = contador(false);
     await H.madSaldoCargar(true);
-    expect(est.pico).toBe(4);
+    expect(est.pico).toBe(5);
   });
 
   /* 🔑 PV7 (2026-09-16) · el comentario de madSaldoCargar lo AFIRMA —«estas CUATRO arrancan sin esperar a
      ?p=ver: mientras el GAS contesta quién es, ellas ya están viajando»— y ninguna prueba lo miraba: con un
      ?p=ver instantáneo, preguntar primero y leer después da el MISMO pico. Aquí ?p=ver no contesta hasta que la
-     prueba lo suelta, y se cuenta cuántas lecturas hay en vuelo mientras tanto. */
-  it('🔴 las cuatro hojas de siempre arrancan SIN esperar a que ?p=ver conteste', async () => {
+     prueba lo suelta, y se cuenta cuántas lecturas hay en vuelo mientras tanto.
+     3.15 (b) (2026-10-12) · ahora son las CINCO: el libro ya no pregunta a ?p=ver. */
+  it('🔴 las cinco hojas arrancan SIN esperar a que ?p=ver conteste', async () => {
     let soltar;
     const ver = new Promise((r) => { soltar = r; });
     const est = { vivas: 0 };
@@ -407,7 +403,7 @@ describe('Maduración · las hojas se piden en paralelo', () => {
     const enVueloMientrasPregunta = est.vivas;
     soltar();
     await carga;
-    expect(enVueloMientrasPregunta, 'esperaron a que ?p=ver contestara para salir').toBe(4);
+    expect(enVueloMientrasPregunta, 'esperaron a que ?p=ver contestara para salir').toBe(5);
   });
 
   it('🔴 el orden de los avisos es el de la FICHA, no el de la red', async () => {

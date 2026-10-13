@@ -7171,7 +7171,7 @@ async function _madEnsureHojaNueva(name, force){
   try{ _reproPutRows(name, await _reproFetchSheet(name, null)); }
   catch(e){ if(_madHojaAunNoCreada(e)) _reproPutRows(name, []); }
 }
-async function madSaldoCargar(force, gasAlDia){
+async function madSaldoCargar(force){
   // La lectura se apoya en la cañería del reproductivo, que ya resuelve reintentos y
   // caché y es GENÉRICA: toma el nombre de la hoja. El prefijo _repro es de dónde nació,
   // no de lo que hace. Duplicarla habría creado dos cañerías divergiendo en silencio.
@@ -7186,24 +7186,20 @@ async function madSaldoCargar(force, gasAlDia){
   /* 2026-09-15 · EN PARALELO, y medido: las ocho hojas que leen estos botones tardaban 13,5 s
      una detrás de otra y 3,4 s todas a la vez (−75 %, `medir-lectura-saldo.mjs`). El tiempo se
      va en la red; el servidor las atiende de verdad a la vez.
-     🔑 Estas CUATRO se piden SIEMPRE, así que arrancan sin esperar a ?p=ver: mientras el GAS
-     contesta quién es, ellas ya están viajando. La quinta sí depende de esa respuesta. */
+     🔑 Las CINCO se piden SIEMPRE y a la vez: desde el 2026-10-12 ninguna espera a ?p=ver (ver la quinta). */
   const _pendientes = [
     _reproEnsureSheet(MAD_LIBRO_SHEETS.ingreso, null, force),
     _reproEnsureSheet(MAD_LIBRO_SHEETS.movimientos, null, force),
     _reproEnsureSheet(MAD_LIBRO_SHEETS.tanques, null, force),
-    _reproEnsureSheet(MAD_LIBRO_SHEETS.cierres, null, force)
+    _reproEnsureSheet(MAD_LIBRO_SHEETS.cierres, null, force),
+    /* 2026-09-15 · la hoja de mortalidad en desove y recuperación es NUEVA: un GAS anterior no la permite («Hoja no
+       permitida») y no puede tener filas de esta app (su ficha no envía contra él), así que _madEnsureHojaNueva la da
+       por leída y VACÍA (A1). Cualquier otro error sigue siendo fallo.
+       🔴 2026-10-12 (3.15, opción b) · antes se daba por vacía SIN PEDIRLA si ?p=ver contestaba «otro GAS». Pero un sello
+       distinto no es un GAS sin la hoja: el 09-10 (app 29b3, GAS 7c03) tenía filas y el Saldo daba +2 ♀. Ahora sólo
+       «Hoja no permitida» la vacía, y el libro ya no pregunta a ?p=ver. */
+    _madEnsureHojaNueva(MAD_LIBRO_SHEETS.mortDesove, force)
   ];
-  /* 2026-09-15 · la hoja de mortalidad en desove y recuperación es NUEVA: un GAS anterior no la permite, así que no
-     puede tener filas de esta app (su ficha no envía contra él). Con ese GAS se da por leída y vacía.
-     A2 (2026-09-15) · quien ya preguntó a ?p=ver pasa la respuesta en gasAlDia (true/false/null) y no se pregunta
-     otra vez; sin ella (undefined) se pregunta aquí.
-     A1 (2026-09-15) · y si NO se sabe (sin respuesta en 6 s) se lee, pero un «Hoja no permitida» de vuelta dice
-     lo mismo que habría dicho ?p=ver: también se da por vacía. Antes contaba como fallo y el Saldo salía
-     INCOMPLETO en rojo sin faltar un dato. Cualquier otro error sigue siendo fallo. */
-  const gas = gasAlDia === undefined ? await _madIngGasAlDia() : gasAlDia;
-  if(gas === false) _reproPutRows(MAD_LIBRO_SHEETS.mortDesove, []);
-  else _pendientes.push(_madEnsureHojaNueva(MAD_LIBRO_SHEETS.mortDesove, force));
   await Promise.all(_pendientes);
   const fallos = [];
   if(!_madHojaLeida(MAD_LIBRO_SHEETS.ingreso)) fallos.push(MAD_LIBRO_SHEETS.ingreso);
@@ -7528,14 +7524,13 @@ function madResPintar(){
     + _madResCuerpoHTML(R, madResVarsLeer(), true, null)
     + '<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700;font-size:13px">📒 Detalle del libro: por tanque, por lote y discrepancias</summary>'+_madSaldoHTML(R.libro)+'</details>';
 }
-// Las hojas que el libro no lee y el resumen sí. Tratamientos es nueva: con el GAS publicado viejo no se pide.
-// gasAlDia: la respuesta de ?p=ver que madSaldoRefrescar ya pidió para el libro (A2: una sola pregunta).
-async function _madResLeerExtra(gasAlDia){
+// Las hojas que el libro no lee y el resumen sí. Tratamientos es nueva: si el GAS publicado aún no la tiene, se dice.
+// 2026-10-12 (3.15, opción b) · se pide siempre, sin mirar el sello: uno distinto no es un GAS sin la hoja.
+async function _madResLeerExtra(){
   const faltan=[], out={ sala:[], desoves:[], tratamientos:[], alimentacion:[] };
   /* A1 (2026-09-15) · `siNoPermitida` es el motivo que se anota cuando la hoja es NUEVA y el GAS
-     desplegado no la conoce: el mismo texto que pone la rama de abajo cuando ?p=ver sí contestó.
-     Así el aviso es idéntico se sepa por ?p=ver o por el propio error, y deja de decir «no se pudo
-     leer» de una hoja que simplemente aún no existe.
+     desplegado no la conoce («Hoja no permitida»): deja de decir «no se pudo leer» de una hoja que
+     simplemente aún no existe.
      🔑 2026-09-15 · `leer` DEVUELVE su motivo en vez de empujarlo: las tres van en paralelo y, si
      lo empujaran, `faltan` saldría en el orden en que contestara la red. El mismo problema
      listado en otro orden en cada recálculo se lee como si hubiera cambiado la causa. */
@@ -7549,7 +7544,7 @@ async function _madResLeerExtra(gasAlDia){
   const motivos=await Promise.all([
     leer("Maduración Sala", "sala", ""),
     leer(MAD_DESOVE_SHEET, "desoves", ""),
-    gasAlDia === false ? Promise.resolve(_sinTrat) : leer(MAD_TRAT_SHEET, "tratamientos", _sinTrat),
+    leer(MAD_TRAT_SHEET, "tratamientos", _sinTrat),
     /* Punto 2 (2026-10-04) · sus pesos tecleados. Sólo los aporta: si aún no existe, no puede tenerlos (vacía, sin aviso);
        si no se pudo leer, se dice que esos pesos no cuentan, no que falte el Saldo. */
     leer(MAD_ALIM_SHEET, "alimentacion", "-").then(function(m){ return m==="-" ? "" : m ? m+" (los pesos tecleados en ella no se cuentan)" : ""; })
@@ -7562,10 +7557,10 @@ async function madSaldoRefrescar(){
   const c=document.getElementById("ms-body");
   if(c) c.innerHTML='<div style="padding:14px;color:#64748b;font-size:12px">Leyendo las hojas… puede tardar unos segundos.</div>';
   try{
-    const gas=await _madIngGasAlDia();
     /* Los dos grupos a la vez: el libro (cinco hojas) y las del resumen (tres). Ninguno mira lo
-       que lee el otro —son hojas distintas— y juntos son la pasada de 3,4 s que se midió. */
-    const _dos=await Promise.all([madSaldoCargar(true, gas), _madResLeerExtra(gas)]);
+       que lee el otro —son hojas distintas— y juntos son la pasada de 3,4 s que se midió.
+       2026-10-12 · sin preguntar antes a ?p=ver: ninguna de las dos lecturas depende ya del sello. */
+    const _dos=await Promise.all([madSaldoCargar(true), _madResLeerExtra()]);
     const libro=_dos[0], extra=_dos[1];
     const f=madLibroFuentes();
     f.sala=extra.sala; f.desoves=extra.desoves; f.tratamientos=extra.tratamientos; f.alimentacion=extra.alimentacion;

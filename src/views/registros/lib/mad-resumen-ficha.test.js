@@ -133,9 +133,11 @@ describe('Saldo · resumen con filtro de variables y PDF', () => {
     }
   });
 
-  it('🔴 el filtro se guarda y oculta lo desmarcado; con el GAS viejo Tratamientos no se pide y se dice', async () => {
-    respuestaVer = 'FichasLarv-OK';
-    await H.madSaldoRefrescar();
+  // 3.15 (b) (2026-10-12) · el GAS «sin Tratamientos» ya no se deduce del sello: es el que contesta «Hoja no permitida».
+  it('🔴 el filtro se guarda y oculta lo desmarcado; con un GAS que aún no tiene Tratamientos, se dice', async () => {
+    const trat = HOJAS['Maduración Tratamientos'];
+    delete HOJAS['Maduración Tratamientos'];
+    try { await H.madSaldoRefrescar(); } finally { HOJAS['Maduración Tratamientos'] = trat; }
     expect(cuerpo().textContent).toContain('Maduración Tratamientos (el GAS publicado aún no la tiene)');
     H.madResVarsAbrir();
     // Una variable de SALA sigue marcada: así la tarjeta de la sala se pinta y se ve que oculta lo desmarcado.

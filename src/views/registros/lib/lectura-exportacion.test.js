@@ -503,7 +503,7 @@ describe('D · cuándo NO se usa la exportación', () => {
 
 describe('D · 🔄 Recalcular (el libro de Maduración) ya no espera al GAS', () => {
   it('🔴 lee sus cinco hojas por la exportación —las que aún no existen, vacías— y el libro sale COMPLETO', async () => {
-    await H.madSaldoCargar(true, true);
+    await H.madSaldoCargar(true);
     expect(alGas(), 'ni una lectura al GAS').toEqual([]);
     expect(H.libro().fallos).toEqual([]);
     expect(H.libro().recortadas).toEqual([]);

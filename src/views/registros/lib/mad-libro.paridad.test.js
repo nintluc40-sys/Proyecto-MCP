@@ -970,7 +970,7 @@ describe('Libro · «Recalcular» RECALCULA de verdad (2026-09-09)', () => {
     // Si alguien quitara el `true` de un botón, ese botón enseñaría una cifra vieja
     // sin decirlo — y los rótulos de la vista seguirían prometiendo lo contrario.
     // D13 (2026-09-14): el quinto es «🔄 Ver ocupación» de Ingreso.
-    // A2 (2026-09-15): 🔄 Recalcular pasa además la respuesta de ?p=ver → `madSaldoCargar(true, gas)`.
+    // A2 (2026-09-15) pasaba además la respuesta de ?p=ver (`madSaldoCargar(true, gas)`); 3.15 (b), 2026-10-12: ya no.
     const veces = (src.match(/madSaldoCargar\(true[,)]/g) || []).length;
     // 2026-09-15: el sexto es «🔄 Leer saldo y pesos» de Alimentación.
     // 2026-09-24 (punto 5): el séptimo es la lectura de «📥 Cargar» de Desoves y su «🔄 Releer».
