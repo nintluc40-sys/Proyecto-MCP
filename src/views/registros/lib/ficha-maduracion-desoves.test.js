@@ -22,6 +22,7 @@ import {
   podarDesovesLocales,
   fechasNauplios,
   n5DeN2,
+  desovesRepetidos,
 } from './ficha-maduracion-desoves.schema.js';
 import { detectSheetName, classifyOrigin } from '../../../core/sheets.js';
 
@@ -590,5 +591,50 @@ describe('Desoves · totales del día en «Desoves pendientes» (2026-10-09, usu
     const fundidos = desovesFundidos(HOJA, [{ fecha: '2026-10-08', lote: 'BN', codigoGenetico: 'CG-BN', desoves: '26' }]);
     expect(fundidos).toHaveLength(HOJA.length + 1);
     expect(desovesPendientes(HOJA, []).map((d) => d.fecha + ' ' + d.lote)).toEqual(['2026-10-08 BQ', '2026-10-07 BQ', '2026-10-07 BP']);
+  });
+});
+
+/* H1 (2026-10-13, usuario) · ¿DESOVE REPETIDO con la fecha cambiada? Lo que pasó el 08/09-10 y el 11/12-10: el mismo desove
+   enviado con una fecha y reenviado con la del día de al lado deja DOS filas (la llave del GAS lleva la Fecha). Datos INVENTADOS. */
+describe('Desoves · ¿desove repetido? (H1)', () => {
+  const filas = (fecha, ...desoves) => buildDesoveRows({ fecha, desoves });
+  const hoja = (fecha, lote, cg, desoves, huevos, extra = {}) => ({ Fecha: fecha, Lote: lote, 'Código genético': cg, Desoves: desoves, 'Total de huevos': huevos, ...extra });
+  const D = (extra = {}) => ({ lote: 'ZA', codigoGenetico: 'TST.A1', desoves: '12', huevos: '6500', ...extra });
+  const H = [hoja('2026-10-11', 'ZA', 'TST.A1', 12, 6500000)];
+
+  it('🔴 el día SIGUIENTE con los mismos desoves y huevos: avisa, con la fecha de la hoja', () => {
+    expect(desovesRepetidos(filas('2026-10-12', D()), H))
+      .toEqual([{ fecha: '2026-10-12', lote: 'ZA', codigoGenetico: 'TST.A1', desoves: 12, huevos: 6500000, otraFecha: '2026-10-11', enLaHoja: true }]);
+  });
+  it('🔴 y el día ANTERIOR, aunque la hoja traiga las cifras como texto y el lote en minúsculas', () => {
+    const h = [hoja('2026-10-11', ' za ', 'tst.a1', '12', '6500000')];
+    expect(desovesRepetidos(filas('2026-10-10', D()), h)).toHaveLength(1);
+  });
+  it('🔴 el reenvío de SU llave (completar N2/N5, ✏️) no avisa: actualiza la fila', () => {
+    expect(desovesRepetidos(filas('2026-10-11', D({ n2: '6000', n5: '5800' })), H)).toEqual([]);
+  });
+  it('🔴 con la fila buena YA en la hoja, el reenvío de la mala (su llave) tampoco avisa: sólo la que va a CREAR una llave', () => {
+    const conLas2 = H.concat([hoja('2026-10-12', 'ZA', 'TST.A1', 12, 6500000)]);
+    expect(desovesRepetidos(filas('2026-10-12', D()), conLas2)).toEqual([]);
+  });
+  it('🔴 no avisa si cambia una cifra, el lote o el código, ni a dos días', () => {
+    expect(desovesRepetidos(filas('2026-10-12', D({ huevos: '6510' })), H)).toEqual([]);
+    expect(desovesRepetidos(filas('2026-10-12', D({ desoves: '11' })), H)).toEqual([]);
+    expect(desovesRepetidos(filas('2026-10-12', D({ lote: 'ZB' })), H)).toEqual([]);
+    expect(desovesRepetidos(filas('2026-10-12', D({ codigoGenetico: 'TST.A2' })), H)).toEqual([]);
+    expect(desovesRepetidos(filas('2026-10-13', D()), H)).toEqual([]);
+  });
+  it('🔴 sin desoves o sin huevos no avisa: un recuento vacío no es «el mismo»', () => {
+    const h0 = [hoja('2026-10-11', 'ZA', 'TST.A1', '', 6500000), hoja('2026-10-11', 'ZB', 'TST.B2', 3, '')];
+    expect(desovesRepetidos(filas('2026-10-12', D({ desoves: '' })), h0)).toEqual([]);
+    expect(desovesRepetidos(filas('2026-10-12', D({ lote: 'ZB', codigoGenetico: 'TST.B2', desoves: '3', huevos: '' })), h0)).toEqual([]);
+  });
+  it('🔴 dos fechas de al lado en el MISMO envío (lo guardado y lo de pantalla): UNA entrada, «otro desove de este envío»', () => {
+    const r = desovesRepetidos(filas('2026-10-12', D()).concat(filas('2026-10-13', D())), []);
+    expect(r).toEqual([{ fecha: '2026-10-12', lote: 'ZA', codigoGenetico: 'TST.A1', desoves: 12, huevos: 6500000, otraFecha: '2026-10-13', enLaHoja: false }]);
+  });
+  it('sin hoja ni envío, nada', () => {
+    expect(desovesRepetidos([], H)).toEqual([]);
+    expect(desovesRepetidos(null, null)).toEqual([]);
   });
 });

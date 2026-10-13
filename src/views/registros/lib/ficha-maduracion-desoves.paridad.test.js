@@ -35,6 +35,7 @@ import {
   anotarDesovesLocales,
   podarDesovesLocales,
   fechasNauplios,
+  desovesRepetidos,
 } from './ficha-maduracion-desoves.schema.js';
 
 const ENGINE = new URL('../../../../public/registros/engine.js', import.meta.url);
@@ -65,7 +66,7 @@ function motorDesoves() {
     + ' madDesMiles, MAD_DESOVE_HEADERS, MAD_DESOVE_SHEET, MAD_DESOVE_COLUMNS,'
     + ' MAD_DESOVE_KEY_COLS, MAD_DESOVE_MIL, MAD_DESOVE_DESPACHO_OPTS, madDesDespachoLista, madDesDespachoTexto,'
     + ' madDesLlave, madDesCompleto, madDesDesdeHoja, madDesPendientes, madDesLocalesAnota, madDesLocalesPoda,'
-    + ' madDesFechasNauplios, madDesFundidos, madDesTotalesDia };',
+    + ' madDesFechasNauplios, madDesFundidos, madDesTotalesDia, madDesRepetidos };',
   ).runInContext(ctx);
   return ctx.__api;
 }
@@ -337,4 +338,39 @@ describe('Desoves · la pestaña sustituyó a la de Lotes', () => {
     expect(src).toContain('function madDesLogAnota(');
     expect(src).toContain('madDesLogAnota(model, payload.rows.length, "cola", _envio)');
   });
+});
+
+/* H1 (2026-10-13, usuario) · ¿desove REPETIDO con la fecha cambiada? La misma pregunta en los dos lados. Datos INVENTADOS. */
+describe('Desoves · el mismo «¿desove repetido?» (H1)', () => {
+  const filasDe = (fecha, desoves) => buildDesoveRows({ fecha, desoves });
+  const enHoja = (fecha, lote, cg, desoves, huevos) => ({ Fecha: fecha, Lote: lote, 'Código genético': cg, Desoves: desoves, 'Total de huevos': huevos });
+  const HOJA_H1 = [enHoja('2026-09-11', 'ZA', 'TST.A1', 12, 6500000), enHoja('2026-09-11', 'ZB', 'TST.B2', 7, 4100000),
+    // el duplicado YA en la hoja (las dos fechas) y una fila sin desoves: lo que hace falta para que la llave y el > 0 cuenten
+    enHoja('2026-09-11', 'ZE', 'TST.E5', 9, 2000000), enHoja('2026-09-12', 'ZE', 'TST.E5', 9, 2000000), enHoja('2026-09-11', 'ZD', 'TST.D4', '', 800000)];
+  const CASOS = {
+    'la fecha cambiada: el día siguiente, mismas cifras': filasDe('2026-09-12', [{ lote: 'za', codigoGenetico: 'tst.a1', desoves: '12', huevos: '6500' }]),
+    'reenvío de su propia llave (completar N5): no pregunta': filasDe('2026-09-11', [{ lote: 'ZA', codigoGenetico: 'TST.A1', desoves: '12', huevos: '6500', n2: '5000', n5: '4800' }]),
+    'otros huevos, dos días después o sin desoves: no pregunta': filasDe('2026-09-12', [{ lote: 'ZB', codigoGenetico: 'TST.B2', desoves: '7', huevos: '4200' }])
+      .concat(filasDe('2026-09-13', [{ lote: 'ZA', codigoGenetico: 'TST.A1', desoves: '12', huevos: '6500' }]))
+      .concat(filasDe('2026-09-10', [{ lote: 'ZB', codigoGenetico: 'TST.B2', desoves: '', huevos: '4100' }])),
+    'reenvío de la fila mala (su llave) con la buena ya en la hoja: no pregunta': filasDe('2026-09-12', [{ lote: 'ZE', codigoGenetico: 'TST.E5', desoves: '9', huevos: '2000', n2: '1500' }]),
+    'sin desoves en los dos lados, mismos huevos: no pregunta': filasDe('2026-09-12', [{ lote: 'ZD', codigoGenetico: 'TST.D4', desoves: '', huevos: '800' }]),
+    'dos fechas en el MISMO envío (lo guardado y lo de pantalla): una sola entrada': filasDe('2026-09-20', [{ lote: 'ZC', codigoGenetico: 'TST.C3', desoves: '5', huevos: '900' }])
+      .concat(filasDe('2026-09-21', [{ lote: 'ZC', codigoGenetico: 'TST.C3', desoves: '5', huevos: '900' }])),
+  };
+  it('el fixture ejerce algo: avisa en la fecha cambiada y en el mismo envío, y en nada más', () => {
+    expect(desovesRepetidos(CASOS['la fecha cambiada: el día siguiente, mismas cifras'], HOJA_H1))
+      .toEqual([{ fecha: '2026-09-12', lote: 'ZA', codigoGenetico: 'TST.A1', desoves: 12, huevos: 6500000, otraFecha: '2026-09-11', enLaHoja: true }]);
+    expect(desovesRepetidos(CASOS['reenvío de su propia llave (completar N5): no pregunta'], HOJA_H1)).toEqual([]);
+    expect(desovesRepetidos(CASOS['otros huevos, dos días después o sin desoves: no pregunta'], HOJA_H1)).toEqual([]);
+    expect(desovesRepetidos(CASOS['reenvío de la fila mala (su llave) con la buena ya en la hoja: no pregunta'], HOJA_H1)).toEqual([]);
+    expect(desovesRepetidos(CASOS['sin desoves en los dos lados, mismos huevos: no pregunta'], HOJA_H1)).toEqual([]);
+    expect(desovesRepetidos(CASOS['dos fechas en el MISMO envío (lo guardado y lo de pantalla): una sola entrada'], HOJA_H1)).toHaveLength(1);
+  });
+  for (const [nombre, filas] of Object.entries(CASOS)) {
+    it('lo mismo en los dos: ' + nombre, () => {
+      expect(api.madDesRepetidos(filas, HOJA_H1)).toEqual(desovesRepetidos(filas, HOJA_H1));
+      expect(api.madDesRepetidos(filas, [])).toEqual(desovesRepetidos(filas, []));
+    });
+  }
 });

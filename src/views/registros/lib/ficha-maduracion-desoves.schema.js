@@ -444,3 +444,48 @@ export function podarDesovesLocales(locales, filasHoja) {
   const completos = new Set((filasHoja || []).map(desoveDesdeHoja).filter(desoveCompleto).map(desoveLlave));
   return (locales || []).filter((l) => l && typeof l === 'object' && !completos.has(desoveLlave(l)));
 }
+
+/**
+ * H1 (2026-10-13, usuario) · ¿DESOVE REPETIDO con la fecha cambiada? La llave del GAS es (Fecha, Lote, Código): enviar un
+ * desove con la fecha equivocada y reenviarlo con la buena deja DOS filas —la de la fecha mala ni se corrige ni se borra—.
+ * Pasó el 08/09-10 (BQ) y el 11/12-10 (los cinco lotes). Cada fila que va a CREAR una llave nueva se compara con las de
+ * la hoja y con las demás del envío: el mismo lote y código, el día ANTERIOR o el SIGUIENTE, con los mismos desoves y el
+ * mismo total de huevos (los dos > 0). La que ya está en la hoja con su llave es un reenvío que la ACTUALIZA (completar
+ * N2/N5, ✏️): no se pregunta.
+ * @param {Array<Array>} filas  las filas del envío, en el orden de MAD_DESOVE_COLUMNS
+ * @param {Array<Object>} hoja  las filas de la hoja (objeto por cabecera)
+ * @returns {Array<{fecha,lote,codigoGenetico,desoves,huevos,otraFecha,enLaHoja}>} una entrada por pareja
+ */
+export function desovesRepetidos(filas, hoja) {
+  const ix = {}, cab = {};
+  MAD_DESOVE_COLUMNS.forEach((c, i) => { ix[c.k] = i; cab[c.k] = c.h; });
+  const txt = (v) => String(v == null ? '' : v).trim();
+  const num = (v) => { const t = txt(v); return (t !== '' && Number.isFinite(Number(t))) ? Number(t) : null; };
+  const dia = (f) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(txt(f)); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) / 864e5 : null; };
+  const reg = (fecha, lote, cg, desoves, huevos, enLaHoja) => ({ fecha: txt(fecha).slice(0, 10), lote: normLote(lote),
+    codigoGenetico: normCodigoGenetico(cg), desoves: num(desoves), huevos: num(huevos), enLaHoja });
+  const deHoja = (hoja || []).map((x) => { const f = x || {};
+    return reg(f[cab.fecha], f[cab.lote], f[cab.codigoGenetico], f[cab.desoves], f[cab.huevos], true); });
+  const deEnvio = (filas || []).map((r) => { const a = r || [];
+    return reg(a[ix.fecha], a[ix.lote], a[ix.codigoGenetico], a[ix.desoves], a[ix.huevos], false); });
+  const llave = (x) => x.fecha + '|' + x.lote + '|' + x.codigoGenetico;
+  const enHoja = new Set(deHoja.map(llave));
+  const out = [], vistas = new Set();
+  deEnvio.forEach((e, i) => {
+    if (!e.lote || !e.codigoGenetico || enHoja.has(llave(e)) || !(e.desoves > 0) || !(e.huevos > 0)) return;
+    const de = dia(e.fecha);
+    if (de === null) return;
+    const otra = deHoja.concat(deEnvio.filter((_, j) => j !== i)).find((x) => {
+      const dx = dia(x.fecha);
+      return dx !== null && Math.abs(dx - de) === 1 && x.lote === e.lote && x.codigoGenetico === e.codigoGenetico
+        && x.desoves === e.desoves && x.huevos === e.huevos;
+    });
+    if (!otra) return;
+    const par = e.lote + '|' + e.codigoGenetico + '|' + [e.fecha, otra.fecha].sort().join('|');
+    if (vistas.has(par)) return;
+    vistas.add(par);
+    out.push({ fecha: e.fecha, lote: e.lote, codigoGenetico: e.codigoGenetico, desoves: e.desoves, huevos: e.huevos,
+      otraFecha: otra.fecha, enLaHoja: otra.enLaHoja });
+  });
+  return out;
+}

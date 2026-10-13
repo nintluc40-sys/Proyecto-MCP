@@ -2309,6 +2309,7 @@ async function syncAll(){
   setSyncUI("pend","Sincronizando...");
   let ok=0, fail=0, queued=0, total=0;
   let _tqRetenido = false;   // 2026-09-30 · Tanques no se envió porque, ante «¿ronda repetida?», se contestó que no
+  let _desRetenido = false;  // H1 (2026-10-13) · lo guardado de Desoves no se envió: ante «¿desove repetido?», se contestó que no
 
   // Block sync without corrida/técnico for M01-M10 and CIO (no aplica a Lab. Algas ni Maduración).
   // La Corrida puede provenir de cualquier ficha estándar O de Desinfección.
@@ -2382,6 +2383,7 @@ async function syncAll(){
        aquí se reutiliza la misma respuesta. */
     for(const f of MAD_LOC_FICHAS){
       if(!madLocLeer(f).length) continue;
+      if(f === "desoves" && !(await _madDesConfirmarRepetidos(_madDesFilasGuardadas()))){ _desRetenido = true; _madDesNoEnviado(); continue; }   // H1 · ¿desove repetido?
       total++;
       if(_gasLoc === undefined && _madLocCfg(f).sello) _gasLoc = await _madIngGasAlDia();
       const r = await _madLocEnviar(f, _gasLoc, { callado:true });
@@ -2507,7 +2509,9 @@ async function syncAll(){
 
   /* 2026-09-30 · con Tanques retenido ante «¿ronda repetida?», «Sin datos nuevos» y «Todo sincronizado» serían FALSOS:
      queda Tanques pendiente, y se dice. */
-  const _tqPend = "Tanques pendiente (¿ronda repetida?)";
+  // H1 (2026-10-13) · y lo mismo con Desoves retenido ante «¿desove repetido?»: se dice qué queda pendiente.
+  const _tqPend = [_tqRetenido ? "Tanques pendiente (¿ronda repetida?)" : "", _desRetenido ? "Desoves pendiente (¿desove repetido?)" : ""].filter(Boolean).join(" · ");
+  _tqRetenido = _tqRetenido || _desRetenido;
   if(!total && _tqRetenido){ setSyncUI("pend", _tqPend); updateDots(); return; }
   if(!total){ setSyncUI("idle","Sin datos nuevos"); toast("No hay datos pendientes","info",2000); updateDots(); return; }
   if(!fail && !queued){
@@ -10581,6 +10585,48 @@ function madDesLocalesPoda(locales, filasHoja){
   (filasHoja||[]).forEach(function(f){ const d=madDesDesdeHoja(f); if(madDesCompleto(d)) completos[madDesLlave(d)]=1; });
   return (locales||[]).filter(function(l){ return l && typeof l==="object" && completos[madDesLlave(l)]!==1; });
 }
+/* H1 (2026-10-13, usuario) · ¿DESOVE REPETIDO? con la fecha cambiada. La llave del GAS es (Fecha, Lote, Código): enviar
+   un desove con la fecha equivocada y reenviarlo con la buena deja DOS filas —la de la fecha mala ni se corrige ni se
+   borra—. Pasó el 08/09-10 (BQ) y el 11/12-10 (los cinco lotes). Cada fila que va a CREAR una llave nueva se compara con
+   las de la hoja y con las demás del envío: el mismo lote y código, el día ANTERIOR o el SIGUIENTE, con los mismos desoves
+   y el mismo total de huevos (los dos > 0). La que ya está en la hoja con su llave es un reenvío que la ACTUALIZA
+   (completar N2/N5, ✏️): no se pregunta. Una entrada por pareja. Ver el módulo (desovesRepetidos). */
+function madDesRepetidos(filas, hoja){
+  const ix={}, cab={};
+  MAD_DESOVE_COLUMNS.forEach(function(c, i){ ix[c.k]=i; cab[c.k]=c.h; });
+  const txt=function(v){ return String(v==null?"":v).trim(); };
+  const num=function(v){ const t=txt(v); return (t!=="" && isFinite(Number(t))) ? Number(t) : null; };
+  const dia=function(f){ const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(txt(f)); return m ? Date.UTC(+m[1], +m[2]-1, +m[3])/864e5 : null; };
+  const reg=function(fecha, lote, cg, desoves, huevos, enLaHoja){
+    return { fecha:txt(fecha).slice(0,10), lote:madDesNormLote(lote), codigoGenetico:madDesNormCG(cg),
+      desoves:num(desoves), huevos:num(huevos), enLaHoja:enLaHoja };
+  };
+  const deHoja=(hoja||[]).map(function(x){ const f=x||{};
+    return reg(f[cab.fecha], f[cab.lote], f[cab.codigoGenetico], f[cab.desoves], f[cab.huevos], true); });
+  const deEnvio=(filas||[]).map(function(r){ const a=r||[];
+    return reg(a[ix.fecha], a[ix.lote], a[ix.codigoGenetico], a[ix.desoves], a[ix.huevos], false); });
+  const llave=function(x){ return x.fecha+"|"+x.lote+"|"+x.codigoGenetico; };
+  const enHoja={};
+  deHoja.forEach(function(x){ enHoja[llave(x)]=1; });
+  const out=[], vistas={};
+  deEnvio.forEach(function(e, i){
+    if(!e.lote || !e.codigoGenetico || enHoja[llave(e)]===1 || !(e.desoves>0) || !(e.huevos>0)) return;
+    const de=dia(e.fecha);
+    if(de===null) return;
+    const otra=deHoja.concat(deEnvio.filter(function(_, j){ return j!==i; })).find(function(x){
+      const dx=dia(x.fecha);
+      return dx!==null && Math.abs(dx-de)===1 && x.lote===e.lote && x.codigoGenetico===e.codigoGenetico
+        && x.desoves===e.desoves && x.huevos===e.huevos;
+    });
+    if(!otra) return;
+    const par=e.lote+"|"+e.codigoGenetico+"|"+[e.fecha, otra.fecha].sort().join("|");
+    if(vistas[par]===1) return;
+    vistas[par]=1;
+    out.push({ fecha:e.fecha, lote:e.lote, codigoGenetico:e.codigoGenetico, desoves:e.desoves, huevos:e.huevos,
+      otraFecha:otra.fecha, enLaHoja:otra.enLaHoja });
+  });
+  return out;
+}
 function madDesValidar(model){
   const m = model||{}, errores=[], avisos=[];
   // Un día REAL: de él salen las fechas de N2 y N5, y con uno inventado se escribirían vacías sin avisar.
@@ -10969,6 +11015,36 @@ function madDesGuardarLocal(){
   madDesReiniciar();
   _madLocGuardado("desoves");
 }
+/* H1 (2026-10-13) · las filas guardadas con 💾 que se van a enviar (las de un esquema anterior no salen: ver _madLocEnviar). */
+function _madDesFilasGuardadas(){
+  const out=[], cab=JSON.stringify(MAD_DESOVE_HEADERS);
+  madLocLeer("desoves").forEach(function(e){
+    const p=e && e.payload;
+    if(p && Array.isArray(p.rows) && JSON.stringify(p.headers)===cab) p.rows.forEach(function(r){ out.push(r); });
+  });
+  return out;
+}
+/** ☁️ y 🔄 · true = enviar; false = quien sincroniza dijo que no (lo tecleado y lo guardado se quedan). Si la hoja no se
+ *  puede leer, se envía como hoy. Como el aviso de ronda repetida de Tanques (_madTqConfirmarRepetidas). */
+async function _madDesConfirmarRepetidos(filas){
+  if(!filas || !filas.length) return true;
+  toast("Comprobando la hoja de Desoves…","info",2500);
+  const hoja=await _madHojaFresca(MAD_DESOVE_SHEET);
+  if(!hoja) return true;
+  const rep=madDesRepetidos(filas, hoja);
+  if(!rep.length) return true;
+  const lineas=rep.map(function(x){
+    return "· "+x.lote+" ("+x.codigoGenetico+") del "+x.fecha+": "+x.desoves+" desoves y "
+      +(x.huevos/MAD_DESOVE_MIL).toLocaleString("es-EC")+" mil huevos, igual que "
+      +(x.enLaHoja ? "la hoja" : "otro desove de este envío")+" el "+x.otraFecha;
+  });
+  return confirm("⚠ ¿Desove REPETIDO? Estos lotes tienen las MISMAS cifras un día antes o después:\n"+lineas.join("\n")
+    +"\n\nAceptar = son desoves distintos, o corregiste la fecha: enviar. Si corregiste la fecha, borra después en la hoja la fila de la otra fecha: sobra."
+    +"\nCancelar = no enviar Desoves ahora; lo tecleado y lo guardado siguen en este dispositivo.");
+}
+function _madDesNoEnviado(){
+  toast("Desoves NO enviado: lo tecleado y lo guardado siguen en este dispositivo. Si era el mismo desove con otra fecha, corrige la fecha antes de enviar.","warn",9000);
+}
 async function madDesGuardar(){
   const _loc=madLocLeer("desoves").length;
   const _p=_madDesPreparar(_loc>0); if(!_p) return;
@@ -10983,6 +11059,8 @@ async function madDesGuardar(){
     toast(aviso, "err", 10000);
     return;
   }
+  // H1 (2026-10-13) · ¿desove repetido con la fecha cambiada? Se pregunta ANTES de enviar nada: «Cancelar» tampoco envía lo guardado.
+  if(!(await _madDesConfirmarRepetidos(payload.rows.concat(_loc ? _madDesFilasGuardadas() : [])))){ _madDesNoEnviado(); return; }
   // PE1.4 · primero lo guardado con 💾 (lo más viejo antes); si algo falla, lo de pantalla tampoco sale.
   if(_loc && (await _madLocEnviar("desoves", _gas)).fallo) return;
   if(!payload.rows.length) return;
@@ -16327,16 +16405,18 @@ function _madTqRondasRepetidas(pendientes, hoja){
   });
   return out;
 }
-/** La hoja de Tanques FRESCA para esa pregunta: su exportación (D) si se puede y, si no, el GAS en UN intento con tope —la
- *  lectura del libro reintenta hasta cuatro veces, y aquí esperaría minutos quien sólo quiere enviar—. null si no llega. */
-async function _madTqHojaFresca(){
+/** Una hoja FRESCA para una de estas preguntas: su exportación (D) si se puede y, si no, el GAS en UN intento con tope —la
+ *  lectura del libro reintenta hasta cuatro veces, y aquí esperaría minutos quien sólo quiere enviar—. null si no llega.
+ *  H1 (2026-10-13) · era sólo la de Tanques; Desoves la usa igual (_madDesConfirmarRepetidos). */
+async function _madTqHojaFresca(){ return _madHojaFresca(MAD_SHEET.tanques); }
+async function _madHojaFresca(nombre){
   if(_exportPuede()){
-    try{ const f = await _exportLeerHoja(MAD_SHEET.tanques, null); if(f) return f; }catch(_){}
+    try{ const f = await _exportLeerHoja(nombre, null); if(f) return f; }catch(_){}
   }
   const base = gasUrl();
   if(!isValidGasUrl(base)) return null;
   const tok = gcfg("gas-token","");
-  let u = base + (base.indexOf("?") === -1 ? "?" : "&") + "p=rows&sheet=" + encodeURIComponent(MAD_SHEET.tanques);
+  let u = base + (base.indexOf("?") === -1 ? "?" : "&") + "p=rows&sheet=" + encodeURIComponent(nombre);
   if(tok) u += "&t=" + encodeURIComponent(tok);
   const ctrl = new AbortController();
   const t = setTimeout(function(){ ctrl.abort(); }, 15000);
