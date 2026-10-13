@@ -170,10 +170,11 @@ describe('Saldo · resumen con filtro de variables y PDF', () => {
     expect(grupo('Desoves').getAttribute('onchange')).toBe('madResVarsGrupo(this)');
     expect(vars('Desoves')[0].getAttribute('onchange')).toBe('madResVarsSync()');
     expect(sets().every((fs) => fs.querySelector('.ms-grupo').checked)).toBe(true);   // por defecto, todo marcado
-    // Quitar la ficha Desoves entera: sus tres variables se desmarcan y las de Lotes no se tocan.
+    // Quitar la ficha Desoves entera: sus cinco variables se desmarcan y las de Lotes no se tocan.
+    // (Eran tres; desde el 2026-10-13, punto 2 del usuario, + «huevos y N2» y «desoves por 100 ♀».)
     grupo('Desoves').checked = false;
     H.madResVarsGrupo(grupo('Desoves'));
-    expect(vars('Desoves').map((c) => c.checked)).toEqual([false, false, false]);
+    expect(vars('Desoves').map((c) => c.checked)).toEqual([false, false, false, false, false]);
     expect(vars('Lotes').every((c) => c.checked)).toBe(true);
     // Volver a marcar una sola: la casilla de la ficha queda a medias.
     vars('Desoves')[1].checked = true;
@@ -432,5 +433,58 @@ describe('Mortalidad de hembras · la ficha', () => {
     expect(JSON.parse(localStorage.getItem('larv4_syncqueue'))[0].mark.kind, 'PE1.2: sin su marca el registro no sabe si llegó').toBe('madlog:mortdes');
     expect(avisos.filter((a) => a.tipo === 'err')).toEqual([]);
     localStorage.removeItem('larv4_syncqueue');
+  });
+});
+
+/* ── Punto 2 (2026-10-13, usuario) · las variables NUEVAS en las tarjetas (pantalla y PDF estándar) ──
+   El 11/01 la Sala 1 da dos partes en su t1 (06:30 y 16:00) y 🍤 Alimentación guarda 2,4 kg de poliqueto (biomasa 4,1). */
+describe('Saldo · las variables nuevas por sala y por lote (punto 2)', () => {
+  const cuerpo = () => document.getElementById('ms-body');
+  const fila = (th) => [...cuerpo().querySelectorAll('tr')].find((tr) => tr.querySelector('th') && tr.querySelector('th').textContent === th);
+  const conDia = async (fn) => {
+    const tq = HOJAS['Maduración Tanques'], al = HOJAS['Maduración Alimentación'];
+    HOJAS['Maduración Tanques'] = tq.concat([
+      { Fecha: '2026-01-11', Sala: 'Sala 1', Tanque: 1, Hora: '16:00', Parte: 2, 'Machos muertos': 1 },
+      { Fecha: '2026-01-11', Sala: 'Sala 1', Tanque: 1, Hora: '06:30', Parte: 1, 'Hembras muertas': 1, 'Machos muertos por descarte de selección': 1, 'Cópulas': 5, Muda: 2 },
+    ]);
+    HOJAS['Maduración Alimentación'] = [{ Fecha: '2026-01-11', Sala: 'Sala 1', Tanque: 1, 'Biomasa total (kg)': 4.1, 'Poliqueto (kg/día)': 2.4, 'Total (kg/día)': 2.4 }];
+    try { await fn(); } finally { HOJAS['Maduración Tanques'] = tq; if (al) HOJAS['Maduración Alimentación'] = al; else delete HOJAS['Maduración Alimentación']; }
+  };
+  beforeEach(() => { localStorage.removeItem(H.MAD_RES_VARS_KEY); document.getElementById('fp-saldo').innerHTML = ''; H.renderMadSaldo(); });
+
+  it('🔴 la sala: partes con sus horas, bajas, cópulas y mudas del último día, y su alimento', async () => {
+    await conDia(() => H.madSaldoRefrescar());
+    expect(fila('Partes enviados').textContent).toBe('Partes enviados2 parte(s) · 06:30, 16:00 (2026-01-11)');
+    expect(fila('Bajas del día').textContent).toContain('muertos 1♂ · 1♀ · descarte 1♂ · 0♀ (2026-01-11)');
+    expect(fila('Cópulas · Mudas').textContent).toMatch(/^Cópulas · Mudas5 \([\d.]+%\) · 2 \([\d.]+%\) \(2026-01-11\)$/);
+    expect(fila('Alimento del día').textContent).toBe('Alimento del día2.4 kg · Poliqueto 2.4 · biomasa 4.1 kg (2026-01-11)');
+  });
+
+  it('🔴 el lote: descartes del día y acumulados, biomasa, alimento, huevos y N2, desoves por 100 ♀', async () => {
+    await conDia(() => H.madSaldoRefrescar());
+    const lote = [...cuerpo().querySelectorAll('.ms-card')].find((c) => c.textContent.includes('Lote AB'));
+    const de = (th) => [...lote.querySelectorAll('tr')].find((tr) => tr.querySelector('th') && tr.querySelector('th').textContent === th);
+    expect(de('Descartes del día').textContent).toBe('Descartes del día1♂ · 0♀ (2026-01-11)');
+    expect(de('Descartes acumulados').textContent).toContain('1♂ · 0♀');
+    expect(de('Biomasa').textContent).toBe('Biomasa♂ — · ♀ — · total —');   // la hoja de esta prueba no trae pesos: vacía, no 0
+    expect(de('Alimento del día').textContent).toBe('Alimento del día2.4 kg · Poliqueto 2.4 (2026-01-11)');   // AB es el único lote del t1
+    expect(de('Huevos · N2').textContent).toBe('Huevos · N2100.000 · 50.000');
+    expect(de('Desoves por 100 ♀').textContent).toBe('Desoves por 100 ♀6.67 (4 desoves · 60 ♀) (2026-01-05)');
+  });
+
+  it('🔴 son variables como las demás: desmarcadas no salen', async () => {
+    await conDia(async () => {
+      H.madResVarsAbrir();
+      document.querySelectorAll('#ms-vars .ms-var').forEach((c) => { c.checked = !['sala-partes', 'sala-alimento', 'lote-biomasa', 'des-por100'].includes(c.value); });
+      H.madResVarsAplicar();
+      await H.madSaldoRefrescar();
+    });
+    const tarjeta = (txt) => [...cuerpo().querySelectorAll('.ms-card')].find((c) => c.textContent.includes(txt));
+    const en = (card, th) => [...card.querySelectorAll('tr')].find((tr) => tr.querySelector('th') && tr.querySelector('th').textContent === th);
+    const s1 = tarjeta('🏠 Sala 1'), ab = tarjeta('Lote AB');
+    for (const th of ['Partes enviados', 'Alimento del día']) expect(en(s1, th), th).toBeUndefined();
+    for (const th of ['Biomasa', 'Desoves por 100 ♀']) expect(en(ab, th), th).toBeUndefined();
+    expect(en(s1, 'Bajas del día')).toBeTruthy();
+    expect(en(ab, 'Alimento del día'), 'el alimento del LOTE sigue marcado').toBeTruthy();
   });
 });

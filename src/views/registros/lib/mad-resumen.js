@@ -355,6 +355,46 @@ function resumenLotes(fuentes, libro, hoy) {
     const ing = L.ingresados;
     const mu = L.muertos;
     const mort = (o) => ({ entran: o.entran, muertas: o.muertas, pct: tasa(o.muertas, o.entran) });
+    /* 2026-10-13 (usuario, punto 2) · cuatro variables nuevas del lote.
+         · DESCARTES DEL DÍA: como la mortalidad del día, restando el libro al cierre de la víspera (en un tanque mezclado
+           los reparte el libro). Del mismo «último día» del lote.
+         · BIOMASA = vivos × el último peso registrado, por sexo y en kg (los mismos pesos que la carga); sin peso, vacía.
+         · ALIMENTO del último día de 🍤 Alimentación en que sus tanques lo tenían: el «Total (kg/día)» de cada tanque y sus
+           productos; en un tanque con varios lotes, la parte de los animales de ESTE lote (libro al cierre de ese día).
+         · DESOVES POR 100 ♀ del último día con desoves del lote = Σ desoves ÷ hembras del libro al cierre × 100, la regla
+           del tablero del MCP (🌊 Mareas). */
+    let descartesDia = { machos: 0, hembras: 0 };
+    if (fDia) {
+      const h = libroAl(fDia).lotes.get(L.lote), a = libroAl(sumarDias(fDia, -1)).lotes.get(L.lote);
+      descartesDia = { machos: Math.max(0, ((h && h.descartes.machos) || 0) - ((a && a.descartes.machos) || 0)),
+        hembras: Math.max(0, ((h && h.descartes.hembras) || 0) - ((a && a.descartes.hembras) || 0)) };
+    }
+    const kgDe = (n, p) => (p === '' ? '' : r2((n * p) / 1000));
+    const biomasa = { machos: kgDe(L.machos, pesoM.valor), hembras: kgDe(L.hembras, pesoH.valor) };
+    biomasa.total = biomasa.machos === '' && biomasa.hembras === '' ? '' : r2((biomasa.machos || 0) + (biomasa.hembras || 0));
+    const alim = ultimoDia((fuentes.alimentacion || []).filter((r) => txt(r.Sala) && ent(r.Tanque) && esFecha(fecha10(r.Fecha))
+      && num(r['Total (kg/día)']) !== null && (!L.ingreso || fecha10(r.Fecha) >= L.ingreso)));
+    let alimento = { fecha: alim.fecha, productos: [], total: '' };
+    if (alim.fecha) {
+      const lib = libroAl(alim.fecha);
+      const parte = (r) => {
+        const T = lib.tanques.get(ubicKey(r.Sala, r.Tanque));
+        const mio = T.composicion.filter((c) => c.lote === L.lote).reduce((a, c) => a + c.machos + c.hembras, 0);
+        return T.machos + T.hembras > 0 ? mio / (T.machos + T.hembras) : 0;
+      };
+      const cols = productosDe(alim.filas);
+      alimento = { fecha: alim.fecha,
+        productos: cols.map((c) => ({ producto: c.replace(/ \(kg\/día\)$/, ''), kg: r2(alim.filas.reduce((a, r) => a + (num(r[c]) || 0) * parte(r), 0)) })).filter((p) => p.kg > 0),
+        total: r2(alim.filas.reduce((a, r) => a + num(r['Total (kg/día)']) * parte(r), 0)) };
+    }
+    const misDesoves = (fuentes.desoves || []).filter((r) => loteKey(r.Lote) === loteKey(L.lote) && esFecha(fecha10(r.Fecha)));
+    const fDes = misDesoves.map((r) => fecha10(r.Fecha)).sort().pop() || '';
+    let desovesDia = { fecha: fDes, desoves: 0, hembras: 0, por100: '' };
+    if (fDes) {
+      const n = misDesoves.filter((r) => fecha10(r.Fecha) === fDes).reduce((a, r) => a + ent(r.Desoves), 0);
+      const Lh = libroAl(fDes).lotes.get(L.lote), h = Lh ? Lh.hembras : 0;
+      desovesDia = { fecha: fDes, desoves: n, hembras: h, por100: h > 0 ? r2((n / h) * 100) : '' };
+    }
     out.push({
       lote: L.lote, estado: L.estado, machos: L.machos, hembras: L.hembras,
       ingresados: { machos: ing.machos, hembras: ing.hembras },
@@ -375,11 +415,75 @@ function resumenLotes(fuentes, libro, hoy) {
         fertilidad: d.huevosConN2 > 0 ? r2((d.n2ConHuevos / d.huevosConN2) * 100) : '',
       },
       mortDesove: mort(L.mortDesove), mortRecuperacion: mort(L.mortRecuperacion),
+      descartesDia, biomasa, alimento, desovesDia,   // punto 2 (2026-10-13)
       tratamientos: recientes(trat.filter((r) => txt(r.Tipo) === 'Preventivo' && lotesDeCelda(r.Lotes).indexOf(loteKey(L.lote)) !== -1))
         .map((r) => ({ fecha: fecha10(r.Fecha), sala: txt(r.Sala), productos: txt(r.Productos), ras: txt(r['Productos RAS']) })),
     });
   }
   return out.sort((a, b) => porNombre(a.lote, b.lote));
+}
+
+/* 2026-10-13 (usuario, punto 2) · LO DEL ÚLTIMO DÍA DE CADA SALA, para cuatro variables nuevas del ⚖️ Saldo: los partes
+   que llegaron (cuántos y a qué horas), sus bajas (♂/♀ muertos y descarte), sus cópulas y mudas —con su %, la regla de los
+   lotes: cópulas ÷ hembras vivas y mudas ÷ vivos de los tanques con parte, con el libro al cierre de ese día— y el
+   alimento. «Último día» = el último con partes de ESA sala, como el de cada lote: sin partes hoy, el de ayer, con su
+   fecha. Las bajas y las cópulas se suman fila a fila porque son de la sala entera (no hay lotes que repartir). El
+   alimento sale de 🍤 Alimentación, de su último día con «Total (kg/día)» en esa sala: kg por producto (las columnas
+   «… (kg/día)»), el total y la biomasa, tal como los guardó la ficha. */
+const minHora = (h) => { const m = /^(\d{1,2}):(\d{2})/.exec(txt(h)); return m ? Number(m[1]) * 60 + Number(m[2]) : 9999; };
+const COL_TOTAL_KG = 'Total (kg/día)';
+const productosDe = (filas) => {
+  const cols = [];
+  filas.forEach((r) => Object.keys(r || {}).forEach((c) => { if (/ \(kg\/día\)$/.test(c) && c !== COL_TOTAL_KG && cols.indexOf(c) === -1) cols.push(c); }));
+  return cols;
+};
+export const diaDeSalaVacio = () => ({ fecha: '', partes: 0, horas: [], machos: 0, hembras: 0, descarteMachos: 0, descarteHembras: 0,
+  copulas: 0, mudas: 0, pctCopulas: '', pctMudas: '' });
+export const alimentoVacio = () => ({ fecha: '', productos: [], total: '', biomasa: '' });
+export function resumenDiaSalas(fuentes) {
+  const f = fuentes || {};
+  const alDia = new Map();
+  const libroAl = (fecha) => { if (!alDia.has(fecha)) alDia.set(fecha, construirLibro(f, { hoy: fecha, hasta: fecha })); return alDia.get(fecha); };
+  const porSala = (filas) => {
+    const m = new Map();
+    (filas || []).forEach((r) => {
+      const s = txt(r && r.Sala);
+      if (!s || !ent(r.Tanque) || !esFecha(fecha10(r.Fecha))) return;
+      if (!m.has(s)) m.set(s, []);
+      m.get(s).push(r);
+    });
+    return m;
+  };
+  const ultimas = (filas) => { const fe = filas.map((r) => fecha10(r.Fecha)).sort().pop() || ''; return { fecha: fe, filas: filas.filter((r) => fecha10(r.Fecha) === fe) }; };
+  const out = new Map();
+  const entrada = (s) => { if (!out.has(s)) out.set(s, { dia: diaDeSalaVacio(), alimento: alimentoVacio() }); return out.get(s); };
+  for (const [sala, filas] of porSala(f.tanques)) {
+    const d = ultimas(filas), lib = libroAl(d.fecha);
+    const suma = (col) => d.filas.reduce((a, r) => a + ent(r[col]), 0);
+    const partes = new Set(), horas = new Set(), vistos = new Set();
+    let vivos = 0, hembras = 0;
+    d.filas.forEach((r) => {
+      partes.add(txt(r.Hora) + '|' + txt(r.Parte));
+      if (txt(r.Hora)) horas.add(txt(r.Hora));
+      const k = ubicKey(r.Sala, r.Tanque), T = lib.tanques.get(k);
+      if (vistos.has(k) || !T) return;
+      vistos.add(k); vivos += T.machos + T.hembras; hembras += T.hembras;
+    });
+    const copulas = suma('Cópulas'), mudas = suma('Muda');
+    entrada(sala).dia = { fecha: d.fecha, partes: partes.size, horas: [...horas].sort((a, b) => minHora(a) - minHora(b)),
+      machos: suma('Machos muertos'), hembras: suma('Hembras muertas'),
+      descarteMachos: suma('Machos muertos por descarte de selección'), descarteHembras: suma('Hembras muertas por descarte de selección'),
+      copulas, mudas, pctCopulas: hembras > 0 ? r2((copulas / hembras) * 100) : '', pctMudas: vivos > 0 ? r2((mudas / vivos) * 100) : '' };
+  }
+  for (const [sala, filas] of porSala((f.alimentacion || []).filter((r) => num(r[COL_TOTAL_KG]) !== null))) {
+    const d = ultimas(filas);
+    const productos = productosDe(d.filas).map((c) => ({ producto: c.replace(/ \(kg\/día\)$/, ''), kg: r2(d.filas.reduce((a, r) => a + (num(r[c]) || 0), 0)) }))
+      .filter((p) => p.kg > 0);
+    const bio = d.filas.filter((r) => num(r['Biomasa total (kg)']) !== null);
+    entrada(sala).alimento = { fecha: d.fecha, productos, total: r2(d.filas.reduce((a, r) => a + num(r[COL_TOTAL_KG]), 0)),
+      biomasa: bio.length ? r2(bio.reduce((a, r) => a + num(r['Biomasa total (kg)']), 0)) : '' };
+  }
+  return out;
 }
 
 /**
@@ -390,6 +494,7 @@ export function resumenMaduracion(fuentes, opts) {
   const f = fuentes || {};
   const hoy = txt((opts || {}).hoy);
   const libro = construirLibro(f, { hoy });
+  const diaSalas = resumenDiaSalas(f);
   const ras = recientes((f.tratamientos || []).filter((r) => txt(r['Productos RAS']) !== '' || txt(r['Área']) === 'RAS y tuberías'))
     .map((r) => ({ fecha: fecha10(r.Fecha), sala: txt(r.Sala), tipo: txt(r.Tipo), productos: txt(r['Área']) === 'RAS y tuberías' ? txt(r.Productos) : txt(r['Productos RAS']) }));
   const tons = ultimoPor(f.sala, 'Sala', 'Toneladas');
@@ -397,7 +502,8 @@ export function resumenMaduracion(fuentes, opts) {
      de cada sala va a su tarjeta y la del RAS a la suya, que es donde se mira el agua del sistema. */
   const alc = { dia: ultimoPor(f.mortDesove, 'Área', 'Alcalinidad día'), noche: ultimoPor(f.mortDesove, 'Área', 'Alcalinidad noche') };
   return { hoy, hasta: libro.hasta, avisos: libro.avisos.length,
-    salas: resumenSalas(f.sala, libro, f.tratamientos, tons, alc),
+    // punto 2 (2026-10-13) · cada sala, con lo de su último día (resumenDiaSalas)
+    salas: resumenSalas(f.sala, libro, f.tratamientos, tons, alc).map((s) => Object.assign(s, { dia: diaDeSalaVacio(), alimento: alimentoVacio() }, diaSalas.get(s.sala) || {})),
     lotes: resumenLotes(f, libro, hoy),
     ras, rasAlcalinidad: { dia: alc.dia.get('RAS') || { valor: '', fecha: '' }, noche: alc.noche.get('RAS') || { valor: '', fecha: '' } } };
 }

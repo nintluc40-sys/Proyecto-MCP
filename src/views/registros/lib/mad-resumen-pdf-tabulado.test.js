@@ -286,3 +286,47 @@ describe('Saldo · PDF tabulado «como el Último parte»', () => {
     expect(impreso).toContain('Nada que mostrar con las variables elegidas.');
   });
 });
+
+/* ── Punto 2 (2026-10-13, usuario) · las variables NUEVAS en la tabulada: columnas en la franja de la sala y dos tablas
+   PROPIAS de lotes (las de antes no cambian). El 11/01 la Sala 1 da dos partes y 🍤 Alimentación guarda 2,4 kg. */
+describe('Saldo · la tabulada con las variables nuevas (punto 2)', () => {
+  const conDia = async (fn) => {
+    const tq = HOJAS['Maduración Tanques'];
+    HOJAS['Maduración Tanques'] = tq.concat([
+      { Fecha: '2026-01-11', Sala: 'Sala 1', Tanque: 1, Hora: '06:30', Parte: 1, 'Hembras muertas': 1, 'Machos muertos por descarte de selección': 1, 'Cópulas': 5, Muda: 2 },
+    ]);
+    HOJAS['Maduración Alimentación'] = [{ Fecha: '2026-01-11', Sala: 'Sala 1', Tanque: 1, 'Biomasa total (kg)': 4.1, 'Poliqueto (kg/día)': 2.4, 'Total (kg/día)': 2.4 }];
+    try { await fn(); } finally { HOJAS['Maduración Tanques'] = tq; delete HOJAS['Maduración Alimentación']; }
+  };
+
+  it('🔴 la franja de la sala lleva partes, bajas, cópulas y alimento del último día', async () => {
+    await conDia(() => H.madSaldoRefrescar());
+    elegir('tabulada');
+    H.madResumenPdf('todo');
+    const d = doc();
+    const franja = [...d.querySelectorAll('h2')].find((x) => x.textContent === '🏠 Sala 1').nextElementSibling;
+    const ths = [...franja.querySelectorAll('th')].map((th) => th.textContent);
+    for (const t of ['Partes del día', 'Cópulas · Mudas', 'Alimento del día (kg)']) expect(ths, t).toContain(t);
+    expect(ths.some((t) => t.startsWith('Bajas del día'))).toBe(true);
+    expect(franja.textContent).toContain('06:30');
+    expect(franja.textContent).toContain('Poliqueto 2.4');
+  });
+
+  it('🔴 dos tablas nuevas de lotes, con su total: descartes, biomasa y alimento · huevos, N2 y desoves por 100 ♀', async () => {
+    await conDia(() => H.madSaldoRefrescar());
+    elegir('tabulada');
+    H.madResumenPdf('todo');
+    const d = doc();
+    const t1 = tablaTras(d, '🦐 Lotes · Descartes, biomasa y alimento');
+    expect(columna(t1, 'Alimento del día (kg)')).toBeGreaterThan(0);
+    const filas1 = [...t1.querySelectorAll('tbody tr')];
+    expect(celdas(filas1[0])[0]).toBe('AB');
+    expect(filas1[filas1.length - 1].className).toBe('tot');
+    const t2 = tablaTras(d, '🥚 Lotes · Huevos, N2 y desoves por 100 ♀');
+    const filas2 = [...t2.querySelectorAll('tbody tr')];
+    expect(celdas(filas2[0]).slice(0, 3)).toEqual(['AB', '100.000', '50.000']);
+    expect(celdas(filas2[filas2.length - 1]).slice(0, 3)).toEqual(['Total · 2 lotes', '130.000', '62.000']);   // los % no se suman: «—»
+    // las tablas de antes no cambian: la de reproducción sigue sin columna de huevos
+    expect(columna(tablaTras(d, '🥚 Lotes · Reproducción'), 'Huevos')).toBe(-1);
+  });
+});

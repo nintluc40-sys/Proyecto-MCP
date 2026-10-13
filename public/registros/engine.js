@@ -7109,6 +7109,39 @@ function _madResLotes(fuentes, libro, hoy){
     const d=desoves[_madResLote(L.lote)] || { desoves:0, huevos:0, noViables:0, n2:0, n5:0, huevosConN2:0, n2ConHuevos:0, desovesConN5:0 };
     const ing=L.ingresados, mu=L.muertos;
     const mort=function(o){ return { entran:o.entran, muertas:o.muertas, pct:tasa(o.muertas, o.entran) }; };
+    /* 2026-10-13 (usuario, punto 2) · descartes del día, biomasa, alimento y desoves por 100 ♀ del lote. Ver el módulo. */
+    let descartesDia={ machos:0, hembras:0 };
+    if(fDia){
+      const h=libroAl(fDia).lotes[L.lote], a=libroAl(madSumarDias(fDia,-1)).lotes[L.lote];
+      descartesDia={ machos:Math.max(0, ((h && h.descartes.machos)||0)-((a && a.descartes.machos)||0)),
+        hembras:Math.max(0, ((h && h.descartes.hembras)||0)-((a && a.descartes.hembras)||0)) };
+    }
+    const kgDe=function(n,p){ return p==="" ? "" : _madResR2((n*p)/1000); };
+    const biomasa={ machos:kgDe(L.machos, pesoM.valor), hembras:kgDe(L.hembras, pesoH.valor) };
+    biomasa.total=(biomasa.machos==="" && biomasa.hembras==="") ? "" : _madResR2((biomasa.machos||0)+(biomasa.hembras||0));
+    const alim=ultimoDia((fuentes.alimentacion||[]).filter(function(r){ return madLibroTxt(r.Sala) && madLibroEnt(r.Tanque) && _madResEsFecha(_madResF10(r.Fecha))
+      && _madResNum(r[MAD_RES_COL_TOTAL_KG])!==null && (!L.ingreso || _madResF10(r.Fecha)>=L.ingreso); }));
+    let alimento={ fecha:alim.fecha, productos:[], total:"" };
+    if(alim.fecha){
+      const libA=libroAl(alim.fecha);
+      const parte=function(r){
+        const T=libA.tanques[madUbicKey(r.Sala, r.Tanque)];
+        const mio=T.composicion.filter(function(c){ return c.lote===L.lote; }).reduce(function(a,c){ return a+c.machos+c.hembras; },0);
+        return (T.machos+T.hembras)>0 ? mio/(T.machos+T.hembras) : 0;
+      };
+      alimento={ fecha:alim.fecha,
+        productos:_madResProductosDe(alim.filas).map(function(c){ return { producto:c.replace(/ \(kg\/día\)$/, ""), kg:_madResR2(alim.filas.reduce(function(a,r){ return a+(_madResNum(r[c])||0)*parte(r); },0)) }; })
+          .filter(function(x){ return x.kg>0; }),
+        total:_madResR2(alim.filas.reduce(function(a,r){ return a+_madResNum(r[MAD_RES_COL_TOTAL_KG])*parte(r); },0)) };
+    }
+    const misDesoves=(fuentes.desoves||[]).filter(function(r){ return _madResLote(r.Lote)===_madResLote(L.lote) && _madResEsFecha(_madResF10(r.Fecha)); });
+    const fDes=misDesoves.map(function(r){ return _madResF10(r.Fecha); }).sort().pop() || "";
+    let desovesDia={ fecha:fDes, desoves:0, hembras:0, por100:"" };
+    if(fDes){
+      const nDes=misDesoves.filter(function(r){ return _madResF10(r.Fecha)===fDes; }).reduce(function(a,r){ return a+madLibroEnt(r.Desoves); },0);
+      const Lh=libroAl(fDes).lotes[L.lote], hh=Lh ? Lh.hembras : 0;
+      desovesDia={ fecha:fDes, desoves:nDes, hembras:hh, por100:hh>0 ? _madResR2((nDes/hh)*100) : "" };
+    }
     out.push({ lote:L.lote, estado:L.estado, machos:L.machos, hembras:L.hembras,
       ingresados:{ machos:ing.machos, hembras:ing.hembras }, muertos:{ machos:mu.machos, hembras:mu.hembras },
       descartes:{ machos:L.descartes.machos, hembras:L.descartes.hembras },
@@ -7125,14 +7158,72 @@ function _madResLotes(fuentes, libro, hoy){
         naupliosPorHembra:d.desovesConN5>0 ? Math.round(d.n5/d.desovesConN5) : "",
         fertilidad:d.huevosConN2>0 ? _madResR2((d.n2ConHuevos/d.huevosConN2)*100) : "" },
       mortDesove:mort(L.mortDesove), mortRecuperacion:mort(L.mortRecuperacion),
+      descartesDia:descartesDia, biomasa:biomasa, alimento:alimento, desovesDia:desovesDia,   // punto 2 (2026-10-13)
       tratamientos:_madResRecientes(trat.filter(function(r){ return madLibroTxt(r.Tipo)==="Preventivo" && _madResLotesCelda(r.Lotes).indexOf(_madResLote(L.lote))!==-1; }))
         .map(function(r){ return { fecha:_madResF10(r.Fecha), sala:madLibroTxt(r.Sala), productos:madLibroTxt(r.Productos), ras:madLibroTxt(r["Productos RAS"]) }; }) });
   });
   return out.sort(function(a,b){ return _madResOrden(a.lote, b.lote); });
 }
+/* 2026-10-13 (usuario, punto 2) · LO DEL ÚLTIMO DÍA DE CADA SALA: partes (cuántos y a qué horas), bajas, cópulas y mudas
+   con su %, y el alimento de 🍤 Alimentación. Ver el módulo (resumenDiaSalas): misma regla, la paridad lo ata. */
+function _madResMinHora(h){ const m=/^(\d{1,2}):(\d{2})/.exec(madLibroTxt(h)); return m ? Number(m[1])*60+Number(m[2]) : 9999; }
+const MAD_RES_COL_TOTAL_KG = "Total (kg/día)";
+function _madResProductosDe(filas){
+  const cols=[];
+  filas.forEach(function(r){ Object.keys(r||{}).forEach(function(c){ if(/ \(kg\/día\)$/.test(c) && c!==MAD_RES_COL_TOTAL_KG && cols.indexOf(c)===-1) cols.push(c); }); });
+  return cols;
+}
+function madResDiaDeSalaVacio(){ return { fecha:"", partes:0, horas:[], machos:0, hembras:0, descarteMachos:0, descarteHembras:0, copulas:0, mudas:0, pctCopulas:"", pctMudas:"" }; }
+function madResAlimentoVacio(){ return { fecha:"", productos:[], total:"", biomasa:"" }; }
+function madResDiaSalas(fuentes){
+  const f=fuentes||{}, alDia={};
+  const libroAl=function(fecha){ if(!alDia[fecha]) alDia[fecha]=madConstruirLibro(f, { hoy:fecha, hasta:fecha }); return alDia[fecha]; };
+  const porSala=function(filas){
+    const m={}, orden=[];
+    (filas||[]).forEach(function(r){
+      const s=madLibroTxt(r && r.Sala);
+      if(!s || !madLibroEnt(r.Tanque) || !_madResEsFecha(_madResF10(r.Fecha))) return;
+      if(!m[s]){ m[s]=[]; orden.push(s); }
+      m[s].push(r);
+    });
+    return orden.map(function(s){ return [s, m[s]]; });
+  };
+  const ultimas=function(filas){ const fe=filas.map(function(r){ return _madResF10(r.Fecha); }).sort().pop() || ""; return { fecha:fe, filas:filas.filter(function(r){ return _madResF10(r.Fecha)===fe; }) }; };
+  const out={};
+  const entrada=function(s){ if(!out[s]) out[s]={ dia:madResDiaDeSalaVacio(), alimento:madResAlimentoVacio() }; return out[s]; };
+  porSala(f.tanques).forEach(function(p){
+    const sala=p[0], d=ultimas(p[1]), lib=libroAl(d.fecha);
+    const suma=function(col){ return d.filas.reduce(function(a,r){ return a+madLibroEnt(r[col]); },0); };
+    const partes=[], horas=[], vistos={};
+    let vivos=0, hembras=0;
+    d.filas.forEach(function(r){
+      const pk=madLibroTxt(r.Hora)+"|"+madLibroTxt(r.Parte), h=madLibroTxt(r.Hora);
+      if(partes.indexOf(pk)===-1) partes.push(pk);
+      if(h && horas.indexOf(h)===-1) horas.push(h);
+      const k=madUbicKey(r.Sala, r.Tanque), T=lib.tanques[k];
+      if(vistos[k]===1 || !T) return;
+      vistos[k]=1; vivos+=T.machos+T.hembras; hembras+=T.hembras;
+    });
+    const copulas=suma("Cópulas"), mudas=suma("Muda");
+    entrada(sala).dia={ fecha:d.fecha, partes:partes.length, horas:horas.sort(function(a,b){ return _madResMinHora(a)-_madResMinHora(b); }),
+      machos:suma("Machos muertos"), hembras:suma("Hembras muertas"),
+      descarteMachos:suma("Machos muertos por descarte de selección"), descarteHembras:suma("Hembras muertas por descarte de selección"),
+      copulas:copulas, mudas:mudas, pctCopulas:hembras>0 ? _madResR2((copulas/hembras)*100) : "", pctMudas:vivos>0 ? _madResR2((mudas/vivos)*100) : "" };
+  });
+  porSala((f.alimentacion||[]).filter(function(r){ return _madResNum(r[MAD_RES_COL_TOTAL_KG])!==null; })).forEach(function(p){
+    const sala=p[0], d=ultimas(p[1]);
+    const productos=_madResProductosDe(d.filas).map(function(c){ return { producto:c.replace(/ \(kg\/día\)$/, ""), kg:_madResR2(d.filas.reduce(function(a,r){ return a+(_madResNum(r[c])||0); },0)) }; })
+      .filter(function(x){ return x.kg>0; });
+    const bio=d.filas.filter(function(r){ return _madResNum(r["Biomasa total (kg)"])!==null; });
+    entrada(sala).alimento={ fecha:d.fecha, productos:productos, total:_madResR2(d.filas.reduce(function(a,r){ return a+_madResNum(r[MAD_RES_COL_TOTAL_KG]); },0)),
+      biomasa:bio.length ? _madResR2(bio.reduce(function(a,r){ return a+_madResNum(r["Biomasa total (kg)"]); },0)) : "" };
+  });
+  return out;
+}
 function madResumenMaduracion(fuentes, opts){
   const f=fuentes||{}, hoy=madLibroTxt((opts||{}).hoy);
   const libro=madConstruirLibro(f, { hoy:hoy });
+  const diaSalas=madResDiaSalas(f);
   const ras=_madResRecientes((f.tratamientos||[]).filter(function(r){ return madLibroTxt(r["Productos RAS"])!=="" || madLibroTxt(r["Área"])==="RAS y tuberías"; }))
     .map(function(r){ return { fecha:_madResF10(r.Fecha), sala:madLibroTxt(r.Sala), tipo:madLibroTxt(r.Tipo), productos:madLibroTxt(r["Área"])==="RAS y tuberías" ? madLibroTxt(r.Productos) : madLibroTxt(r["Productos RAS"]) }; });
   const tons=_madResUltimoPor(f.sala, "Sala", "Toneladas");
@@ -7140,7 +7231,8 @@ function madResumenMaduracion(fuentes, opts){
      de cada sala va a su tarjeta y la del RAS a la suya, que es donde se mira el agua del sistema. */
   const alc={ dia:_madResUltimoPor(f.mortDesove, "Área", "Alcalinidad día"), noche:_madResUltimoPor(f.mortDesove, "Área", "Alcalinidad noche") };
   return { hoy:hoy, hasta:libro.hasta, avisos:libro.avisos.length,
-    salas:_madResSalas(f.sala, libro, f.tratamientos, tons, alc),
+    // punto 2 (2026-10-13) · cada sala, con lo de su último día (madResDiaSalas)
+    salas:_madResSalas(f.sala, libro, f.tratamientos, tons, alc).map(function(s){ return Object.assign(s, { dia:madResDiaDeSalaVacio(), alimento:madResAlimentoVacio() }, _madResDe(diaSalas, s.sala) || {}); }),
     lotes:_madResLotes(f, libro, hoy),
     ras:ras, rasAlcalinidad:{ dia:_madResDe(alc.dia, "RAS") || { valor:"", fecha:"" }, noche:_madResDe(alc.noche, "RAS") || { valor:"", fecha:"" } } };
 }
@@ -7351,14 +7443,20 @@ const MAD_RES_VARS = [
     ["sala-toneladas","Toneladas de agua y volumen medio de sus tanques"],
     ["sala-temp","Temperatura: promedio, última, Δ con el registro anterior y CV"],["sala-ox","Oxígeno: promedio, último, Δ con el registro anterior y CV"],
     ["sala-alcalinidad","Alcalinidad del área (Inf. Supervisor)"],
-    ["sala-ocupacion","Tanques y animales en producción y en cuarentena"],["sala-trat","Desinfección y controles de la sala"]] },
+    ["sala-ocupacion","Tanques y animales en producción y en cuarentena"],
+    // punto 2 (2026-10-13, usuario) · lo del ÚLTIMO DÍA de la sala (madResDiaSalas)
+    ["sala-partes","Partes enviados del último día (cuántos y a qué horas)"],["sala-bajas","Bajas del último día: ♂/♀ muertos y descarte"],
+    ["sala-copulas","Cópulas y mudas del último día, con su %"],["sala-alimento","Alimento del último día: kg por producto, total y biomasa"],
+    ["sala-trat","Desinfección y controles de la sala"]] },
   { grupo:"🦐 Lotes", vars:[["lote-poblacion","Población actual ♂ y ♀"],["lote-mortalidad","Mortalidad del día y acumulada (con su rango), tasas por sexo y total"],
+    ["lote-descartes","Descartes de selección ♂/♀: del último día y acumulados"],
     ["lote-dias","Días de cuarentena y de producción"],["lote-relacion","Relación H:M por tanque"],
     ["lote-carga","Carga por tanque: métrica (g/m²) y volumétrica promedio (kg/m³)"],
-    ["lote-pesos","Peso ♂ y ♀ (último registrado)"],
-    ["lote-mudas","% Mudas y % Cópulas (último día)"],
+    ["lote-pesos","Peso ♂ y ♀ (último registrado)"],["lote-biomasa","Biomasa ♂, ♀ y total (vivos × último peso)"],
+    ["lote-mudas","% Mudas y % Cópulas (último día)"],["lote-alimento","Alimento del último día (kg; en tanques con varios lotes, por animales)"],
     ["lote-obs","Observaciones sanitarias y operativas de sus tanques (último día)"]] },
-  { grupo:"🥚 Desoves", vars:[["des-totales","Total de desoves, no viables y N5"],["des-nauplios","Nauplios/Hembra (N5 ÷ desoves)"],["des-fertilidad","Tasa de fertilidad (N2 ÷ huevos)"]] },
+  { grupo:"🥚 Desoves", vars:[["des-totales","Total de desoves, no viables y N5"],["des-nauplios","Nauplios/Hembra (N5 ÷ desoves)"],["des-fertilidad","Tasa de fertilidad (N2 ÷ huevos)"],
+    ["des-huevos","Total de huevos y de N2"],["des-por100","Desoves por 100 ♀ (último día con desoves)"]] },
   { grupo:"🔬 Revisión de nauplios", vars:[["naup-calidad","Deformidad, actividad, hongos, fototropismo y aireación (última revisión)"],
     ["naup-agua","Salinidad y temperatura de esa revisión"]] },
   { grupo:"📉 Mortalidad de hembras", vars:[["mortdes","% en tanques de desove y de recuperación"]] },
@@ -7456,6 +7554,12 @@ function _madResSalaHTML(s, sel, conPdf){
   if(sel["sala-ox"]) b+=_madResFila("Oxígeno", "prom "+_madResCel(s.ox.prom)+" · último "+_madResCel(s.ox.ultima)+" · Δ "+_madResDelta(s.ox.delta)+" · CV "+_madResCel(s.ox.cv,"%")+_madResGris(s.ox.fecha));
   if(sel["sala-alcalinidad"]) b+=_madResFila("Alcalinidad ☀️ día", _madResCel(s.alcalinidad.dia.valor," mg/L")+_madResGris(s.alcalinidad.dia.fecha))+_madResFila("Alcalinidad 🌙 noche", _madResCel(s.alcalinidad.noche.valor," mg/L")+_madResGris(s.alcalinidad.noche.fecha));
   if(sel["sala-ocupacion"]) b+=_madResFila("En producción", s.tanquesProduccion+" tanque(s) · "+s.animalesProduccion+" animales")+_madResFila("En cuarentena", s.animalesCuarentena+" animales");
+  // punto 2 (2026-10-13) · lo del último día de la sala (madResDiaSalas)
+  const D=s.dia||madResDiaDeSalaVacio(), A=s.alimento||madResAlimentoVacio();
+  if(sel["sala-partes"]) b+=_madResFila("Partes enviados", D.fecha ? D.partes+" parte(s)"+(D.horas.length ? " · "+escapeHtml(D.horas.join(", ")) : "")+_madResGris(D.fecha) : "—");
+  if(sel["sala-bajas"]) b+=_madResFila("Bajas del día", D.fecha ? "muertos "+D.machos+"♂ · "+D.hembras+"♀ · descarte "+D.descarteMachos+"♂ · "+D.descarteHembras+"♀"+_madResGris(D.fecha) : "—");
+  if(sel["sala-copulas"]) b+=_madResFila("Cópulas · Mudas", D.fecha ? D.copulas+" ("+_madResCel(D.pctCopulas,"%")+") · "+D.mudas+" ("+_madResCel(D.pctMudas,"%")+")"+_madResGris(D.fecha) : "—");
+  if(sel["sala-alimento"]) b+=_madResFila("Alimento del día", A.fecha ? _madResCel(A.total," kg")+(A.productos.length ? " · "+A.productos.map(function(p){ return escapeHtml(p.producto)+" "+p.kg; }).join(" · ") : "")+" · biomasa "+_madResCel(A.biomasa," kg")+_madResGris(A.fecha) : "—");
   if(sel["sala-trat"]) b+=_madResFila("Desinfección y controles", _madResTratLista(s.tratamientos, function(t){ return escapeHtml(t.tipo)+" · "+escapeHtml(t.area)+(t.lotes ? " ("+escapeHtml(t.lotes)+")" : "")+": "+escapeHtml(t.productos||t.ras); }));
   return _madResTarjeta("🏠 "+escapeHtml(s.sala), b, "sala:"+s.sala, conPdf);
 }
@@ -7475,6 +7579,9 @@ function _madResLoteHTML(L, sel, conPdf){
     + _madResFila("Mortalidad acumulada", _madResMort(L.muertos, L.tasaMortalidad)+_madResGris(_madResRango(L.rangoAcumulado)))
     + _madResFila("Descartes de selección", L.descartes.machos+"♂ · "+L.descartes.hembras+"♀")
     + _madResFila("Ingresados", L.ingresados.machos+"♂ · "+L.ingresados.hembras+"♀");
+  // punto 2 (2026-10-13) · descartes del día, biomasa, alimento, huevos y N2, desoves por 100 ♀
+  if(sel["lote-descartes"]) b+=_madResFila("Descartes del día", L.descartesDia.machos+"♂ · "+L.descartesDia.hembras+"♀"+_madResGris(L.fechaDia))
+    + _madResFila("Descartes acumulados", L.descartes.machos+"♂ · "+L.descartes.hembras+"♀"+_madResGris(_madResRango(L.rangoAcumulado)));
   if(sel["lote-dias"]) b+=_madResFila("Días", L.dias.length ? L.dias.map(function(d){ return escapeHtml(d.sala)+": cuarentena "+_madResCel(d.diasCuarentena)+" · producción "+_madResCel(d.diasProduccion); }).join("<br>") : "—");
   if(sel["lote-relacion"]) b+=_madResFila("Relación H:M por tanque", L.tanques.length ? L.tanques.map(function(t){ return escapeHtml(t.sala)+" t"+t.tanque+": "+_madResCel(t.relacion)+" ("+t.hembras+"♀/"+t.machos+"♂)"; }).join("<br>") : "—");
   /* Se pinta junto a la relación H:M porque sale de las mismas dos cifras, y se enseñan el ÁREA y el
@@ -7484,6 +7591,8 @@ function _madResLoteHTML(L, sel, conPdf){
       +_madResGris([t.area==="" ? "" : t.area+" m²", t.volumen==="" ? "" : t.volumen+" m³"].filter(Boolean).join(" · "));
   }).join("<br>") : "—");
   if(sel["lote-pesos"]) b+=_madResFila("Peso promedio", "♂ "+_madResCel(L.pesoMachos.valor," g")+_madResGris(L.pesoMachos.fecha)+" · ♀ "+_madResCel(L.pesoHembras.valor," g")+_madResGris(L.pesoHembras.fecha));
+  if(sel["lote-biomasa"]) b+=_madResFila("Biomasa", "♂ "+_madResCel(L.biomasa.machos," kg")+" · ♀ "+_madResCel(L.biomasa.hembras," kg")+" · total "+_madResCel(L.biomasa.total," kg"));
+  if(sel["lote-alimento"]) b+=_madResFila("Alimento del día", L.alimento.fecha ? _madResCel(L.alimento.total," kg")+(L.alimento.productos.length ? " · "+L.alimento.productos.map(function(p){ return escapeHtml(p.producto)+" "+p.kg; }).join(" · ") : "")+_madResGris(L.alimento.fecha) : "—");
   if(sel["lote-mudas"]) b+=_madResFila("% Mudas · % Cópulas", _madResCel(L.pctMudas,"%")+" · "+_madResCel(L.pctCopulas,"%")+_madResGris(L.fechaDia));
   if(sel["lote-obs"]) b+=_madResFila("Observaciones de sus tanques", L.observaciones.length ? L.observaciones.map(function(o){
     return escapeHtml(o.sala)+" t"+o.tanque+": "+[o.sanitarias,o.operativas].filter(Boolean).map(escapeHtml).join(" · ");
@@ -7498,6 +7607,8 @@ function _madResLoteHTML(L, sel, conPdf){
   if(sel["des-totales"]) b+=_madResFila("Desoves · no viables · N5", L.desoves.desoves+" · "+L.desoves.noViables+" · "+_madResMiles(L.desoves.n5));
   if(sel["des-nauplios"]) b+=_madResFila("Nauplios/Hembra", _madResMiles(L.desoves.naupliosPorHembra));
   if(sel["des-fertilidad"]) b+=_madResFila("Tasa de fertilidad", _madResCel(L.desoves.fertilidad,"%"));
+  if(sel["des-huevos"]) b+=_madResFila("Huevos · N2", _madResMiles(L.desoves.huevos)+" · "+_madResMiles(L.desoves.n2));
+  if(sel["des-por100"]) b+=_madResFila("Desoves por 100 ♀", L.desovesDia.fecha ? _madResCel(L.desovesDia.por100)+" ("+L.desovesDia.desoves+" desoves · "+L.desovesDia.hembras+" ♀)"+_madResGris(L.desovesDia.fecha) : "—");
   if(sel["mortdes"]) b+=_madResFila("Mortalidad ♀ en desove", md(L.mortDesove))+_madResFila("Mortalidad ♀ en recuperación", md(L.mortRecuperacion));
   if(sel["lote-trat"]) b+=_madResFila("Preventivos", _madResTratLista(L.tratamientos, function(t){ return escapeHtml(t.productos)+(t.ras ? " · RAS: "+escapeHtml(t.ras) : "")+(t.sala ? " ("+escapeHtml(t.sala)+")" : ""); }));
   return _madResTarjeta("🦐 Lote "+escapeHtml(L.lote), b, "lote:"+L.lote, conPdf);
@@ -7658,6 +7769,12 @@ function _madResTabFranja(s, sel){
       + (fd || fn ? '<div class="f">'+(fd===fn ? escapeHtml(_madUpDMY(fd)) : (fd ? "☀️ "+escapeHtml(_madUpDMY(fd)) : "")+(fd && fn ? " · " : "")+(fn ? "🌙 "+escapeHtml(_madUpDMY(fn)) : ""))+'</div>' : "")]);
   }
   if(sel["sala-ocupacion"]) c.push(["En producción", s.tanquesProduccion+" tanque(s) · "+s.animalesProduccion+" animales"], ["En cuarentena", s.animalesCuarentena+" animales"]);
+  // punto 2 (2026-10-13) · lo del último día de la sala (madResDiaSalas)
+  const D=s.dia||madResDiaDeSalaVacio(), A=s.alimento||madResAlimentoVacio();
+  if(sel["sala-partes"]) c.push(["Partes del día", D.fecha ? D.partes+(D.horas.length ? '<div class="f">'+escapeHtml(D.horas.join(", "))+'</div>' : "")+_madResTabF(D.fecha) : "—"]);
+  if(sel["sala-bajas"]) c.push(["Bajas del día<br>muertos ♂ · ♀ · descarte ♂ · ♀", D.fecha ? D.machos+" · "+D.hembras+" · "+D.descarteMachos+" · "+D.descarteHembras+_madResTabF(D.fecha) : "—"]);
+  if(sel["sala-copulas"]) c.push(["Cópulas · Mudas", D.fecha ? D.copulas+" ("+_madResCel(D.pctCopulas,"%")+") · "+D.mudas+" ("+_madResCel(D.pctMudas,"%")+")"+_madResTabF(D.fecha) : "—"]);
+  if(sel["sala-alimento"]) c.push(["Alimento del día (kg)", A.fecha ? _madResCel(A.total)+(A.productos.length ? '<div class="f">'+A.productos.map(function(p){ return escapeHtml(p.producto)+" "+p.kg; }).join(" · ")+'</div>' : "")+'<div class="f">biomasa '+_madResCel(A.biomasa," kg")+'</div>'+_madResTabF(A.fecha) : "—"]);
   if(!c.length) return "";
   return '<table class="fr"><thead><tr>'+c.map(function(x){ return '<th>'+x[0]+'</th>'; }).join("")+'</tr></thead>'
     + '<tbody><tr>'+c.map(function(x){ return '<td>'+x[1]+'</td>'; }).join("")+'</tr></tbody></table>';
@@ -7815,6 +7932,55 @@ function _madResTabLotesHTML(lotes, sel){
       filas.push([_madResTabTd('<b>'+escapeHtml(L.lote)+'</b>'), _madResTabTd(escapeHtml(_madUpDMY(t.fecha))), _madResTabTd(escapeHtml(t.productos)), _madResTabTd(escapeHtml(t.ras||"")), _madResTabTd(escapeHtml(t.sala||""))]);
     }); });
     h+=_madResTabBlk('<h2>🧪 Lotes · Preventivos</h2>'+_madResTabLista(["Lote","Fecha","Productos","Productos RAS","Sala"], filas, "Sin preventivos registrados."));
+  }
+  h+=_madResTabLotesNuevosHTML(lotes, sel);   // punto 2 (2026-10-13)
+  return h;
+}
+// punto 2 (2026-10-13) · las variables nuevas de los lotes, en tablas PROPIAS (las de antes no cambian); total sólo de lo que se suma.
+function _madResTabLotesNuevosHTML(lotes, sel){
+  const n=lotes.length, tot='<tr class="tot"><td>Total · '+n+' lote'+(n===1 ? "" : "s")+'</td>';
+  let h="";
+  const xd=sel["lote-descartes"], bio=sel["lote-biomasa"], ali=sel["lote-alimento"];
+  if(xd || bio || ali){
+    const cab=[].concat([{ t:"Lote" }], xd ? [{ t:"Descartes del día", sub:["♂","♀"] }, { t:"Descartes acumulados", sub:["♂","♀"] }] : [],
+      bio ? [{ t:"Biomasa (kg)", sub:["♂","♀","Total"] }] : [], ali ? [{ t:"Alimento del día (kg)" }, { t:"Por producto (kg)" }] : []);
+    const S={ dm:0, dh:0, am:0, ah:0, bm:0, bh:0, bt:0, al:0 };
+    const filas=lotes.map(function(L){
+      let f='<tr>'+_madResTabTd('<b>'+escapeHtml(L.lote)+'</b>');
+      if(xd){
+        S.dm+=_madResTabN(L.descartesDia.machos); S.dh+=_madResTabN(L.descartesDia.hembras); S.am+=_madResTabN(L.descartes.machos); S.ah+=_madResTabN(L.descartes.hembras);
+        f+=_madResTabTd(L.descartesDia.machos+_madResTabF(L.fechaDia), true)+_madResTabTd(L.descartesDia.hembras, true)+_madResTabTd(L.descartes.machos, true)+_madResTabTd(L.descartes.hembras, true);
+      }
+      if(bio){
+        S.bm+=_madResTabN(L.biomasa.machos); S.bh+=_madResTabN(L.biomasa.hembras); S.bt+=_madResTabN(L.biomasa.total);
+        f+=_madResTabTd(_madResCel(L.biomasa.machos), true)+_madResTabTd(_madResCel(L.biomasa.hembras), true)+_madResTabTd(_madResCel(L.biomasa.total), true);
+      }
+      if(ali){
+        S.al+=_madResTabN(L.alimento.total);
+        f+=_madResTabTd(_madResCel(L.alimento.total)+_madResTabF(L.alimento.fecha), true)
+          + _madResTabTd(L.alimento.productos.length ? L.alimento.productos.map(function(p){ return escapeHtml(p.producto)+" "+p.kg; }).join("<br>") : "—");
+      }
+      return f+'</tr>';
+    }).join("");
+    let t=tot;
+    if(xd) t+=_madResTabTd(S.dm, true)+_madResTabTd(S.dh, true)+_madResTabTd(S.am, true)+_madResTabTd(S.ah, true);
+    if(bio) t+=_madResTabTd(_madResR2(S.bm), true)+_madResTabTd(_madResR2(S.bh), true)+_madResTabTd(_madResR2(S.bt), true);
+    if(ali) t+=_madResTabTd(_madResR2(S.al), true)+'<td></td>';
+    h+=_madResTabBlk('<h2>🦐 Lotes · Descartes, biomasa y alimento</h2><table>'+_madResTabCab(cab)+'<tbody>'+filas+(n>1 ? t+'</tr>' : "")+'</tbody></table>');
+  }
+  const hv=sel["des-huevos"], p100=sel["des-por100"];
+  if(hv || p100){
+    const cab=[].concat([{ t:"Lote" }], hv ? [{ t:"Huevos" }, { t:"N2" }] : [], p100 ? [{ t:"Desoves por 100 ♀" }, { t:"Desoves · ♀" }, { t:"Día" }] : []);
+    const S={ hu:0, n2:0 };
+    const filas=lotes.map(function(L){
+      S.hu+=_madResTabN(L.desoves.huevos); S.n2+=_madResTabN(L.desoves.n2);
+      const D=L.desovesDia;
+      return '<tr>'+_madResTabTd('<b>'+escapeHtml(L.lote)+'</b>')
+        + (hv ? _madResTabTd(_madResMiles(L.desoves.huevos), true)+_madResTabTd(_madResMiles(L.desoves.n2), true) : "")
+        + (p100 ? _madResTabTd(_madResCel(D.por100), true)+_madResTabTd(D.fecha ? D.desoves+" · "+D.hembras : "—", true)+_madResTabTd(D.fecha ? escapeHtml(_madUpDMY(D.fecha)) : "—") : "")+'</tr>';
+    }).join("");
+    const t=tot+(hv ? _madResTabTd(_madResMiles(S.hu), true)+_madResTabTd(_madResMiles(S.n2), true) : "")+(p100 ? _madResTabTd("—", true)+'<td></td><td></td>' : "")+'</tr>';
+    h+=_madResTabBlk('<h2>🥚 Lotes · Huevos, N2 y desoves por 100 ♀</h2><table>'+_madResTabCab(cab)+'<tbody>'+filas+(n>1 ? t : "")+'</tbody></table>');
   }
   return h;
 }

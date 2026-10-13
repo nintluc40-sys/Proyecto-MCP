@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { createContext, Script } from 'node:vm';
 import { resumenMaduracion, estadisticaDia, diasEntre, rasComoTexto, RESUMEN_TEMPS, RESUMEN_OXIGENOS } from './mad-resumen.js';
 import { areaTanqueM2 } from './ficha-maduracion-ingreso.schema.js';
+import { construirLibro, ubicKey } from './mad-libro.js';
 
 const ing = (Fecha, Lote, cg, Sala, Tanque, Machos, Hembras) => ({ Fecha, Lote, 'Código genético': cg, Sala, Tanque, Machos, Hembras });
 const tq = (Fecha, Sala, Tanque, extra = {}) => Object.assign({ Fecha, Sala, Tanque, 'Machos muertos': 0, 'Hembras muertas': 0,
@@ -45,6 +46,25 @@ const CON_ALIMENTACION = () => Object.assign(FUENTES(), { alimentacion: [
   { Fecha: '2026-01-30', Sala: 'Sala 2', Tanque: 3, 'Peso machos (g)': 33, 'Fuente del peso': '♂ Manual' },
   { Fecha: '2026-01-31', Sala: 'Sala 2', Tanque: 3, 'Peso hembras (g)': 99, 'Fuente del peso': '♀ Biometría 2026-01-30' },
 ] });
+/* Punto 2 (2026-10-13) · lo del ÚLTIMO DÍA: el 31/01 la Sala 1 da DOS partes (16:00 y 06:30, en ese orden en la hoja) en su
+   t1 —el que comparten AB y CD desde el 20/01—; 🍤 Alimentación guarda ese día el t1 (3,5 kg: 2 de poliqueto y 1,5 de
+   calamar; biomasa 6,2) y el t3 de la Sala 2 (1 kg de krill, sólo AB). La del 30/01 es más vieja y no cuenta. */
+const CON_DIA = () => Object.assign(FUENTES(), {
+  tanques: FUENTES().tanques.concat([
+    tq('2026-01-31', 'Sala 1', 1, { Hora: '16:00', Parte: 2, 'Machos muertos': 1, 'Hembras muertas por descarte de selección': 1, 'Cópulas': 2 }),
+    tq('2026-01-31', 'Sala 1', 1, { Hora: '06:30', Parte: 1, 'Hembras muertas': 1, 'Cópulas': 4, Muda: 2 }),
+  ]),
+  alimentacion: [
+    { Fecha: '2026-01-30', Sala: 'Sala 1', Tanque: 1, 'Biomasa total (kg)': 9, 'Poliqueto (kg/día)': 9, 'Total (kg/día)': 9 },
+    { Fecha: '2026-01-31', Sala: 'Sala 1', Tanque: 1, 'Biomasa total (kg)': 6.2, 'Poliqueto (kg/día)': 2, 'Calamar (kg/día)': 1.5, 'Krill (kg/día)': '', 'Total (kg/día)': 3.5 },
+    { Fecha: '2026-01-31', Sala: 'Sala 2', Tanque: 3, 'Biomasa total (kg)': 2, 'Krill (kg/día)': 1, 'Total (kg/día)': 1 },
+  ],
+});
+/* … y con ♂ descartados ANTES del último día (3 el 30/01) y en él (1 el 31/01): los del día no son los acumulados. */
+const CON_DIA_DESCARTES = () => Object.assign(CON_DIA(), { tanques: CON_DIA().tanques.concat([
+  tq('2026-01-30', 'Sala 1', 1, { Hora: '21:00', Parte: 3, 'Machos muertos por descarte de selección': 3 }),
+  tq('2026-01-31', 'Sala 1', 1, { Hora: '21:00', Parte: 3, 'Machos muertos por descarte de selección': 1 }),
+]) });
 /* 3 (2026-10-01) · un desove de AB con N2 y SIN «Total de huevos» (lo de 60 de las 72 filas reales). */
 const N2_SIN_HUEVOS = () => Object.assign(FUENTES(), { desoves: FUENTES().desoves.concat([des('2026-01-26', 'AB', 5, '', '', 700000, '')]) });
 const SALA_PARCIAL = () => [
@@ -407,6 +427,70 @@ describe('Resumen · la alcalinidad de día y de noche (PE1.5)', () => {
   });
 });
 
+/* ── Punto 2 (2026-10-13, usuario) · variables nuevas por SALA y por LOTE ── */
+describe('Resumen · lo del último día por sala y lo nuevo del lote (punto 2)', () => {
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const R = () => resumenMaduracion(CON_DIA(), { hoy: '2026-02-01' });
+  const S = (n) => R().salas.find((s) => s.sala === n);
+  const L = (n) => R().lotes.find((l) => l.lote === n);
+  const libroAl = (f) => construirLibro(CON_DIA(), { hoy: f, hasta: f });
+
+  it('🔴 la sala: su último día con partes, cuántos y a qué horas (ordenadas), y sus bajas, cópulas y mudas sumadas', () => {
+    expect(S('Sala 1').dia).toMatchObject({ fecha: '2026-01-31', partes: 2, horas: ['06:30', '16:00'],
+      machos: 1, hembras: 1, descarteMachos: 0, descarteHembras: 1, copulas: 6, mudas: 2 });
+    expect(S('Sala 2').dia).toMatchObject({ fecha: '2026-01-30', partes: 1, horas: [], machos: 1, copulas: 2, mudas: 1 });
+  });
+  it('🔴 el % de cópulas y de mudas: sobre las hembras y los vivos de los tanques con parte, con el libro al cierre de ese día', () => {
+    const T = libroAl('2026-01-31').tanques.get(ubicKey('Sala 1', 1));
+    expect(T.hembras).toBeGreaterThan(0);
+    expect(S('Sala 1').dia.pctCopulas).toBe(r2((6 / T.hembras) * 100));
+    expect(S('Sala 1').dia.pctMudas).toBe(r2((2 / (T.machos + T.hembras)) * 100));
+  });
+  it('🔴 el alimento de la sala: su último día, kg por producto (sin los vacíos), el total y la biomasa', () => {
+    expect(S('Sala 1').alimento).toEqual({ fecha: '2026-01-31', productos: [{ producto: 'Poliqueto', kg: 2 }, { producto: 'Calamar', kg: 1.5 }], total: 3.5, biomasa: 6.2 });
+    expect(S('Sala 2').alimento).toEqual({ fecha: '2026-01-31', productos: [{ producto: 'Krill', kg: 1 }], total: 1, biomasa: 2 });
+  });
+  it('una sala sin partes ni alimento sale vacía, no inventada', () => {
+    const f = CON_DIA();
+    const sinNada = { ...f, tanques: f.tanques.filter((r) => r.Sala !== 'Sala 2'), alimentacion: f.alimentacion.filter((r) => r.Sala !== 'Sala 2') };
+    const s2 = resumenMaduracion(sinNada, { hoy: '2026-02-01' }).salas.find((s) => s.sala === 'Sala 2');
+    expect(s2, 'la Sala 2 sigue en el resumen (tiene animales)').toBeTruthy();
+    expect(s2.dia).toMatchObject({ fecha: '', partes: 0, horas: [], pctCopulas: '', pctMudas: '' });
+    expect(s2.alimento).toEqual({ fecha: '', productos: [], total: '', biomasa: '' });
+  });
+  it('🔴 el alimento del lote: en el tanque compartido, la parte de sus animales; entre los dos suman lo de la hoja', () => {
+    const ab = L('AB').alimento, cd = L('CD').alimento;
+    expect([ab.fecha, cd.fecha]).toEqual(['2026-01-31', '2026-01-31']);
+    expect(ab.total + cd.total).toBeCloseTo(4.5, 1);   // 3,5 del t1 compartido + 1 del t3, que es sólo de AB
+    expect(cd.productos.map((p) => p.producto)).toEqual(['Poliqueto', 'Calamar']);   // CD no está en el t3: sin krill
+    const T = libroAl('2026-01-31').tanques.get(ubicKey('Sala 1', 1));
+    const cdT = T.composicion.filter((c) => c.lote === 'CD').reduce((a, c) => a + c.machos + c.hembras, 0);
+    expect(cd.total).toBe(r2(3.5 * (cdT / (T.machos + T.hembras))));
+  });
+  it('🔴 los descartes del día del lote: restando el libro; entre los dos lotes del tanque suman el de la hoja', () => {
+    expect(L('AB').descartesDia.hembras + L('CD').descartesDia.hembras).toBe(1);   // el ♀ del 31/01, no los 2 del 30/01
+    expect(L('AB').descartesDia.machos + L('CD').descartesDia.machos).toBe(0);
+    // y con ♂ descartados ANTES (3 el 30/01) y el último día (1 el 31/01): del día, sólo el del 31; acumulados, los 4.
+    const lotes = resumenMaduracion(CON_DIA_DESCARTES(), { hoy: '2026-02-01' }).lotes;
+    const suma = (k, s) => lotes.reduce((a, l) => a + l[k][s], 0);
+    expect(suma('descartesDia', 'machos')).toBe(1);
+    expect(suma('descartes', 'machos')).toBe(4);
+  });
+  it('🔴 la biomasa del lote = vivos × su último peso, en kg; sin peso, vacía', () => {
+    const ab = L('AB');
+    expect(ab.biomasa.machos).toBe(r2((ab.machos * ab.pesoMachos.valor) / 1000));
+    expect(ab.biomasa.hembras).toBe(r2((ab.hembras * ab.pesoHembras.valor) / 1000));
+    expect(ab.biomasa.total).toBe(r2(ab.biomasa.machos + ab.biomasa.hembras));
+    const sinPeso = resumenMaduracion({ ...FUENTES(), tanques: [] }, { hoy: '2026-02-01' }).lotes[0];
+    expect(sinPeso.biomasa).toEqual({ machos: '', hembras: '', total: '' });
+  });
+  it('🔴 desoves por 100 ♀ del último día con desoves = Σ desoves ÷ hembras del libro al cierre × 100 (la regla del MCP)', () => {
+    const h = libroAl('2026-01-25').lotes.get('AB').hembras;
+    expect(L('AB').desovesDia).toEqual({ fecha: '2026-01-25', desoves: 4, hembras: h, por100: r2((4 / h) * 100) });
+    expect(L('CD').desovesDia).toEqual({ fecha: '', desoves: 0, hembras: 0, por100: '' });
+  });
+});
+
 /* ── PARIDAD con el monolito ── */
 describe('Resumen · el monolito y el módulo dan lo mismo', () => {
   const src = readFileSync(new URL('../../../../public/registros/engine.js', import.meta.url), 'utf8').split('\r\n').join('\n');
@@ -447,7 +531,7 @@ describe('Resumen · el monolito y el módulo dan lo mismo', () => {
   it('🔴 el mismo resumen, cifra a cifra, en el caso completo y en variantes', () => {
     const variantes = [FUENTES(), Object.assign(FUENTES(), { cierres: [{ Fecha: '2026-01-31', Lote: 'CD', Tipo: 'Total', Machos: 10, Hembras: 18, Sala: '' }] }),
       Object.assign(FUENTES(), { sala: [], desoves: [], tratamientos: [] }), {}, Object.assign(FUENTES(), { sala: FUENTES().sala.concat(SALA_PARCIAL()) }), TANQUE_REUTILIZADO(), CARGA_LIMITES(),
-      ALCALINIDAD_TURNOS(), N2_SIN_HUEVOS(), CON_ALIMENTACION(),
+      ALCALINIDAD_TURNOS(), N2_SIN_HUEVOS(), CON_ALIMENTACION(), CON_DIA(), CON_DIA_DESCARTES(),   // punto 2 (2026-10-13)
       // 2026-09-19 · el RAS como lo devuelve ?p=rows: fracciones (el 100% es 1) y un número que no es fracción.
       Object.assign(FUENTES(), { sala: FUENTES().sala.map((r, i) => ({ ...r, RAS: [0.7, 1, 1.5, 'No'][i] })) })];
     for (const f of variantes) {
