@@ -9,7 +9,8 @@
        Actividad, Hongos, Salinidad y Temperatura. Una fila por revisión con algún dato, con «Revisión» rellena y «Tipo
        de tanque» vacío: el libro se salta estas filas.
    Modelo PURO; el monolito lleva su copia. Hoja por «ID» con MERGE: reenviar corrige; un texto no se vacía reenviándolo
-   en blanco. ⚠ El ID va el ÚLTIMO: el GAS lo busca por cabecera y, si la cabecera faltara, cae a la última columna.
+   en blanco. ⚠ El GAS busca el ID por su CABECERA (la de la hoja o, si faltara, la del envío) y sólo sin ninguna de las
+   dos cae a la última columna. Fue la última hasta el 2026-10-04: detrás va «Temperatura tanque desove» (ver abajo).
    2026-09-24 (usuario, punto 6) · CÓDIGO GENÉTICO y PISCINA BROODSTOCK, «para identificar dichos individuos». El
    código entra en la LLAVE, como en Desoves —un pool es lote + código—: el mismo lote con otro código es otro registro,
    y sin código no hay fila. La piscina es dato.
@@ -76,7 +77,7 @@ export const MAD_MORT_COLUMNS = [
   /* Sólo las llevan las filas de alcalinidad, igual que «Revisión» sólo la llevan las de la
      revisión de nauplios y «Tipo de tanque» sólo las de mortalidad.
      ⚠ 2026-09-16 (PE1.5) · «Alcalinidad» pasa a «Alcalinidad día» y entra «Alcalinidad noche» detrás,
-     ANTES de Observaciones e ID (el ID va el último). La hoja no existía en producción (medido), así
+     ANTES de Observaciones e ID (entonces, el ID iba el último). La hoja no existía en producción (medido), así
      que no hay nada que migrar; y la firma A4 del GAS exige «Alcalinidad día» —en la 18 desde el
      2026-09-24—, para que una app anterior no pueda crearla con la cabecera vieja. */
   { h: 'Área', k: 'area' },

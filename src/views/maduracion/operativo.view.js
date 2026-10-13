@@ -2358,7 +2358,7 @@ function cerradosHTML(c, p) {
     <div class="mc-tablewrap"><table class="mc-table mc-table-sm">
       <thead><tr><th>Fecha</th><th>Lote</th><th>Tipo</th><th>Motivo</th><th class="r">Salieron ♂/♀</th><th class="r">Rojos</th><th class="r">Diferencia</th><th class="r">Metabisulfito</th></tr></thead>
       <tbody>${c.map((f) => `<tr>
-        <td>${esc(dma(f.fecha))}</td><td><b>${esc(f.lote)}</b>${f.sala ? ' <span class="mop-nota">' + esc(f.sala) + '</span>' : ''}</td>
+        <td>${esc(dma(f.fecha))}</td><td><b>${esc(f.lote)}</b></td>
         <td>${esc(f.tipo || '—')}</td><td>${esc(f.motivo || '—')}</td>
         <td class="r">${nf(f.salida.machos)} / ${nf(f.salida.hembras)}</td>
         <td class="r">${f.rojos ? nf(f.rojos) : '—'}</td>

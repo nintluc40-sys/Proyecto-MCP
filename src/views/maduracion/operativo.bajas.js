@@ -316,7 +316,7 @@ export function lotesCerrados(M, F, periodo) {
     const esTotal = txt(r.Tipo) === 'Total';
     const d = (esTotal && dif.get(normLote(lote) + '|' + fecha)) || { machos: 0, hembras: 0 };
     filas.push({
-      lote, fecha, tipo: txt(r.Tipo), motivo: txt(r.Motivo), sala: txt(r.Sala),
+      lote, fecha, tipo: txt(r.Tipo), motivo: txt(r.Motivo),   // sin «Sala»: Fin de Ciclo no la lleva desde el 2026-10-09
       salida: par(r.Machos, r.Hembras),
       rojos: ent(r.Rojos),
       diferencia: par(d.machos, d.hembras),
