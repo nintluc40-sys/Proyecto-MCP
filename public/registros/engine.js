@@ -15689,10 +15689,12 @@ function renderMadTanques(){
           <button class="btn bp" type="button" onclick="syncMadTanquesGrid()">☁️ Guardar y sincronizar</button>
         </div>
       </div>
+      <div id="tq-dia"></div>
     </div>
   </div>`;
   _madAfterRender("tanques");
   _madTanquesPintaVivosGuardados();
+  _madTqDiaPintar();   // 2026-10-13 · la tabla del día sigue a la grilla (otra sala u otra fecha)
 }
 /* 🔄 VER VIVOS · decisión del usuario (2026-09-08). Los «vivos» de la Fase 6 se MUESTRAN,
    no se guardan en la HOJA, y la razón es la misma que hace valioso al libro: son una vista
@@ -15795,6 +15797,7 @@ function _madTanquesPintaVivos(libro){
     _madTqVivosCelda(c, libro.tanques[madUbicKey(sala, tq)], roto ? "?" : "sin ingreso");
   });
   _madTqAplicarBloqueo(!roto);   // con el libro incompleto no se bloquea nada
+  _madTqDiaTrasLeer(libro);      // 2026-10-13 · 📊 partes del día, con las mismas filas
 }
 /* Al pintar la grilla: la última referencia completa guardada, con su fecha. Sin referencia, «—». */
 function _madTanquesPintaVivosGuardados(){
@@ -15809,6 +15812,113 @@ function _madTanquesPintaVivosGuardados(){
   const nota = document.getElementById("tq-vivos-nota");
   if(nota) nota.innerHTML = _madTqVivosNotaRef(g);
   _madTqAplicarBloqueo(true);    // la referencia guardada es siempre de un libro COMPLETO (ver _madTanquesPintaVivos)
+}
+/* 2026-10-13 (usuario, punto 1) · 📊 PARTES DEL DÍA · TODAS LAS SALAS. Tras 🔄 Ver vivos, debajo de la grilla: cada parte
+   que llegó a la hoja ese día (sala, parte, hora y tanques) con las seis cifras de la grilla, y el total de cada sala y del
+   día, «para que el usuario sepa cuántas veces se envió la información y la totalidad realizada en el día». Como el
+   «📊 Resumen general» de Alimentación. Sale de las MISMAS filas que acaba de leer el libro (ninguna lectura más) y la
+   fecha es la de la grilla. Decisiones del usuario: sólo lo que está en la HOJA —lo de este dispositivo sin enviar se avisa
+   aparte, no suma—, las seis cifras y un 🖨 PDF. Se vuelve a pintar con la grilla (otra sala u otra fecha) mientras dure la
+   lectura de esta sesión; otra lectura la sustituye. */
+const _MAD_TQ_DIA_CIFRAS = [["Machos muertos","mm"], ["Hembras muertas","hm"], ["Machos muertos por descarte de selección","md"],
+  ["Hembras muertas por descarte de selección","hd"], ["Cópulas","copulas"], ["Muda","muda"]];
+/** Los partes de una fecha, por sala: { fecha, salas:[{ sala, partes:[{ hora, parte, tanques, mm, hm, md, hd, copulas, muda }],
+ *  total }], total, partes }. Un parte = (Sala, Hora, Parte); «tanques» = sus filas; vacío = 0. */
+function madTqPartesDelDia(filas, fecha){
+  const num = function(v){ const x = parseFloat(v); return Number.isFinite(x) ? x : 0; };
+  const txt = function(v){ return String(v == null ? "" : v).trim(); };
+  const cero = function(){ const o = { tanques:0 }; _MAD_TQ_DIA_CIFRAS.forEach(function(c){ o[c[1]] = 0; }); return o; };
+  const suma = function(a, f){ a.tanques++; _MAD_TQ_DIA_CIFRAS.forEach(function(c){ a[c[1]] += num(f[c[0]]); }); };
+  const porSala = {}, total = cero();
+  (filas || []).forEach(function(f){
+    if(!f || txt(f.Fecha).slice(0, 10) !== fecha) return;
+    const sala = txt(f.Sala) || "(sin sala)", hora = txt(f.Hora), parte = txt(f.Parte);
+    const S = porSala[sala] || (porSala[sala] = { sala:sala, partes:{}, total:cero() });
+    const k = hora + "|" + parte;
+    const P = S.partes[k] || (S.partes[k] = Object.assign({ hora:hora, parte:parte }, cero()));
+    suma(P, f); suma(S.total, f); suma(total, f);
+  });
+  const min = function(h){ const m = _madTqMinutos(h); return m === null ? Infinity : m; };
+  let n = 0;
+  const salas = Object.keys(porSala).sort(function(a, b){ return a.localeCompare(b, "es", { numeric:true }); }).map(function(s){
+    const S = porSala[s];
+    const partes = Object.keys(S.partes).map(function(k){ return S.partes[k]; })
+      .sort(function(a, b){ return (min(a.hora) - min(b.hora)) || (num(a.parte) - num(b.parte)); });
+    n += partes.length;
+    return { sala:S.sala, partes:partes, total:S.total };
+  });
+  return { fecha:fecha, salas:salas, total:total, partes:n };
+}
+/** Los partes de esa fecha que este dispositivo aún no envió (no están en la tabla): { n, salas }. */
+function _madTqDiaPendientes(fecha){
+  const vistos = {}, salas = {};
+  loadMad("tanques").forEach(function(r){
+    const d = r && r.data;
+    if(!r || r.synced || !d || d.fecha !== fecha) return;
+    vistos[d.sala + "|" + (d.hora || "") + "|" + (d.parte || "")] = 1;
+    salas[d.sala] = 1;
+  });
+  return { n: Object.keys(vistos).length, salas: Object.keys(salas).sort(function(a, b){ return a.localeCompare(b, "es", { numeric:true }); }) };
+}
+/** La tarjeta. `notas` va debajo de la tabla (HTML ya escapado); `conBoton` = sólo en pantalla (el PDF no lo lleva). */
+function _madTqDiaHTML(R, notas, conBoton){
+  const td = '<td style="text-align:right">';
+  const cifras = function(o, fuerte){ return _MAD_TQ_DIA_CIFRAS.map(function(c){ return td + (fuerte ? "<b>" + o[c[1]] + "</b>" : o[c[1]]) + "</td>"; }).join(""); };
+  const cab = "<tr><th>Sala</th><th>Parte</th><th>Hora</th><th>Tanques</th><th>Machos<br>muertos</th><th>Hembras<br>muertas</th>"
+    + "<th>Machos<br>descarte</th><th>Hembras<br>descarte</th><th>Cópulas</th><th>Muda</th></tr>";
+  const cuerpo = R.salas.map(function(S){
+    return S.partes.map(function(P){
+      return "<tr><td>" + escapeHtml(S.sala) + "</td><td>" + (P.parte ? "P" + escapeHtml(P.parte) : "—") + "</td><td>"
+        + (P.hora ? escapeHtml(P.hora) : "sin hora") + "</td>" + td + P.tanques + "</td>" + cifras(P, false) + "</tr>";
+    }).join("")
+      + '<tr style="background:#f1f5f9"><td colspan="4"><b>Total ' + escapeHtml(S.sala) + "</b> · " + S.partes.length + " parte(s)</td>" + cifras(S.total, true) + "</tr>";
+  }).join("");
+  return '<div class="ms-card" style="border:1.5px solid #bfdbfe;border-radius:8px;padding:10px 12px;margin:12px 0;background:#f8fafc">'
+    + '<div style="font-weight:700;font-size:13px;margin-bottom:6px">📊 Partes del día · todas las salas · ' + escapeHtml(R.fecha) + "</div>"
+    + (R.salas.length
+      ? '<div class="tw"><table class="ft" style="font-size:12px"><thead>' + cab + "</thead><tbody>" + cuerpo
+        + '<tr style="background:#e2e8f0"><td colspan="4"><b>Total del día</b> · ' + R.partes + " parte(s)</td>" + cifras(R.total, true) + "</tr></tbody></table></div>"
+      : '<div style="font-size:12px;color:#64748b">Ningún parte de esta fecha en la hoja.</div>')
+    + (notas ? '<div style="font-size:11px;margin-top:6px">' + notas + "</div>" : "")
+    + (conBoton ? '<button class="btn" type="button" onclick="madTqDiaPdf()" style="font-size:11px;margin-top:6px">🖨 PDF de los partes del día</button>' : "")
+    + "</div>";
+}
+let _madTqDiaLeido = 0;      // hora de la lectura de 🔄 Ver vivos de esta sesión (0 = aún ninguna)
+let _madTqDiaAviso = "";     // por qué esa lectura no sirve (la hoja de Tanques no se leyó) o está a medias (recortada)
+function _madTqDiaFecha(){ const f = document.getElementById("mad-tanques-fecha"); return (f && f.value) || today(); }
+/** Tras 🔄 Ver vivos: recuerda la lectura y pinta. Sin la hoja de Tanques no hay tabla; recortada, se dice. */
+function _madTqDiaTrasLeer(libro){
+  const hoja = MAD_LIBRO_SHEETS.tanques, L = libro || {};
+  _madTqDiaLeido = Date.now();
+  _madTqDiaAviso = (L.fallos || []).indexOf(hoja) !== -1 ? "fallo" : (L.recortadas || []).indexOf(hoja) !== -1 ? "recortada" : "";
+  _madTqDiaPintar();
+}
+function _madTqDiaPintar(){
+  const box = document.getElementById("tq-dia");
+  if(!box || !_madTqDiaLeido) return;
+  if(_madTqDiaAviso === "fallo"){
+    box.innerHTML = '<div style="font-size:12px;color:#991b1b;margin-top:10px">⚠ No se pudo leer la hoja de Tanques: no hay partes del día que enseñar. Reintenta con 🔄 Ver vivos.</div>';
+    return;
+  }
+  const fecha = _madTqDiaFecha(), pend = _madTqDiaPendientes(fecha);
+  const notas = '<span style="color:#64748b">Leído de la hoja a las ' + escapeHtml(_reproFmtTs(_madTqDiaLeido)) + "; 🔄 Ver vivos para volver a leer.</span>"
+    + (_madTqDiaAviso === "recortada" ? '<br><span style="color:#991b1b">⚠ La hoja de Tanques llegó RECORTADA: pueden faltar los partes más recientes.</span>' : "")
+    + (pend.n ? '<br><span style="color:#92400e">📱 Este dispositivo tiene ' + pend.n + " parte(s) de esta fecha sin enviar (" + escapeHtml(pend.salas.join(", ")) + "): no están en la tabla.</span>" : "");
+  box.innerHTML = _madTqDiaHTML(madTqPartesDelDia(madLibroFuentes().tanques, fecha), notas, true);
+}
+function madTqDiaPdf(){
+  if(!_madTqDiaLeido || _madTqDiaAviso === "fallo"){ toast("Pulsa 🔄 Ver vivos antes de imprimir.","warn",3500); return; }
+  const fecha = _madTqDiaFecha();
+  const titulo = "Maduración · Tanques · Partes del día · " + fecha;
+  const page = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>' + escapeHtml(titulo) + "</title>"
+    + "<style>body{font-family:Arial,Helvetica,sans-serif;margin:18px;color:#0f172a}h1{font-size:16px;margin:0 0 4px}table{border-collapse:collapse}th,td{border:1px solid #cbd5e1;padding:2px 5px}.ms-card{page-break-inside:avoid}</style></head><body>"
+    + "<h1>" + escapeHtml(titulo) + "</h1>"
+    + _madTqDiaHTML(madTqPartesDelDia(madLibroFuentes().tanques, fecha), "Leído de la hoja a las " + escapeHtml(_reproFmtTs(_madTqDiaLeido)) + ".", false)
+    + '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},300);});<\/script></body></html>';
+  const w = window.open("", "_blank", "width=1000,height=720");
+  if(!w){ toast("El navegador bloqueó la ventana emergente. Permite pop-ups para este sitio.","warn",6000); return; }
+  w.document.write(page);
+  w.document.close();
 }
 /* 2026-10-04 (usuario) · LOS TANQUES SIN ANIMALES SE BLOQUEAN, para que no se anoten partes en tanques vacíos. Con la
    referencia de vivos —la de 🔄 Ver vivos o la última guardada en el equipo, aunque sea de otro día (decisión del
