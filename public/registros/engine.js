@@ -7521,7 +7521,7 @@ function madResVarsAplicar(){
   document.querySelectorAll("#ms-vars .ms-var").forEach(function(c){ sel[c.value]=c.checked; });
   try{ localStorage.setItem(MAD_RES_VARS_KEY, JSON.stringify(sel)); }catch(_){}
   const modo=Array.prototype.filter.call(document.querySelectorAll("#ms-vars .ms-pdf-modo-op"), function(r){ return r.checked; })[0];
-  if(modo){ try{ localStorage.setItem(MAD_RES_PDF_KEY, modo.value==="tabulada" ? "tabulada" : "estandar"); }catch(_){} }
+  if(modo){ try{ localStorage.setItem(MAD_RES_PDF_KEY, (modo.value==="tabulada" || modo.value==="administrativa") ? modo.value : "estandar"); }catch(_){} }
   madResVarsCerrar();
   madResPintar();
 }
@@ -7696,6 +7696,14 @@ function madResumenPdf(alcance){
   const a=String(alcance||"todo"), i=a.indexOf(":");
   const filtro=i>0 ? { tipo:a.slice(0,i), nombre:a.slice(i+1) } : null;
   const titulo="Maduración · Resumen"+(filtro ? " · "+(filtro.tipo==="sala" ? filtro.nombre : "Lote "+filtro.nombre) : "")+" · "+_madResumen.hoy;
+  // Punto 2 (2026-10-13): la ADMINISTRATIVA, como los reportes del MCP. Mismas cifras, variables y alcance que la tabulada.
+  if(madResPdfModo()==="administrativa"){
+    const wa=window.open("","_blank","width=900,height=1000");
+    if(!wa){ toast("El navegador bloqueó la ventana emergente. Permite pop-ups para este sitio.","warn",6000); return; }
+    wa.document.write(_madResAdmDoc(_madResumen, madResVarsLeer(), filtro, titulo));
+    wa.document.close();
+    return;
+  }
   // Punto 7 (2026-10-04): la presentación TABULADA, si es la elegida en ⚙️ Variables. Mismas cifras, variables y alcance.
   if(madResPdfModo()==="tabulada"){
     const wt=window.open("","_blank","width=1100,height=760");
@@ -7724,9 +7732,10 @@ function madResumenPdf(alcance){
    tarjetas. Respeta las mismas variables y el mismo alcance (todo · una sala · un lote) que la estándar y usa las MISMAS
    cifras (R, de madResumenMaduracion): sólo cambia cómo se colocan. */
 const MAD_RES_PDF_KEY = "larv4_mad_resumen_pdf";
-const MAD_RES_PDF_MODOS = [["estandar","Estándar (tarjetas, como en pantalla)"],["tabulada","Tabulada de fácil lectura (como el «🖨 Último parte»)"]];
+const MAD_RES_PDF_MODOS = [["estandar","Estándar (tarjetas, como en pantalla)"],["tabulada","Tabulada de fácil lectura (como el «🖨 Último parte»)"],
+  ["administrativa","Administrativa (como los reportes del MCP)"]];   // punto 2 (2026-10-13, usuario): la tercera
 function madResPdfModo(){
-  try{ return localStorage.getItem(MAD_RES_PDF_KEY)==="tabulada" ? "tabulada" : "estandar"; }catch(_){ return "estandar"; }
+  try{ const v=localStorage.getItem(MAD_RES_PDF_KEY); return (v==="tabulada" || v==="administrativa") ? v : "estandar"; }catch(_){ return "estandar"; }
 }
 function _madResPdfModoHTML(){
   const modo=madResPdfModo();
@@ -8030,6 +8039,101 @@ function _madResTabDoc(R, sel, filtro, titulo){
     + '.blk{break-inside:avoid;page-break-inside:avoid}.sub{font-size:11px;font-weight:700;margin:4px 0 2px}.sd{color:#94a3b8;font-style:italic;font-size:11px;margin:2px 0 6px}</style></head><body>'
     + '<h1>'+escapeHtml(titulo)+'</h1><div style="font-size:11px;color:#64748b;margin-bottom:6px">Deducido de las hojas el '+escapeHtml(R.hoy)+'. Presentación tabulada: los totales suman sólo cifras (animales, desoves, N5, muertas); los % no se promedian («—»). Si se corrigen registros pasados, este informe puede no cuadrar con uno posterior.</div>'
     + _madResTabHTML(R, sel, filtro)
+    + '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},300);});<\/script></body></html>';
+}
+// ── Saldo · la presentación ADMINISTRATIVA del PDF (usuario, 2026-10-13, punto 2) ─────────────────────
+/* «Otra presentación del PDF, similar a la que se puede exportar desde el MCP, más administrativa». Es la TERCERA
+   (decisión del usuario): la forma de los reportes del MCP (🖨 Reportes de Maduración) —A4 vertical, cabecera con título,
+   fecha en letra y alcance; una fila de indicadores; tablas compactas de cabecera gris; las discrepancias del libro;
+   código verificador, «Generado el…», «Página i de N» y la firma «Responsable del turno»— con el CONTENIDO de la
+   tabulada: las mismas cifras (R), las mismas variables y el mismo alcance (todo · una sala · un lote). Nada se recalcula.
+   El código es la huella del contenido (FNV-1a, como el del MCP): el mismo informe da siempre el mismo código. */
+function _madResFnv1a(str){
+  let h=0x811c9dc5;
+  for(let i=0; i<str.length; i++){ h^=str.charCodeAt(i); h=(h+((h<<1)+(h<<4)+(h<<7)+(h<<8)+(h<<24)))>>>0; }
+  return h>>>0;
+}
+const MAD_RES_DIAS = ["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
+// «martes, 13/10/2026», en UTC (es un día, no un instante), como fechaLarga de los reportes del MCP.
+function _madResFechaLarga(iso){
+  if(!_madResEsFecha(iso)) return "—";
+  const p=iso.split("-").map(Number);
+  return MAD_RES_DIAS[new Date(Date.UTC(p[0], p[1]-1, p[2])).getUTCDay()]+", "+String(p[2]).padStart(2,"0")+"/"+String(p[1]).padStart(2,"0")+"/"+p[0];
+}
+function _madResAdmNf(v, dec){ const x=Number(v); return (v===""||v===null||v===undefined||!isFinite(x)) ? "—" : x.toLocaleString("es-EC", { minimumFractionDigits:0, maximumFractionDigits:dec||0 }); }
+/** Los indicadores de la cabecera, según el alcance: [etiqueta, valor, nota]. */
+function _madResAdmKpis(R, filtro){
+  const N=_madResTabN, fdia=function(f){ return f ? _madUpDMY(f) : ""; };
+  if(filtro && filtro.tipo==="lote"){
+    const L=R.lotes.filter(function(l){ return l.lote===filtro.nombre; })[0];
+    if(!L) return [];
+    const bajas=N(L.muertosDia.machos)+N(L.muertosDia.hembras)+N(L.descartesDia.machos)+N(L.descartesDia.hembras);
+    return [["Vivos ♂", _madResAdmNf(L.machos), ""], ["Vivos ♀", _madResAdmNf(L.hembras), ""], ["Estado", L.estado || "—", ""],
+      ["Tanques", _madResAdmNf(L.tanques.length), ""], ["Bajas del último día", _madResAdmNf(bajas), fdia(L.fechaDia)],
+      ["Alimento del día", L.alimento.fecha ? _madResAdmNf(L.alimento.total, 2)+" kg" : "—", fdia(L.alimento.fecha)]];
+  }
+  const salas=R.salas.filter(function(s){ return !filtro || s.sala===filtro.nombre; });
+  let m=0, h=0, prod=0, cuar=0, nLotes=0;
+  if(filtro){
+    salas.forEach(function(s){ s.lotes.forEach(function(l){ m+=N(l.machos); h+=N(l.hembras); nLotes++; if(l.estado===MAD_EST_PROD) prod++; else if(l.estado===MAD_EST_CUAR) cuar++; }); });
+  } else {
+    R.lotes.forEach(function(L){ m+=N(L.machos); h+=N(L.hembras); if(N(L.machos)+N(L.hembras)>0) nLotes++; if(L.estado===MAD_EST_PROD) prod++; else if(L.estado===MAD_EST_CUAR) cuar++; });
+  }
+  /* «Del día» = el día MÁS RECIENTE de las salas del alcance, y sólo las salas que lo tienen: sumar «el último de cada sala»
+     metía el alimento de una sala ya vacía de días atrás (medido el 13-10: la Sala 4, del 11-10). */
+  const ultimo=function(fs){ return fs.filter(Boolean).sort().pop() || ""; };
+  const fB=ultimo(salas.map(function(s){ return (s.dia||{}).fecha; })), fA=ultimo(salas.map(function(s){ return (s.alimento||{}).fecha; }));
+  let bajas=0, kg=0;
+  salas.forEach(function(s){
+    const D=s.dia||madResDiaDeSalaVacio(), A=s.alimento||madResAlimentoVacio();
+    if(fB && D.fecha===fB) bajas+=N(D.machos)+N(D.hembras)+N(D.descarteMachos)+N(D.descarteHembras);
+    if(fA && A.fecha===fA) kg+=N(A.total);
+  });
+  return [["Vivos ♂", _madResAdmNf(m), ""], ["Vivos ♀", _madResAdmNf(h), ""], ["Lotes", _madResAdmNf(nLotes), prod+" en producción · "+cuar+" en cuarentena"],
+    ["Tanques en producción", _madResAdmNf(salas.reduce(function(a,s){ return a+N(s.tanquesProduccion); },0)), ""],
+    ["Bajas del último día", fB ? _madResAdmNf(bajas) : "—", fB ? _madUpDMY(fB) : ""],
+    ["Alimento del día", fA ? _madResAdmNf(_madResR2(kg), 2)+" kg" : "—", fA ? _madUpDMY(fA) : ""]];
+}
+const MAD_RES_ADM_TOPE = 6;   // como los reportes del MCP: el papel enseña las primeras y dice cuántas quedan
+function _madResAdmDoc(R, sel, filtro, titulo){
+  const cuerpo=_madResTabHTML(R, sel, filtro);
+  const alcance=filtro ? (filtro.tipo==="sala" ? filtro.nombre : "Lote "+filtro.nombre) : "Toda la planta";
+  const nVars=Object.keys(sel||{}).filter(function(k){ return sel[k]; }).length;
+  const codigo="MAD-SAL-"+String(R.hoy||"").replace(/-/g,"")+"-"+_madResFnv1a("MAD-SALDO|"+R.hoy+"|"+alcance+"|"+cuerpo).toString(16).toUpperCase().padStart(8,"0").slice(-6);
+  const mal=R.libro ? madLibroIncompleto(R.libro) : "";
+  const avisos=((R.libro && R.libro.avisos) || []).filter(function(a){
+    if(!filtro) return true;
+    return a[filtro.tipo]===filtro.nombre || String(a.texto||"").indexOf(filtro.nombre)!==-1;
+  }).slice().sort(function(a,b){ return _madResOrden(b.fecha, a.fecha); });
+  const lista=avisos.slice(0, MAD_RES_ADM_TOPE).map(function(a){ return '<li>'+escapeHtml(_madUpDMY(a.fecha))+' · '+escapeHtml(a.texto)+'</li>'; }).join("")
+    + (avisos.length>MAD_RES_ADM_TOPE ? '<li class="mas">+ '+(avisos.length-MAD_RES_ADM_TOPE)+' más (el detalle completo, en «📒 Detalle del libro» del Saldo)</li>' : "");
+  const kpis=_madResAdmKpis(R, filtro);
+  const generado=new Date().toLocaleString("es-EC", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" });
+  return '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>'+escapeHtml(titulo)+'</title><style>'
+    + '@page{size:A4 portrait;margin:10mm 9mm 14mm;@bottom-left{content:"Código verificador '+codigo+'";font-size:7pt;color:#444}@bottom-right{content:"Página " counter(page) " de " counter(pages);font-size:7pt;color:#444}}'
+    + '*{box-sizing:border-box}body{margin:0;font-family:"Segoe UI",Arial,sans-serif;color:#111;background:#fff}'
+    + '.rp-head{border-bottom:2px solid #111;padding-bottom:2mm;margin-bottom:3mm}.rp-h1{font-size:13pt;font-weight:800;letter-spacing:.2px;text-transform:uppercase}'
+    + '.rp-h2{font-size:10pt;color:#333}.rp-h3{font-size:9pt;color:#555;margin-top:1mm}.rp-h3.is-alerta{color:#a33;font-weight:700}'
+    + '.rp-kpis{display:flex;flex-wrap:wrap;gap:2mm;margin-bottom:3mm}.rp-kpi{flex:1 1 28mm;border:.3mm solid #bbb;border-left:1mm solid #444;border-radius:1mm;padding:1.5mm 2mm}'
+    + '.rp-kpi-lb{font-size:6.5pt;text-transform:uppercase;letter-spacing:.3px;color:#555;font-weight:700}.rp-kpi-v{font-size:12pt;font-weight:800;line-height:1.1}.rp-kpi-s{font-size:6.5pt;color:#666}'
+    + 'h2{font-size:9pt;margin:3mm 0 1.5mm;padding-bottom:.8mm;border-bottom:.3mm solid #999}'
+    + 'table{width:100%;border-collapse:collapse;font-size:7pt;margin-bottom:2mm;page-break-inside:avoid}th{background:#eee;border:.2mm solid #bbb;padding:.8mm 1.2mm;font-size:6.5pt;text-align:left;vertical-align:bottom}'
+    + 'td{border:.2mm solid #ddd;padding:.8mm 1.2mm;vertical-align:top}td.r{text-align:right;font-variant-numeric:tabular-nums}'   // sin nowrap: «7 (0.83%)» se parte y la tabla cabe en A4 vertical
+    + 'tr.tot td{font-weight:700;background:#f6f6f6;border-top:.4mm solid #444}.f{font-size:6pt;color:#666}table.fr td{text-align:center}table.gr{width:auto}'
+    + '.blk{break-inside:avoid;page-break-inside:avoid}.sub{font-size:7.5pt;font-weight:700;margin:1mm 0 .5mm}.sd{color:#777;font-style:italic;font-size:7pt;margin:1mm 0 2mm}'
+    + '.rp-avisos{font-size:7.5pt;margin:0;padding-left:4mm}.rp-avisos li{margin-bottom:.8mm}.rp-avisos li.mas{color:#555;font-style:italic;list-style:none}'
+    + '.rp-foot{border-top:.3mm solid #999;margin-top:4mm;padding-top:1.5mm;display:flex;justify-content:space-between;font-size:7pt;color:#444}'
+    + '.rp-firma{border-top:.3mm solid #666;width:55mm;margin-top:10mm;padding-top:1mm;text-align:center;font-size:7.5pt}'
+    + '</style></head><body>'
+    + '<header class="rp-head"><div class="rp-h1">Maduración · Saldo y resumen</div>'
+    + '<div class="rp-h2">'+escapeHtml(_madResFechaLarga(R.hoy))+' · último registro del libro: '+escapeHtml(R.hasta ? _madUpDMY(R.hasta) : "—")+'</div>'
+    + '<div class="rp-h3">'+escapeHtml(alcance)+' · '+nVars+' variable(s) elegida(s) en ⚙️ Variables</div>'
+    + (mal ? '<div class="rp-h3 is-alerta">⚠ Resumen INCOMPLETO: '+escapeHtml(mal)+'</div>' : "")+'</header>'
+    + (kpis.length ? '<section class="rp-kpis">'+kpis.map(function(k){ return '<div class="rp-kpi"><div class="rp-kpi-lb">'+escapeHtml(k[0])+'</div><div class="rp-kpi-v">'+escapeHtml(k[1])+'</div><div class="rp-kpi-s">'+escapeHtml(k[2])+'</div></div>'; }).join("")+'</section>' : "")
+    + cuerpo
+    + '<section class="blk"><h2>⚠ Discrepancias del libro ('+avisos.length+')</h2>'+(avisos.length ? '<ul class="rp-avisos">'+lista+'</ul>' : '<p class="sd">Sin discrepancias: cada baja registrada tiene ingreso que la explique.</p>')+'</section>'
+    + '<footer class="rp-foot"><div>Código verificador <b>'+escapeHtml(codigo)+'</b></div><div>Generado el '+escapeHtml(generado)+'</div><div>Deducido de las hojas el '+escapeHtml(R.hoy)+'</div></footer>'
+    + '<div class="rp-firma">Responsable del turno</div>'
     + '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},300);});<\/script></body></html>';
 }
 // ── Saldo · «🖨 Último parte» (plan 0t · 12, 2026-09-29, usuario) ─────────────────────────

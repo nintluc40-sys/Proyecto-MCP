@@ -129,11 +129,12 @@ const elegir = (modo) => {
 };
 
 describe('Saldo · la presentación del PDF se elige en ⚙️ Variables', () => {
-  it('🔴 por defecto es la ESTÁNDAR; las dos opciones están en Variables y la elegida se guarda y se recuerda', () => {
+  // 2026-10-13 (punto 2, usuario) · eran DOS; entra la tercera, «Administrativa» (como los reportes del MCP).
+  it('🔴 por defecto es la ESTÁNDAR; las tres opciones están en Variables y la elegida se guarda y se recuerda', () => {
     expect(H.madResPdfModo()).toBe('estandar');
     H.madResVarsAbrir();
     const ops = [...document.querySelectorAll('#ms-vars .ms-pdf-modo-op')];
-    expect(ops.map((r) => r.value)).toEqual(['estandar', 'tabulada']);
+    expect(ops.map((r) => r.value)).toEqual(['estandar', 'tabulada', 'administrativa']);
     expect(ops.find((r) => r.checked).value).toBe('estandar');
     expect(document.querySelectorAll('#ms-vars fieldset')).toHaveLength(6);   // no es una ficha de variables más
     ops[1].checked = true; ops[0].checked = false;
@@ -328,5 +329,88 @@ describe('Saldo · la tabulada con las variables nuevas (punto 2)', () => {
     expect(celdas(filas2[filas2.length - 1]).slice(0, 3)).toEqual(['Total · 2 lotes', '130.000', '62.000']);   // los % no se suman: «—»
     // las tablas de antes no cambian: la de reproducción sigue sin columna de huevos
     expect(columna(tablaTras(d, '🥚 Lotes · Reproducción'), 'Huevos')).toBe(-1);
+  });
+});
+
+/* ── Punto 2 (2026-10-13, usuario) · la TERCERA presentación, «Administrativa»: la forma de los reportes del MCP (A4 vertical,
+   cabecera, indicadores, tablas compactas, discrepancias, código verificador y firma) con el CONTENIDO de la tabulada. ── */
+describe('Saldo · la presentación ADMINISTRATIVA del PDF (punto 2)', () => {
+  const codigo = () => (/Código verificador <b>(MAD-SAL-\d{8}-[0-9A-F]{6})<\/b>/.exec(impreso) || [])[1];
+
+  it('🔴 se elige en ⚙️ Variables, se recuerda y sale con la forma de los reportes del MCP', () => {
+    elegir('administrativa');
+    expect(H.madResPdfModo()).toBe('administrativa');
+    H.madResumenPdf('todo');
+    expect(impreso).toContain('size:A4 portrait');
+    const d = doc();
+    expect(d.querySelector('.rp-h1').textContent).toBe('Maduración · Saldo y resumen');
+    expect(d.querySelector('.rp-h2').textContent).toMatch(/^(domingo|lunes|martes|miércoles|jueves|viernes|sábado), \d{2}\/\d{2}\/\d{4} · último registro del libro: /);
+    expect(d.querySelector('.rp-h3').textContent).toMatch(/^Toda la planta · \d+ variable\(s\) elegida\(s\)/);
+    expect([...d.querySelectorAll('.rp-kpi-lb')].map((x) => x.textContent))
+      .toEqual(['Vivos ♂', 'Vivos ♀', 'Lotes', 'Tanques en producción', 'Bajas del último día', 'Alimento del día']);
+    expect(d.querySelector('.ms-card'), 'no son las tarjetas de la estándar').toBeNull();
+    expect(tablaTras(d, '🦐 Lotes · Población y mortalidad'), 'el contenido es el de la tabulada').toBeTruthy();
+    expect([...d.querySelectorAll('h2')].some((h) => h.textContent.startsWith('⚠ Discrepancias del libro'))).toBe(true);
+    expect(codigo()).toBeTruthy();
+    expect(d.querySelector('.rp-firma').textContent).toBe('Responsable del turno');
+  });
+
+  it('🔴 los indicadores suman lo mismo que la tabulada: vivos de todos los lotes', () => {
+    elegir('administrativa');
+    H.madResumenPdf('todo');
+    const d = doc();
+    const v = (lb) => [...d.querySelectorAll('.rp-kpi')].find((k) => k.querySelector('.rp-kpi-lb').textContent === lb).querySelector('.rp-kpi-v').textContent;
+    const pob = tablaTras(d, '🦐 Lotes · Población y mortalidad');
+    const tot = [...pob.querySelectorAll('tbody tr')].pop();
+    expect(tot.className).toBe('tot');
+    expect([v('Vivos ♂'), v('Vivos ♀')]).toEqual([celdas(tot)[2], celdas(tot)[3]]);
+  });
+
+  it('🔴 el código verificador es la huella del contenido: el mismo informe, el mismo código; otras variables, otro', () => {
+    elegir('administrativa');
+    H.madResumenPdf('todo');
+    const a = codigo();
+    H.madResumenPdf('todo');
+    expect(codigo()).toBe(a);
+    H.madResVarsAbrir();
+    document.querySelectorAll('#ms-vars .ms-var').forEach((c) => { c.checked = c.value !== 'sala-temp'; });
+    H.madResVarsAplicar();
+    H.madResumenPdf('todo');
+    expect(codigo()).not.toBe(a);
+  });
+
+  it('🔴 respeta el alcance: el de un lote dice el lote y lleva sus indicadores; el de una sala, la sala', () => {
+    elegir('administrativa');
+    H.madResumenPdf('lote:AB');
+    let d = doc();
+    expect(d.querySelector('.rp-h3').textContent).toMatch(/^Lote AB · /);
+    expect([...d.querySelectorAll('.rp-kpi-lb')].map((x) => x.textContent)).toEqual(['Vivos ♂', 'Vivos ♀', 'Estado', 'Tanques', 'Bajas del último día', 'Alimento del día']);
+    H.madResumenPdf('sala:Sala 2');
+    d = doc();
+    expect(d.querySelector('.rp-h3').textContent).toMatch(/^Sala 2 · /);
+    expect([...d.querySelectorAll('h2')].some((h) => h.textContent === '🏠 Sala 1')).toBe(false);
+  });
+});
+
+describe('Saldo · los indicadores «del día» de la administrativa (punto 2)', () => {
+  /* Medido con datos reales el 13-10: sumar «el último día de cada sala» metía el alimento de una sala ya vacía de días
+     atrás. «Del día» = el día MÁS RECIENTE de las salas del alcance, y sólo las salas que lo tienen. */
+  it('🔴 bajas y alimento suman sólo el día más reciente, y lo dicen', async () => {
+    const tq = HOJAS['Maduración Tanques'];
+    HOJAS['Maduración Tanques'] = tq.concat([{ Fecha: '2026-01-11', Sala: 'Sala 1', Tanque: 1, Hora: '06:30', Parte: 1, 'Hembras muertas': 3 }]);
+    HOJAS['Maduración Alimentación'] = [
+      { Fecha: '2026-01-11', Sala: 'Sala 1', Tanque: 1, 'Poliqueto (kg/día)': 2, 'Total (kg/día)': 2 },
+      { Fecha: '2026-01-09', Sala: 'Sala 2', Tanque: 3, 'Calamar (kg/día)': 5, 'Total (kg/día)': 5 },
+    ];
+    try {
+      await H.madSaldoRefrescar();
+      elegir('administrativa');
+      H.madResumenPdf('todo');
+    } finally { HOJAS['Maduración Tanques'] = tq; delete HOJAS['Maduración Alimentación']; }
+    const k = (lb) => [...doc().querySelectorAll('.rp-kpi')].find((x) => x.querySelector('.rp-kpi-lb').textContent === lb);
+    expect(k('Bajas del último día').querySelector('.rp-kpi-v').textContent).toBe('3');   // la Sala 2 se quedó en el 10/01: no suma
+    expect(k('Bajas del último día').querySelector('.rp-kpi-s').textContent).toBe('11/01/2026');
+    expect(k('Alimento del día').querySelector('.rp-kpi-v').textContent).toBe('2 kg');     // no 7: el de la Sala 2 es del 09/01
+    expect(k('Alimento del día').querySelector('.rp-kpi-s').textContent).toBe('11/01/2026');
   });
 });
