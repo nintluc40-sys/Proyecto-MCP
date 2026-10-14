@@ -226,7 +226,7 @@ describe('Maduración · laboratorio · 0q·5a · la ventana y las cantidades', 
     expect(filtroDeLaVentana({ mes: '2026-02' }).periodo.hasta).toBe('2026-02-28');
     const t = filtroDeLaVentana({}).periodo;
     expect(t.desde <= '1900-01-01' && t.hasta >= '2999-12-31').toBe(true);
-    expect(filtroDeLaVentana({ lote: ' qa ', sala: 'Sala 2', sexo: 'Hembras' }).F).toMatchObject({ lotes: ['QA'], sala: 'Sala 2', sexo: 'Hembras', tanque: null });   // etapa A · la forma del filtro: LISTAS
+    expect(filtroDeLaVentana({ lote: ' qa ', sala: 'Sala 2', sexo: 'Hembras' }).F).toMatchObject({ lotes: ['QA'], salas: ['Sala 2'], sexo: 'Hembras', tanques: [] });   // etapas A y B · la forma del filtro: LISTAS
     expect(filtroDeLaVentana({}).F).toMatchObject({ lotes: [], codigos: [] });
   });
 

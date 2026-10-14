@@ -33,7 +33,7 @@ import { MAD_FIN_MOTIVOS } from '../registros/lib/ficha-maduracion-fin-ciclo.sch
 import { sumarDias, ubicKey } from '../registros/lib/mad-libro.js';
 import { fechaDeFila } from './operativo.data.js';
 import { cociente } from './operativo.indicadores.js';
-import { loteElegido, hayLote, hayCodigo } from './operativo.tablero.js';   // punto 2 · etapa A · uno o varios lotes
+import { loteElegido, hayLote, hayCodigo, haySala, hayTanque, salaElegida, tanqueElegido } from './operativo.tablero.js';   // punto 2 · etapas A y B · uno o varios
 
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
 const esIso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -59,8 +59,8 @@ export const DIMENSIONES_BAJAS = [
 function noHonra(F, dimension) {
   const fuera = [];
   if (dimension === 'lote') {
-    if (F.sala) fuera.push('sala');
-    if (F.tanque !== null) fuera.push('tanque');
+    if (haySala(F)) fuera.push('sala');
+    if (hayTanque(F)) fuera.push('tanque');
     if (hayCodigo(F)) fuera.push('código genético');
   } else {
     if (hayLote(F)) fuera.push('lote');
@@ -77,8 +77,8 @@ function porPartes(partes, F, periodo, dimension) {
   const m = new Map();
   for (const d of partes || []) {
     if (!enPeriodo(txt(d.fecha), periodo)) continue;
-    if (F.sala && d.sala !== F.sala) continue;
-    if (F.tanque !== null && Number(d.tanque) !== F.tanque) continue;
+    if (!salaElegida(d.sala, F)) continue;
+    if (!tanqueElegido(d.sala, d.tanque, F)) continue;
     const clave = dimension === 'tanque' ? ubicKey(d.sala, d.tanque) : txt(d.sala);
     if (!clave) continue;
     const f = m.get(clave) || { clave, sala: txt(d.sala), tanque: dimension === 'tanque' ? d.tanque : null,
@@ -232,8 +232,8 @@ export function bajasPorHora(fuentes, periodo, F) {
   let registros = 0;
   for (const r of ((fuentes || {}).tanques || [])) {
     if (!enPeriodo(fechaDeFila('tanques', r), periodo)) continue;
-    if (F.sala && txt(r.Sala) !== F.sala) continue;
-    if (F.tanque !== null && Number(r.Tanque) !== F.tanque) continue;
+    if (!salaElegida(txt(r.Sala), F)) continue;
+    if (!tanqueElegido(txt(r.Sala), r.Tanque, F)) continue;
     const natural = par(r['Machos muertos'], r['Hembras muertas']);
     const descarte = par(r['Machos muertos por descarte de selección'], r['Hembras muertas por descarte de selección']);
     if (!natural.total && !descarte.total) continue;
@@ -273,8 +273,8 @@ export function calorSalaDia(partes, F, periodo) {
   for (const p of partes || []) {
     const f = txt(p.fecha);
     if (!idx.has(f)) continue;
-    if (F.sala && p.sala !== F.sala) continue;
-    if (F.tanque !== null && Number(p.tanque) !== F.tanque) continue;
+    if (!salaElegida(p.sala, F)) continue;
+    if (!tanqueElegido(p.sala, p.tanque, F)) continue;
     const sala = txt(p.sala);
     if (!sala) continue;
     if (!m.has(sala)) m.set(sala, { sala, valores: dias.map(() => null), total: 0 });

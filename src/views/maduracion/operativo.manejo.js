@@ -46,7 +46,7 @@ import { sumarDias, ubicKey } from '../registros/lib/mad-libro.js';
 import { diasEntre } from '../registros/lib/mad-resumen.js';
 import { fechaDeFila } from './operativo.data.js';
 import { cociente } from './operativo.indicadores.js';
-import { loteElegido, hayLote, hayCodigo } from './operativo.tablero.js';   // punto 2 · etapa A · uno o varios lotes
+import { loteElegido, hayLote, hayCodigo, haySala, hayTanque, salaElegida, tanqueElegido } from './operativo.tablero.js';   // punto 2 · etapas A y B · uno o varios
 
 const txt = (v) => String(v == null ? '' : v).trim();
 const ent = (v) => { const n = Number(txt(v)); return Number.isFinite(n) && n > 0 ? n : 0; };
@@ -68,9 +68,8 @@ function movEnFiltro(r, F) {
     { sala: txt(r['Sala origen']), tanque: ent(r['Tanque origen']) },
     { sala: txt(r['Sala destino']), tanque: ent(r['Tanque destino']) },
   ];
-  if (F.sala && !lados.some((l) => l.sala === F.sala)) return false;
-  if (F.tanque !== null && F.tanque !== undefined
-    && !lados.some((l) => l.tanque === F.tanque && (!F.sala || l.sala === F.sala))) return false;
+  if (haySala(F) && !lados.some((l) => salaElegida(l.sala, F))) return false;
+  if (hayTanque(F) && !lados.some((l) => tanqueElegido(l.sala, l.tanque, F))) return false;
   return true;
 }
 
@@ -182,8 +181,8 @@ export function agendaPorProducto() {
 /** ¿La fila de alimentación pasa el filtro? Sus «Lotes» son un texto con varios: basta que el lote aparezca. */
 function alimEnFiltro(r, F) {
   if (!F) return true;
-  if (F.sala && txt(r.Sala) !== F.sala) return false;
-  if (F.tanque !== null && F.tanque !== undefined && ent(r.Tanque) !== F.tanque) return false;
+  if (!salaElegida(txt(r.Sala), F)) return false;
+  if (!tanqueElegido(txt(r.Sala), ent(r.Tanque), F)) return false;
   if (hayLote(F) && !lista(r.Lotes).some((l) => loteElegido(l, F))) return false;
   return true;
 }
@@ -283,14 +282,14 @@ export function procedenciaDelPeso(fuentes, periodo, F) {
 /** Lo que el filtro no puede aplicar aquí: el TANQUE, que esta hoja no registra (se aplican por sala y área). */
 export function ignoraDeTratamientos(F) {
   const x = [];
-  if (F && F.tanque !== null && F.tanque !== undefined) x.push('tanque');
+  if (hayTanque(F)) x.push('tanque');
   if (hayCodigo(F)) x.push('código genético');
   return x;
 }
 
 function tratEnFiltro(r, F) {
   if (!F) return true;
-  if (F.sala && txt(r.Sala) !== F.sala) return false;
+  if (!salaElegida(txt(r.Sala), F)) return false;
   if (hayLote(F) && !lista(r.Lotes).some((l) => loteElegido(l, F))) return false;
   return true;
 }

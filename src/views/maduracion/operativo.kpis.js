@@ -16,7 +16,7 @@
    ============================================================ */
 import { ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_MIXTO, sumarDias, ubicKey } from '../registros/lib/mad-libro.js';
 import { SALAS_VISIBLES } from './operativo.data.js';
-import { tasaEntre, kpiBiomasa, posicionEnFiltro, codigoEnFiltro, loteElegido, hayLote, hayCodigo } from './operativo.tablero.js';
+import { tasaEntre, kpiBiomasa, posicionEnFiltro, codigoEnFiltro, loteElegido, hayLote, hayCodigo, haySala, hayTanque, salaElegida, tanqueElegido } from './operativo.tablero.js';
 
 /** Las siete tarjetas que tienen gráfico, en su orden, con su título. */
 export const KPIS_CON_GRAFICO = [
@@ -45,15 +45,15 @@ const sinSerie = (F) => !!(hayCodigo(F) || F.estado || F.piscina || F.camaronera
 
 /** VIVOS · la curva diaria ♀ / ♂ / total del período, del desglose de la serie que corresponde al filtro. */
 export function graficoVivos(serie, periodo, F) {
-  if (sinSerie(F) || (F.tanque !== null && hayLote(F))) {
+  if (sinSerie(F) || (hayTanque(F) && hayLote(F))) {
     return noAplica('Con este filtro el libro no guarda los vivos día a día: el gráfico no aplica (la cifra de la tarjeta sí).');
   }
   const suma = (entradas) => entradas.reduce((a, x) => ({ machos: a.machos + ent(x.machos), hembras: a.hembras + ent(x.hembras) }), { machos: 0, hembras: 0 });
   const del = (d) => {
-    if (F.tanque !== null) return suma([(d.porTanque || {})[ubicKey(F.sala, F.tanque)] || {}]);
-    if (hayLote(F) && F.sala) return suma(Object.entries(d.porLoteSala || {}).filter(([k]) => { const [l, s] = k.split('|'); return loteElegido(l, F) && s === F.sala; }).map(([, v]) => v));
+    if (hayTanque(F)) return suma(F.tanques.map((k) => { const i = k.lastIndexOf('|'); return (d.porTanque || {})[ubicKey(k.slice(0, i), k.slice(i + 1))] || {}; }));
+    if (hayLote(F) && haySala(F)) return suma(Object.entries(d.porLoteSala || {}).filter(([k]) => { const [l, s] = k.split('|'); return loteElegido(l, F) && salaElegida(s, F); }).map(([, v]) => v));
     if (hayLote(F)) return suma(Object.entries(d.porLote || {}).filter(([l]) => loteElegido(l, F)).map(([, v]) => v));
-    if (F.sala) return suma([(d.porSala || {})[F.sala] || {}]);
+    if (haySala(F)) return suma(F.salas.map((s) => (d.porSala || {})[s] || {}));
     return suma([d.total || {}]);
   };
   const ds = diasDe(serie, periodo);
@@ -77,13 +77,13 @@ export function graficoVivos(serie, periodo, F) {
  *  animales ese día (su reloj en cada una, `estadoLoteSala` de la serie) y `Mixto` si no coinciden: la regla de la
  *  tarjeta (`kpiLotes`), con filtro de sala el de ESA sala. */
 export function graficoLotes(serie, periodo, F) {
-  if (sinSerie(F) || F.tanque !== null) return noAplica('Con este filtro el libro no guarda los lotes día a día: el gráfico no aplica (la cifra de la tarjeta sí).');
+  if (sinSerie(F) || hayTanque(F)) return noAplica('Con este filtro el libro no guarda los lotes día a día: el gráfico no aplica (la cifra de la tarjeta sí).');
   const ds = diasDe(serie, periodo);
   const cuenta = ds.map((d) => {
     const porLote = new Map();
     for (const [k, estado] of Object.entries(d.estadoLoteSala || {})) {
       const [lote, sala] = k.split('|');
-      if (F.sala && sala !== F.sala) continue;
+      if (!salaElegida(sala, F)) continue;
       if (!loteElegido(lote, F)) continue;
       if (F.sexo && ent(((d.porLoteSala || {})[k] || {})[F.sexo]) <= 0) continue;
       if (!porLote.has(lote)) porLote.set(lote, new Set());
@@ -112,7 +112,7 @@ export function graficoLotes(serie, periodo, F) {
 
 /** SALAS · sala por sala, el estado registrado en la hoja frente al que propone el libro (la regla de `kpiSalas`). */
 export function graficoSalas(salas, F) {
-  const filas = (salas || []).filter((s) => !F.sala || s.sala === F.sala).map((s) => ({
+  const filas = (salas || []).filter((s) => salaElegida(s.sala, F)).map((s) => ({
     sala: s.sala, registrado: txt(s.registrado && s.registrado.estado), propuesto: txt(s.propuesto && s.propuesto.estado),
     situacion: s.coinciden === true ? 'coinciden' : s.coinciden === false ? 'difieren' : !txt(s.registrado && s.registrado.estado) ? 'sin-registro' : 'sin-propuesta',
   }));
@@ -122,9 +122,10 @@ export function graficoSalas(salas, F) {
 /** OCUPACIÓN · por sala, los tanques ocupados frente a su total (la regla de `kpiOcupacion`: con un filtro que estrecha
  *  las posiciones, los tanques con animales de lo filtrado). La suma de las barras es la cifra de la tarjeta. */
 export function graficoOcupacion(salas, libro, F) {
-  if (F.tanque !== null) return noAplica('Con un tanque elegido, la ocupación es la de ese tanque: no hay salas que comparar.');
+  if (hayTanque(F)) return noAplica(F.tanques.length === 1 ? 'Con un tanque elegido, la ocupación es la de ese tanque: no hay salas que comparar.'
+    : 'Con tanques elegidos, la ocupación es la de esos tanques (la cifra de la tarjeta): no hay salas que comparar.');
   const estrecha = !!(hayLote(F) || hayCodigo(F) || F.estado || F.sexo || F.piscina || F.camaronera);
-  const ss = (salas || []).filter((s) => !F.sala || s.sala === F.sala);
+  const ss = (salas || []).filter((s) => salaElegida(s.sala, F));
   const filas = ss.map((s) => {
     const total = ent(s.propuesto && s.propuesto.total);
     let ocupados = ent(s.propuesto && s.propuesto.ocupados);
@@ -150,10 +151,10 @@ export function graficoOcupacion(salas, libro, F) {
  *  barras; la acumulada desde la víspera del período, en línea); con sala o tanque, las muertes REGISTRADAS en la hoja
  *  (las del día y su suma); con código genético, no aplica. La serie tiene que empezar la víspera del período. */
 export function graficoMortalidad(serie, periodo, F, partes) {
-  if (F.sala) {
+  if (haySala(F)) {
     const porDia = new Map();
     for (const d of partes || []) {
-      if (d.sala !== F.sala || (F.tanque !== null && d.tanque !== F.tanque) || !enPeriodo(d.fecha, periodo)) continue;
+      if (!salaElegida(d.sala, F) || !tanqueElegido(d.sala, d.tanque, F) || !enPeriodo(d.fecha, periodo)) continue;
       porDia.set(d.fecha, (porDia.get(d.fecha) || 0) + ent(d.machosMuertos) + ent(d.hembrasMuertas));
     }
     const ds = fechas(periodo);
@@ -197,7 +198,7 @@ export function graficoReproduccion(filasDesoves, periodo, F) {
   }
   const ds = fechas(periodo);
   return {
-    aplica: true, tipo: 'barrasYLinea', unidad: 'desoves', etiquetas: ds, ignora: F.sala ? ['sala'] : [],
+    aplica: true, tipo: 'barrasYLinea', unidad: 'desoves', etiquetas: ds, ignora: haySala(F) ? ['sala'] : [],
     series: [
       { clave: 'desoves', etiqueta: 'Desoves', datos: ds.map((f) => des.get(f) || 0) },
       { clave: 'n5', etiqueta: 'N5', datos: ds.map((f) => n5.get(f) || 0) },
@@ -208,8 +209,8 @@ export function graficoReproduccion(filasDesoves, periodo, F) {
 /** BIOMASA · ♀ y ♂ de cada sala, con la regla de la tarjeta (`kpiBiomasa`) aplicada sala por sala. Sin ningún peso en el
  *  período, no hay nada que enseñar (una biomasa inventada es peor que ninguna). */
 export function graficoBiomasa(M, F, periodo) {
-  const salas = SALAS_VISIBLES.filter((s) => !F.sala || s === F.sala);
-  const filas = salas.map((sala) => ({ sala, ...kpiBiomasa(M, { ...F, sala }, periodo) }));
+  const salas = SALAS_VISIBLES.filter((s) => salaElegida(s, F));
+  const filas = salas.map((sala) => ({ sala, ...kpiBiomasa(M, { ...F, salas: [sala] }, periodo) }));
   if (filas.every((f) => vacio(f.totalKg))) return noAplica('Sin pesos registrados en el período: no hay biomasa que enseñar.');
   const kg = (v) => (vacio(v) ? null : v);
   return {

@@ -41,7 +41,7 @@ import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { construirLibro, sumarDias, ubicKey, ESTADO_PRODUCCION } from '../registros/lib/mad-libro.js';
 import { fechaDeFila } from './operativo.data.js';
 import { cociente, tasaEnPartesDelLote } from './operativo.indicadores.js';
-import { posicionEnFiltro, salasEnAlcance, codigoEnFiltro, hayCodigo } from './operativo.tablero.js';
+import { posicionEnFiltro, salasEnAlcance, codigoEnFiltro, hayCodigo, tanqueElegido } from './operativo.tablero.js';
 import { loteEnFiltro, origenDeLote } from './operativo.lotes.js';
 import { UMBRALES_DE_AVISO } from './operativo.umbrales.js';
 
@@ -269,8 +269,8 @@ export function tendencias(M, periodo, F, partes, presencia) {
     if (c !== null) out.produccion.push({ sala, antes: va, ahora: vh, cambio: c });
   }
 
-  /* 💀 MORTALIDAD DE CADA SALA · muertes registradas por tanque y día; con tanque elegido, las de ese tanque. */
-  const partesDe = (p, sala) => (partes || []).filter((d) => d.sala === sala && (F.tanque === null || d.tanque === F.tanque) && enPeriodo(d.fecha, p));
+  /* 💀 MORTALIDAD DE CADA SALA · muertes registradas por tanque y día; con tanques elegidos, las de esos tanques. */
+  const partesDe = (p, sala) => (partes || []).filter((d) => d.sala === sala && tanqueElegido(sala, d.tanque, F) && enPeriodo(d.fecha, p));
   const bajas = (lista) => lista.reduce((s, d) => s + ent(d.machosMuertos) + ent(d.hembrasMuertas), 0);
   for (const sala of salas) {
     const a = partesDe(anterior, sala);

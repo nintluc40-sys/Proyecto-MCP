@@ -33,7 +33,7 @@ import {
   MAD_NAUP_FOTOTROPISMO, MAD_NAUP_AIREACION, MAD_NAUP_SAL_MAX, MAD_NAUP_TEMP_MAX, MAD_ALC_AREAS,
 } from '../registros/lib/ficha-maduracion-mortdesove.schema.js';
 import { fechaDeFila } from './operativo.data.js';
-import { loteElegido, hayLote, hayCodigo } from './operativo.tablero.js';   // punto 2 · etapa A · uno o varios lotes
+import { loteElegido, hayLote, hayCodigo, haySala, hayTanque, salaElegida, tanqueElegido } from './operativo.tablero.js';   // punto 2 · etapas A y B · uno o varios
 import { cociente } from './operativo.indicadores.js';
 import { umbralVigente, evaluar } from './operativo.umbrales.js';
 
@@ -90,8 +90,8 @@ function lecturaConTope(valor, tope) {
  */
 export function revisionesDeNauplios(fuentes, F, periodo) {
   const ignora = [];
-  if (F.sala) ignora.push('sala');
-  if (F.tanque !== null) ignora.push('tanque');
+  if (haySala(F)) ignora.push('sala');
+  if (hayTanque(F)) ignora.push('tanque');
   if (hayCodigo(F)) ignora.push('código genético');
   const filas = [];
   for (const r of ((fuentes || {}).mortDesove || [])) {
@@ -146,7 +146,7 @@ export function alcalinidadPorArea(fuentes, F, periodo) {
   }
   const areas = [];
   for (const area of MAD_ALC_AREAS) {
-    if (F.sala && area !== 'RAS' && area !== F.sala) continue;
+    if (haySala(F) && area !== 'RAS' && !salaElegida(area, F)) continue;
     const a = ult.get(area) || { area, dia: { valor: null, fecha: '' }, noche: { valor: null, fecha: '' } };
     areas.push({
       area, esRas: area === 'RAS',
@@ -217,8 +217,8 @@ export function frecuenciaDeObservaciones(partes, F, periodo) {
   let registros = 0;
   for (const d of partes || []) {
     if (!enPeriodo(txt(d.fecha), periodo)) continue;
-    if (F.sala && d.sala !== F.sala) continue;
-    if (F.tanque !== null && Number(d.tanque) !== F.tanque) continue;
+    if (!salaElegida(d.sala, F)) continue;
+    if (!tanqueElegido(d.sala, d.tanque, F)) continue;
     registros++;
     for (const [lista, m] of [[d.obsSanitarias, san], [d.obsOperativas, ope]]) {
       for (const o of lista || []) {

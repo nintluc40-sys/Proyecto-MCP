@@ -11,6 +11,9 @@
    · Cada caso deja FUERA a un tercer lote: si el filtro se ignorase, la cifra sería la de todos y la prueba lo vería.
    · Ningún módulo vuelve a leer `F.lote` / `F.codigo` ni arma un filtro con esas claves (la guarda del final): uno
      solo que se quedara con la forma vieja enseñaría TODO sin filtrar, sin un síntoma.
+   Etapa B (2026-10-14, usuario) · la SALA y el TANQUE, también varios (`salas`, `tanques`: pares «sala|n»), con la regla
+   de Lote → Código (decisión del usuario): la unión dentro de cada una; entre las dos, ambas a la vez —con tanques
+   marcados se ven SÓLO esos; una sala sin ninguno de sus tanques no suma—. La guarda vigila también `F.sala` / `F.tanque`.
    Datos FICTICIOS.
    ============================================================ */
 import { describe, it, expect } from 'vitest';
@@ -18,6 +21,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import {
   normalizarFiltro, hayFiltro, hayLote, hayCodigo, loteUnico, dimensionActiva, loteElegido, codigoEnFiltro,
   etiquetasDeFiltro, kpiVivos, kpiOcupacion, kpiMortalidad, kpiReproduccion, periodoDe,
+  haySala, hayTanque, salaUnica, salaElegida, tanqueElegido, mapaDePlanta,
 } from './operativo.tablero.js';
 import { modeloOperativo, serieDiaria, diasDeTanque } from './operativo.data.js';
 import { MAD_OP_ORIGEN } from './operativo.fuentes.js';
@@ -167,6 +171,66 @@ describe('Maduración · operativo · etapa A · lo que se filtra por FILA es lo
   });
 });
 
+/* ── ETAPA B ── varias salas y varios tanques. En el fixture, QA está en Sala 1 · T1, QB en Sala 4 · T1 (el MISMO número en
+   otra sala) y QC en Sala 2 · T16. */
+describe('Maduración · operativo · etapa B · el filtro con VARIAS salas y VARIOS tanques', () => {
+  it('listas sin repetir; el tanque, el par «sala|n», sólo con SU sala marcada; una etiqueta por valor', () => {
+    const X = F({ sala: ['Sala 1', 'Sala 4', 'Sala 1'], tanque: ['Sala 1|01', 'Sala 4|1', 'Sala 2|16', '1'] });
+    expect(X).toMatchObject({ salas: ['Sala 1', 'Sala 4'], tanques: ['Sala 1|1', 'Sala 4|1'] });   // T16 sin su sala; «1» suelto con dos salas
+    expect(F({ sala: 'Sala 4', tanque: 1 }).tanques, 'con UNA sala, el número de siempre').toEqual(['Sala 4|1']);
+    expect([haySala(SIN), hayTanque(SIN), haySala(X), hayTanque(X), hayFiltro(F({ sala: [] }))]).toEqual([false, false, true, true, false]);
+    expect([salaUnica(X), salaUnica(F({ sala: 'Sala 4' })), salaUnica(SIN)]).toEqual(['', 'Sala 4', '']);
+    expect([salaElegida('Sala 4', X), salaElegida('Sala 2', X), salaElegida('Sala 2', SIN)]).toEqual([true, false, true]);
+    expect([tanqueElegido('Sala 4', 1, X), tanqueElegido('Sala 4', '01', X), tanqueElegido('Sala 2', 1, X), tanqueElegido('Sala 1', 2, X), tanqueElegido('Sala 2', 1, SIN)])
+      .toEqual([true, true, false, false, true]);
+    expect(['sala', 'tanque'].map((d) => dimensionActiva(X, d))).toEqual([true, true]);
+    expect(etiquetasDeFiltro(X).map((e) => [e.dim, e.valor, e.clave]))
+      .toEqual([['sala', 'Sala 1', 'Sala 1'], ['sala', 'Sala 4', 'Sala 4'], ['tanque', 'Sala 1 · T1', 'Sala 1|1'], ['tanque', 'Sala 4 · T1', 'Sala 4|1']]);
+    expect(etiquetasDeFiltro(F({ sala: 'Sala 4', tanque: 1 })).map((e) => e.valor), 'con una sala, el tanque es su número').toEqual(['Sala 4', '1']);
+  });
+
+  it('🔴 vivos: Sala 1 + Sala 4 es la suma de cada una, sin la Sala 2; y sus dos tanques 1, igual', () => {
+    const v = (o) => kpiVivos(M.libro, F(o)).total;
+    expect(v({ sala: ['Sala 1', 'Sala 4'] })).toBe(v({ sala: 'Sala 1' }) + v({ sala: 'Sala 4' }));
+    expect(v({ sala: ['Sala 1', 'Sala 4'] })).toBeLessThan(v({}));
+    expect(v({ sala: ['Sala 1', 'Sala 4'], tanque: ['Sala 1|1', 'Sala 4|1'] })).toBe(v({ sala: ['Sala 1', 'Sala 4'] }));
+    expect(v({ sala: ['Sala 1', 'Sala 4'] })).toBe(kpiVivos(M.libro, F({ lote: ['QA', 'QB'] })).total);
+  });
+
+  it('🔴 como Lote → Código: con tanques marcados se ven SÓLO esos; la sala sin ninguno de sus tanques no suma', () => {
+    const v = (o) => kpiVivos(M.libro, F(o)).total;
+    expect(v({ sala: ['Sala 1', 'Sala 4'], tanque: ['Sala 1|1'] })).toBe(v({ sala: 'Sala 1', tanque: 1 }));
+    expect(v({ sala: ['Sala 1', 'Sala 4'], tanque: ['Sala 1|1'] })).toBeLessThan(v({ sala: ['Sala 1', 'Sala 4'] }));
+    const enMapa = (o) => mapaDePlanta(M.libro, F(o)).salas.flatMap((x) => x.tanques).filter((t) => t.enFiltro && t.vivos > 0).map((t) => t.sala + '|' + t.tanque);
+    expect(enMapa({ sala: ['Sala 1', 'Sala 4'], tanque: ['Sala 1|1'] })).toEqual(['Sala 1|1']);
+    expect(enMapa({ sala: ['Sala 1', 'Sala 4'] })).toEqual(['Sala 1|1', 'Sala 4|1']);
+  });
+
+  it('🔴 ocupación: con UN tanque, si está ocupado; con varios, cuántos de ELLOS tienen lo filtrado', () => {
+    const o = (x) => kpiOcupacion(M.salas, M.libro, F(x));
+    expect(o({ sala: 'Sala 4', tanque: 1 })).toMatchObject({ modo: 'tanque', ocupados: 1, total: 1 });
+    expect(o({ sala: ['Sala 1', 'Sala 4'], tanque: ['Sala 1|1', 'Sala 4|1'] })).toMatchObject({ modo: 'filtro', ocupados: 2, total: 2 });
+    expect(o({ sala: ['Sala 1', 'Sala 4'], tanque: ['Sala 1|1', 'Sala 1|2'] })).toMatchObject({ modo: 'filtro', ocupados: 1, total: 2 });
+    expect(o({ sala: ['Sala 1', 'Sala 4'] }).total).toBe(o({ sala: 'Sala 1' }).total + o({ sala: 'Sala 4' }).total);
+  });
+
+  it('🔴 la mortalidad REGISTRADA y los gráficos de vivos y mortalidad: la suma de las salas (y de los tanques) elegidas', () => {
+    const p = periodoDe('7d', FOTO, M.fuentes);
+    const serie = serieDiaria(M.fuentes, sumarDias(p.desde, -1), p.hasta);
+    const partes = diasDeTanque(M.fuentes.tanques);
+    const m = (o) => kpiMortalidad(serie, p, F(o), partes);
+    expect(m({ sala: ['Sala 1', 'Sala 4'] })).toMatchObject({ modo: 'registradas', dia: { muertos: 6 } });   // 2 + 4, sin los 5 de la Sala 2
+    expect(m({ sala: ['Sala 1', 'Sala 4'], tanque: ['Sala 4|1'] }).dia.muertos).toBe(4);
+    const total = (g) => g.series.find((x) => x.clave === 'total').datos;
+    const vivos = (o) => graficoVivos(serie, p, F(o));
+    expect(total(vivos({ sala: ['Sala 1', 'Sala 4'] }))).toEqual(total(vivos({ sala: 'Sala 1' })).map((n, i) => n + total(vivos({ sala: 'Sala 4' }))[i]));
+    expect(total(vivos({ sala: ['Sala 1', 'Sala 4'], tanque: ['Sala 1|1', 'Sala 4|1'] }))).toEqual(total(vivos({ sala: ['Sala 1', 'Sala 4'] })));
+    expect(total(vivos({ sala: ['Sala 1', 'Sala 4'] }))).not.toEqual(total(vivos({})));
+    const dia = (o) => graficoDeKpi('mortalidad', { serie, periodo: p, F: F(o), partes, M }).series.find((x) => x.clave === 'dia').datos;
+    expect(dia({ sala: ['Sala 1', 'Sala 4'] })).toEqual(dia({ sala: 'Sala 1' }).map((n, i) => n + dia({ sala: 'Sala 4' })[i]));
+  });
+});
+
 /* ── LA GUARDA ── ningún módulo del tablero lee el filtro con la forma vieja ni la arma. */
 const DIR = new URL('./', import.meta.url);
 const sinComentarios = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
@@ -184,6 +248,18 @@ describe('Maduración · operativo · etapa A · la forma vieja del filtro no vu
       expect(s.match(/\bF\.(lote|codigo)\b/g), 'lee la forma vieja').toBeNull();
       expect(s.match(/\.\.\.\s*\(?\s*F\b[^}]*\b(lote|codigo)\b\s*[:,}]/g), 'arma un filtro con la clave vieja').toBeNull();
       expect(s.match(/(EnFiltro|loteElegido)\([^;]*\{\s*(lote|codigo)\b\s*[:,}]/g), 'pasa un filtro con la clave vieja').toBeNull();
+    });
+  }
+  /* Etapa B · ni `F.sala` / `F.tanque` ni un filtro armado con `sala` / `tanque` (también tras un `...(F || {})`, que es
+     como estaba `observacionesDeTanque`). En planta/estado.js `F` es OTRA cosa —los nombres de columna: `F.tanque` es
+     «Tanque»— y su filtro del tablero es `normalizarFiltro({})`: por eso no entra aquí. */
+  for (const n of [...MODULOS, '../visitante/maduracion.produccion.js']) {
+    it(`🔴 etapa B · ${n}: ni \`F.sala\` / \`F.tanque\` ni un filtro armado con \`sala\` / \`tanque\``, () => {
+      const s = sinComentarios(readFileSync(new URL(n, DIR), 'utf8'));
+      expect(s.match(/\bF\.(sala|tanque)\b/g), 'lee la forma vieja').toBeNull();
+      expect(s.match(/\.\.\.\s*\(?\s*F\b(?:[^}]|\{\})*\b(sala|tanque)\b\s*[:,}]/g), 'arma un filtro con la clave vieja').toBeNull();
+      // el FILTRO es el segundo argumento: una posición o una fila sí llevan `sala` / `tanque` (`posicionEnFiltro({ sala, … }, F)`)
+      expect(s.match(/(EnFiltro|Elegid[oa])\(\s*[^,;()]+,\s*\{\s*(sala|tanque)\b\s*[:,}]/g), 'pasa un filtro con la clave vieja').toBeNull();
     });
   }
 });

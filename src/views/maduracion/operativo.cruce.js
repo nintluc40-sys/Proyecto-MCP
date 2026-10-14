@@ -26,7 +26,7 @@
 import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { ESTADO_MUERTO, resolveEventLocation } from './data.js';
 import { fechaDeFila } from './operativo.data.js';
-import { codigoEnFiltro, loteElegido } from './operativo.tablero.js';   // 0r·4 · H2 · la pareja de códigos cuenta como sus dos
+import { codigoEnFiltro, loteElegido, hayTanque, salaElegida, tanqueElegido } from './operativo.tablero.js';   // 0r·4 · H2 · la pareja de códigos cuenta como sus dos
 
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
 const esIso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -55,8 +55,8 @@ const ROTULO_DIM = { estado: 'estado', sexo: 'sexo', piscina: 'piscina', camaron
 export function ignoraDeCruce(F) {
   return Object.keys(ROTULO_DIM).filter((d) => F && F[d]).map((d) => ROTULO_DIM[d]);
 }
-const enLugar = (F, sala, tanque) => (!F || !F.sala || salaCanonica(sala) === F.sala)
-  && (!F || F.tanque === null || F.tanque === undefined || tanqueCanonico(tanque) === F.tanque);
+const enLugar = (F, sala, tanque) => salaElegida(salaCanonica(sala), F)
+  && (!hayTanque(F) || (tanqueCanonico(tanque) !== null && tanqueElegido(salaCanonica(sala), tanqueCanonico(tanque), F)));
 const enOrigen = (F, lote, codigo) => loteElegido(lote, F) && codigoEnFiltro(codigo, F);
 
 /**

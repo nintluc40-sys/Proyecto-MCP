@@ -256,10 +256,13 @@ const DIMS = ['sala', 'tanque', 'lote', 'codigo'];
 /* Valores que EXISTEN en el fixture de abajo, para que un filtro pueda cambiar algo. */
 const VALOR = { sala: 'Sala 1', tanque: 1, lote: 'L1', codigo: 'C1' };
 
-/* Punto 2 · etapa A (2026-10-13) · el filtro lleva LISTAS de lotes y códigos (`lotes`, `codigos`; vacía = todos). */
+/* Punto 2 · etapa A (2026-10-13) · el filtro lleva LISTAS de lotes y códigos (`lotes`, `codigos`; vacía = todos); etapa B
+   (2026-10-14), también de salas y tanques (`salas`, `tanques`: pares «sala|n»; un tanque suelto es de la sala de VALOR). */
 const FIL = (d) => {
-  const { lote, codigo, ...resto } = d || {};
-  return { sala: null, tanque: null, lotes: lote ? [].concat(lote) : [], codigos: codigo ? [].concat(codigo) : [], ...resto };
+  const { lote, codigo, sala, tanque, ...resto } = d || {};
+  const lista = (v) => (v === undefined || v === null ? [] : [].concat(v));
+  return { salas: lista(sala), tanques: lista(tanque).map((t) => (String(t).includes('|') ? String(t) : VALOR.sala + '|' + t)),
+    lotes: lista(lote), codigos: lista(codigo), ...resto };
 };
 const P = { desde: '2026-09-01', hasta: '2026-09-30' };
 
@@ -380,10 +383,10 @@ for (const [hoja, sonda] of Object.entries(SONDAS)) {
       }
     });
 
-    /* Punto 2 · etapa A (2026-10-13, usuario) · VARIOS lotes o códigos son la UNIÓN: uno que no existe, elegido ANTES
-       que el bueno, no cambia nada. Un consumidor que mirase sólo el primero de la lista se quedaría con el inexistente
-       y sus datos serían los de «nada»; el control comprueba que el inexistente, solo, sí los cambia. */
-    const varios = admite.filter((d) => d === 'lote' || d === 'codigo');
+    /* Punto 2 · etapas A y B (2026-10-13/14, usuario) · VARIOS lotes, códigos, salas o tanques son la UNIÓN: uno que no
+       existe, elegido ANTES que el bueno, no cambia nada. Un consumidor que mirase sólo el primero de la lista se quedaría
+       con el inexistente y sus datos serían los de «nada»; el control comprueba que el inexistente, solo, sí los cambia. */
+    const varios = admite.filter((d) => d === 'lote' || d === 'codigo' || d === 'sala' || d === 'tanque');
     if (varios.length) {
       it(`con VARIOS (${varios.join(', ')}), la unión: uno que no existe no le quita nada al bueno`, () => {
         const f = FIXTURE();

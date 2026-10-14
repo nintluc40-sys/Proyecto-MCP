@@ -41,7 +41,7 @@ import { diasEntre } from '../registros/lib/mad-resumen.js';
 import { normPiscina } from '../registros/lib/ficha-maduracion-broodstock.schema.js';   // punto 5 · la piscina canónica
 import { fechaDeFila } from './operativo.data.js';
 import { cociente } from './operativo.indicadores.js';
-import { kpiReproduccion, codigoEnFiltro, loteElegido } from './operativo.tablero.js';
+import { kpiReproduccion, codigoEnFiltro, loteElegido, haySala, hayTanque } from './operativo.tablero.js';
 import { reproduccionDeLote } from './operativo.lotes.js';
 
 const txt = (v) => String(v == null ? '' : v).trim();
@@ -61,8 +61,8 @@ const porCatalogo = (a, b) => ordenDestino(a) - ordenDestino(b) || porNombre(a, 
 /** Lo que el filtro NO puede aplicar aquí, para que la vista lo rotule. Mismo criterio que `kpiReproduccion`. */
 export function ignoraDeReproduccion(F) {
   const x = [];
-  if (F && F.sala) x.push('sala');
-  if (F && F.tanque !== null && F.tanque !== undefined) x.push('tanque');
+  if (haySala(F)) x.push('sala');
+  if (hayTanque(F)) x.push('tanque');
   return x;
 }
 

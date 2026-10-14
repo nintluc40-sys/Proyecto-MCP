@@ -47,7 +47,7 @@ import {
   PERIODOS, PERIODO_INICIAL, periodoDe, normalizarFiltro, hayFiltro, kpiVivos, kpiLotes, kpiSalas, kpiOcupacion,
   kpiMortalidad, kpiReproduccion, mapaDePlanta, MODOS_MAPA, ESTADO_VACIO, ESTADO_SIN, alertas, ultimosRegistros,
   cuarentenasDeLotes, conIngresoDelLote, curvaDeCuarentena, AVISO_CUARENTENA_DIAS, tarjetasDeSalas, detalleDeSala, ambienteDelDia,
-  indiceDeFiltro, cicloDelLote, etiquetasDeFiltro, kpiBiomasa, loteUnico,
+  indiceDeFiltro, cicloDelLote, etiquetasDeFiltro, kpiBiomasa, loteUnico, salaUnica, textoDeTanque,
 } from './operativo.tablero.js';
 import { KPIS_CON_GRAFICO, graficoDeKpi } from './operativo.kpis.js';
 import { BIOMOL_PATOGENOS } from './operativo.laboratorio.js';
@@ -142,7 +142,7 @@ const SUBS = [
 ];
 /** 2 · las sub-vistas con sus propios filtros: sin la barra ni las etiquetas del tablero, que no les aplican. */
 const PROPIOS = new Set(['micro', 'biomol', 'mareas']);
-const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', tanque: '', lote: [], codigo: [], color: 'estado', salaDetalle: '', tanqueSel: '', loteSel: '', agrupacion: 'lote',
+const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: [], tanque: [], lote: [], codigo: [], color: 'estado', salaDetalle: '', tanqueSel: '', loteSel: '', agrupacion: 'lote',
   estado: '', sexo: '', piscina: '', camaronera: '', agrupacionBajas: 'sala',
   /* 2026-10-03 (punto 5, usuario) · el «Desde» del período «Rango» (su «Hasta» es la foto); '' = aún sin elegir. */
   desde: '',
@@ -317,7 +317,7 @@ export function operativoView(root) {
   let h = cabeceraHTML(fecha) + barra + subnavHTML() + avisosDelDatoHTML(M);
   let detalle = null;
   if (vOp.sub === 'salas') {
-    const salaDet = F.sala || vOp.salaDetalle;
+    const salaDet = salaUnica(F) || vOp.salaDetalle;   // etapa B · se abre solo sólo con UNA sala (decisión del usuario)
     detalle = salaDet ? detalleDeSala(M, salaDet, periodo, F, memo.partes) : null;
     h += salasHTML(M, F, detalle, periodo);
   } else if (vOp.sub === 'lotes') {
@@ -364,10 +364,14 @@ export function operativoView(root) {
   bind(root);
 }
 
-/** Un filtro que ya no existe en los datos (otra foto, datos refrescados) se quita; el tanque, sin sala, también. */
+/** Un filtro que ya no existe en los datos (otra foto, datos refrescados) se quita; un tanque cuya sala ya no está
+ *  marcada, también (etapa B: el tanque es el par «sala|n»). */
 function depurarFiltros(o) {
-  if (vOp.sala && !o.salas.includes(vOp.sala)) vOp.sala = '';
-  if (!vOp.sala || !(o.tanquesPorSala[vOp.sala] || []).map(String).includes(String(vOp.tanque))) vOp.tanque = '';
+  vOp.sala = vOp.sala.filter((x) => o.salas.includes(x));
+  vOp.tanque = vOp.tanque.filter((k) => {
+    const i = k.lastIndexOf('|');
+    return vOp.sala.includes(k.slice(0, i)) && (o.tanquesPorSala[k.slice(0, i)] || []).map(String).includes(k.slice(i + 1));
+  });
   vOp.lote = vOp.lote.filter((l) => o.lotes.includes(l));
   const codigos = codigosDe(o, vOp.lote);
   vOp.codigo = vOp.codigo.filter((c) => codigos.includes(c));
@@ -382,8 +386,10 @@ function etiquetasHTML(F) {
   const es = etiquetasDeFiltro(F);
   if (!es.length) return '';
   return `<div class="mop-chips" role="group" aria-label="Filtros activos">${es.map((e) =>
-    `<button class="mop-chip-f" data-mop-quitar="${esc(e.dim)}"${MULTI.has(e.dim) ? ` data-mop-valor="${esc(e.valor)}"` : ''} title="Quitar el filtro de ${esc(e.rotulo)}">${esc(e.rotulo)}: <b>${esc(e.valor)}</b> ✕</button>`).join('')}</div>`;
+    `<button class="mop-chip-f" data-mop-quitar="${esc(e.dim)}"${MULTI.has(e.dim) ? ` data-mop-valor="${esc(e.clave)}"` : ''} title="Quitar el filtro de ${esc(e.rotulo)}">${esc(e.rotulo)}: <b>${esc(e.valor)}</b> ✕</button>`).join('')}</div>`;
 }
+/** Los tanques de las salas marcadas, como pares «sala|n», en el orden de las salas y de su catálogo. */
+const tanquesDe = (o, salas) => o.salas.filter((s) => salas.includes(s)).flatMap((s) => (o.tanquesPorSala[s] || []).map((t) => s + '|' + t));
 /** Los códigos de los lotes elegidos (todos, sin lote): la cascada Lote → Código con varios lotes es la UNIÓN. */
 const codigosDe = (o, lotes) => (lotes.length ? [...new Set(lotes.flatMap((l) => o.codigosPorLote[l] || []))]
   : [...new Set(Object.values(o.codigosPorLote).flat())]).sort(porNombre);
@@ -393,16 +399,19 @@ const codigosDe = (o, lotes) => (lotes.length ? [...new Set(lotes.flatMap((l) =>
    JUNTO (la unión). Un desplegable con casillas: cada una aplica al momento y la lista sigue abierta mientras se marca
    (se repinta abierta con `vOp.multiAbierto`); un clic fuera o Escape la cierran. `id` distingue la barra del tablero
    de la de 🖨 Reportes, que comparten el estado. */
-const MULTI = new Set(['lote', 'codigo']);
-const NORM_MULTI = { lote: normLote, codigo: normCodigoGenetico };
-function multiHTML(dim, elegidos, valores, rotulo, id = dim) {
-  const sel = valores.filter((v) => elegidos.includes(v));   // en el orden de las opciones
+/* Etapa B (2026-10-14) · la sala y el tanque, igual. El tanque es el par «sala|n» y se LEE «3» con una sala y «Sala 1 ·
+   T3» con varias (`texto`); sin sala marcada no hay tanques que ofrecer (`vacio`). */
+const MULTI = new Set(['lote', 'codigo', 'sala', 'tanque']);
+const mismo = (x) => x;
+const NORM_MULTI = { lote: normLote, codigo: normCodigoGenetico, sala: mismo, tanque: mismo };
+function multiHTML(dim, elegidos, valores, rotulo, id = dim, { texto = mismo, vacio = 'Sin opciones' } = {}) {
+  const sel = valores.filter((v) => elegidos.includes(v)).map(texto);   // en el orden de las opciones
   const resumen = !sel.length ? rotulo : sel.length <= 2 ? sel.join(', ') : `${sel.slice(0, 2).join(', ')} +${sel.length - 2}`;
   return `<details class="mop-multi${sel.length ? ' is-on' : ''}" data-mop-multi="${esc(id)}"${vOp.multiAbierto === id ? ' open' : ''}>
       <summary class="mc-select mop-multi-s" aria-label="${esc(rotulo)}">${esc(resumen)}</summary>
       <div class="mop-multi-p" role="group" aria-label="${esc(rotulo)}">${valores.length
-        ? valores.map((v) => `<label class="mop-multi-o"><input type="checkbox" data-mop-multi-v="${esc(dim)}" value="${esc(v)}"${elegidos.includes(v) ? ' checked' : ''}> ${esc(v)}</label>`).join('')
-        : '<span class="mc-note">Sin opciones</span>'}${sel.length ? `<button type="button" class="mc-mini mop-multi-todos" data-mop-multi-todos="${esc(dim)}">${esc(rotulo)}</button>` : ''}</div>
+        ? valores.map((v) => `<label class="mop-multi-o"><input type="checkbox" data-mop-multi-v="${esc(dim)}" value="${esc(v)}"${elegidos.includes(v) ? ' checked' : ''}> ${esc(texto(v))}</label>`).join('')
+        : `<span class="mc-note">${esc(vacio)}</span>`}${sel.length ? `<button type="button" class="mc-mini mop-multi-todos" data-mop-multi-todos="${esc(dim)}">${esc(rotulo)}</button>` : ''}</div>
     </details>`;
 }
 
@@ -423,7 +432,7 @@ function filtrosHTML(M, hoy, fecha, p) {
         return `<option value="${esc(v)}"${String(valor) === String(v) ? ' selected' : ''}>${esc(t)}</option>`;
       }).join('')}
     </select>`;
-  const cambiado = vOp.periodo !== INICIAL.periodo || vOp.fecha || vOp.sala || vOp.lote.length || vOp.codigo.length
+  const cambiado = vOp.periodo !== INICIAL.periodo || vOp.fecha || vOp.sala.length || vOp.lote.length || vOp.codigo.length
     || vOp.estado || vOp.sexo || vOp.piscina || vOp.camaronera;
   return `<div class="mop-filtros">
     <div class="mop-f-grupo"><span class="mop-f-lbl">Período</span>
@@ -438,8 +447,8 @@ function filtrosHTML(M, hoy, fecha, p) {
     <label class="mop-f-grupo"><span class="mop-f-lbl">${p.clave === 'rango' ? 'Hasta (foto al día)' : 'Foto al día'}</span>
       <input type="date" class="mop-fecha" data-mop-fecha value="${esc(fecha)}" max="${esc(hoy)}"></label>
     <div class="mop-f-grupo"><span class="mop-f-lbl">Sala → Tanque</span>
-      ${sel('sala', vOp.sala, o.salas, 'Todas las salas')}
-      ${sel('tanque', vOp.tanque, vOp.sala ? o.tanquesPorSala[vOp.sala] || [] : [], 'Todos los tanques', !vOp.sala)}</div>
+      ${multiHTML('sala', vOp.sala, o.salas, 'Todas las salas')}
+      ${multiHTML('tanque', vOp.tanque, tanquesDe(o, vOp.sala), 'Todos los tanques', 'tanque', { texto: (k) => textoDeTanque(k, { salas: vOp.sala }), vacio: 'Elige antes una sala' })}</div>
     <div class="mop-f-grupo"><span class="mop-f-lbl">Lote → Código genético</span>
       ${multiHTML('lote', vOp.lote, o.lotes, 'Todos los lotes')}
       ${multiHTML('codigo', vOp.codigo, codigosDe(o, vOp.lote), 'Todos los códigos')}</div>
@@ -3439,7 +3448,7 @@ function bind(root) {
       const nueva = sub.dataset.mopSub;
       /* 2 · entrar en 🦠 o 🧬 empieza con la sala, el sexo y el lote del tablero (0q·5a), y en 🌊, en «Día» (0r·1): como
          al abrir sus ventanas. Pulsar la que ya está a la vista no borra lo elegido. */
-      if (LAB[nueva] && nueva !== vOp.sub) vOp.labF = { ...LABF_VACIO, lote: vOp.lote.length === 1 ? vOp.lote[0] : '', sala: vOp.sala || '', sexo: vOp.sexo || '' };
+      if (LAB[nueva] && nueva !== vOp.sub) vOp.labF = { ...LABF_VACIO, lote: vOp.lote.length === 1 ? vOp.lote[0] : '', sala: vOp.sala.length === 1 ? vOp.sala[0] : '', sexo: vOp.sexo || '' };
       if (nueva === 'mareas' && vOp.sub !== 'mareas') _mareas.estado = undefined;
       vOp.sub = nueva;
       repintar();
@@ -3467,7 +3476,7 @@ function bind(root) {
     if (t.closest('[data-mop-rep-pdf]')) { imprimirParte(); return; }
     if (t.closest('[data-mop-rep-xlsx]')) { descargarParte(); return; }
     if (t.closest('[data-mop-limpiar]')) {
-      Object.assign(vOp, { periodo: INICIAL.periodo, fecha: '', sala: '', tanque: '', lote: [], codigo: [], tanqueSel: '', salaDetalle: '', piscinaSel: '', loteSel: '', tqFicha: '', estado: '', sexo: '', piscina: '', camaronera: '' });
+      Object.assign(vOp, { periodo: INICIAL.periodo, fecha: '', sala: [], tanque: [], lote: [], codigo: [], tanqueSel: '', salaDetalle: '', piscinaSel: '', loteSel: '', tqFicha: '', estado: '', sexo: '', piscina: '', camaronera: '' });
       vOp.desde = '';   // punto 5 · el «Desde» del Rango (aparte: las dos puntas de la línea de arriba son anclas)
       repintar();
       return;
@@ -3476,10 +3485,9 @@ function bind(root) {
     if (col) { vOp.color = col.dataset.mopColor; repintar(); return; }
     const qui = t.closest('[data-mop-quitar]');
     if (qui) {
-      /* No hace falta soltar aquí el tanque: sin sala, `depurarFiltros` ya lo limpia en el pintado siguiente
-         (`!vOp.sala`). La línea que lo hacía era redundante —ningún banco podía distinguirla— y se retiró. ⚠ La
-         del CAMBIO de sala NO lo es: al pasar a otra sala que también tenga ese número, depurarFiltros lo da por
-         bueno y el tanque de la sala anterior se quedaría puesto (eso lo vigila V08). */
+      /* No hace falta soltar aquí los tanques de una sala que se quita: `depurarFiltros` los limpia en el pintado
+         siguiente. Desde la etapa B (2026-10-14) el tanque es el par «sala|n», así que tampoco puede quedarse puesto
+         el de otra sala con el mismo número (lo que vigilaba V08 con la línea que lo soltaba al cambiar de sala). */
       const dim = qui.dataset.mopQuitar;
       if (MULTI.has(dim)) vOp[dim] = vOp[dim].filter((x) => NORM_MULTI[dim](x) !== qui.dataset.mopValor);   // etapa A · sólo ESE
       else vOp[dim] = '';
@@ -3546,8 +3554,8 @@ function bind(root) {
     if (ftq) {
       const k = ftq.dataset.mopFiltrarTq;
       const i = k.lastIndexOf('|');
-      vOp.sala = k.slice(0, i);
-      vOp.tanque = k.slice(i + 1);
+      vOp.sala = [k.slice(0, i)];   // etapa B · sustituye lo marcado por ESE tanque (decisión del usuario)
+      vOp.tanque = [k];
       repintar();
       return;
     }
@@ -3651,7 +3659,6 @@ function bind(root) {
     if (f) {
       const dim = f.dataset.mopFiltro;
       vOp[dim] = f.value || '';
-      if (dim === 'sala') vOp.tanque = '';
       vOp.tanqueSel = '';
       repintar();
       return;

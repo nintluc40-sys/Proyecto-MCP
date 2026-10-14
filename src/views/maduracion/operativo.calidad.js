@@ -25,7 +25,7 @@
 import { MAD_OP_HOJAS } from './operativo.fuentes.js';
 import { fechaDeFila } from './operativo.data.js';
 import { cociente } from './operativo.indicadores.js';
-import { ETIQUETA_HOJA, ESPERA_DIAS, TIPOS_AVISO, avisoEnFiltro, ultimosRegistros, dimensionActiva, hayCodigo } from './operativo.tablero.js';
+import { ETIQUETA_HOJA, ESPERA_DIAS, TIPOS_AVISO, avisoEnFiltro, ultimosRegistros, dimensionActiva, hayCodigo, salaElegida, tanqueElegido } from './operativo.tablero.js';
 import { sumarDias, ubicKey } from '../registros/lib/mad-libro.js';
 import { diasEntre } from '../registros/lib/mad-resumen.js';
 
@@ -148,8 +148,8 @@ export function coberturaDePartes(M, serie, partes, periodo, F) {
     if (!foto) return;
     for (const T of Object.values(foto.porTanque || {})) {
       if (!vivo(T)) continue;
-      if (F && F.sala && T.sala !== F.sala) continue;
-      if (F && F.tanque !== null && F.tanque !== undefined && Number(T.tanque) !== F.tanque) continue;
+      if (!salaElegida(T.sala, F)) continue;
+      if (!tanqueElegido(T.sala, T.tanque, F)) continue;
       const S = salaDe(T.sala);
       const c = celdaDe(S, i, d);
       const tiene = (conParte.get(d) || new Set()).has(ubicKey(T.sala, T.tanque));
@@ -163,7 +163,7 @@ export function coberturaDePartes(M, serie, partes, periodo, F) {
     }
     for (const [sala, v] of Object.entries(foto.porSala || {})) {
       if (!vivo(v)) continue;
-      if (F && F.sala && sala !== F.sala) continue;
+      if (!salaElegida(sala, F)) continue;
       const S = salaDe(sala);
       const c = celdaDe(S, i, d);
       const tiene = (conRegistro.get(d) || new Set()).has(sala);
@@ -202,12 +202,11 @@ export function partesDelDia(cob, serie, partes, dia, sala, F) {
   const foto = (serie || []).find((x) => x.fecha === dia);
   const esperado = new Set();
   for (const T of Object.values((foto && foto.porTanque) || {})) if (vivo(T)) esperado.add(ubicKey(T.sala, T.tanque));
-  const conTanque = !!F && F.tanque !== null && F.tanque !== undefined;
   const salas = [];
   for (const S of cob.salas) {
     if (sala && S.sala !== sala) continue;
     const filas = (partes || [])
-      .filter((p) => txt(p.fecha) === dia && txt(p.sala) === S.sala && (!conTanque || Number(p.tanque) === F.tanque))
+      .filter((p) => txt(p.fecha) === dia && txt(p.sala) === S.sala && tanqueElegido(S.sala, p.tanque, F))
       .map((p) => ({ ...p, esperado: esperado.has(ubicKey(p.sala, p.tanque)) }))
       .sort((a, b) => (Number(a.tanque) || 0) - (Number(b.tanque) || 0));
     const celda = S.celdas[i];
@@ -231,7 +230,7 @@ export const SITUACIONES_ESTADO = {
  * tecleado hace semanas que coincide por casualidad no es un estado al día, y se ve en `desfaseDias`.
  */
 export function comparacionDeEstados(M, F) {
-  const filas = ((M && M.salas) || []).filter((s) => !(F && F.sala) || s.sala === F.sala).map((s) => {
+  const filas = ((M && M.salas) || []).filter((s) => salaElegida(s.sala, F)).map((s) => {
     const r = txt(s.registrado && s.registrado.estado);
     const p = txt(s.propuesto && s.propuesto.estado);
     const situacion = s.coinciden === true ? 'coinciden' : s.coinciden === false ? 'difieren'

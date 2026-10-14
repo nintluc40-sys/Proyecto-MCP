@@ -33,7 +33,7 @@ import { normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.sc
 import { ubicKey, pesosDeAlimentacion } from '../registros/lib/mad-libro.js';
 import { fechaDeFila } from './operativo.data.js';
 import { proporcionHM, densidadTanque } from './operativo.indicadores.js';
-import { posicionEnFiltro, hayLote, hayCodigo } from './operativo.tablero.js';
+import { posicionEnFiltro, hayLote, hayCodigo, claveTanque } from './operativo.tablero.js';
 import { frecuenciaDeObservaciones } from './operativo.revisiones.js';
 
 const txt = (v) => String(v == null ? '' : v).trim();
@@ -209,7 +209,7 @@ export function partesDelDia(fuentes, sala, tanque, fecha) {
  *  ⚠ Su unidad es el DÍA con parte, no el parte suelto: `diasDeTanque` ya unifica las observaciones del día
  *  (una observación marcada en las cinco rondas de un día cuenta una vez). */
 export function observacionesDeTanque(dias, sala, tanque, periodo, F) {
-  return frecuenciaDeObservaciones(dias, { ...(F || {}), sala: txt(sala), tanque: ent(tanque) }, periodo);
+  return frecuenciaDeObservaciones(dias, { ...(F || {}), salas: [txt(sala)], tanques: [claveTanque(txt(sala), ent(tanque))] }, periodo);   // etapa B · LISTAS
 }
 
 /** Los movimientos que ENTRARON o SALIERON de este tanque, en orden. Un traslado interno aparece en los dos. */

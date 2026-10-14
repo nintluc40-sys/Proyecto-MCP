@@ -88,14 +88,12 @@ const kpi = (rotulo) => {
 };
 const tq = (sala, n) => root.querySelector(`[data-mop-tq="${sala}|${n}"]`);
 const filtro = (dim) => root.querySelector(`[data-mop-filtro="${dim}"]`);
-/* La opción que el HTML declara elegida, que es la que enseña el navegador. ⚠ No `select.value`: happy-dom, al leer
-   un <select> desde innerHTML, marca la opción ANTERIOR a la que lleva `selected` cuando no es la segunda (medido el
-   2026-09-19: con la tercera marcada devuelve la segunda). */
-const elegido = (dim) => { const s = filtro(dim); return (s.querySelector('option[selected]') || s.options[0]).value; };
 /* Punto 2 · etapa A (2026-10-13, usuario) · el lote y el código se eligen en un desplegable de CASILLAS, varios a la vez.
+   Etapa B (2026-10-14): la sala y el tanque, también (`marcar('sala', …)`, `marcar('tanque', 'Sala 1|1')`).
    `marcar(id, valores)` deja marcados EXACTAMENTE esos —como elegir en el antiguo <select>; [] = ninguno—, casilla a
-   casilla y con su evento; `id` es 'lote' / 'codigo' en la barra del tablero y 'rep-lote' / 'rep-codigo' en la de
-   🖨 Reportes. Si un valor no se puede marcar (no está entre las opciones), revienta: no se da por elegido en silencio. */
+   casilla y con su evento; `id` es 'lote' / 'codigo' / 'sala' / 'tanque' en la barra del tablero y 'rep-lote' /
+   'rep-codigo' en la de 🖨 Reportes. Si un valor no se puede marcar (no está entre las opciones), revienta: no se da por
+   elegido en silencio. */
 const casillas = (id) => [...root.querySelectorAll(`[data-mop-multi="${id}"] [data-mop-multi-v]`)];
 const opcionesDe = (id) => casillas(id).map((c) => c.value);
 const marcados = (id) => casillas(id).filter((c) => c.checked).map((c) => c.value);
@@ -159,26 +157,27 @@ describe('Maduración · operativo · 📊 Estado actual', () => {
 
   it('filtros: sala → tanque en cascada (el 1 de la Sala 1 no es el de la Sala 4), lote → código, y ✕ Limpiar', async () => {
     await montar(PLANTA);
-    expect(filtro('tanque').disabled).toBe(true);
+    expect(opcionesDe('tanque')).toEqual([]);   // etapa B · sin sala marcada no hay tanques que ofrecer
+    expect(root.querySelector('[data-mop-multi="tanque"]').textContent).toContain('Elige antes una sala');
     expect(root.querySelector('[data-mop-limpiar]')).toBeNull();
-    cambiar(filtro('sala'), 'Sala 1');
+    marcar('sala', 'Sala 1');
     expect(kpi('Vivos')).toBe('34');
-    expect(filtro('tanque').disabled).toBe(false);
-    expect(filtro('tanque').options).toHaveLength(16);
-    cambiar(filtro('tanque'), '1');
+    expect(opcionesDe('tanque')[0]).toBe('Sala 1|1');
+    expect(opcionesDe('tanque')).toHaveLength(15);
+    marcar('tanque', 'Sala 1|1');
     expect(kpi('Vivos')).toBe('34');
     expect(tq('Sala 4', 1).classList.contains('is-dim')).toBe(true);
     expect(tq('Sala 1', 1).classList.contains('is-dim')).toBe(false);
-    cambiar(filtro('sala'), 'Sala 4');                      // otra sala: el tanque 1 de antes ya no es éste
-    expect(elegido('tanque')).toBe('');
+    marcar('sala', 'Sala 4');                      // otra sala: el tanque 1 de antes ya no es éste
+    expect(marcados('tanque')).toEqual([]);
     click(root.querySelector('[data-mop-limpiar]'));
     expect(kpi('Vivos')).toBe('66');
-    expect(elegido('sala')).toBe('');
+    expect(marcados('sala')).toEqual([]);
     marcar('lote', 'QB');
     expect(kpi('Vivos')).toBe('16');
     expect(marcados('lote')).toEqual(['QB']);
     expect(opcionesDe('codigo')).toEqual(['CA']);
-    cambiar(filtro('sala'), 'Sala 1');                      // cambiar de sala borra el tanque, no el lote
+    marcar('sala', 'Sala 1');                      // cambiar de sala borra el tanque, no el lote
     expect(marcados('lote')).toEqual(['QB']);
     expect(kpi('Vivos')).toBe('0');
     expect(errSpy).not.toHaveBeenCalled();
@@ -289,7 +288,7 @@ describe('Maduración · operativo · 📊 Estado actual', () => {
     // 0f · 3: la línea de texto pasó a ser el LIENZO del tanque (sus lotes con código y estado, y lo demás).
     expect(info).toContain('QA · CA · Producción');
     click(root.querySelector('[data-mop-filtrar-tq]'));
-    expect([elegido('sala'), elegido('tanque')]).toEqual(['Sala 1', '1']);
+    expect([marcados('sala'), marcados('tanque')]).toEqual([['Sala 1'], ['Sala 1|1']]);
     expect(kpi('Vivos')).toBe('34');
   });
 });
@@ -464,7 +463,7 @@ describe('Maduración · operativo · 🏠 Salas', () => {
 
   it('con filtro de sala, sólo su tarjeta y su detalle abierto', async () => {
     await montar(PLANTA);
-    cambiar(filtro('sala'), 'Sala 2');
+    marcar('sala', 'Sala 2');
     click(root.querySelector('[data-mop-sub="salas"]'));
     expect([...root.querySelectorAll('.mop-sala-card')].map((c) => c.dataset.mopSala)).toEqual(['Sala 2']);
     expect(root.querySelector('.mop-detalle .mc-card-h').textContent).toContain('Sala 2');
@@ -765,7 +764,7 @@ describe('Maduración · operativo · 🧬 Lotes', () => {
     abrirLotes();
     click(filaLote('QA'));
     expect(root.querySelector('#mopLoteCurva')).not.toBeNull();
-    cambiar(filtro('sala'), 'Sala 4');
+    marcar('sala', 'Sala 4');
     expect([...root.querySelectorAll('[data-mop-lote]')].map((t) => t.dataset.mopLote)).toEqual(['QB']);
     expect(root.querySelector('#mopLoteCurva')).toBeNull();   // QA ya no está: su ficha tampoco
   });
@@ -775,7 +774,7 @@ describe('Maduración · operativo · 🧬 Lotes', () => {
     abrirLotes();
     marcar('lote', 'QA');
     marcar('codigo', 'CB');
-    cambiar(filtro('sala'), 'Sala 4');
+    marcar('sala', 'Sala 4');
     expect(root.querySelectorAll('[data-mop-lote]')).toHaveLength(0);
     expect(root.textContent).toContain('Ningún lote pasa el filtro');
     expect(errSpy).not.toHaveBeenCalled();
@@ -933,16 +932,74 @@ describe('Maduración · operativo · 🧬 Lotes · el peso de cada lote (4)', (
 describe('Maduración · operativo · F2.3 · quitar la etiqueta de sala', () => {
   it('🔴 suelta también su TANQUE: si no, el 1 de la Sala 1 reaparecería como el 1 de la Sala 4', async () => {
     await montar(PLANTA);
-    cambiar(filtro('sala'), 'Sala 1');
-    cambiar(filtro('tanque'), '1');
+    marcar('sala', 'Sala 1');
+    marcar('tanque', 'Sala 1|1');
     expect(chips()).toEqual(['Sala: Sala 1 ✕', 'Tanque: 1 ✕']);
     click(root.querySelector('[data-mop-quitar="sala"]'));
     expect(chips()).toEqual([]);
     /* El daño no se ve al quitarla —sin sala, el tanque ya no normaliza—: se ve DESPUÉS. La Sala 4 también
        tiene un tanque 1, así que un `vOp.tanque` que sobreviviera se volvería a aplicar solo, en silencio. */
-    cambiar(filtro('sala'), 'Sala 4');
+    marcar('sala', 'Sala 4');
     expect(chips()).toEqual(['Sala: Sala 4 ✕']);
-    expect(elegido('tanque')).toBe('');
+    expect(marcados('tanque')).toEqual([]);
+  });
+});
+
+/* Punto 2 · etapa B (2026-10-14, usuario) · la sala y el tanque, VARIOS a la vez y con casillas. La regla, la de Lote →
+   Código (decisión del usuario): la unión dentro de cada una; con tanques marcados se ven SÓLO esos. En PLANTA, la Sala 1
+   tiene 34 vivos (todos en su T1), la Sala 2 16 (T16) y la Sala 4 16 (en su T1: el mismo número que el de la Sala 1). */
+describe('Maduración · operativo · etapa B · varias salas y varios tanques', () => {
+  const ocupacion = () => [...root.querySelectorAll('.mc-kpi')].find((x) => x.querySelector('.mc-kpi-lb').textContent === 'Ocupación').textContent.replace(/\s+/g, ' ');
+  it('🔴 dos salas: las cifras de las dos JUNTAS; sus tanques se leen «Sala 1 · T1»; una etiqueta por valor, y se quitan de una en una', async () => {
+    await montar(PLANTA);
+    marcar('sala', ['Sala 1', 'Sala 4']);
+    expect(kpi('Vivos')).toBe('50');
+    expect(opcionesDe('tanque')).toHaveLength(15 + 6);
+    expect(opcionesDe('tanque').slice(14, 16)).toEqual(['Sala 1|15', 'Sala 4|1']);
+    const rotulo = (v) => casillas('tanque').find((c) => c.value === v).closest('label').textContent.trim();
+    expect(rotulo('Sala 4|1')).toBe('Sala 4 · T1');
+    marcar('tanque', ['Sala 1|1', 'Sala 4|1']);
+    expect(kpi('Vivos')).toBe('50');
+    expect(chips()).toEqual(['Sala: Sala 1 ✕', 'Sala: Sala 4 ✕', 'Tanque: Sala 1 · T1 ✕', 'Tanque: Sala 4 · T1 ✕']);
+    expect(ocupacion()).toContain('2/2');
+    expect(ocupacion()).toContain('tanques con lo filtrado');
+    click(root.querySelector('[data-mop-quitar="sala"][data-mop-valor="Sala 4"]'));   // se va la sala Y su tanque
+    expect(chips()).toEqual(['Sala: Sala 1 ✕', 'Tanque: 1 ✕']);
+    expect([marcados('sala'), marcados('tanque'), kpi('Vivos')]).toEqual([['Sala 1'], ['Sala 1|1'], '34']);
+    expect(ocupacion()).toContain('tanque ocupado');
+    marcar('sala', ['Sala 1', 'Sala 4']);   // su tanque se fue de verdad: volver a marcar la Sala 4 no lo trae marcado
+    expect(marcados('tanque')).toEqual(['Sala 1|1']);
+    marcar('sala', 'Sala 1');
+    click(root.querySelector('[data-mop-quitar="tanque"][data-mop-valor="Sala 1|1"]'));
+    expect([marcados('sala'), marcados('tanque')]).toEqual([['Sala 1'], []]);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('🔴 como Lote → Código: con tanques marcados se ven SÓLO esos; una sala sin ninguno de sus tanques no suma', async () => {
+    await montar(PLANTA);
+    marcar('sala', ['Sala 1', 'Sala 2']);
+    expect(kpi('Vivos')).toBe('50');
+    marcar('tanque', 'Sala 1|1');
+    expect(kpi('Vivos')).toBe('34');
+    expect(tq('Sala 2', 16).classList.contains('is-dim')).toBe(true);
+    expect(tq('Sala 1', 1).classList.contains('is-dim')).toBe(false);
+    expect(tq('Sala 4', 1).classList.contains('is-dim')).toBe(true);
+  });
+
+  it('🔴 con varias salas el detalle de 🏠 Salas no se abre solo (con UNA, sí); «Filtrar por este tanque» deja sólo ése', async () => {
+    await montar(PLANTA);
+    marcar('sala', ['Sala 1', 'Sala 2']);
+    click(root.querySelector('[data-mop-sub="salas"]'));
+    expect([...root.querySelectorAll('.mop-sala-card')].map((c) => c.dataset.mopSala)).toEqual(['Sala 1', 'Sala 2']);
+    expect(root.querySelector('.mop-detalle')).toBeNull();
+    marcar('sala', 'Sala 2');
+    expect(root.querySelector('.mop-detalle .mc-card-h').textContent).toContain('Sala 2');
+    click(root.querySelector('[data-mop-sub="estado"]'));
+    marcar('sala', ['Sala 1', 'Sala 2']);
+    click(tq('Sala 1', 1));
+    click(root.querySelector('[data-mop-filtrar-tq]'));
+    expect([marcados('sala'), marcados('tanque')]).toEqual([['Sala 1'], ['Sala 1|1']]);
+    expect(errSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -1253,7 +1310,7 @@ describe('Maduración · operativo · 🛢 Tanques', () => {
     abrirTanques();
     click(filaTq('Sala 1|1'));
     expect(root.querySelector('.mop-ficha')).not.toBeNull();
-    cambiar(filtro('sala'), 'Sala 4');
+    marcar('sala', 'Sala 4');
     expect(root.querySelector('.mop-ficha')).toBeNull();
   });
 
@@ -1329,7 +1386,7 @@ describe('Maduración · operativo · 🥚 Reproducción', () => {
   it('el filtro de sala se ignora aquí, y se dice', async () => {
     await montar(PLANTA_F4);
     abrirRepro();
-    cambiar(filtro('sala'), 'Sala 1');
+    marcar('sala', 'Sala 1');
     expect(root.textContent).toContain('no puede separarse por sala');
   });
 });
@@ -1444,8 +1501,8 @@ describe('Maduración · operativo · 🔄 Manejo', () => {
   it('🔑 el filtro de TANQUE no llega a los tratamientos, y se dice con SU motivo', async () => {
     await montar(PLANTA_F5);
     abrirManejo();
-    cambiar(filtro('sala'), 'Sala 1');
-    cambiar(filtro('tanque'), '1');
+    marcar('sala', 'Sala 1');
+    marcar('tanque', 'Sala 1|1');
     const t = plano(root);
     expect(t).toContain('Un tratamiento no puede separarse por tanque');
     expect(t).toContain('se registra por sala y área');
@@ -1569,7 +1626,7 @@ describe('Maduración · operativo · 📈 Piscinas de origen (en 🧬 Lotes)', 
     marcar('lote', []);
     expect(root.querySelector('.mop-bs-ficha')).toBeNull();   // y no vuelve sola
     click(filaPiscina('9701'));
-    cambiar(filtro('sala'), 'Sala 1');
+    marcar('sala', 'Sala 1');
     expect(root.querySelector('.mop-bs-ficha')).not.toBeNull();
     expect(plano(root.querySelector('.mop-piscinas'))).toContain('Una piscina de Broodstock no puede separarse por sala');
     click(root.querySelector('[data-mop-limpiar]'));
@@ -1771,7 +1828,7 @@ describe('Maduración · operativo · 🖨 Reportes', () => {
 
   it('🔑 lo que se exporta es lo que se VE: con filtro, el parte sale marcado como FILTRADO', async () => {
     await montar(PLANTA);
-    cambiar(filtro('sala'), 'Sala 2');
+    marcar('sala', 'Sala 2');
     abrirReportes();
     const doc = root.querySelector('.mop-rep-prev').getAttribute('srcdoc');
     expect(doc).toContain('PARTE FILTRADO — Sala 2');
@@ -2221,11 +2278,11 @@ describe('Maduración · operativo · 0f · 5 · el gráfico de cada KPI', () =>
     await montar(PLANTA);
     click(tarjeta('mortalidad'));
     expect(ultimoGrafico().data.datasets[0].label).toBe('Tasa del día (%)');
-    cambiar(filtro('sala'), 'Sala 1');
+    marcar('sala', 'Sala 1');
     expect(tarjeta('mortalidad').classList.contains('is-on')).toBe(true);
     expect(ultimoGrafico().data.datasets[0].label).toBe('Muertes del día (registradas)');
     expect(panel().textContent).toContain('REGISTRADAS en la hoja Tanques');
-    cambiar(filtro('sala'), '');
+    marcar('sala', []);
     click(tarjeta('vivos'));
     marcar('codigo', 'CA');
     expect(panel().querySelector('canvas')).toBeNull();
@@ -2289,14 +2346,14 @@ describe('Maduración · operativo · 0f · 8 · 🦠 / 🧬 lo del laboratorio'
 
   it('🔴 2 · 🦠, 🧬 y 🌊 no enseñan la barra de filtros del tablero ni sus etiquetas: traen las suyas', async () => {
     await montar([...PLANTA, ...LAB]);
-    cambiar(filtro('sala'), 'Sala 2');
+    marcar('sala', 'Sala 2');
     expect([!!root.querySelector('.mop-filtros'), !!root.querySelector('.mop-chips')], 'control: en 📊 están').toEqual([true, true]);
     for (const k of ['micro', 'biomol', 'mareas']) {
       click(boton(k));
       expect([root.querySelector('.mop-filtros'), root.querySelector('.mop-chips')], k).toEqual([null, null]);
     }
     click(boton('bajas'));
-    expect([!!root.querySelector('.mop-filtros'), elegido('sala')], 'vuelve, con lo elegido').toEqual([true, 'Sala 2']);
+    expect([!!root.querySelector('.mop-filtros'), marcados('sala')], 'vuelve, con lo elegido').toEqual([true, ['Sala 2']]);
   });
 
   it('🔴 Micro y agua: los tres bloques con sus cifras, en una tarjeta como las demás sub-vistas', async () => {
@@ -2314,7 +2371,7 @@ describe('Maduración · operativo · 0f · 8 · 🦠 / 🧬 lo del laboratorio'
 
   it('🔴 sigue los filtros del tablero y dice el que no puede aplicar', async () => {
     await montar([...PLANTA, ...LAB]);
-    cambiar(filtro('sala'), 'Sala 2');
+    marcar('sala', 'Sala 2');
     click(boton('micro'));
     expect(modal().querySelector('.mop-lab-kpi').textContent).toContain('1 muestras · 0 en alerta');
     const des = modal().querySelectorAll('.mop-lab-bloque')[1];
@@ -2590,11 +2647,11 @@ describe('Maduración · operativo · 🥚 A dónde fueron, plegable', () => {
     abrirRepro();
     click(destinos().querySelector('summary'));
     expect(destinos().open).toBe(true);
-    cambiar(filtro('sala'), 'Sala 1');           // repinta la vista entera
+    marcar('sala', 'Sala 1');           // repinta la vista entera
     expect(destinos().open).toBe(true);
     click(destinos().querySelector('summary'));
     expect(destinos().open).toBe(false);
-    cambiar(filtro('sala'), '');
+    marcar('sala', []);
     expect(destinos().open).toBe(false);
   });
 
@@ -2858,7 +2915,7 @@ describe('Maduración · operativo · 🦠 la ventana de Microbiología con sus 
 
   it('🔴 empieza con la sala y el sexo del tablero', async () => {
     await montar([...PLANTA, ...LAB5]);
-    cambiar(filtro('sala'), 'Sala 2');
+    marcar('sala', 'Sala 2');
     abrirMicro();
     // ⚠ happy-dom lee mal el `value` de un <select> pintado con innerHTML: se lee la opción marcada.
     expect(selLab('sala').querySelector('option[selected]').value).toBe('Sala 2');
@@ -2874,6 +2931,17 @@ describe('Maduración · operativo · 🦠 la ventana de Microbiología con sus 
     marcar('lote', ['QA', 'QB']);
     abrirMicro();
     expect(selLab('lote').querySelector('option[selected]'), 'con dos, empieza sin lote').toBeNull();
+  });
+
+  it('🔴 punto 2 · etapa B · y la sala, también sólo si hay UNA', async () => {
+    await montar([...PLANTA, ...LAB5]);
+    marcar('sala', ['Sala 1', 'Sala 2']);
+    abrirMicro();
+    expect(selLab('sala').querySelector('option[selected]'), 'con dos, empieza sin sala').toBeNull();
+    click(root.querySelector('[data-mop-sub="estado"]'));
+    marcar('sala', 'Sala 2');
+    abrirMicro();
+    expect(selLab('sala').querySelector('option[selected]').value).toBe('Sala 2');
   });
 
   it('🔑 2 · pulsar 🦠 estando en 🦠 no borra sus filtros; salir y volver a entrar, sí (empieza con el tablero)', async () => {
@@ -3144,7 +3212,7 @@ describe('Maduración · operativo · 🧬 Biomol: sus filtros, por lote y la te
 
   it('🔴 empieza con la sala del tablero; la piscina combinada cuenta en las dos', async () => {
     await montar([...PLANTA, ...BIO6]);
-    cambiar(filtro('sala'), 'Sala 1');
+    marcar('sala', 'Sala 1');
     await abrirBiomol();
     expect(selLab('sala').querySelector('option[selected]').value).toBe('Sala 1');
     expect(kpiRep()).toContain('2 muestras');

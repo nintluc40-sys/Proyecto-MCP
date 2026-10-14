@@ -72,6 +72,11 @@ describe('Maduración · KPI · los siete gráficos', () => {
 describe('Maduración · KPI · 🔑 el último punto de cada gráfico ES la cifra de su tarjeta', () => {
   const FILTROS = [F(), F({ sala: 'Sala 1' }), F({ lote: 'QA' }), F({ lote: 'QC' }), F({ sexo: 'hembras' }), F({ sexo: 'machos' }), F({ lote: 'QA', sala: 'Sala 2' }),
     F({ sala: 'Sala 1', tanque: '2' }), F({ sala: 'Sala 4', tanque: '1' })];
+  /* Los que no llevan tanque (la serie no guarda los lotes por tanque, y con un tanque la ocupación no aplica). ⚠ Etapa B
+     (2026-10-14): aquí decía `x.tanque === null`; con la forma nueva (`tanques`, una lista) esa clave no existe, el filtro
+     dejaba la lista VACÍA y las dos pruebas de abajo pasaban sin mirar nada. Lo cazó la mutación K08. El control lo impide. */
+  const SIN_TANQUE = FILTROS.filter((x) => !x.tanques.length);
+  it('control: los filtros sin tanque son los siete', () => expect(SIN_TANQUE).toHaveLength(7));
 
   it('🔴 Vivos: ♀, ♂ y total del último día = kpiVivos, con cada filtro', () => {
     for (const f of FILTROS) {
@@ -85,7 +90,7 @@ describe('Maduración · KPI · 🔑 el último punto de cada gráfico ES la cif
   it('🔴 Lotes: CADA DÍA, por estado = kpiLotes con el libro cerrado ese día, con cada filtro que aplica', () => {
     const dias = ['2026-09-10', '2026-09-12', '2026-09-15', '2026-09-16', '2026-09-17', FOTO];
     const libros = Object.fromEntries(dias.map((d) => [d, libroAlCierre(M.fuentes, d)]));
-    for (const f of FILTROS.filter((x) => x.tanque === null)) {
+    for (const f of SIN_TANQUE) {
       const g = graficoLotes(SERIE, P, f);
       for (const d of dias) {
         const k = kpiLotes(libros[d], f);
@@ -97,7 +102,7 @@ describe('Maduración · KPI · 🔑 el último punto de cada gráfico ES la cif
   });
 
   it('🔴 Ocupación: la suma de las salas = kpiOcupacion', () => {
-    for (const f of FILTROS.filter((x) => x.tanque === null)) {
+    for (const f of SIN_TANQUE) {
       const g = graficoOcupacion(M.salas, M.libro, f);
       const k = kpiOcupacion(M.salas, M.libro, f);
       expect([suma(g, 'ocupados'), suma(g, 'ocupados') + suma(g, 'libres')], nombre(f)).toEqual([k.ocupados, k.total]);

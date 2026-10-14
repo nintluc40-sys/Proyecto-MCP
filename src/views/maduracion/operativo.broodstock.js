@@ -34,7 +34,7 @@
 import { fechaDeFila } from './operativo.data.js';
 import { supervivencia } from './operativo.indicadores.js';
 import { loteDelLibro, estadoDeLoteEntero, desempenoPorPiscina } from './operativo.lotes.js';
-import { codigoEnFiltro, loteElegido, hayLote } from './operativo.tablero.js';   // 0r·4 · H2 · la pareja de códigos cuenta como sus dos
+import { codigoEnFiltro, loteElegido, hayLote, haySala, hayTanque } from './operativo.tablero.js';   // 0r·4 · H2 · la pareja de códigos cuenta como sus dos
 import { normPiscina, faseCanonica } from '../registros/lib/ficha-maduracion-broodstock.schema.js';
 import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 
@@ -56,8 +56,8 @@ const corteDe = (r) => fechaDeFila('broodstock', r);
 /** Lo que el filtro no puede aplicar a una piscina de Broodstock. */
 export function ignoraDeBroodstock(F) {
   const x = [];
-  if (F && F.sala) x.push('sala');
-  if (F && F.tanque !== null && F.tanque !== undefined) x.push('tanque');
+  if (haySala(F)) x.push('sala');
+  if (hayTanque(F)) x.push('tanque');
   if (F && F.estado) x.push('estado');
   if (F && F.sexo) x.push('sexo');
   return x;
