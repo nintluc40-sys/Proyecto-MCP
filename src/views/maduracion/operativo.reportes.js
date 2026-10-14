@@ -429,7 +429,7 @@ export function semanalPorLote(M, serie, partes, F, opts = {}) {
 }
 
 function paginaSemanal(M, serie, partes, F, periodo, fila, presencia) {
-  const Flote = { ...F, lote: normLote(fila.lote) };
+  const Flote = { ...F, lotes: [normLote(fila.lote)] };   // etapa A · el filtro lleva LISTAS de lotes
   const ficha = fichaDeLote(M, serie, fila.lote, periodo, null, presencia) || {};
   /* Las bajas del lote salen del LIBRO (agrupación «lote»), no de los partes: un tanque compartido atribuiría al
      lote las bajas de otro. Es la misma razón por la que 💀 Bajas avisa de lo que una agrupación no puede honrar. */

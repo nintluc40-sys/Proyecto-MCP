@@ -22,6 +22,7 @@ import { isCalAguaRow, calCtx, calMeasured, calWQI } from '../microbiologia/cala
 import { calRangeText } from '../microbiologia/calagua.data.js';   // 0q·5c
 import { tipoDeMuestra, matrizTejidos, franjaTejidos } from '../biomolecular/tejidos.js';   // 0q·7 · las reglas de su vista
 import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
+import { loteElegido, hayLote, dimensionActiva } from './operativo.tablero.js';   // punto 2 · etapa A · el filtro lleva LISTAS
 
 const txt = (v) => (v == null ? '' : String(v).trim());
 const fold = (s) => txt(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ');
@@ -41,12 +42,13 @@ const esMaduracion = (depto, formatoKey) => fold(depto).startsWith('maduracion')
 
 /* ── EL FILTRO DEL TABLERO, sobre una muestra ────────────────────────────────────────────────────────────────── */
 /** Cómo se lee cada dimensión del filtro en una muestra. `sala`: «Sala 2»; `tanque`: su número (en Biomol viene
- *  «Tq 5»); `sexo`: la inicial (Hembra/Hembras ↔ hembras); `lote`: el lote normalizado. */
+ *  «Tq 5»); `sexo`: la inicial (Hembra/Hembras ↔ hembras); `lote`: el lote normalizado, uno de los del filtro (punto 2 ·
+ *  etapa A: el filtro lleva LISTAS de lotes; los de la ventana, uno o ninguno). */
 const mismoValor = {
-  sala: (v, f) => fold(v) === fold(f),
-  tanque: (v, f) => { const m = /(\d+)/.exec(txt(v)); return !!m && String(Number(m[1])) === String(Number(f)); },
-  sexo: (v, f) => !!fold(v) && fold(v)[0] === fold(f)[0],
-  lote: (v, f) => !!txt(v) && normLote(v) === f,
+  sala: (v, F) => fold(v) === fold(F.sala),
+  tanque: (v, F) => { const m = /(\d+)/.exec(txt(v)); return !!m && String(Number(m[1])) === String(Number(F.tanque)); },
+  sexo: (v, F) => !!fold(v) && fold(v)[0] === fold(F.sexo)[0],
+  lote: (v, F) => !!txt(v) && loteElegido(v, F),
 };
 /** Las dimensiones del tablero que NINGUNA hoja del laboratorio registra: con ellas puestas, se dice. */
 const SIN_EQUIVALENTE = [['codigo', 'código genético'], ['estado', 'estado'], ['piscina', 'piscina de origen'], ['camaronera', 'camaronera']];
@@ -57,15 +59,15 @@ const SIN_EQUIVALENTE = [['codigo', 'código genético'], ['estado', 'estado'], 
  * período que se quedaron fuera por no decirla.
  */
 export function filtroDelTablero(F, periodo, tiene) {
-  const activos = ['sala', 'tanque', 'sexo', 'lote'].filter((d) => F[d] !== null && F[d] !== undefined && F[d] !== '');
+  const activos = ['sala', 'tanque', 'sexo', 'lote'].filter((d) => dimensionActiva(F, d));
   const aplica = activos.filter((d) => tiene.includes(d));
-  const ignora = [...activos.filter((d) => !tiene.includes(d)), ...SIN_EQUIVALENTE.filter(([k]) => F[k]).map(([, r]) => r)];
+  const ignora = [...activos.filter((d) => !tiene.includes(d)), ...SIN_EQUIVALENTE.filter(([k]) => dimensionActiva(F, k)).map(([, r]) => r)];
   const sinDato = {};
   const pasa = (m) => {
     if (!enPeriodo(m.fecha, periodo)) return false;
     for (const d of aplica) {
       if (!txt(m[d])) { sinDato[d] = (sinDato[d] || 0) + 1; return false; }
-      if (!mismoValor[d](m[d], F[d])) return false;
+      if (!mismoValor[d](m[d], F)) return false;
     }
     return true;
   };
@@ -292,7 +294,7 @@ export function filtroDeLaVentana(fi) {
   const periodo = mes
     ? { desde: mes + '-01', hasta: mes + '-' + pad2(new Date(Date.UTC(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 0)).getUTCDate()) }
     : { desde: '0000-01-01', hasta: '9999-12-31' };
-  const F = { sala: txt(f.sala), tanque: null, sexo: txt(f.sexo), lote: txt(f.lote) ? normLote(f.lote) : '', codigo: '', estado: '', piscina: '', camaronera: '' };
+  const F = { sala: txt(f.sala), tanque: null, sexo: txt(f.sexo), lotes: txt(f.lote) ? [normLote(f.lote)] : [], codigos: [], estado: '', piscina: '', camaronera: '' };
   return { periodo, F };
 }
 /** Los tres bloques de la ventana (`resumenMicro`) con SUS filtros; la piscina, sólo en ① reproductores. */
@@ -531,16 +533,16 @@ function cuentaBiomol(rs) {
 export function resumenBiomolDeLaVentana(filasNorm, fi) {
   const { periodo, F } = filtroDeLaVentana(fi);
   const piscina = nombrePiscina((fi || {}).piscina);
-  const filtro = filtroDelTablero({ ...F, lote: '' }, periodo, ['sala', 'tanque', 'sexo']);
+  const filtro = filtroDelTablero({ ...F, lotes: [] }, periodo, ['sala', 'tanque', 'sexo']);
   const fuera = {};
   const cuentaFuera = (d) => { fuera[d] = (fuera[d] || 0) + 1; };
   // 0q·7 · el filtro de la ventana, con nombre: lo usan los reproductores y, en «por tipo de muestra», las demás de Maduración.
   const pasaVentana = (r) => {
     if (!filtro.pasa({ fecha: r.f, sala: esSala(r.lugar) ? r.lugar : '', tanque: r.tq === '—' ? '' : r.tq, sexo: r.sexo })) return false;
-    if (F.lote) {
+    if (hayLote(F)) {
       const l = loteBiomol(r);
       if (!l) { cuentaFuera('lote'); return false; }
-      if (l !== F.lote) return false;
+      if (!loteElegido(l, F)) return false;
     }
     if (piscina) {
       const ps = piscinasBiomol(r);
@@ -553,7 +555,7 @@ export function resumenBiomolDeLaVentana(filasNorm, fi) {
   const fechas = filas.map((r) => r.f).sort();
   const acotado = fechas.length ? { desde: fechas[0], hasta: fechas[fechas.length - 1] }
     : periodo.desde > '1000' ? periodo : { desde: '1970-01-05', hasta: '1970-01-05' };
-  const neutro = { sala: '', tanque: null, sexo: '', lote: '', codigo: '', estado: '', piscina: '', camaronera: '' };
+  const neutro = { sala: '', tanque: null, sexo: '', lotes: [], codigos: [], estado: '', piscina: '', camaronera: '' };
   const r = resumenBiomol(filas, acotado, neutro);
   const porLote = new Map();
   for (const x of filas) { const k = loteBiomol(x) || '(sin lote)'; if (!porLote.has(k)) porLote.set(k, []); porLote.get(k).push(x); }

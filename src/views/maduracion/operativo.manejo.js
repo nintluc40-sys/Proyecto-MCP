@@ -46,6 +46,7 @@ import { sumarDias, ubicKey } from '../registros/lib/mad-libro.js';
 import { diasEntre } from '../registros/lib/mad-resumen.js';
 import { fechaDeFila } from './operativo.data.js';
 import { cociente } from './operativo.indicadores.js';
+import { loteElegido, hayLote, hayCodigo } from './operativo.tablero.js';   // punto 2 · etapa A · uno o varios lotes
 
 const txt = (v) => String(v == null ? '' : v).trim();
 const ent = (v) => { const n = Number(txt(v)); return Number.isFinite(n) && n > 0 ? n : 0; };
@@ -75,7 +76,7 @@ function movEnFiltro(r, F) {
 
 /** Lo que el filtro no puede aplicar a los movimientos: el lote, que esta hoja no registra. */
 export function ignoraDeMovimientos(F) {
-  return F && (F.lote || F.codigo) ? ['lote'] : [];
+  return hayLote(F) || hayCodigo(F) ? ['lote'] : [];
 }
 
 /**
@@ -183,13 +184,13 @@ function alimEnFiltro(r, F) {
   if (!F) return true;
   if (F.sala && txt(r.Sala) !== F.sala) return false;
   if (F.tanque !== null && F.tanque !== undefined && ent(r.Tanque) !== F.tanque) return false;
-  if (F.lote && !lista(r.Lotes).map(normLote).includes(F.lote)) return false;
+  if (hayLote(F) && !lista(r.Lotes).some((l) => loteElegido(l, F))) return false;
   return true;
 }
 
 /** Lo que el filtro no puede aplicar a la alimentación. */
 export function ignoraDeAlimentacion(F) {
-  return F && F.codigo ? ['código genético'] : [];
+  return hayCodigo(F) ? ['código genético'] : [];
 }
 
 /**
@@ -283,14 +284,14 @@ export function procedenciaDelPeso(fuentes, periodo, F) {
 export function ignoraDeTratamientos(F) {
   const x = [];
   if (F && F.tanque !== null && F.tanque !== undefined) x.push('tanque');
-  if (F && F.codigo) x.push('código genético');
+  if (hayCodigo(F)) x.push('código genético');
   return x;
 }
 
 function tratEnFiltro(r, F) {
   if (!F) return true;
   if (F.sala && txt(r.Sala) !== F.sala) return false;
-  if (F.lote && !lista(r.Lotes).map(normLote).includes(F.lote)) return false;
+  if (hayLote(F) && !lista(r.Lotes).some((l) => loteElegido(l, F))) return false;
   return true;
 }
 
@@ -371,7 +372,7 @@ export function coberturaPreventiva(fuentes, libro, periodo, F, hoy) {
   const filas = [];
   for (const [k, L] of ((libro && libro.lotes) || new Map())) {
     const lote = normLote(k);
-    if (F && F.lote && lote !== F.lote) continue;
+    if (!loteElegido(lote, F)) continue;
     if (ent(L.machos) + ent(L.hembras) <= 0) continue;      // los cerrados no necesitan cobertura
     const u = ultimo.get(lote);
     filas.push({

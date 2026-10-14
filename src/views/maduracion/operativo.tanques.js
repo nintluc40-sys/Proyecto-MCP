@@ -33,7 +33,7 @@ import { normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.sc
 import { ubicKey, pesosDeAlimentacion } from '../registros/lib/mad-libro.js';
 import { fechaDeFila } from './operativo.data.js';
 import { proporcionHM, densidadTanque } from './operativo.indicadores.js';
-import { posicionEnFiltro } from './operativo.tablero.js';
+import { posicionEnFiltro, hayLote, hayCodigo } from './operativo.tablero.js';
 import { frecuenciaDeObservaciones } from './operativo.revisiones.js';
 
 const txt = (v) => String(v == null ? '' : v).trim();
@@ -275,7 +275,7 @@ export function fichaDeTanque(M, serie, sala, tanque, periodo, F, dias) {
 /** Lo que el filtro de LOTE no puede decidir aquí, para que la vista lo rotule en vez de callarlo. */
 export function avisosDeTanques(F) {
   const a = [];
-  if (F && (F.lote || F.codigo)) {
+  if (hayLote(F) || hayCodigo(F)) {
     a.push('Las cifras son las del TANQUE ENTERO, incluidos los lotes que el filtro deja fuera: el área y el '
       + 'volumen son del tanque, no del lote.');
   }

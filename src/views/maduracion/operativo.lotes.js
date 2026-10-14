@@ -28,7 +28,7 @@ import { estadoDeLote, ESTADO_MIXTO, ubicKey, pesosDeAlimentacion } from '../reg
 import { diasEntre } from '../registros/lib/mad-resumen.js';
 import { fechaDeFila, diasDeTanque } from './operativo.data.js';
 import { cociente, proporcionHM, supervivencia, tasaDescarte, tasaEnPartesDelLote } from './operativo.indicadores.js';
-import { posicionEnFiltro, codigoEnFiltro, normalizarFiltro } from './operativo.tablero.js';
+import { posicionEnFiltro, codigoEnFiltro, normalizarFiltro, loteElegido, hayCodigo } from './operativo.tablero.js';
 import { normPiscina } from '../registros/lib/ficha-maduracion-broodstock.schema.js';   // 5 · la piscina canónica
 
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
@@ -151,7 +151,7 @@ function contextoDeLote(libro, clave) {
  *  «los lotes de lo filtrado» son los mismos que enseña la tabla de Lotes. */
 export function loteEnFiltro(libro, clave, F) {
   const suyas = ((libro && libro.posiciones) || []).filter((p) => normLote(p.lote) === clave);
-  if (!suyas.length) return !F.sala && F.tanque === null && !F.codigo && (!F.lote || F.lote === clave);
+  if (!suyas.length) return !F.sala && F.tanque === null && !hayCodigo(F) && loteElegido(clave, F);
   return suyas.some((p) => posicionEnFiltro(p, F));
 }
 

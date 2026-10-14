@@ -41,7 +41,7 @@ import { diasEntre } from '../registros/lib/mad-resumen.js';
 import { normPiscina } from '../registros/lib/ficha-maduracion-broodstock.schema.js';   // punto 5 · la piscina canónica
 import { fechaDeFila } from './operativo.data.js';
 import { cociente } from './operativo.indicadores.js';
-import { kpiReproduccion, codigoEnFiltro } from './operativo.tablero.js';
+import { kpiReproduccion, codigoEnFiltro, loteElegido } from './operativo.tablero.js';
 import { reproduccionDeLote } from './operativo.lotes.js';
 
 const txt = (v) => String(v == null ? '' : v).trim();
@@ -74,7 +74,7 @@ export function esPendiente(filaHoja) {
 /** ¿La fila pasa el filtro? Un desove sólo conoce su lote y su código genético. */
 function enFiltro(r, F) {
   if (!F) return true;
-  if (F.lote && normLote(r.Lote) !== F.lote) return false;
+  if (!loteElegido(r.Lote, F)) return false;
   if (!codigoEnFiltro(r['Código genético'], F)) return false;
   if (F.indice && (F.piscina || F.camaronera)) {
     const o = F.indice.origen.get(normLote(r.Lote));
@@ -140,7 +140,7 @@ export function tablaDeReproduccion(M, periodo, F) {
   const fuentes = (M || {}).fuentes || {};
   return lotesConDesove(fuentes, periodo, F).map((lote) => {
     const R = reproduccionDeLote(fuentes, lote, periodo);
-    const pend = pendientesDeN5(fuentes, periodo, { ...(F || {}), lote }, (M || {}).fecha);
+    const pend = pendientesDeN5(fuentes, periodo, { ...(F || {}), lotes: [normLote(lote)] }, (M || {}).fecha);   // etapa A · LISTAS
     return {
       lote,
       desoves: R.desoves, huevos: R.huevos, noViables: R.noViables, n2: R.n2, n5: R.n5,

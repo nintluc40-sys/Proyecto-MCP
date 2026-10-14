@@ -28,12 +28,12 @@
 
    ⏳ Con los datos del 2026-09-20 esta hoja tiene CERO filas: todo nace vacío, y eso es lo correcto.
    ============================================================ */
-import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import {
   MAD_MORT_TIPOS, MAD_NAUP_REVISIONES, MAD_NAUP_DEFORMIDAD, MAD_NAUP_ACTIVIDAD, MAD_NAUP_HONGOS,
   MAD_NAUP_FOTOTROPISMO, MAD_NAUP_AIREACION, MAD_NAUP_SAL_MAX, MAD_NAUP_TEMP_MAX, MAD_ALC_AREAS,
 } from '../registros/lib/ficha-maduracion-mortdesove.schema.js';
 import { fechaDeFila } from './operativo.data.js';
+import { loteElegido, hayLote, hayCodigo } from './operativo.tablero.js';   // punto 2 · etapa A · uno o varios lotes
 import { cociente } from './operativo.indicadores.js';
 import { umbralVigente, evaluar } from './operativo.umbrales.js';
 
@@ -92,12 +92,12 @@ export function revisionesDeNauplios(fuentes, F, periodo) {
   const ignora = [];
   if (F.sala) ignora.push('sala');
   if (F.tanque !== null) ignora.push('tanque');
-  if (F.codigo) ignora.push('código genético');
+  if (hayCodigo(F)) ignora.push('código genético');
   const filas = [];
   for (const r of ((fuentes || {}).mortDesove || [])) {
     if (!esRevision(r)) continue;
     const lote = txt(r.Lote);
-    if (F.lote && normLote(lote) !== F.lote) continue;
+    if (!loteElegido(lote, F)) continue;
     const fecha = fechaDeFila('mortDesove', r);
     if (!enPeriodo(fecha, periodo)) continue;
     const valores = {};
@@ -175,7 +175,7 @@ export function mortalidadEnDesove(fuentes, F, periodo) {
   for (const r of ((fuentes || {}).mortDesove || [])) {
     if (!esMortalidad(r)) continue;
     const lote = txt(r.Lote);
-    if (F.lote && normLote(lote) !== F.lote) continue;
+    if (!loteElegido(lote, F)) continue;
     const fecha = fechaDeFila('mortDesove', r);
     if (!enPeriodo(fecha, periodo)) continue;
     const t = porTipo.get(txt(r['Tipo de tanque']));
@@ -234,5 +234,5 @@ export function frecuenciaDeObservaciones(partes, F, periodo) {
   const salida = (m) => [...m.values()]
     .map((f) => ({ obs: f.obs, veces: f.veces, tanques: f.tanques.size, pct: cociente(f.veces, registros, 100) }))
     .sort((a, b) => b.veces - a.veces || porNombre(a.obs, b.obs));
-  return { sanitarias: salida(san), operativas: salida(ope), registros, ignora: F.lote ? ['lote'] : [] };
+  return { sanitarias: salida(san), operativas: salida(ope), registros, ignora: hayLote(F) ? ['lote'] : [] };
 }

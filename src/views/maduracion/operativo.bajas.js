@@ -33,6 +33,7 @@ import { MAD_FIN_MOTIVOS } from '../registros/lib/ficha-maduracion-fin-ciclo.sch
 import { sumarDias, ubicKey } from '../registros/lib/mad-libro.js';
 import { fechaDeFila } from './operativo.data.js';
 import { cociente } from './operativo.indicadores.js';
+import { loteElegido, hayLote, hayCodigo } from './operativo.tablero.js';   // punto 2 · etapa A · uno o varios lotes
 
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
 const esIso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -60,10 +61,10 @@ function noHonra(F, dimension) {
   if (dimension === 'lote') {
     if (F.sala) fuera.push('sala');
     if (F.tanque !== null) fuera.push('tanque');
-    if (F.codigo) fuera.push('código genético');
+    if (hayCodigo(F)) fuera.push('código genético');
   } else {
-    if (F.lote) fuera.push('lote');
-    if (F.codigo) fuera.push('código genético');
+    if (hayLote(F)) fuera.push('lote');
+    if (hayCodigo(F)) fuera.push('código genético');
   }
   return fuera;
 }
@@ -102,7 +103,7 @@ function porLoteEnSerie(serie, F, periodo) {
   };
   const filas = [];
   for (const lote of Object.keys(fin.porLote || {})) {
-    if (F.lote && normLote(lote) !== F.lote) continue;
+    if (!loteElegido(lote, F)) continue;
     const m0 = de(antes, lote, 'muertos');
     const m1 = de(fin, lote, 'muertos');
     const d0 = de(antes, lote, 'descartes');
@@ -121,7 +122,7 @@ function desovePorLote(fuentes, periodo, F) {
   const m = new Map();
   for (const r of ((fuentes || {}).mortDesove || [])) {
     const lote = txt(r.Lote);
-    if (!lote || (F.lote && normLote(lote) !== F.lote)) continue;
+    if (!lote || !loteElegido(lote, F)) continue;
     if (!enPeriodo(fechaDeFila('mortDesove', r), periodo)) continue;
     m.set(lote, (m.get(lote) || 0) + ent(r['Hembras muertas']));
   }
@@ -134,7 +135,7 @@ function desovePorLote(fuentes, periodo, F) {
  *  son de él: ninguna. */
 function sinLoteDelPeriodo(M, periodo, F) {
   const out = { machos: 0, hembras: 0, total: 0, sitios: [] };
-  if (F && F.lote) return out;
+  if (hayLote(F)) return out;
   for (const a of (((M || {}).libro || {}).avisos || [])) {
     if (a.tipo !== 'sin-ingreso' || !enPeriodo(a.fecha, periodo)) continue;
     const m = ent(a.machos);
@@ -189,7 +190,7 @@ export function motivosDeCierre(fuentes, periodo, F) {
   let metabisulfito = 0;
   for (const r of ((fuentes || {}).cierres || [])) {
     const lote = txt(r.Lote);
-    if (F.lote && normLote(lote) !== F.lote) continue;
+    if (!loteElegido(lote, F)) continue;
     if (!enPeriodo(fechaDeFila('cierres', r), periodo)) continue;
     const motivo = txt(r.Motivo) || '(sin motivo)';
     const f = m.get(motivo) || { motivo, enCatalogo: MAD_FIN_MOTIVOS.includes(motivo), cierres: 0, totales: 0,
@@ -310,7 +311,7 @@ export function lotesCerrados(M, F, periodo) {
   const filas = [];
   for (const r of ((M && M.fuentes ? M.fuentes.cierres : null) || [])) {
     const lote = txt(r.Lote);
-    if (F.lote && normLote(lote) !== F.lote) continue;
+    if (!loteElegido(lote, F)) continue;
     const fecha = fechaDeFila('cierres', r);
     if (!enPeriodo(fecha, periodo)) continue;
     const esTotal = txt(r.Tipo) === 'Total';

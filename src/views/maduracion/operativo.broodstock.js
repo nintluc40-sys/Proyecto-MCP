@@ -34,7 +34,7 @@
 import { fechaDeFila } from './operativo.data.js';
 import { supervivencia } from './operativo.indicadores.js';
 import { loteDelLibro, estadoDeLoteEntero, desempenoPorPiscina } from './operativo.lotes.js';
-import { codigoEnFiltro } from './operativo.tablero.js';   // 0r·4 · H2 · la pareja de códigos cuenta como sus dos
+import { codigoEnFiltro, loteElegido, hayLote } from './operativo.tablero.js';   // 0r·4 · H2 · la pareja de códigos cuenta como sus dos
 import { normPiscina, faseCanonica } from '../registros/lib/ficha-maduracion-broodstock.schema.js';
 import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 
@@ -103,7 +103,7 @@ function filaEnFiltro(r, F, deLote) {
   if (F.piscina && p !== normPiscina(F.piscina)) return false;
   if (F.camaronera && plano(r.Camaronera) !== plano(F.camaronera)) return false;
   if (!codigoEnFiltro(r['Código genético'], F)) return false;
-  if (F.lote && !(deLote.get(F.lote) || new Set()).has(p)) return false;
+  if (hayLote(F) && !F.lotes.some((l) => (deLote.get(l) || new Set()).has(p))) return false;   // etapa A · de alguno de los lotes
   return true;
 }
 
@@ -113,7 +113,7 @@ function ingresoEnFiltro(r, F) {
   if (F.piscina && normPiscina(r['Piscina Broodstock']) !== normPiscina(F.piscina)) return false;
   if (F.camaronera && plano(r['Camaronera origen']) !== plano(F.camaronera)) return false;
   if (!codigoEnFiltro(r['Código genético'], F)) return false;
-  if (F.lote && normLote(r.Lote) !== F.lote) return false;
+  if (!loteElegido(r.Lote, F)) return false;
   return true;
 }
 

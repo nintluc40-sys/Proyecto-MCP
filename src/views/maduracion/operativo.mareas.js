@@ -27,6 +27,8 @@ import { pearson } from '../../core/util.js';
 import { FASES_CICLO } from './data.js';
 import { fechaDeFila } from './operativo.data.js';
 import { codigoEnFiltro } from './operativo.tablero.js';
+/** El código de los filtros PROPIOS de 🌊 Mareas (uno o ninguno) con la forma del filtro del tablero (etapa A: listas). */
+const conCodigo = (codigo) => ({ codigos: codigo ? [codigo] : [] });
 
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
 const esIso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -149,7 +151,7 @@ export function copulasYMarea(base, marea, { sala = '', soloProduccion = false, 
     if (mes && b.fecha.slice(0, 7) !== mes) continue;
     if (sala && b.sala !== sala) continue;
     if (lote && !(b.lotes || []).includes(lote)) continue;
-    if (codigo && !(b.codigos || []).some((c) => codigoEnFiltro(c, { codigo }))) continue;
+    if (codigo && !(b.codigos || []).some((c) => codigoEnFiltro(c, conCodigo(codigo)))) continue;
     if (!(b.hembras > 0)) { sinHembras++; continue; }
     if (soloProduccion && !b.produccion) { fueraDeProduccion++; continue; }
     const o = porDia.get(b.fecha) || { fecha: b.fecha, copulas: 0, hembras: 0, partes: 0 };
@@ -199,11 +201,11 @@ export function desovesYMarea(diarios, marea, { sala = '', soloProduccion = fals
   for (const d of diarios || []) {
     if (mes && d.fecha.slice(0, 7) !== mes) continue;
     const pos = d.posiciones.filter((p) => (!sala || p.sala === sala) && (!lote || p.lote === lote)
-      && codigoEnFiltro(p.codigo, { codigo }) && (!soloProduccion || p.produccion));
+      && codigoEnFiltro(p.codigo, conCodigo(codigo)) && (!soloProduccion || p.produccion));
     const hembras = pos.reduce((s, p) => s + p.hembras, 0);
     if (!(hembras > 0)) { sinHembras++; continue; }
     const enAlcance = new Set(pos.map((p) => p.lote));
-    const filas = d.filas.filter((f) => (!lote || f.lote === lote) && codigoEnFiltro(f.codigo, { codigo })
+    const filas = d.filas.filter((f) => (!lote || f.lote === lote) && codigoEnFiltro(f.codigo, conCodigo(codigo))
       && (!(sala || soloProduccion) || enAlcance.has(f.lote)));
     porDia.set(d.fecha, { fecha: d.fecha, desoves: filas.reduce((s, f) => s + f.desoves, 0), hembras });
   }

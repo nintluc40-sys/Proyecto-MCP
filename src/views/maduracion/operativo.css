@@ -16,6 +16,18 @@
 .mop-filtros .mc-select:disabled { opacity: .5; cursor: default; }
 .mop-limpiar { border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); border-radius: 10px; padding: 7px 12px; font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
 .mop-limpiar:hover { border-color: var(--c-grave); color: var(--c-grave); }
+/* Punto 2 · etapa A (2026-10-13) · el desplegable de casillas: lote y código, varios a la vez. */
+.mop-multi { position: relative; display: inline-block; }
+.mop-multi-s { display: inline-block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; list-style: none; }
+.mop-multi-s::-webkit-details-marker { display: none; }
+.mop-multi-s::after { content: ' ▾'; color: var(--c-text-muted); }
+.mop-multi.is-on .mop-multi-s { border-color: var(--c-brand-600); }
+.mop-multi-p { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 100%; max-width: min(320px, calc(100vw - 32px));
+  max-height: 260px; overflow: auto; display: flex; flex-direction: column; gap: 2px; padding: 6px;
+  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px; box-shadow: var(--sh-1); }
+.mop-multi-o { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; font-size: 13px; font-weight: 400; color: var(--c-text); cursor: pointer; white-space: nowrap; }
+.mop-multi-o:hover { background: var(--c-surface-2); }
+.mop-multi-todos { margin-top: 4px; align-self: flex-start; }
 
 /* Semáforo y notas */
 .mop-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; vertical-align: middle; margin-left: 2px; background: var(--c-sin-dato); }

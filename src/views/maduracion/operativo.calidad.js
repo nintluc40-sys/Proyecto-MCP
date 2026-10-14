@@ -25,7 +25,7 @@
 import { MAD_OP_HOJAS } from './operativo.fuentes.js';
 import { fechaDeFila } from './operativo.data.js';
 import { cociente } from './operativo.indicadores.js';
-import { ETIQUETA_HOJA, ESPERA_DIAS, TIPOS_AVISO, avisoEnFiltro, ultimosRegistros } from './operativo.tablero.js';
+import { ETIQUETA_HOJA, ESPERA_DIAS, TIPOS_AVISO, avisoEnFiltro, ultimosRegistros, dimensionActiva, hayCodigo } from './operativo.tablero.js';
 import { sumarDias, ubicKey } from '../registros/lib/mad-libro.js';
 import { diasEntre } from '../registros/lib/mad-resumen.js';
 
@@ -47,8 +47,7 @@ const ROTULO_DIM = { sala: 'sala', tanque: 'tanque', lote: 'lote', codigo: 'cód
   sexo: 'sexo', piscina: 'piscina', camaronera: 'camaronera' };
 /** Los filtros ACTIVOS que una pieza no puede aplicar (`aplica` son los que sí), con el rótulo de la vista. */
 export function ignoraDeCalidad(F, aplica) {
-  const activa = (d) => (d === 'tanque' ? !!F && F.tanque !== null && F.tanque !== undefined : !!(F && F[d]));
-  return Object.keys(ROTULO_DIM).filter((d) => activa(d) && !(aplica || []).includes(d)).map((d) => ROTULO_DIM[d]);
+  return Object.keys(ROTULO_DIM).filter((d) => dimensionActiva(F, d) && !(aplica || []).includes(d)).map((d) => ROTULO_DIM[d]);
 }
 
 /* ── EL ESTADO DE CADA HOJA ─────────────────────────────────── */
@@ -263,7 +262,7 @@ function lugarDeAviso(a) {
  * Los avisos no dicen el código genético: con ese filtro no aplican (`aplica: false`), como en la portada.
  */
 export function avisosDelLibro(M, periodo, F) {
-  const aplica = !(F && F.codigo);
+  const aplica = !hayCodigo(F);
   const lista = aplica ? (((M && M.libro) || {}).avisos || []).filter((a) => avisoEnFiltro(a, F)) : [];
   const tipos = new Map(Object.entries(TIPOS_AVISO).map(([tipo, etiqueta]) => [tipo, { tipo, etiqueta, conocido: true, total: 0, enPeriodo: 0 }]));
   for (const a of lista) {

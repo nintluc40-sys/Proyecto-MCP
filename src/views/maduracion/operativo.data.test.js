@@ -256,7 +256,11 @@ const DIMS = ['sala', 'tanque', 'lote', 'codigo'];
 /* Valores que EXISTEN en el fixture de abajo, para que un filtro pueda cambiar algo. */
 const VALOR = { sala: 'Sala 1', tanque: 1, lote: 'L1', codigo: 'C1' };
 
-const FIL = (d) => ({ sala: null, tanque: null, lote: null, codigo: null, ...(d || {}) });
+/* Punto 2 · etapa A (2026-10-13) · el filtro lleva LISTAS de lotes y códigos (`lotes`, `codigos`; vacía = todos). */
+const FIL = (d) => {
+  const { lote, codigo, ...resto } = d || {};
+  return { sala: null, tanque: null, lotes: lote ? [].concat(lote) : [], codigos: codigo ? [].concat(codigo) : [], ...resto };
+};
 const P = { desde: '2026-09-01', hasta: '2026-09-30' };
 
 const FIXTURE = () => ({
@@ -375,6 +379,21 @@ for (const [hoja, sonda] of Object.entries(SONDAS)) {
           + 'perdió, o el catálogo declara de adorno').toBe(true);
       }
     });
+
+    /* Punto 2 · etapa A (2026-10-13, usuario) · VARIOS lotes o códigos son la UNIÓN: uno que no existe, elegido ANTES
+       que el bueno, no cambia nada. Un consumidor que mirase sólo el primero de la lista se quedaría con el inexistente
+       y sus datos serían los de «nada»; el control comprueba que el inexistente, solo, sí los cambia. */
+    const varios = admite.filter((d) => d === 'lote' || d === 'codigo');
+    if (varios.length) {
+      it(`con VARIOS (${varios.join(', ')}), la unión: uno que no existe no le quita nada al bueno`, () => {
+        const f = FIXTURE();
+        for (const d of varios) {
+          const solo = datos(sonda(f, FIL({ [d]: VALOR[d] })));
+          expect(datos(sonda(f, FIL({ [d]: ['NO-EXISTE', VALOR[d]] }))), hoja + ' con ' + d + ' = [NO-EXISTE, ' + VALOR[d] + ']').toBe(solo);
+          expect(datos(sonda(f, FIL({ [d]: ['NO-EXISTE'] }))), hoja + ' · control: el inexistente solo SÍ cambia').not.toBe(solo);
+        }
+      });
+    }
   });
 }
 

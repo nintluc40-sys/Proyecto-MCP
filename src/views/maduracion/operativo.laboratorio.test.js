@@ -67,6 +67,14 @@ describe('Maduración · laboratorio · el filtro del tablero', () => {
     expect(f.pasa({ fecha: '2026-09-01', sala: 'Sala 1', tanque: '5', sexo: 'Macho' })).toBe(false);
     expect(f.pasa({ fecha: '2026-09-20', sala: 'Sala 1', tanque: '5', sexo: 'Hembras' }), 'fuera del período').toBe(false);
   });
+  /* Punto 2 · etapa A (2026-10-13) · el filtro lleva LISTAS de lotes: la muestra de otro lote no pasa, la de cualquiera
+     de los elegidos sí, y el lote de la ventana (uno) se lee igual. */
+  it('🔴 el lote: el de la muestra tiene que ser uno de los elegidos', () => {
+    const dos = filtroDelTablero(F({ lote: ['QA', 'qb'] }), P, ['lote']);
+    expect(['QA', 'QB', 'qb ', 'QC'].map((lote) => dos.pasa({ fecha: '2026-09-01', lote }))).toEqual([true, true, true, false]);
+    const ventana = filtroDelTablero(filtroDeLaVentana({ lote: 'QA' }).F, P, ['lote']);
+    expect(['QA', 'QB'].map((lote) => ventana.pasa({ fecha: '2026-09-01', lote }))).toEqual([true, false]);
+  });
 });
 
 describe('Maduración · laboratorio · 🦠 ① reproductores (hepatopáncreas)', () => {
@@ -218,7 +226,8 @@ describe('Maduración · laboratorio · 0q·5a · la ventana y las cantidades', 
     expect(filtroDeLaVentana({ mes: '2026-02' }).periodo.hasta).toBe('2026-02-28');
     const t = filtroDeLaVentana({}).periodo;
     expect(t.desde <= '1900-01-01' && t.hasta >= '2999-12-31').toBe(true);
-    expect(filtroDeLaVentana({ lote: ' qa ', sala: 'Sala 2', sexo: 'Hembras' }).F).toMatchObject({ lote: 'QA', sala: 'Sala 2', sexo: 'Hembras', tanque: null });
+    expect(filtroDeLaVentana({ lote: ' qa ', sala: 'Sala 2', sexo: 'Hembras' }).F).toMatchObject({ lotes: ['QA'], sala: 'Sala 2', sexo: 'Hembras', tanque: null });   // etapa A · la forma del filtro: LISTAS
+    expect(filtroDeLaVentana({}).F).toMatchObject({ lotes: [], codigos: [] });
   });
 
   it('🔴 sin filtros, TODO el registro: la muestra de julio entra', () => {

@@ -41,7 +41,7 @@ import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { construirLibro, sumarDias, ubicKey, ESTADO_PRODUCCION } from '../registros/lib/mad-libro.js';
 import { fechaDeFila } from './operativo.data.js';
 import { cociente, tasaEnPartesDelLote } from './operativo.indicadores.js';
-import { posicionEnFiltro, salasEnAlcance, codigoEnFiltro } from './operativo.tablero.js';
+import { posicionEnFiltro, salasEnAlcance, codigoEnFiltro, hayCodigo } from './operativo.tablero.js';
 import { loteEnFiltro, origenDeLote } from './operativo.lotes.js';
 import { UMBRALES_DE_AVISO } from './operativo.umbrales.js';
 
@@ -288,7 +288,7 @@ export function tendencias(M, periodo, F, partes, presencia) {
     return { valor: x.valor, registros: x.registros };
   };
   const candidatos = new Set(lotesDesove);
-  if (!F.codigo) {
+  if (!hayCodigo(F)) {
     for (const d of partes || []) {
       if (!enPeriodo(d.fecha, anterior) && !enPeriodo(d.fecha, periodo)) continue;
       const foto = pres.get(d.fecha);
@@ -298,7 +298,7 @@ export function tendencias(M, periodo, F, partes, presencia) {
   }
   for (const k of candidatos) {
     const parametros = [];
-    if (!F.codigo) {
+    if (!hayCodigo(F)) {
       const a = copulasDe(k, anterior);
       const h = copulasDe(k, periodo);
       const c = baja(a.valor, h.valor, a.registros);

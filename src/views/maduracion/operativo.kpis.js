@@ -14,10 +14,9 @@
    (por ejemplo, el código genético en los vivos) el gráfico no se inventa: dice que no aplica.
    Módulo puro: devuelve lo que se dibuja; la vista lo dibuja.
    ============================================================ */
-import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_MIXTO, sumarDias, ubicKey } from '../registros/lib/mad-libro.js';
 import { SALAS_VISIBLES } from './operativo.data.js';
-import { tasaEntre, kpiBiomasa, posicionEnFiltro, codigoEnFiltro } from './operativo.tablero.js';
+import { tasaEntre, kpiBiomasa, posicionEnFiltro, codigoEnFiltro, loteElegido, hayLote, hayCodigo } from './operativo.tablero.js';
 
 /** Las siete tarjetas que tienen gráfico, en su orden, con su título. */
 export const KPIS_CON_GRAFICO = [
@@ -42,18 +41,18 @@ const diasDe = (serie, p) => (serie || []).filter((d) => d.fecha >= p.desde && d
 const noAplica = (nota) => ({ aplica: false, nota });
 /** Filtros que estrechan las posiciones sin que la serie los guarde día a día (el libro lleva los vivos por total, sala,
  *  lote, lote·sala y tanque, no por código, estado ni origen). */
-const sinSerie = (F) => !!(F.codigo || F.estado || F.piscina || F.camaronera);
+const sinSerie = (F) => !!(hayCodigo(F) || F.estado || F.piscina || F.camaronera);
 
 /** VIVOS · la curva diaria ♀ / ♂ / total del período, del desglose de la serie que corresponde al filtro. */
 export function graficoVivos(serie, periodo, F) {
-  if (sinSerie(F) || (F.tanque !== null && F.lote)) {
+  if (sinSerie(F) || (F.tanque !== null && hayLote(F))) {
     return noAplica('Con este filtro el libro no guarda los vivos día a día: el gráfico no aplica (la cifra de la tarjeta sí).');
   }
   const suma = (entradas) => entradas.reduce((a, x) => ({ machos: a.machos + ent(x.machos), hembras: a.hembras + ent(x.hembras) }), { machos: 0, hembras: 0 });
   const del = (d) => {
     if (F.tanque !== null) return suma([(d.porTanque || {})[ubicKey(F.sala, F.tanque)] || {}]);
-    if (F.lote && F.sala) return suma(Object.entries(d.porLoteSala || {}).filter(([k]) => { const [l, s] = k.split('|'); return normLote(l) === F.lote && s === F.sala; }).map(([, v]) => v));
-    if (F.lote) return suma(Object.entries(d.porLote || {}).filter(([l]) => normLote(l) === F.lote).map(([, v]) => v));
+    if (hayLote(F) && F.sala) return suma(Object.entries(d.porLoteSala || {}).filter(([k]) => { const [l, s] = k.split('|'); return loteElegido(l, F) && s === F.sala; }).map(([, v]) => v));
+    if (hayLote(F)) return suma(Object.entries(d.porLote || {}).filter(([l]) => loteElegido(l, F)).map(([, v]) => v));
     if (F.sala) return suma([(d.porSala || {})[F.sala] || {}]);
     return suma([d.total || {}]);
   };
@@ -85,7 +84,7 @@ export function graficoLotes(serie, periodo, F) {
     for (const [k, estado] of Object.entries(d.estadoLoteSala || {})) {
       const [lote, sala] = k.split('|');
       if (F.sala && sala !== F.sala) continue;
-      if (F.lote && normLote(lote) !== F.lote) continue;
+      if (!loteElegido(lote, F)) continue;
       if (F.sexo && ent(((d.porLoteSala || {})[k] || {})[F.sexo]) <= 0) continue;
       if (!porLote.has(lote)) porLote.set(lote, new Set());
       if (estado) porLote.get(lote).add(estado);
@@ -124,7 +123,7 @@ export function graficoSalas(salas, F) {
  *  las posiciones, los tanques con animales de lo filtrado). La suma de las barras es la cifra de la tarjeta. */
 export function graficoOcupacion(salas, libro, F) {
   if (F.tanque !== null) return noAplica('Con un tanque elegido, la ocupación es la de ese tanque: no hay salas que comparar.');
-  const estrecha = !!(F.lote || F.codigo || F.estado || F.sexo || F.piscina || F.camaronera);
+  const estrecha = !!(hayLote(F) || hayCodigo(F) || F.estado || F.sexo || F.piscina || F.camaronera);
   const ss = (salas || []).filter((s) => !F.sala || s.sala === F.sala);
   const filas = ss.map((s) => {
     const total = ent(s.propuesto && s.propuesto.total);
@@ -168,7 +167,7 @@ export function graficoMortalidad(serie, periodo, F, partes) {
       ],
     };
   }
-  if (F.codigo) return noAplica('El libro lleva las bajas por lote, no por código genético: el gráfico no aplica.');
+  if (hayCodigo(F)) return noAplica('El libro lleva las bajas por lote, no por código genético: el gráfico no aplica.');
   const porFecha = new Map((serie || []).map((d) => [d.fecha, d]));
   const antes = porFecha.get(sumarDias(periodo.desde, -1));
   if (!antes) return noAplica('Sin la serie del período no hay tasa que dibujar.');
@@ -177,8 +176,8 @@ export function graficoMortalidad(serie, periodo, F, partes) {
   return {
     aplica: true, tipo: 'barrasYLinea', unidad: '%', etiquetas: ds,
     series: [
-      { clave: 'dia', etiqueta: 'Tasa del día (%)', datos: ds.map((f) => valor(tasaEntre(porFecha.get(sumarDias(f, -1)), porFecha.get(f), F.lote))) },
-      { clave: 'acumulada', etiqueta: 'Acumulada del período (%)', datos: ds.map((f) => valor(tasaEntre(antes, porFecha.get(f), F.lote))) },
+      { clave: 'dia', etiqueta: 'Tasa del día (%)', datos: ds.map((f) => valor(tasaEntre(porFecha.get(sumarDias(f, -1)), porFecha.get(f), F.lotes))) },
+      { clave: 'acumulada', etiqueta: 'Acumulada del período (%)', datos: ds.map((f) => valor(tasaEntre(antes, porFecha.get(f), F.lotes))) },
     ],
   };
 }
@@ -191,7 +190,7 @@ export function graficoReproduccion(filasDesoves, periodo, F) {
   for (const r of filasDesoves || []) {
     const f = fecha10(r.Fecha);
     if (!enPeriodo(f, periodo)) continue;
-    if (F.lote && normLote(r.Lote) !== F.lote) continue;
+    if (!loteElegido(r.Lote, F)) continue;
     if (!codigoEnFiltro(r['Código genético'], F)) continue;
     des.set(f, (des.get(f) || 0) + ent(r.Desoves));
     n5.set(f, (n5.get(f) || 0) + ent(r.N5));

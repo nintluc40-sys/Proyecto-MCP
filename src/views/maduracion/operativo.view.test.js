@@ -92,6 +92,24 @@ const filtro = (dim) => root.querySelector(`[data-mop-filtro="${dim}"]`);
    un <select> desde innerHTML, marca la opción ANTERIOR a la que lleva `selected` cuando no es la segunda (medido el
    2026-09-19: con la tercera marcada devuelve la segunda). */
 const elegido = (dim) => { const s = filtro(dim); return (s.querySelector('option[selected]') || s.options[0]).value; };
+/* Punto 2 · etapa A (2026-10-13, usuario) · el lote y el código se eligen en un desplegable de CASILLAS, varios a la vez.
+   `marcar(id, valores)` deja marcados EXACTAMENTE esos —como elegir en el antiguo <select>; [] = ninguno—, casilla a
+   casilla y con su evento; `id` es 'lote' / 'codigo' en la barra del tablero y 'rep-lote' / 'rep-codigo' en la de
+   🖨 Reportes. Si un valor no se puede marcar (no está entre las opciones), revienta: no se da por elegido en silencio. */
+const casillas = (id) => [...root.querySelectorAll(`[data-mop-multi="${id}"] [data-mop-multi-v]`)];
+const opcionesDe = (id) => casillas(id).map((c) => c.value);
+const marcados = (id) => casillas(id).filter((c) => c.checked).map((c) => c.value);
+const marcar = (id, valores) => {
+  const quiere = [].concat(valores);
+  for (let i = 0; i < 50; i++) {
+    const c = casillas(id).find((x) => x.checked !== quiere.includes(x.value));
+    if (!c) break;
+    c.checked = !c.checked;
+    c.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  const hay = marcados(id);
+  if (hay.length !== quiere.length || quiere.some((v) => !hay.includes(v))) throw new Error(`marcar(${id}): quedó [${hay}] y se pidió [${quiere}]`);
+};
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
@@ -156,14 +174,76 @@ describe('Maduración · operativo · 📊 Estado actual', () => {
     click(root.querySelector('[data-mop-limpiar]'));
     expect(kpi('Vivos')).toBe('66');
     expect(elegido('sala')).toBe('');
-    cambiar(filtro('lote'), 'QB');
+    marcar('lote', 'QB');
     expect(kpi('Vivos')).toBe('16');
-    expect(elegido('lote')).toBe('QB');
-    expect([...filtro('codigo').options].map((o) => o.value)).toEqual(['', 'CA']);
+    expect(marcados('lote')).toEqual(['QB']);
+    expect(opcionesDe('codigo')).toEqual(['CA']);
     cambiar(filtro('sala'), 'Sala 1');                      // cambiar de sala borra el tanque, no el lote
-    expect(elegido('lote')).toBe('QB');
+    expect(marcados('lote')).toEqual(['QB']);
     expect(kpi('Vivos')).toBe('0');
     expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  /* Punto 2 · etapa A (2026-10-13, usuario) · «si escojo el lote BA y también quiero ver junto a la información del lote
+     BC, pueda filtrar ambos». Decidido: la UNIÓN —lo elegido se ve junto, sumado—, en un desplegable de casillas. */
+  it('🔴 dos lotes a la vez: las cifras son las de los dos JUNTOS, una etiqueta por lote, y se quitan de una en una', async () => {
+    await montar(PLANTA);
+    marcar('lote', 'QA');
+    const qa = Number(kpi('Vivos'));
+    marcar('lote', 'QB');
+    const qb = Number(kpi('Vivos'));
+    marcar('lote', ['QA', 'QB']);
+    expect(Number(kpi('Vivos'))).toBe(qa + qb);
+    expect(qa + qb, 'el filtro deja fuera a QC y QD').toBeLessThan(66);
+    expect(root.querySelector('.mop-filtros [data-mop-multi="lote"] summary').textContent).toBe('QA, QB');
+    const chips = () => [...root.querySelectorAll('[data-mop-quitar="lote"]')];
+    expect(chips().map((c) => c.dataset.mopValor)).toEqual(['QA', 'QB']);
+    click(chips().find((c) => c.dataset.mopValor === 'QB'));
+    expect(marcados('lote')).toEqual(['QA']);
+    expect(Number(kpi('Vivos'))).toBe(qa);
+    click(root.querySelector('[data-mop-limpiar]'));
+    expect(marcados('lote')).toEqual([]);
+    expect(kpi('Vivos')).toBe('66');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('🔴 dos códigos a la vez, y el código en cascada de VARIOS lotes es la unión de los suyos', async () => {
+    await montar(PLANTA);
+    marcar('lote', 'QB');
+    expect(opcionesDe('codigo')).toEqual(['CA']);
+    marcar('lote', ['QB', 'QC']);
+    expect(opcionesDe('codigo')).toEqual(['CA', 'CB']);
+    // Un código que sólo lleva el SEGUNDO lote elegido se puede marcar y se queda (no se depura con el primero).
+    marcar('codigo', 'CB');
+    expect(marcados('codigo')).toEqual(['CB']);
+    marcar('codigo', []);
+    marcar('lote', []);
+    marcar('codigo', 'CA');
+    const ca = Number(kpi('Vivos'));
+    marcar('codigo', 'CB');
+    const cb = Number(kpi('Vivos'));
+    marcar('codigo', ['CA', 'CB']);
+    expect(Number(kpi('Vivos'))).toBe(ca + cb);
+    expect([ca, cb].every((n) => n > 0 && n < 66), 'cada código deja fuera a algo').toBe(true);
+    // Un código que ya no está en los lotes elegidos se descarta (y sólo ése).
+    marcar('lote', 'QB');
+    expect(marcados('codigo')).toEqual(['CA']);
+  });
+
+  it('🔴 la lista sigue abierta mientras se marca; un clic fuera o Escape la cierran', async () => {
+    await montar(PLANTA);
+    const det = () => root.querySelector('.mop-filtros [data-mop-multi="lote"]');
+    expect(det().open).toBe(false);
+    marcar('lote', 'QA');
+    expect(det().open, 'tras marcar, se repinta ABIERTA').toBe(true);
+    expect(document.activeElement && document.activeElement.value, 'el foco, en la misma casilla').toBe('QA');
+    click(root.querySelector('.mc-title'));
+    expect(det().open, 'un clic fuera la cierra').toBe(false);
+    marcar('lote', ['QA', 'QB']);
+    expect(det().open).toBe(true);
+    casillas('lote')[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(det().open, 'Escape la cierra').toBe(false);
+    expect(marcados('lote'), 'cerrar no cambia lo elegido').toEqual(['QA', 'QB']);
   });
 
   it('período y foto: «Hoy» es un día; la foto del 10/09 no ve lo posterior; una foto futura vuelve a hoy', async () => {
@@ -693,8 +773,8 @@ describe('Maduración · operativo · 🧬 Lotes', () => {
   it('con un filtro que no deja ningún lote lo dice, y no revienta', async () => {
     await montar(PLANTA_L);
     abrirLotes();
-    cambiar(filtro('lote'), 'QA');
-    cambiar(filtro('codigo'), 'CB');
+    marcar('lote', 'QA');
+    marcar('codigo', 'CB');
     cambiar(filtro('sala'), 'Sala 4');
     expect(root.querySelectorAll('[data-mop-lote]')).toHaveLength(0);
     expect(root.textContent).toContain('Ningún lote pasa el filtro');
@@ -763,9 +843,14 @@ describe('Maduración · operativo · F2.3 · filtros, etiquetas, ciclo y biomas
     click(root.querySelector('[data-mop-periodo="ciclo"]'));
     expect(root.querySelector('.mop-f-rango').textContent).toContain('elige un lote');
     expect(root.querySelector('.mop-f-rango').textContent).toContain('21/08 – 19/09');   // el de por defecto
-    cambiar(filtro('lote'), 'LA');
+    marcar('lote', 'LA');
     expect(root.querySelector('.mop-f-rango').textContent).toContain('01/08 – 19/09 · 50 días');
     expect(root.querySelector('.mop-f-rango').textContent).not.toContain('elige un lote');
+    // Punto 2 · etapa A · con VARIOS lotes no hay UN ciclo: se cae al de por defecto y pide uno solo.
+    const otro = opcionesDe('lote').find((l) => l !== 'LA');
+    marcar('lote', ['LA', otro]);
+    expect(root.querySelector('.mop-f-rango').textContent).toContain('elige un solo lote');
+    expect(root.querySelector('.mop-f-rango').textContent).toContain('21/08 – 19/09');
   });
 
   it('🔴 la BIOMASA es el séptimo indicador, pesa por tanque, y sin pesos se queda vacía', async () => {
@@ -1154,7 +1239,7 @@ describe('Maduración · operativo · 🛢 Tanques', () => {
   it('🔑 con filtro de lote la fila avisa y la composición que queda fuera se marca, sin esconderla', async () => {
     await montar(PLANTA_F4);
     abrirTanques();
-    cambiar(filtro('lote'), 'QA');
+    marcar('lote', 'QA');
     click(filaTq('Sala 1|1'));
     const ficha = root.querySelector('.mop-ficha');
     expect(ficha.textContent).toContain('QC');
@@ -1299,9 +1384,9 @@ describe('Maduración · operativo · 🔄 Manejo', () => {
     const h = [...root.querySelectorAll('.mc-card-h')].map((x) => x.textContent);
     expect(h).toHaveLength(1);
     expect(h[0]).toContain('🦐 Alimentación · ración PLANIFICADA');
-    expect(filtro('lote'), 'sigue los filtros del tablero').not.toBeNull();
+    expect(root.querySelector('.mop-filtros [data-mop-multi="lote"]'), 'sigue los filtros del tablero').not.toBeNull();
     // …y los recibe: con un código genético, dice que su hoja no lo registra (como hacía dentro de Manejo).
-    cambiar(filtro('codigo'), 'CA');
+    marcar('codigo', 'CA');
     expect(plano(root)).toContain('La hoja de Alimentación dice sus lotes, no sus códigos genéticos.');
     expect(errSpy).not.toHaveBeenCalled();
   });
@@ -1369,7 +1454,7 @@ describe('Maduración · operativo · 🔄 Manejo', () => {
   it('🔑 el filtro de LOTE no llega a los movimientos, y se dice con SU motivo, no con el de Tanques', async () => {
     await montar(PLANTA_F5);
     abrirManejo();
-    cambiar(filtro('lote'), 'QA');
+    marcar('lote', 'QA');
     const t = plano(root);
     expect(t).toContain('Un movimiento no puede separarse por lote');
     expect(t).toContain('La hoja de Movimientos no registra el lote');
@@ -1479,9 +1564,9 @@ describe('Maduración · operativo · 📈 Piscinas de origen (en 🧬 Lotes)', 
     await montar(PLANTA_F6);
     abrirLotes();
     click(filaPiscina('9701'));
-    cambiar(filtro('lote'), 'QB');   // QB no entró de ninguna piscina: la tabla se vacía y la ficha con ella
+    marcar('lote', 'QB');   // QB no entró de ninguna piscina: la tabla se vacía y la ficha con ella
     expect(root.querySelector('.mop-bs-ficha')).toBeNull();
-    cambiar(filtro('lote'), '');
+    marcar('lote', []);
     expect(root.querySelector('.mop-bs-ficha')).toBeNull();   // y no vuelve sola
     click(filaPiscina('9701'));
     cambiar(filtro('sala'), 'Sala 1');
@@ -1593,7 +1678,7 @@ describe('Maduración · operativo · 🩺 Calidad del dato', () => {
     await montar(PLANTA_F6C);
     abrirCalidad();
     expect(root.querySelectorAll('.mop-av-tipos tbody tr')).toHaveLength(Object.keys(TIPOS_AVISO).length);
-    cambiar(filtro('codigo'), 'CA');
+    marcar('codigo', 'CA');
     expect(plano(root)).toContain('Los avisos del libro no dicen el código genético');
     expect(root.querySelector('.mop-av-tipos')).toBeNull();
   });
@@ -1750,7 +1835,7 @@ describe('Maduración · operativo · 🖨 Reportes', () => {
     expect(root.querySelector('.mop-rep-prev').getAttribute('srcdoc')).toContain('Lote QA');
     cambiar(sel, 'QB');
     expect(root.querySelector('.mop-rep-prev').getAttribute('srcdoc')).toContain('Lote QB');
-    expect(elegido('lote')).toBe('');                                  // el filtro del tablero no se ha movido
+    expect(marcados('lote')).toEqual([]);                              // el filtro del tablero no se ha movido
   });
 
   /* 0r·4 (2026-09-28, usuario) · el diario y el semanal ofrecen en SU barra el «Lote → Código genético» del tablero.
@@ -1760,20 +1845,20 @@ describe('Maduración · operativo · 🖨 Reportes', () => {
     await montar(PLANTA);
     abrirReportes();
     const barra = () => root.querySelector('.mop-rep-barra');
-    const selR = (d) => barra().querySelector(`[data-mop-filtro="${d}"]`);
-    expect([...selR('lote').options].map((o) => o.value)).toEqual(['', 'QA', 'QB', 'QC', 'QD']);
+    expect(barra().querySelector('[data-mop-multi="rep-lote"]'), 'el desplegable va en SU barra').not.toBeNull();
+    expect(opcionesDe('rep-lote')).toEqual(['QA', 'QB', 'QC', 'QD']);
     expect(plano(barra())).toContain('son los filtros del tablero');
-    cambiar(selR('lote'), 'QB');
-    expect([...selR('codigo').options].map((o) => o.value), 'el código, en cascada: QB sólo lleva CA').toEqual(['', 'CA']);
-    cambiar(selR('lote'), 'QA');
-    expect(elegido('lote'), 'el tablero se mueve con él').toBe('QA');
+    marcar('rep-lote', 'QB');
+    expect(opcionesDe('rep-codigo'), 'el código, en cascada: QB sólo lleva CA').toEqual(['CA']);
+    marcar('rep-lote', 'QA');
+    expect(marcados('lote'), 'el tablero se mueve con él').toEqual(['QA']);
     expect(root.querySelector('.mop-rep-prev').getAttribute('srcdoc')).toContain('PARTE FILTRADO — Lote QA');
-    expect([...selR('codigo').options].map((o) => o.value), 'el código, en cascada del lote').toEqual(['', 'CA', 'CB']);
-    cambiar(selR('codigo'), 'CB');
-    expect(elegido('codigo')).toBe('CB');
+    expect(opcionesDe('rep-codigo'), 'el código, en cascada del lote').toEqual(['CA', 'CB']);
+    marcar('rep-codigo', 'CB');
+    expect(marcados('codigo')).toEqual(['CB']);
     expect(plano(root.querySelector('.mop-rep-alcance'))).toContain('CB');
     click(root.querySelector('[data-mop-rep="semanal"]'));
-    expect(selR('lote').querySelector('option[selected]').value, 'el semanal enseña el mismo filtro').toBe('QA');
+    expect(marcados('rep-lote'), 'el semanal enseña el mismo filtro').toEqual(['QA']);
     const doc = root.querySelector('.mop-rep-prev').getAttribute('srcdoc');
     expect(doc.match(/class="rp-page"/g), 'el semanal: sólo la página de QA').toHaveLength(1);
     expect(doc).toContain('Lote QA');
@@ -1783,9 +1868,11 @@ describe('Maduración · operativo · 🖨 Reportes', () => {
     await montar(PLANTA);
     abrirReportes();
     click(root.querySelector('[data-mop-rep="cierre"]'));
-    expect(root.querySelector('.mop-rep-barra [data-mop-filtro]')).toBeNull();
+    expect(root.querySelector('.mop-rep-barra [data-mop-multi]')).toBeNull();
     click(root.querySelector('[data-mop-rep="broodstock"]'));
-    expect(root.querySelector('.mop-rep-barra [data-mop-filtro]')).toBeNull();
+    expect(root.querySelector('.mop-rep-barra [data-mop-multi]')).toBeNull();
+    click(root.querySelector('[data-mop-rep="diario"]'));
+    expect(root.querySelector('.mop-rep-barra [data-mop-multi]'), 'control: el diario sí los lleva').not.toBeNull();
   });
 
   it('🔑 el cierre de un lote ABIERTO lo dice, y su curva empieza en el ingreso, no en la víspera de la foto', async () => {
@@ -1929,7 +2016,7 @@ describe('Maduración · operativo · 0f · 2b · 📉 Tendencias y ⏳ Permanen
   it('con un lote sin nada que avisar (TC, en cuarentena), «✓ Sin alertas en el período»', async () => {
     await montar(PLANTA_T());
     click(root.querySelector('[data-mop-periodo="7d"]'));
-    cambiar(filtro('lote'), 'TC');
+    marcar('lote', 'TC');
     const t = tarjeta();
     expect(t.querySelector('.mop-tendencias')).toBeNull();
     expect(t.querySelector('.mop-permanencia')).toBeNull();
@@ -2140,7 +2227,7 @@ describe('Maduración · operativo · 0f · 5 · el gráfico de cada KPI', () =>
     expect(panel().textContent).toContain('REGISTRADAS en la hoja Tanques');
     cambiar(filtro('sala'), '');
     click(tarjeta('vivos'));
-    cambiar(filtro('codigo'), 'CA');
+    marcar('codigo', 'CA');
     expect(panel().querySelector('canvas')).toBeNull();
     expect(panel().textContent).toContain('no guarda los vivos día a día');
   });
@@ -2629,10 +2716,10 @@ describe('Maduración · operativo · 🥚 Reproducción: lo que el navegador ha
     await montar(PLANTA_Q3);
     abrirRepro();
     click(filaRepro('QA'));
-    expect([...filtro('lote').options].some((o) => o.value === 'QB')).toBe(true);
-    cambiar(filtro('lote'), 'QB');
+    expect(opcionesDe('lote')).toContain('QB');
+    marcar('lote', 'QB');
     expect(filaRepro('QA')).toBeNull();
-    cambiar(filtro('lote'), '');
+    marcar('lote', []);
     expect(filaRepro('QA').getAttribute('aria-expanded')).toBe('false');
     expect(root.querySelector('.mop-rlote-det')).toBeNull();
   });
@@ -2776,6 +2863,17 @@ describe('Maduración · operativo · 🦠 la ventana de Microbiología con sus 
     // ⚠ happy-dom lee mal el `value` de un <select> pintado con innerHTML: se lee la opción marcada.
     expect(selLab('sala').querySelector('option[selected]').value).toBe('Sala 2');
     expect(kpiRep()).toContain('1 muestras');
+  });
+
+  it('🔴 punto 2 · etapa A · hereda el lote del tablero sólo si hay UNO (su filtro es de un solo lote)', async () => {
+    await montar([...PLANTA, ...LAB5]);
+    marcar('lote', 'QA');
+    abrirMicro();
+    expect(selLab('lote').querySelector('option[selected]').value).toBe('QA');
+    click(root.querySelector('[data-mop-sub="estado"]'));
+    marcar('lote', ['QA', 'QB']);
+    abrirMicro();
+    expect(selLab('lote').querySelector('option[selected]'), 'con dos, empieza sin lote').toBeNull();
   });
 
   it('🔑 2 · pulsar 🦠 estando en 🦠 no borra sus filtros; salir y volver a entrar, sí (empieza con el tablero)', async () => {

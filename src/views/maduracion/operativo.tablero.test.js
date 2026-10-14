@@ -99,8 +99,9 @@ describe('Maduración · tablero · período y filtros', () => {
   });
 
   it('el filtro: el tanque sólo con su sala y como número; lote y código canónicos', () => {
-    expect(normalizarFiltro({ tanque: 3 })).toEqual({ sala: '', tanque: null, lote: '', codigo: '', ...SIN_DIM });
-    expect(normalizarFiltro({ sala: 'Sala 4', tanque: '1', lote: ' qa ', codigo: 'c b' })).toEqual({ sala: 'Sala 4', tanque: 1, lote: 'QA', codigo: 'CB', ...SIN_DIM });
+    /* Punto 2 · etapa A (2026-10-13): el lote y el código son LISTAS (vacía = todos); llegan como un valor o como una lista. */
+    expect(normalizarFiltro({ tanque: 3 })).toEqual({ sala: '', tanque: null, lotes: [], codigos: [], ...SIN_DIM });
+    expect(normalizarFiltro({ sala: 'Sala 4', tanque: '1', lote: ' qa ', codigo: 'c b' })).toEqual({ sala: 'Sala 4', tanque: 1, lotes: ['QA'], codigos: ['CB'], ...SIN_DIM });
     expect(hayFiltro(SIN)).toBe(false);
     expect(hayFiltro(F({ codigo: 'x' }))).toBe(true);
     const p = { sala: 'Sala 1', tanque: 1, lote: 'QA', codigoGenetico: 'CA' };

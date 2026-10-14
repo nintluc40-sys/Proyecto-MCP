@@ -41,12 +41,13 @@ import { store } from '../../core/store.js';
 import { makeChart, destroyAllCharts } from '../../core/charts.js';
 import { esc } from '../../core/format.js';
 import { sumarDias, ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_MIXTO } from '../registros/lib/mad-libro.js';
+import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';   // punto 2 · etapa A
 import { modeloOperativo, serieDiaria, diasDeTanque, libroAlCierre } from './operativo.data.js';
 import {
   PERIODOS, PERIODO_INICIAL, periodoDe, normalizarFiltro, hayFiltro, kpiVivos, kpiLotes, kpiSalas, kpiOcupacion,
   kpiMortalidad, kpiReproduccion, mapaDePlanta, MODOS_MAPA, ESTADO_VACIO, ESTADO_SIN, alertas, ultimosRegistros,
   cuarentenasDeLotes, conIngresoDelLote, curvaDeCuarentena, AVISO_CUARENTENA_DIAS, tarjetasDeSalas, detalleDeSala, ambienteDelDia,
-  indiceDeFiltro, cicloDelLote, etiquetasDeFiltro, kpiBiomasa,
+  indiceDeFiltro, cicloDelLote, etiquetasDeFiltro, kpiBiomasa, loteUnico,
 } from './operativo.tablero.js';
 import { KPIS_CON_GRAFICO, graficoDeKpi } from './operativo.kpis.js';
 import { BIOMOL_PATOGENOS } from './operativo.laboratorio.js';
@@ -141,7 +142,7 @@ const SUBS = [
 ];
 /** 2 · las sub-vistas con sus propios filtros: sin la barra ni las etiquetas del tablero, que no les aplican. */
 const PROPIOS = new Set(['micro', 'biomol', 'mareas']);
-const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', tanque: '', lote: '', codigo: '', color: 'estado', salaDetalle: '', tanqueSel: '', loteSel: '', agrupacion: 'lote',
+const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', tanque: '', lote: [], codigo: [], color: 'estado', salaDetalle: '', tanqueSel: '', loteSel: '', agrupacion: 'lote',
   estado: '', sexo: '', piscina: '', camaronera: '', agrupacionBajas: 'sala',
   /* 2026-10-03 (punto 5, usuario) · el «Desde» del período «Rango» (su «Hasta» es la foto); '' = aún sin elegir. */
   desde: '',
@@ -183,7 +184,11 @@ const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', 
   bioPat: '',
   /* 3 (2026-09-29, usuario) · 🏠 Salas → detalle: la temperatura y el oxígeno por hora de UN día ('dia', por defecto) o de
      todo el período ('periodo'); y el día elegido (vacío = el de la foto; uno que ya no está en el período, también). */
-  ambModo: 'dia', ambDia: '' };
+  ambModo: 'dia', ambDia: '',
+  /* Punto 2 · etapa A (2026-10-13, usuario) · `lote` y `codigo` son LISTAS (varios a la vez; vacía = todos). Nunca se
+     modifican en su sitio —siempre una lista nueva—: el estado inicial se copia sin clonar. `multiAbierto` es el
+     desplegable de casillas que se repinta abierto mientras se marca ('' = ninguno). */
+  multiAbierto: '' };
 /* El estado de la vista vive lo que dura la sesión: al volver a Maduración, o al refrescarse los datos, se conserva. */
 const vOp = { ...INICIAL };
 
@@ -307,7 +312,7 @@ export function operativoView(root) {
   }
   depurarFiltros(M.filtros);
   const F = normalizarFiltro(vOp, indiceDeFiltro(M));
-  const periodo = periodoDe(vOp.periodo, fecha, M.fuentes, cicloDelLote(M.libro, vOp.lote, fecha), vOp.desde);
+  const periodo = periodoDe(vOp.periodo, fecha, M.fuentes, cicloDelLote(M.libro, loteUnico(F), fecha), vOp.desde);   // etapa A · con varios lotes, no hay UN ciclo
   const barra = PROPIOS.has(vOp.sub) ? '' : filtrosHTML(M, hoy, fecha, periodo) + etiquetasHTML(F);   // 2 · las tres con SUS filtros
   let h = cabeceraHTML(fecha) + barra + subnavHTML() + avisosDelDatoHTML(M);
   let detalle = null;
@@ -363,8 +368,9 @@ export function operativoView(root) {
 function depurarFiltros(o) {
   if (vOp.sala && !o.salas.includes(vOp.sala)) vOp.sala = '';
   if (!vOp.sala || !(o.tanquesPorSala[vOp.sala] || []).map(String).includes(String(vOp.tanque))) vOp.tanque = '';
-  if (vOp.lote && !o.lotes.includes(vOp.lote)) vOp.lote = '';
-  if (vOp.codigo && !codigosDe(o, vOp.lote).includes(vOp.codigo)) vOp.codigo = '';
+  vOp.lote = vOp.lote.filter((l) => o.lotes.includes(l));
+  const codigos = codigosDe(o, vOp.lote);
+  vOp.codigo = vOp.codigo.filter((c) => codigos.includes(c));
   if (vOp.estado && !(o.estados || []).includes(vOp.estado)) vOp.estado = '';
   if (vOp.piscina && !(o.piscinas || []).includes(vOp.piscina)) vOp.piscina = '';
   if (vOp.camaronera && !(o.camaroneras || []).includes(vOp.camaronera)) vOp.camaronera = '';
@@ -376,9 +382,29 @@ function etiquetasHTML(F) {
   const es = etiquetasDeFiltro(F);
   if (!es.length) return '';
   return `<div class="mop-chips" role="group" aria-label="Filtros activos">${es.map((e) =>
-    `<button class="mop-chip-f" data-mop-quitar="${esc(e.dim)}" title="Quitar el filtro de ${esc(e.rotulo)}">${esc(e.rotulo)}: <b>${esc(e.valor)}</b> ✕</button>`).join('')}</div>`;
+    `<button class="mop-chip-f" data-mop-quitar="${esc(e.dim)}"${MULTI.has(e.dim) ? ` data-mop-valor="${esc(e.valor)}"` : ''} title="Quitar el filtro de ${esc(e.rotulo)}">${esc(e.rotulo)}: <b>${esc(e.valor)}</b> ✕</button>`).join('')}</div>`;
 }
-const codigosDe = (o, lote) => (lote ? o.codigosPorLote[lote] || [] : [...new Set(Object.values(o.codigosPorLote).flat())].sort(porNombre));
+/** Los códigos de los lotes elegidos (todos, sin lote): la cascada Lote → Código con varios lotes es la UNIÓN. */
+const codigosDe = (o, lotes) => (lotes.length ? [...new Set(lotes.flatMap((l) => o.codigosPorLote[l] || []))]
+  : [...new Set(Object.values(o.codigosPorLote).flat())]).sort(porNombre);
+
+/* ── Punto 2 · etapa A (2026-10-13, usuario) · el lote y el código, VARIOS a la vez ─────────────────────────────────
+   «Si escojo el lote BA y también quiero ver junto a la información del lote BC, pueda filtrar ambos»: lo elegido se ve
+   JUNTO (la unión). Un desplegable con casillas: cada una aplica al momento y la lista sigue abierta mientras se marca
+   (se repinta abierta con `vOp.multiAbierto`); un clic fuera o Escape la cierran. `id` distingue la barra del tablero
+   de la de 🖨 Reportes, que comparten el estado. */
+const MULTI = new Set(['lote', 'codigo']);
+const NORM_MULTI = { lote: normLote, codigo: normCodigoGenetico };
+function multiHTML(dim, elegidos, valores, rotulo, id = dim) {
+  const sel = valores.filter((v) => elegidos.includes(v));   // en el orden de las opciones
+  const resumen = !sel.length ? rotulo : sel.length <= 2 ? sel.join(', ') : `${sel.slice(0, 2).join(', ')} +${sel.length - 2}`;
+  return `<details class="mop-multi${sel.length ? ' is-on' : ''}" data-mop-multi="${esc(id)}"${vOp.multiAbierto === id ? ' open' : ''}>
+      <summary class="mc-select mop-multi-s" aria-label="${esc(rotulo)}">${esc(resumen)}</summary>
+      <div class="mop-multi-p" role="group" aria-label="${esc(rotulo)}">${valores.length
+        ? valores.map((v) => `<label class="mop-multi-o"><input type="checkbox" data-mop-multi-v="${esc(dim)}" value="${esc(v)}"${elegidos.includes(v) ? ' checked' : ''}> ${esc(v)}</label>`).join('')
+        : '<span class="mc-note">Sin opciones</span>'}${sel.length ? `<button type="button" class="mc-mini mop-multi-todos" data-mop-multi-todos="${esc(dim)}">${esc(rotulo)}</button>` : ''}</div>
+    </details>`;
+}
 
 function cabeceraHTML(fecha) {
   return `<div class="mc-head"><div class="mc-head-t"><span class="mc-head-ic">📋</span><div>
@@ -397,7 +423,7 @@ function filtrosHTML(M, hoy, fecha, p) {
         return `<option value="${esc(v)}"${String(valor) === String(v) ? ' selected' : ''}>${esc(t)}</option>`;
       }).join('')}
     </select>`;
-  const cambiado = vOp.periodo !== INICIAL.periodo || vOp.fecha || vOp.sala || vOp.lote || vOp.codigo
+  const cambiado = vOp.periodo !== INICIAL.periodo || vOp.fecha || vOp.sala || vOp.lote.length || vOp.codigo.length
     || vOp.estado || vOp.sexo || vOp.piscina || vOp.camaronera;
   return `<div class="mop-filtros">
     <div class="mop-f-grupo"><span class="mop-f-lbl">Período</span>
@@ -405,7 +431,7 @@ function filtrosHTML(M, hoy, fecha, p) {
         const on = x.clave === p.clave;
         return `<button class="mc-seg-b ${on ? 'is-on' : ''}" data-mop-periodo="${x.clave}" aria-pressed="${on}">${esc(x.etiqueta)}</button>`;
       }).join('')}</div>
-      <span class="mop-f-rango">${esc(dm(p.desde))} – ${esc(dm(p.hasta))} · ${nf(p.dias)} ${p.dias === 1 ? 'día' : 'días'}${p.cicloSinLote ? ' · <span class="mop-nota">elige un lote para ver su ciclo</span>' : ''}${p.rangoSinDesde ? ' · <span class="mop-nota">elige el «Desde»</span>' : ''}${p.rangoInvertido ? ' · <span class="mop-nota">el «Desde» era posterior a la foto: un solo día</span>' : ''}</span>
+      <span class="mop-f-rango">${esc(dm(p.desde))} – ${esc(dm(p.hasta))} · ${nf(p.dias)} ${p.dias === 1 ? 'día' : 'días'}${p.cicloSinLote ? ` · <span class="mop-nota">elige ${vOp.lote.length > 1 ? 'un solo lote' : 'un lote'} para ver su ciclo</span>` : ''}${p.rangoSinDesde ? ' · <span class="mop-nota">elige el «Desde»</span>' : ''}${p.rangoInvertido ? ' · <span class="mop-nota">el «Desde» era posterior a la foto: un solo día</span>' : ''}</span>
     </div>
     ${p.clave === 'rango' ? `<label class="mop-f-grupo"><span class="mop-f-lbl">Desde</span>
       <input type="date" class="mop-fecha" data-mop-desde value="${esc(p.desde)}" max="${esc(fecha)}"></label>` : ''}
@@ -415,8 +441,8 @@ function filtrosHTML(M, hoy, fecha, p) {
       ${sel('sala', vOp.sala, o.salas, 'Todas las salas')}
       ${sel('tanque', vOp.tanque, vOp.sala ? o.tanquesPorSala[vOp.sala] || [] : [], 'Todos los tanques', !vOp.sala)}</div>
     <div class="mop-f-grupo"><span class="mop-f-lbl">Lote → Código genético</span>
-      ${sel('lote', vOp.lote, o.lotes, 'Todos los lotes')}
-      ${sel('codigo', vOp.codigo, codigosDe(o, vOp.lote), 'Todos los códigos')}</div>
+      ${multiHTML('lote', vOp.lote, o.lotes, 'Todos los lotes')}
+      ${multiHTML('codigo', vOp.codigo, codigosDe(o, vOp.lote), 'Todos los códigos')}</div>
     <div class="mop-f-grupo"><span class="mop-f-lbl">Estado · Sexo</span>
       ${sel('estado', vOp.estado, o.estados || [], 'Todos los estados')}
       ${sel('sexo', vOp.sexo, [{ v: 'hembras', t: '♀ Hembras' }, { v: 'machos', t: '♂ Machos' }], 'Los dos sexos')}</div>
@@ -3276,7 +3302,7 @@ function reportesHTML(M, memo, fecha, hoy, F, periodo) {
        📈 Piscinas de origen en pantalla, y para la historia entera basta con poner «Todo» arriba. */
     modelo = reporteBroodstock(M, F, periodo, {});
   } else if (clave === 'cierre') {
-    if (!lotes.includes(vOp.repLote)) vOp.repLote = F.lote && lotes.includes(F.lote) ? F.lote : (lotes[0] || '');
+    if (!lotes.includes(vOp.repLote)) vOp.repLote = loteUnico(F) && lotes.includes(loteUnico(F)) ? loteUnico(F) : (lotes[0] || '');
     /* La vida del lote empieza en su ingreso: la serie tiene que llegar hasta ahí, o la curva saldría recortada. */
     const ciclo = vOp.repLote ? cicloDelLote(M.libro, vOp.repLote, fecha) : null;
     const desde = ciclo && ciclo.desde ? sumarDias(ciclo.desde, -1) : sumarDias(fecha, -1);
@@ -3297,13 +3323,14 @@ function reportesHTML(M, memo, fecha, hoy, F, periodo) {
      los MISMOS selectores (`data-mop-filtro`: el mismo estado y el mismo manejador), como el «Día del parte» mueve la
      foto (F7.1·8): el reporte hereda los filtros (F7.1·6) y no puede haber dos que discrepen. */
   const o = M.filtros;
-  const opciones = (valores, elegido) => valores.map((x) => `<option value="${esc(x)}"${String(elegido) === String(x) ? ' selected' : ''}>${esc(x)}</option>`).join('');
+  /* Etapa A · los MISMOS desplegables de casillas que la barra del tablero (un <div>, no un <label>: un label con
+     casillas dentro marcaría la primera al pulsar su rótulo). */
   const selFiltros = REPORTES.find((r) => r.clave === clave).filtros
-    ? `<label class="mop-rep-dia">Lote
-        <select class="mc-select" data-mop-filtro="lote" aria-label="Lote (filtro del tablero)"><option value="">Todos los lotes</option>${opciones(o.lotes, vOp.lote)}</select></label>
-      <label class="mop-rep-dia">Código genético
-        <select class="mc-select" data-mop-filtro="codigo" aria-label="Código genético (filtro del tablero)"><option value="">Todos los códigos</option>${opciones(codigosDe(o, vOp.lote), vOp.codigo)}</select>
-        <span class="mc-note">son los filtros del tablero: cambian también las demás sub-vistas</span></label>` : '';
+    ? `<div class="mop-rep-dia">Lote
+        ${multiHTML('lote', vOp.lote, o.lotes, 'Todos los lotes', 'rep-lote')}</div>
+      <div class="mop-rep-dia">Código genético
+        ${multiHTML('codigo', vOp.codigo, codigosDe(o, vOp.lote), 'Todos los códigos', 'rep-codigo')}
+        <span class="mc-note">son los filtros del tablero: cambian también las demás sub-vistas</span></div>` : '';
   const cab = modelo ? modelo.cabecera : { filtrado: false, etiquetas: [] };
   const alcance = alcanceDelParte(cab);
   const doc = modelo ? A.doc(modelo) : '';
@@ -3381,14 +3408,38 @@ function bind(root) {
   };
   const abrirReparto = (l) => { vOp.reproLote = vOp.reproLote === l ? '' : l; repintar(); };    // 0q·3
 
+  /* Etapa A · los desplegables de casillas: uno abierto a la vez; el abierto se recuerda para repintarlo abierto. El
+     «toggle» de un <details> no burbujea: se escucha en la captura. */
+  const cerrarMultis = () => {
+    root.querySelectorAll('.mop-multi[open]').forEach((d) => { d.open = false; });
+    vOp.multiAbierto = '';
+  };
+  root.addEventListener('toggle', (e) => {
+    const d = e.target;
+    if (!d.matches || !d.matches('.mop-multi')) return;
+    if (d.open) {
+      vOp.multiAbierto = d.dataset.mopMulti;
+      root.querySelectorAll('.mop-multi[open]').forEach((x) => { if (x !== d) x.open = false; });
+    } else if (vOp.multiAbierto === d.dataset.mopMulti) vOp.multiAbierto = '';
+  }, true);
+
   root.addEventListener('click', (e) => {
     const t = e.target;
+    if (!t.closest('.mop-multi')) { if (vOp.multiAbierto || root.querySelector('.mop-multi[open]')) cerrarMultis(); }
+    const todos = t.closest('[data-mop-multi-todos]');
+    if (todos) {
+      vOp[todos.dataset.mopMultiTodos] = [];
+      vOp.multiAbierto = todos.closest('[data-mop-multi]').dataset.mopMulti;
+      vOp.tanqueSel = '';
+      repintar();
+      return;
+    }
     const sub = t.closest('[data-mop-sub]');
     if (sub) {
       const nueva = sub.dataset.mopSub;
       /* 2 · entrar en 🦠 o 🧬 empieza con la sala, el sexo y el lote del tablero (0q·5a), y en 🌊, en «Día» (0r·1): como
          al abrir sus ventanas. Pulsar la que ya está a la vista no borra lo elegido. */
-      if (LAB[nueva] && nueva !== vOp.sub) vOp.labF = { ...LABF_VACIO, lote: vOp.lote || '', sala: vOp.sala || '', sexo: vOp.sexo || '' };
+      if (LAB[nueva] && nueva !== vOp.sub) vOp.labF = { ...LABF_VACIO, lote: vOp.lote.length === 1 ? vOp.lote[0] : '', sala: vOp.sala || '', sexo: vOp.sexo || '' };
       if (nueva === 'mareas' && vOp.sub !== 'mareas') _mareas.estado = undefined;
       vOp.sub = nueva;
       repintar();
@@ -3416,7 +3467,7 @@ function bind(root) {
     if (t.closest('[data-mop-rep-pdf]')) { imprimirParte(); return; }
     if (t.closest('[data-mop-rep-xlsx]')) { descargarParte(); return; }
     if (t.closest('[data-mop-limpiar]')) {
-      Object.assign(vOp, { periodo: INICIAL.periodo, fecha: '', sala: '', tanque: '', lote: '', codigo: '', tanqueSel: '', salaDetalle: '', piscinaSel: '', loteSel: '', tqFicha: '', estado: '', sexo: '', piscina: '', camaronera: '' });
+      Object.assign(vOp, { periodo: INICIAL.periodo, fecha: '', sala: '', tanque: '', lote: [], codigo: [], tanqueSel: '', salaDetalle: '', piscinaSel: '', loteSel: '', tqFicha: '', estado: '', sexo: '', piscina: '', camaronera: '' });
       vOp.desde = '';   // punto 5 · el «Desde» del Rango (aparte: las dos puntas de la línea de arriba son anclas)
       repintar();
       return;
@@ -3430,7 +3481,8 @@ function bind(root) {
          del CAMBIO de sala NO lo es: al pasar a otra sala que también tenga ese número, depurarFiltros lo da por
          bueno y el tanque de la sala anterior se quedaría puesto (eso lo vigila V08). */
       const dim = qui.dataset.mopQuitar;
-      vOp[dim] = '';
+      if (MULTI.has(dim)) vOp[dim] = vOp[dim].filter((x) => NORM_MULTI[dim](x) !== qui.dataset.mopValor);   // etapa A · sólo ESE
+      else vOp[dim] = '';
       repintar();
       return;
     }
@@ -3524,6 +3576,11 @@ function bind(root) {
   });
 
   root.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const d = e.target.closest && e.target.closest('.mop-multi[open]');
+      if (d) { const s = d.querySelector('summary'); cerrarMultis(); if (s) s.focus(); }
+      return;
+    }
     if (e.key !== 'Enter' && e.key !== ' ') return;
     const mp = e.target.closest && e.target.closest('[data-mop-micpat]');   // 0q·5a
     if (mp && e.target === mp) { e.preventDefault(); elegirPatogeno(mp.dataset.mopMicpat); return; }
@@ -3572,6 +3629,21 @@ function bind(root) {
       vOp.labF = { ...vOp.labF, [d]: lf.value || '' };
       repintar();
       const x = root.querySelector(`[data-mop-labf="${d}"]`);
+      if (x) x.focus();
+      return;
+    }
+    const mv = e.target.closest('[data-mop-multi-v]');
+    if (mv) {
+      const dim = mv.dataset.mopMultiV;
+      const caja = mv.closest('[data-mop-multi]');
+      const id = caja.dataset.mopMulti;
+      // Lo elegido, en el orden de la lista (el del resumen y el de las etiquetas), no en el de los clics.
+      vOp[dim] = [...caja.querySelectorAll('[data-mop-multi-v]')].map((c) => c.value)
+        .filter((v) => (v === mv.value ? mv.checked : vOp[dim].includes(v)));
+      vOp.multiAbierto = id;
+      vOp.tanqueSel = '';
+      repintar();
+      const x = [...root.querySelectorAll(`[data-mop-multi="${id}"] [data-mop-multi-v]`)].find((c) => c.value === mv.value);
       if (x) x.focus();
       return;
     }
