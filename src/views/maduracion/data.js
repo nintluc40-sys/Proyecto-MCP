@@ -1065,16 +1065,28 @@ export function salasOf(model) {
   return [...set].sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
 }
 const _ordenEs = (a, b) => a.localeCompare(b, 'es', { numeric: true });
-/** Lotes presentes en la MATRIZ (el lote es de la hembra, no del evento). */
-export function lotesOf(model) {
+/* 2026-10-13 (usuario) · «cuando se seleccione una sala, salgan los tanques disponibles y a su vez los lotes y los
+   códigos genéticos». Con `sala`/`tanque`, sólo los de esa ubicación: los de sus hembras de hoy (MATRIZ) y los de los
+   desoves y mortalidades registrados allí (una hembra trasladada sigue en la sala donde desovó). Es la regla de
+   `tanquesOf` y la del filtro (`passFem` + `passLoc`): ninguna opción sale vacía y no falta ninguna con datos.
+   Sin ubicación, las de siempre. */
+const enUbicacion = (v, sala, tanque) => (!sala || String(v.sala) === sala) && (!tanque || String(v.tanque) === tanque);
+const eventosEn = (model, sala, tanque) => (sala || tanque
+  ? model.desoves.concat(model.mortalidades).filter((e) => enUbicacion(e, sala, tanque)) : []);
+/** Lotes presentes en la MATRIZ (el lote es de la hembra, no del evento); con `sala`/`tanque`, los de esa ubicación. */
+export function lotesOf(model, sala = null, tanque = null) {
   const set = new Set();
-  model.females.forEach((r) => { if (r.lote) set.add(String(r.lote)); });
+  model.females.forEach((r) => { if (r.lote && enUbicacion(r, sala, tanque)) set.add(String(r.lote)); });
+  eventosEn(model, sala, tanque).forEach((e) => { if (e.lote) set.add(String(e.lote)); });
   return [...set].sort(_ordenEs);
 }
-/** Códigos genéticos presentes en la MATRIZ; con `lote`, sólo los de ese lote (cascada). */
-export function codigosOf(model, lote) {
+/** Códigos genéticos presentes en la MATRIZ; con `lote`, sólo los de ese lote (cascada), y con `sala`/`tanque`,
+ *  los de esa ubicación. */
+export function codigosOf(model, lote, sala = null, tanque = null) {
   const set = new Set();
-  model.females.forEach((r) => { if (r.codigo && (!lote || String(r.lote) === lote)) set.add(String(r.codigo)); });
+  const ok = (r) => r.codigo && (!lote || String(r.lote) === lote);
+  model.females.forEach((r) => { if (ok(r) && enUbicacion(r, sala, tanque)) set.add(String(r.codigo)); });
+  eventosEn(model, sala, tanque).forEach((e) => { if (ok(e)) set.add(String(e.codigo)); });
   return [...set].sort(_ordenEs);
 }
 export function tanquesOf(model, sala) {

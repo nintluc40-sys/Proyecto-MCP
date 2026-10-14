@@ -142,6 +142,62 @@ describe('Maduración · filtro de Lote y Código genético · datos', () => {
   });
 });
 
+/* 2026-10-13 (usuario) · «cuando se seleccione una sala, salgan los tanques disponibles y a su vez los lotes y los
+   códigos genéticos». Decidido: entran los de las hembras que están HOY en la ubicación (vivas o muertas) y los de los
+   eventos registrados allí; sólo en el sentido Sala → Tanque → Lote → Código. */
+describe('Maduración · Lote y Código acotados a la sala y el tanque', () => {
+  const m = buildReproModel([
+    { 'Trovan ID': 'H1', 'Sala actual': 'S1', 'Tanque actual': 'T1', Estado: 'Vivo', 'Fecha ingreso': '2026-05-01', Lote: 'L1', 'Código genético': 'C1' },
+    { 'Trovan ID': 'H2', 'Sala actual': 'S1', 'Tanque actual': 'T2', Estado: 'Vivo', 'Fecha ingreso': '2026-05-01', Lote: 'L2', 'Código genético': 'C2' },
+    // Trasladada: hoy en S2·T3, pero desovó en S1·T1 (la Bitácora guarda dónde fue).
+    { 'Trovan ID': 'H3', 'Sala actual': 'S2', 'Tanque actual': 'T3', Estado: 'Vivo', 'Fecha ingreso': '2026-05-01', Lote: 'L3', 'Código genético': 'C3' },
+    // Muerta en S2·T3 sin su mortalidad en la Bitácora: su lote cuenta ahí por la MATRIZ (opción a, no «sólo vivas»).
+    { 'Trovan ID': 'H4', 'Sala actual': 'S2', 'Tanque actual': 'T3', Estado: 'Muerto', 'Fecha ingreso': '2026-05-01', 'Fecha muerte': '2026-06-20', Lote: 'L2', 'Código genético': 'C4' },
+    // Muerta sin ubicación en la MATRIZ: sólo su mortalidad dice dónde estaba (S1·T2).
+    { 'Trovan ID': 'H5', Estado: 'Muerto', 'Fecha ingreso': '2026-05-01', 'Fecha muerte': '2026-06-25', Lote: 'L4', 'Código genético': 'C5' },
+  ], [
+    { 'Trovan ID': 'H1', Fecha: '2026-06-01', Tipo: 'Desove', Sala: 'S1', Tanque: 'T1' },
+    { 'Trovan ID': 'H3', Fecha: '2026-06-02', Tipo: 'Desove', Sala: 'S1', Tanque: 'T1' },
+    { 'Trovan ID': 'H5', Fecha: '2026-06-25', Tipo: 'Mortalidad', Sala: 'S1', Tanque: 'T2' },
+  ], []);
+
+  it('sin sala ni tanque, las listas de siempre', () => {
+    expect(lotesOf(m)).toEqual(['L1', 'L2', 'L3', 'L4']);
+    expect(codigosOf(m)).toEqual(['C1', 'C2', 'C3', 'C4', 'C5']);
+    expect(codigosOf(m, 'L2')).toEqual(['C2', 'C4']);
+  });
+
+  it('🔴 con una sala, sólo sus lotes y códigos (también los de una hembra muerta allí)', () => {
+    expect(lotesOf(m, 'S2')).toEqual(['L2', 'L3']);
+    expect(codigosOf(m, null, 'S2')).toEqual(['C3', 'C4']);
+  });
+
+  it('🔴 con sala y tanque, sólo los de ese tanque', () => {
+    expect(lotesOf(m, 'S1', 'T1')).toEqual(['L1', 'L3']);
+    expect(codigosOf(m, null, 'S2', 'T3')).toEqual(['C3', 'C4']);
+    expect(lotesOf(m, null, 'T3')).toEqual(['L2', 'L3']);
+  });
+
+  it('🔴 una hembra trasladada sigue en la sala donde desovó', () => {
+    expect(lotesOf(m, 'S1', 'T1')).toContain('L3');
+    expect(codigosOf(m, null, 'S1')).toEqual(['C1', 'C2', 'C3', 'C5']);
+    // Y la opción tiene datos: el filtro encuentra ese desove.
+    expect(kpis(m, makeFilter({ sala: 'S1', lote: 'L3' })).desoves).toBe(1);
+  });
+
+  it('🔴 y una mortalidad registrada en el tanque también lo trae', () => {
+    expect(lotesOf(m, 'S1', 'T2')).toEqual(['L2', 'L4']);
+    expect(codigosOf(m, null, 'S1', 'T2')).toEqual(['C2', 'C5']);
+    expect(kpis(m, makeFilter({ sala: 'S1', tanque: 'T2', lote: 'L4' })).mortalidad).toBe(1);
+  });
+
+  it('🔴 el código, acotado al lote Y a la ubicación', () => {
+    expect(codigosOf(m, 'L2', 'S2')).toEqual(['C4']);
+    expect(codigosOf(m, 'L2', 'S1')).toEqual(['C2']);
+    expect(codigosOf(m, 'L1', 'S2')).toEqual([]);
+  });
+});
+
 /* ── La vista: los dos desplegables y su efecto en pantalla ── */
 const M = (o) => ({ _SheetOrigin: 'Maduración MATRIZ', ...o });
 const B = (o) => ({ _SheetOrigin: 'Maduración Bitácora', ...o });
@@ -232,5 +288,39 @@ describe('Maduración · filtro de Lote y Código genético · vista', () => {
     expect(sumaDesoves()).toBe(3);
     elegir(root, 'codigo', 'C1');
     expect(sumaDesoves()).toBe(2);
+  });
+
+  const opciones = (root, dim) => [...root.querySelector(`[data-mc-filter="${dim}"]`).options].map((o) => o.value);
+
+  it('🔴 elegir una sala acota los tanques, los lotes y los códigos a los suyos', () => {
+    maduracionView(root);
+    elegir(root, 'sala', 'S2');
+    expect(opciones(root, 'tanque')).toEqual(['', 'T2']);
+    expect(opciones(root, 'lote')).toEqual(['', 'L2']);
+    expect(opciones(root, 'codigo')).toEqual(['', 'C3']);
+    elegir(root, 'sala', 'S1');
+    elegir(root, 'tanque', 'T1');
+    expect(opciones(root, 'lote')).toEqual(['', 'L1', 'L2']);
+    expect(opciones(root, 'codigo')).toEqual(['', 'C1', 'C2', 'C3']);
+    elegir(root, 'lote', 'L1');
+    expect(opciones(root, 'codigo')).toEqual(['', 'C1', 'C2']);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('🔴 un lote que no está en la sala elegida vuelve a «Todos» (y su código con él)', () => {
+    maduracionView(root);
+    root.querySelector('[data-mc-sub="panorama"]').dispatchEvent(new Event('click', { bubbles: true }));
+    const hembrasKpi = () => [...root.querySelectorAll('.mc-kpi')].find((x) => x.querySelector('.mc-kpi-lb').textContent === 'Hembras').querySelector('.mc-kpi-v').textContent;
+    elegir(root, 'lote', 'L1');
+    elegir(root, 'codigo', 'C2');
+    elegir(root, 'sala', 'S2');
+    expect(elegido(root, 'lote')).toBe('');
+    expect(elegido(root, 'codigo')).toBe('');
+    // Y no queda puesto «por debajo» del desplegable: las cifras son las de toda la sala S2 (B2 y B3).
+    expect(hembrasKpi()).toBe('2');
+    // Sólo en un sentido: con un lote elegido, la lista de salas no se acota.
+    elegir(root, 'sala', '');
+    elegir(root, 'lote', 'L1');
+    expect(opciones(root, 'sala')).toEqual(['', 'S1', 'S2']);
   });
 });

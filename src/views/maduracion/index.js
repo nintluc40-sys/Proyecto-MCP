@@ -131,11 +131,11 @@ export function maduracionView(root) {
   const tanques = tanquesOf(model, vState.sala);
   if (vState.tanque && !tanques.includes(vState.tanque)) vState.tanque = null;
 
-  // Filtros de la hembra (cascada Lote → Código genético). Un código que no pertenece al
-  // lote elegido se descarta, igual que un tanque que no está en la sala.
-  const lotes = lotesOf(model);
+  // Filtros de la hembra (cascada Lote → Código genético), acotados a la sala y el tanque elegidos
+  // (2026-10-13). Un lote o un código que no está ahí se descarta, igual que un tanque que no está en la sala.
+  const lotes = lotesOf(model, vState.sala, vState.tanque);
   if (vState.lote && !lotes.includes(vState.lote)) { vState.lote = null; vState.codigo = null; }
-  const codigos = codigosOf(model, vState.lote);
+  const codigos = codigosOf(model, vState.lote, vState.sala, vState.tanque);
   if (vState.codigo && !codigos.includes(vState.codigo)) vState.codigo = null;
 
   const f = makeFilter({ sala: vState.sala, tanque: vState.tanque, lote: vState.lote, codigo: vState.codigo, month: vState.month });
