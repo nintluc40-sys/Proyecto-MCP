@@ -228,6 +228,41 @@ describe('Maduración · lotes · la tabla maestra', () => {
   });
 });
 
+/* Punto 4 de la tanda del 13-10 (usuario, 2026-10-14) · en la fila de cada lote: cada ingreso con su piscina, los muertos
+   acumulados (sin los descartes) y la fertilidad, N2 y N5 de su CICLO (de su ingreso a la foto o a su cierre). Para que un
+   tramo equivocado dé OTRA cifra, la planta de aquí suma un desove de QE ANTES de su ingreso y otro DESPUÉS de la foto, uno de
+   QG tras su cierre, y un ingreso de QE posterior a la foto. */
+describe('Maduración · lotes · punto 4 · la fila del lote', () => {
+  const PLANTA4 = [...PLANTA, DES('2026-08-25', 'QE', 7, 700000, 600000, 500000), DES('2026-09-22', 'QE', 3, 300000, 200000, 100000),
+    DES('2026-09-18', 'QG', 5, 500000, 400000, 300000), ING('2026-09-25', 'QE', 'Sala 3', 1, 1, 1, 'CA', 'P9')];
+  const M4 = modeloOperativo(PLANTA4, { hoy: FOTO, fecha: FOTO });
+  const fila = (l) => tablaDeLotes(M4, SIN).find((f) => f.lote === l);
+
+  it('🔴 cada ingreso con su piscina, sin repetir (fecha, piscina) y sin los posteriores a la foto', () => {
+    expect(fila('QE').ingresos).toEqual([{ fecha: '2026-09-01', piscina: 'P1' }]);   // el del 25/09 es de después de la foto
+    expect(fila('QJ').ingresos, 'dos filas de Ingreso el mismo día y de la misma piscina: una').toEqual([{ fecha: '2026-09-04', piscina: 'P1' }]);
+    expect(fila('QI').ingresos).toEqual([{ fecha: '2026-09-04', piscina: 'P3' }]);
+    const conDos = tablaDeLotes(modeloOperativo([...PLANTA, ING('2026-09-06', 'QE', 'Sala 3', 1, 5, 5, 'CA', 'P4')], { hoy: FOTO, fecha: FOTO }), SIN);
+    expect(conDos.find((f) => f.lote === 'QE').ingresos, 'dos ingresos, en su orden').toEqual([{ fecha: '2026-09-01', piscina: 'P1' }, { fecha: '2026-09-06', piscina: 'P4' }]);
+  });
+
+  it('🔴 los muertos: los del libro, acumulados hasta la foto y SIN los descartes', () => {
+    // QE: 10♂ 6♀ muertos el 05/09 y 5♀ muertas desovando el 10/09; sus 24/22 descartes no son muertes.
+    expect(fila('QE').muertos).toEqual({ machos: 10, hembras: 11, total: 21 });
+    expect(fila('QF').muertos, 'QF sólo tuvo descartes').toEqual({ machos: 0, hembras: 0, total: 0 });
+    const QE = M4.libro.lotes.get('QE');
+    expect(fila('QE').muertos).toEqual({ machos: QE.muertos.machos, hembras: QE.muertos.hembras, total: QE.muertos.machos + QE.muertos.hembras });
+  });
+
+  it('🔴 fertilidad, N2 y N5 del CICLO: sin el desove de antes del ingreso, ni el de después de la foto, ni el de tras el cierre', () => {
+    // QE: del 01/09 a la foto, los del 12/09 (4 desoves, 400 000 huevos, N2 340 000) y del 14/09 (N5 180 000).
+    expect(fila('QE').reproduccion).toMatchObject({ desoves: 6, n2: 340000, n5: 180000, fertilidad: 85 });
+    expect(fila('QE').reproduccion).toEqual(reproduccionDeLote(M4.fuentes, 'QE', cicloDelLote(M4.libro, 'QE', FOTO)));
+    expect(fila('QG').reproduccion.desoves, 'QG se cerró el 17/09: su desove del 18/09 no es de su ciclo').toBe(0);
+    expect(reproduccionDeLote(M4.fuentes, 'QE', { desde: '2026-08-01', hasta: '2026-09-30' }).desoves, 'control: los de fuera existen').toBe(16);
+  });
+});
+
 describe('Maduración · lotes · la ficha', () => {
   it('el ORIGEN trae cada ingreso con su piscina y su camaronera', () => {
     expect(origenDeLote(M.fuentes, 'QE')).toEqual([{ fecha: '2026-09-01', sala: 'Sala 3', tanque: 1, codigo: 'CA',

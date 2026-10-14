@@ -900,14 +900,16 @@ describe('Maduración · operativo · F2.3 · el sexo también manda en la tabla
     await montar(PLANTA_F3);
     click(root.querySelector('[data-mop-sub="lotes"]'));
     const celdas = (l) => [...filaLote(l).querySelectorAll('td')].map((t) => t.textContent.trim());
-    expect(celdas('LA')[5]).toBe('50');                 // vivos del lote: 20 ♂ + 30 ♀
-    expect(celdas('LA')[4]).toBe('50');                 // ingresados
+    /* Punto 4 de la tanda (2026-10-14) · desde aquí los vivos van en DOS columnas (♀ 6, ♂ 7) y entra «Ingreso» (4): antes,
+       ingresados en la 4 y vivos (total o el del sexo) en la 5. */
+    expect(celdas('LA').slice(6, 8)).toEqual(['30', '20']);   // vivos del lote: 30 ♀ y 20 ♂
+    expect(celdas('LA')[5]).toBe('50');                 // ingresados
     cambiar(filtro('sexo'), 'hembras');
     // LB no tiene hembras: se va. Y de LA se enseñan las 30 hembras, no las 50 (que es lo que dice el KPI de arriba).
     expect([...root.querySelectorAll('[data-mop-lote]')].map((t) => t.dataset.mopLote)).toEqual(['LA']);
-    expect(celdas('LA')[5]).toBe('30');
-    expect(root.querySelector('.mop-lotes thead').textContent).toContain('♀ Vivos');
-    expect(celdas('LA')[8]).toBe('—');                  // la proporción sexual no dice nada con un solo sexo
+    expect(celdas('LA').slice(5, 8)).toEqual(['30', '30', '—']);   // ingresadas, vivas y el otro sexo fuera
+    expect(root.querySelector('.mop-lotes thead').textContent).toContain('♀ Ingresados');
+    expect(celdas('LA')[11]).toBe('—');                  // la proporción sexual no dice nada con un solo sexo
   });
 
   it('la CASCADA de la ficha sigue entera con filtro de sexo: un cuadre a medias no cuadraría', async () => {
@@ -931,14 +933,16 @@ describe('Maduración · operativo · 🧬 Lotes · el peso de cada lote (4)', (
   const celdas = (l) => [...filaLote(l).querySelectorAll('td')];
   const txt = (l) => celdas(l).map((t) => t.textContent.trim());
 
-  it('🔴 dos columnas, Peso ♀ y Peso ♂, entre ♀:♂ y Edad; en gramos, con la fecha del peso en el globo; «—» sin peso', async () => {
+  /* Punto 4 de la tanda (2026-10-14) · entre ♀:♂ y los pesos entran Fertilidad, N2 y N5, y antes Ingreso y un vivo más: los
+     pesos pasan de la 9–10 a la 15–16. */
+  it('🔴 dos columnas, Peso ♀ y Peso ♂, entre N5 y Edad; en gramos, con la fecha del peso en el globo; «—» sin peso', async () => {
     await montar(PLANTA_F3);
     click(root.querySelector('[data-mop-sub="lotes"]'));
-    expect(cab().slice(8)).toEqual(['♀:♂', 'Peso ♀', 'Peso ♂', 'Edad']);
-    expect(txt('LA').slice(9, 11)).toEqual(['40 g', '30 g']);
-    expect(celdas('LA')[9].getAttribute('title')).toBe('último peso: 18/09/2026');
-    expect(txt('LB').slice(9, 11), 'LB sólo pesó machos').toEqual(['—', '25 g']);
-    expect(celdas('LB')[9].getAttribute('title')).toBeNull();
+    expect(cab().slice(11)).toEqual(['♀:♂', 'Fertilidad', 'N2', 'N5', 'Peso ♀', 'Peso ♂', 'Edad']);
+    expect(txt('LA').slice(15, 17)).toEqual(['40 g', '30 g']);
+    expect(celdas('LA')[15].getAttribute('title')).toBe('último peso: 18/09/2026');
+    expect(txt('LB').slice(15, 17), 'LB sólo pesó machos').toEqual(['—', '25 g']);
+    expect(celdas('LB')[15].getAttribute('title')).toBeNull();
     expect(root.querySelector('.mop-lotes').closest('.mc-card').querySelector('.mc-note').textContent).toContain('el del ⚖️ Saldo');
   });
 
@@ -946,9 +950,41 @@ describe('Maduración · operativo · 🧬 Lotes · el peso de cada lote (4)', (
     await montar(PLANTA_F3);
     click(root.querySelector('[data-mop-sub="lotes"]'));
     cambiar(filtro('sexo'), 'hembras');
-    expect(txt('LA').slice(9, 11)).toEqual(['40 g', '—']);
+    expect(txt('LA').slice(15, 17)).toEqual(['40 g', '—']);
     cambiar(filtro('sexo'), 'machos');
-    expect(txt('LA').slice(9, 11)).toEqual(['—', '30 g']);
+    expect(txt('LA').slice(15, 17)).toEqual(['—', '30 g']);
+  });
+});
+
+/* Punto 4 de la tanda del 13-10 (usuario, 2026-10-14) · en la fila del lote: «Ingreso» (cada fecha con su piscina), los vivos
+   ♀ y ♂, los muertos (♀/♂ en el globo) y la fertilidad, N2 y N5 de su CICLO. Las cuentas las vigila operativo.lotes.test.js;
+   aquí, que lleguen a su columna. LA entró el 01/08 desde P1; un desove suyo del 20/07 (ANTES de su ingreso) no es de su
+   ciclo: con él, N2 diría 1.140.000. */
+describe('Maduración · operativo · 🧬 Lotes · punto 4 · la fila del lote', () => {
+  const cab = () => [...root.querySelectorAll('.mop-lotes thead th')].map((t) => t.textContent.trim());
+  const celdas = (l) => [...filaLote(l).querySelectorAll('td')];
+  const txt = (l) => celdas(l).map((t) => t.textContent.trim());
+  const PLANTA_P4 = [...PLANTA_F3, TQ('17/09/2026', 'Sala 1', 1, { 'Machos muertos': 1, 'Hembras muertas': 2 }),
+    DES('10/09/2026', 'LA', 4, 400000, { N2: 340000, N5: 300000 }), DES('20/07/2026', 'LA', 9, 900000, { N2: 800000 })];
+
+  it('🔴 Ingreso con su piscina, ♀ y ♂ vivos, muertos con su reparto en el globo, y fertilidad, N2 y N5 del ciclo', async () => {
+    await montar(PLANTA_P4);
+    click(root.querySelector('[data-mop-sub="lotes"]'));
+    expect(cab().slice(4, 9)).toEqual(['Ingreso', 'Ingresados', '♀ Vivos', '♂ Vivos', 'Muertos']);
+    expect(txt('LA')[4]).toBe('01/08 · P1');
+    expect(txt('LB')[4]).toBe('15/09 · P2');
+    expect(txt('LA').slice(5, 9)).toEqual(['50', '28', '19', '3']);
+    expect(celdas('LA')[8].getAttribute('title')).toBe('♀ 2 · ♂ 1');
+    expect(txt('LA').slice(12, 15)).toEqual(['85 %', '340.000', '300.000']);
+    expect(root.querySelector('.mop-lotes').closest('.mc-card').querySelector('.mc-note').textContent).toContain('los del CICLO del lote');
+  });
+
+  it('🔴 con filtro de sexo: el otro sexo de los vivos como «—» y los muertos de ese sexo', async () => {
+    await montar(PLANTA_P4);
+    click(root.querySelector('[data-mop-sub="lotes"]'));
+    cambiar(filtro('sexo'), 'machos');
+    expect(cab()[8]).toBe('♂ Muertos');
+    expect(txt('LA').slice(6, 9)).toEqual(['—', '19', '1']);
   });
 });
 

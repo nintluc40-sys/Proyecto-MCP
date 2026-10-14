@@ -28,7 +28,7 @@ import { estadoDeLote, ESTADO_MIXTO, ubicKey, pesosDeAlimentacion } from '../reg
 import { diasEntre } from '../registros/lib/mad-resumen.js';
 import { fechaDeFila, diasDeTanque } from './operativo.data.js';
 import { cociente, proporcionHM, supervivencia, tasaDescarte, tasaEnPartesDelLote } from './operativo.indicadores.js';
-import { posicionEnFiltro, codigoEnFiltro, normalizarFiltro, loteElegido, hayCodigo, haySala, hayTanque, hayPiscina } from './operativo.tablero.js';
+import { posicionEnFiltro, codigoEnFiltro, normalizarFiltro, loteElegido, hayCodigo, haySala, hayTanque, hayPiscina, cicloDelLote } from './operativo.tablero.js';
 import { normPiscina } from '../registros/lib/ficha-maduracion-broodstock.schema.js';   // 5 · la piscina canónica
 
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
@@ -161,6 +161,10 @@ export function loteEnFiltro(libro, clave, F) {
  * 4 (2026-09-29, usuario) · `peso` { hembras, machos }, cada uno { valor, fecha }: el del ⚖️ Saldo al cierre de la foto
  * (`M.resumen` es `resumenMaduracion` a la fecha de la foto): el promedio de los tanques del lote en la última fecha con
  * peso. No se recalcula. Un lote sin ningún peso, o que el Saldo no lista (cerrado y a cero), va vacío.
+ * Punto 4 de la tanda del 13-10 (usuario, 2026-10-14) · en la MISMA fila: `ingresos` (cada fecha de Ingreso con su
+ * piscina), `muertos` (acumulados hasta la foto, sin los descartes, que tienen su %) y `reproduccion` del CICLO del lote
+ * —`cicloDelLote`: de su ingreso a su cierre o a la foto, el tramo de la curva de su ficha— con la regla del Saldo de
+ * `reproduccionDeLote` (fertilidad, N2, N5). La comparativa de debajo sigue con el período.
  */
 export function tablaDeLotes(M, F) {
   const libro = (M && M.libro) || { lotes: new Map(), posiciones: [], avisos: [] };
@@ -184,9 +188,23 @@ export function tablaDeLotes(M, F) {
       hm: proporcionHM(vivos.hembras, vivos.machos),
       peso: { hembras: pesoDe(delSaldo.get(clave), 'pesoHembras'), machos: pesoDe(delSaldo.get(clave), 'pesoMachos') },
       cuadra: cuadre ? cuadre.cuadra : true,
+      ingresos: ingresosDeLote(M.fuentes, clave, txt(M.fecha)),
+      muertos: par((L.muertos || {}).machos, (L.muertos || {}).hembras),
+      reproduccion: reproduccionDeLote(M.fuentes, clave, cicloDelLote(libro, clave, txt(M.fecha)) || { desde: '', hasta: txt(M.fecha) }),
     });
   }
   return filas.sort((a, b) => porNombre(a.lote, b.lote));
+}
+
+/** Punto 4 · los ingresos del lote hasta la foto, uno por (fecha, piscina) distintos y en su orden: los de `origenDeLote`. */
+function ingresosDeLote(fuentes, clave, foto) {
+  const vistos = new Set();
+  return origenDeLote(fuentes, clave).filter((o) => {
+    const k = o.fecha + '|' + o.piscina;
+    if (o.fecha > foto || vistos.has(k)) return false;
+    vistos.add(k);
+    return true;
+  }).map((o) => ({ fecha: o.fecha, piscina: o.piscina }));
 }
 
 /* ── LA FICHA DE UN LOTE ────────────────────────────────────── */

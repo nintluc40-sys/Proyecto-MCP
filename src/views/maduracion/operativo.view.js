@@ -1963,19 +1963,29 @@ function tablaLotesHTML(filas, F) {
     if (F.sexo && F.sexo !== sexo) return '<td class="r"><span class="muted" title="Con filtro de sexo, sólo el peso de ese sexo">—</span></td>';
     return vacio(x.valor) ? '<td class="r">—</td>' : `<td class="r" title="último peso: ${esc(dma(x.fecha))}">${nf(x.valor, 1)} g</td>`;
   };
+  /* Punto 4 de la tanda del 13-10 (usuario, 2026-10-14) · en la misma fila: cada ingreso con su piscina, los vivos ♀ y ♂
+     por separado (con filtro de sexo, el otro como «—»), los muertos acumulados (♀/♂ en el globo) y la fertilidad, N2 y
+     N5 del CICLO del lote. */
+  const vivosCelda = (f, sexo) => (F.sexo && F.sexo !== sexo ? '<td class="r"><span class="muted">—</span></td>' : `<td class="r">${nf(f.vivos[sexo])}</td>`);
+  const ingresosCelda = (f) => (f.ingresos.length
+    ? f.ingresos.map((i) => esc(dm(i.fecha)) + (i.piscina ? ' · ' + esc(i.piscina) : '')).join(', ') : '<span class="muted">—</span>');
   const fila = (f) => {
     const sel = f.lote === vOp.loteSel;
     const cuadra = f.cuadra ? '' : ' <span class="mop-dif" title="La cascada del cuadre no cuadra: mírala en la ficha">⚠</span>';
+    const R = f.reproduccion;
     return `<tr class="mop-lote-fila ${sel ? 'is-on' : ''}" role="button" tabindex="0" aria-pressed="${sel}" data-mop-lote="${esc(f.lote)}">
       <td><b>${esc(f.lote)}</b>${cuadra}</td>
       <td><span class="mop-chip is-e-${claseEstado(f.estado)}">${esc(f.estado || 'sin estado')}</span></td>
       <td>${f.codigos.length ? f.codigos.map((c) => esc(c)).join(' · ') : '<span class="muted">—</span>'}</td>
       <td>${f.salas.length ? f.salas.map((s) => esc(s)).join(' · ') : '<span class="muted">—</span>'}</td>
+      <td>${ingresosCelda(f)}</td>
       <td class="r">${nf(col(f.ingresados))}</td>
-      <td class="r">${nf(col(f.vivos))}</td>
+      ${vivosCelda(f, 'hembras')}${vivosCelda(f, 'machos')}
+      <td class="r" title="♀ ${nf(f.muertos.hembras)} · ♂ ${nf(f.muertos.machos)}">${nf(col(f.muertos))}</td>
       <td class="r">${pc(col(f.supervivencia))}</td>
       <td class="r">${pc(col(f.descarte))}</td>
       <td class="r">${F.sexo ? '<span class="muted" title="La proporción sexual no significa nada con un solo sexo">—</span>' : nf(f.hm, 2)}</td>
+      <td class="r">${pc(R.fertilidad)}</td><td class="r">${nf(R.n2)}</td><td class="r">${nf(R.n5)}</td>
       ${pesoCelda(f.peso.hembras, 'hembras')}${pesoCelda(f.peso.machos, 'machos')}
       <td class="r">${f.dias === '' ? '—' : nf(f.dias) + ' d'}${f.cerrado ? ' <span class="mop-nota" title="Cerrado el ' + esc(dma(f.cerrado)) + '">cerrado</span>' : ''}</td>
     </tr>`;
@@ -1984,12 +1994,15 @@ function tablaLotesHTML(filas, F) {
   return `<div class="mc-card mc-card-wide">
     <h4 class="mc-card-h">🧬 Lotes <span class="mc-h-note">al cierre de la foto · pulsa una fila para su ficha${F.sexo ? ' · sólo ' + (F.sexo === 'hembras' ? 'hembras' : 'machos') : ''}</span></h4>
     <div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-lotes">
-      <thead><tr><th>Lote</th><th>Estado</th><th>Código</th><th>Salas</th><th class="r">${sx}Ingresados</th><th class="r">${sx}Vivos</th>
+      <thead><tr><th>Lote</th><th>Estado</th><th>Código</th><th>Salas</th><th>Ingreso</th><th class="r">${sx}Ingresados</th><th class="r">♀ Vivos</th><th class="r">♂ Vivos</th>
+        <th class="r">${sx}Muertos</th>
         <th class="r" title="${esc(definicion('supervivencia'))}">Superv.</th>
         <th class="r" title="${esc(definicion('tasaDescarte'))}">Descarte</th>
-        <th class="r" title="${esc(definicion('proporcionHM'))}">♀:♂</th><th class="r">Peso ♀</th><th class="r">Peso ♂</th><th class="r">Edad</th></tr></thead>
+        <th class="r" title="${esc(definicion('proporcionHM'))}">♀:♂</th>
+        <th class="r" title="N2 ÷ huevos, de los desoves que traen los dos (la regla del ⚖️ Saldo), en el ciclo del lote">Fertilidad</th><th class="r">N2</th><th class="r">N5</th>
+        <th class="r">Peso ♀</th><th class="r">Peso ♂</th><th class="r">Edad</th></tr></thead>
       <tbody>${filas.map(fila).join('')}</tbody></table></div>
-    <p class="mc-note">La EDAD va del ingreso a la foto; en un lote cerrado, hasta su cierre. El PESO es el del ⚖️ Saldo: el promedio de sus tanques en la última fecha con peso, hasta la foto (su fecha, en el globo). ⚠ en un lote = su cascada no cuadra.${F.sexo ? ' Con filtro de sexo estas cifras son de ese sexo; la CASCADA de la ficha sigue entera, porque es un cuadre y a medias no cuadraría.' : ''}</p>
+    <p class="mc-note">INGRESO: cada fecha del Ingreso con su piscina. MUERTOS: los acumulados hasta la foto, sin los descartes (♀ y ♂ en el globo). FERTILIDAD, N2 y N5: los del CICLO del lote, de su ingreso a la foto o a su cierre (la comparativa de abajo, los del período). La EDAD va del ingreso a la foto; en un lote cerrado, hasta su cierre. El PESO es el del ⚖️ Saldo: el promedio de sus tanques en la última fecha con peso, hasta la foto (su fecha, en el globo). ⚠ en un lote = su cascada no cuadra.${F.sexo ? ' Con filtro de sexo estas cifras son de ese sexo; la CASCADA de la ficha sigue entera, porque es un cuadre y a medias no cuadraría.' : ''}</p>
   </div>`;
 }
 
