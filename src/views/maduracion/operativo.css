@@ -174,6 +174,12 @@
 .mc-kpi.is-clic:hover, .mc-kpi.is-clic:focus-visible { border-color: var(--c-brand-600); outline: none; }
 .mc-kpi.is-on { background: var(--c-surface-2); box-shadow: inset 0 0 0 1px var(--c-brand-600); }
 .mop-kpi-lienzo { margin: 0 0 12px; }
+/* punto 3 (2026-10-14) · la fila de cifras bajo el gráfico de Vivos y de Mortalidad: el rótulo de cada fila es un th, pero
+   se lee como texto, no como cabecera */
+.mop-kpi-resumen { margin-top: 8px; }
+.mop-kpi-resumen tbody th { text-transform: none; letter-spacing: 0; font-size: 12px; font-weight: 600; color: var(--c-text);
+  border-bottom: 1px solid var(--c-border-soft); white-space: nowrap; }
+.mop-kpi-resumen td.r { white-space: nowrap; }
 .mop-lienzo-curva { display: inline-flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--c-text-soft); }
 .mop-curva { color: var(--c-brand-600); overflow: visible; }
 .mop-lienzo-b { display: flex; flex-wrap: wrap; gap: 6px; }

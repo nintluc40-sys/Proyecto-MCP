@@ -12,6 +12,9 @@
    🔑 Cada gráfico sale de las MISMAS reglas que la cifra de su tarjeta (operativo.tablero.js) —el mismo filtro, la misma
    regla del Saldo—, y su último punto ES esa cifra: las pruebas lo atan. Con un filtro que el libro no guarda día a día
    (por ejemplo, el código genético en los vivos) el gráfico no se inventa: dice que no aplica.
+   Punto 3 de la tanda del 13-10 (usuario, 2026-10-14): Vivos y Mortalidad traen además su `resumen`, la fila de cifras
+   que va DEBAJO del gráfico —los vivos ♀/♂ al inicio del período y al cierre, con la diferencia; los muertos ♀/♂ del
+   período—, con los mismos filtros y las mismas reglas que el gráfico (sus extremos son los de la curva).
    Módulo puro: devuelve lo que se dibuja; la vista lo dibuja.
    ============================================================ */
 import { ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_MIXTO, sumarDias, ubicKey } from '../registros/lib/mad-libro.js';
@@ -64,6 +67,15 @@ export function graficoVivos(serie, periodo, F) {
     const h = F.sexo === 'machos' ? 0 : x.hembras;
     return { machos: m, hembras: h, total: m + h };
   });
+  /* Punto 3 (2026-10-14, usuario) · la fila de debajo: el PRIMER y el ÚLTIMO punto de esta misma curva (el último es la
+     cifra de la tarjeta) y su diferencia. `sexo` para que la vista no enseñe como «0» el sexo que el filtro deja fuera. */
+  const ini = v[0];
+  const fin = v[v.length - 1];
+  const resumen = !ds.length ? null : {
+    inicio: { fecha: ds[0].fecha, ...ini }, actual: { fecha: ds[ds.length - 1].fecha, ...fin },
+    diferencia: { hembras: fin.hembras - ini.hembras, machos: fin.machos - ini.machos, total: fin.total - ini.total },
+    sexo: F.sexo || '',
+  };
   return {
     aplica: true, tipo: 'lineas', etiquetas: ds.map((d) => d.fecha),
     series: [
@@ -71,6 +83,7 @@ export function graficoVivos(serie, periodo, F) {
       { clave: 'machos', etiqueta: '♂ Machos', datos: v.map((x) => x.machos) },
       { clave: 'total', etiqueta: 'Total', datos: v.map((x) => x.total) },
     ],
+    resumen,
   };
 }
 
@@ -154,9 +167,12 @@ export function graficoOcupacion(salas, libro, F) {
 export function graficoMortalidad(serie, periodo, F, partes) {
   if (haySala(F)) {
     const porDia = new Map();
+    const muertos = { hembras: 0, machos: 0 };   // punto 3 · los del período por sexo, de los MISMOS partes
     for (const d of partes || []) {
       if (!salaElegida(d.sala, F) || !tanqueElegido(d.sala, d.tanque, F) || !enPeriodo(d.fecha, periodo)) continue;
       porDia.set(d.fecha, (porDia.get(d.fecha) || 0) + ent(d.machosMuertos) + ent(d.hembrasMuertas));
+      muertos.hembras += ent(d.hembrasMuertas);
+      muertos.machos += ent(d.machosMuertos);
     }
     const ds = fechas(periodo);
     let acum = 0;
@@ -167,6 +183,7 @@ export function graficoMortalidad(serie, periodo, F, partes) {
         { clave: 'dia', etiqueta: 'Muertes del día (registradas)', datos: ds.map((f) => porDia.get(f) || 0) },
         { clave: 'acumulada', etiqueta: 'Acumuladas', datos: acumulada },
       ],
+      resumen: !ds.length ? null : { desde: ds[0], hasta: ds[ds.length - 1], ...muertos, total: muertos.hembras + muertos.machos },
     };
   }
   if (hayCodigo(F)) return noAplica('El libro lleva las bajas por lote, no por código genético: el gráfico no aplica.');
@@ -181,7 +198,19 @@ export function graficoMortalidad(serie, periodo, F, partes) {
       { clave: 'dia', etiqueta: 'Tasa del día (%)', datos: ds.map((f) => valor(tasaEntre(porFecha.get(sumarDias(f, -1)), porFecha.get(f), F.lotes))) },
       { clave: 'acumulada', etiqueta: 'Acumulada del período (%)', datos: ds.map((f) => valor(tasaEntre(antes, porFecha.get(f), F.lotes))) },
     ],
+    resumen: !ds.length ? null : muertosDelPeriodo(antes, porFecha.get(ds[ds.length - 1]), F.lotes, ds[0], ds[ds.length - 1]),
   };
+}
+
+/** Punto 3 (2026-10-14) · los muertos ♀/♂ entre dos cierres con la regla de `tasaEntre` —la de la tarjeta—, sin
+ *  copiarla: se le pasa cada sexo por separado (sólo sus muertos) y su numerador es el de ese sexo. El total es el
+ *  numerador de la tasa acumulada que dibuja el gráfico. */
+function muertosDelPeriodo(a, b, lotes, desde, hasta) {
+  const soloSexo = (d, s) => ({ porLote: Object.fromEntries(Object.entries((d && d.porLote) || {})
+    .map(([l, x]) => [l, { muertos: { [s]: ((x && x.muertos) || {})[s] } }])) });
+  const hembras = tasaEntre(soloSexo(a, 'hembras'), soloSexo(b, 'hembras'), lotes).muertos;
+  const machos = tasaEntre(soloSexo(a, 'machos'), soloSexo(b, 'machos'), lotes).muertos;
+  return { desde, hasta, hembras, machos, total: hembras + machos };
 }
 
 /** REPRODUCCIÓN · desoves y N5 de cada día del período, por la fecha del desove, con los filtros de la tarjeta

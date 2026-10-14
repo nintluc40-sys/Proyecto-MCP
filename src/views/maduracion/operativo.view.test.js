@@ -2323,10 +2323,44 @@ describe('Maduración · operativo · 0f · 5 · el gráfico de cada KPI', () =>
     expect(tarjeta('reproduccion').classList.contains('is-on')).toBe(false);
   });
 
+  /* Punto 3 de la tanda del 13-10 (usuario, 2026-10-14) · bajo la curva de Vivos y la de Mortalidad, su fila de cifras.
+     Las cuentas las ata operativo.kpis.test.js a las tarjetas; aquí, que lleguen: debajo del lienzo, «Actual» = la tarjeta,
+     la diferencia con su signo, el sexo que el filtro deja fuera como «—» y los muertos que suman. */
+  const fila = (clave) => panel().querySelector(`.mop-kpi-resumen tr[data-fila="${clave}"]`);
+  const cifras = (tr) => [...tr.cells].slice(1).map((c) => c.textContent.trim());
+  it('🔴 punto 3 · Vivos: inicio, actual (= la tarjeta) y diferencia, debajo de la curva', async () => {
+    await montar(PLANTA);
+    click(tarjeta('vivos'));
+    expect(panel().querySelector('.mc-chart').nextElementSibling.classList.contains('mop-kpi-resumen'), 'justo debajo del gráfico').toBe(true);
+    expect([...panel().querySelectorAll('.mop-kpi-resumen thead th')].map((th) => th.textContent)).toEqual(['', '♀ Hembras', '♂ Machos', 'Total']);
+    expect(fila('actual').cells[0].textContent).toBe('Actual · 19/09');
+    expect(numero(cifras(fila('actual'))[2])).toBe(numero(kpi('Vivos')));
+    const [ini, act, dif] = ['inicio', 'actual', 'diferencia'].map((k) => cifras(fila(k)));
+    const conSigno = (n) => (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n).toLocaleString('es-EC');
+    for (let i = 0; i < 3; i++) expect(dif[i], 'diferencia ' + i).toBe(conSigno(numero(act[i]) - numero(ini[i])));
+    expect(dif.some((d) => /^[+−]/.test(d)), 'control: en el período hay alguna diferencia').toBe(true);
+    cambiar(filtro('sexo'), 'hembras');
+    expect(cifras(fila('actual'))[1], 'los machos no están en el filtro: «—», no 0').toBe('—');
+    expect(cifras(fila('actual'))[0]).toBe(cifras(fila('actual'))[2]);
+  });
+
+  it('🔴 punto 3 · Mortalidad: los muertos ♀/♂ del período, con y sin sala; los demás gráficos, sin fila', async () => {
+    await montar(PLANTA);
+    click(tarjeta('mortalidad'));
+    const suman = () => { const [h, m, t] = cifras(fila('muertos')).map(numero); expect(h + m).toBe(t); return t; };
+    expect(fila('muertos').cells[0].textContent).toMatch(/^Muertos · \d\d\/\d\d–19\/09$/);
+    suman();
+    marcar('sala', 'Sala 1');
+    expect(panel().textContent).toContain('REGISTRADAS en la hoja Tanques');
+    expect(suman()).toBe(ultimoGrafico().data.datasets[1].data.at(-1));
+    click(tarjeta('lotes'));
+    expect(panel().querySelector('.mop-kpi-resumen')).toBeNull();
+  });
+
   it('🔑 sus clases están DEFINIDAS en el CSS', async () => {
     const { readFileSync } = await import('node:fs');
     const css = readFileSync('src/views/maduracion/operativo.css', 'utf8');
-    for (const sel of ['.mc-kpi.is-clic', '.mc-kpi.is-on', '.mop-kpi-lienzo']) expect(css.includes(sel + ' '), sel).toBe(true);
+    for (const sel of ['.mc-kpi.is-clic', '.mc-kpi.is-on', '.mop-kpi-lienzo', '.mop-kpi-resumen']) expect(css.includes(sel + ' '), sel).toBe(true);
   });
 });
 

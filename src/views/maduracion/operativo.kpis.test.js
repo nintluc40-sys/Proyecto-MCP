@@ -209,3 +209,70 @@ describe('Maduración · KPI · lo que no se guarda día a día, no se inventa',
     expect(graficoSalas(M.salas, F({ sala: 'Sala 4' })).filas.map((f) => f.sala)).toEqual(['Sala 4']);
   });
 });
+
+/* Punto 3 de la tanda del 13-10 (usuario, 2026-10-14) · la fila de cifras DEBAJO del gráfico de Vivos (inicio del
+   período, actual y diferencia, ♀/♂/total) y del de Mortalidad (los muertos ♀/♂ del período). Lo que se vigila: que salga
+   de las MISMAS reglas que la tarjeta —el inicio, de la tarjeta con el libro cerrado ese día; los muertos, del numerador
+   de la tasa del período— y que el reparto por sexo no se invente. */
+describe('Maduración · KPI · punto 3 · la fila bajo el gráfico de Vivos y de Mortalidad', () => {
+  const FILTROS = [F(), F({ sala: 'Sala 1' }), F({ lote: 'QA' }), F({ lote: 'QB' }), F({ sexo: 'hembras' }), F({ sexo: 'machos' }),
+    F({ lote: 'QA', sala: 'Sala 2' }), F({ sala: 'Sala 1', tanque: '2' }), F({ sala: ['Sala 1', 'Sala 4'] })];
+  const tres = (x) => [x.hembras, x.machos, x.total];
+
+  it('🔴 Vivos: el inicio es la tarjeta con el libro cerrado el PRIMER día; lo actual, la tarjeta; la diferencia, su resta', () => {
+    for (const f of FILTROS) {
+      const g = graficoVivos(SERIE, P, f);
+      const r = g.resumen;
+      expect([r.inicio.fecha, r.actual.fecha], nombre(f)).toEqual([g.etiquetas[0], g.etiquetas.at(-1)]);
+      expect(tres(r.inicio), nombre(f) + ' inicio').toEqual(tres(kpiVivos(libroAlCierre(M.fuentes, r.inicio.fecha), f)));
+      expect(tres(r.actual), nombre(f) + ' actual').toEqual(tres(kpiVivos(M.libro, f)));
+      expect(tres(r.diferencia), nombre(f)).toEqual([0, 1, 2].map((i) => tres(r.actual)[i] - tres(r.inicio)[i]));
+      expect(r.sexo).toBe(f.sexo || '');
+    }
+    // Del 21/08 al 19/09: entran QA en la Sala 2 (5♂ 5♀) y QB (8♂ 8♀); mueren 1♂ 2♀ en la Sala 1, QG entero (1♂ 1♀) y 1♀ de QB.
+    expect(tres(graficoVivos(SERIE, P, F()).resumen.diferencia), 'control: +9 ♀, +11 ♂').toEqual([9, 11, 20]);
+    expect(graficoVivos(SERIE, P, F()).resumen.inicio.fecha, 'control: el primer día del período').toBe(P.desde);
+  });
+
+  /* Un período que EMPIEZA en un día con sucesos (el 10/09, víspera del ingreso de QA en la Sala 2; el 15/09, día de bajas):
+     con el de 30 días el primer y el segundo día valen lo mismo y tomar uno por otro pasaría en verde (lo cazó la mutación). */
+  it('🔴 el inicio es EL PRIMER día (no el segundo) y los muertos cuentan desde la VÍSPERA del período', () => {
+    const P10 = { ...P, desde: '2026-09-10' };
+    const g = graficoVivos(serieDiaria(M.fuentes, '2026-09-09', P.hasta), P10, F());
+    expect(tres(g.resumen.inicio)).toEqual(tres(kpiVivos(libroAlCierre(M.fuentes, '2026-09-10'), F())));
+    expect(tres(g.resumen.inicio)).toEqual(['hembras', 'machos', 'total'].map((s) => serieDe(g, s)[0]));
+    expect(serieDe(g, 'total')[1] - serieDe(g, 'total')[0], 'control: el 11/09 entra QA en la Sala 2').toBe(10);
+    const P15 = { ...P, desde: '2026-09-15' };
+    const S15 = serieDiaria(M.fuentes, '2026-09-14', P.hasta);
+    const m = graficoMortalidad(S15, P15, F(), PARTES).resumen;
+    expect(m.total).toBe(kpiMortalidad(S15, P15, F(), PARTES).periodo.muertos);
+    expect(tres(m), 'control: con las bajas del mismo 15/09').toEqual([4, 2, 6]);
+  });
+
+  it('🔴 Mortalidad (tasa): ♀ + ♂ = los muertos de la tasa del período de la tarjeta; sin filtro y por lote', () => {
+    for (const f of [F(), F({ lote: 'QA' }), F({ lote: 'QB' }), F({ lote: ['QA', 'QB'] })]) {
+      const g = graficoMortalidad(SERIE, P, f, PARTES);
+      const r = g.resumen;
+      expect([r.desde, r.hasta], nombre(f)).toEqual([g.etiquetas[0], g.etiquetas.at(-1)]);
+      expect([r.total, r.hembras + r.machos], nombre(f)).toEqual([kpiMortalidad(SERIE, P, f, PARTES).periodo.muertos, r.total]);
+    }
+    expect(tres(graficoMortalidad(SERIE, P, F(), PARTES).resumen), 'control: 1♂ 2♀ (Sala 1), 1♂ 1♀ (QG), 1♀ (QB); no la del 10/08').toEqual([4, 2, 6]);
+    expect(tres(graficoMortalidad(SERIE, P, F({ lote: 'QB' }), PARTES).resumen), 'control: sólo la hembra de QB').toEqual([1, 0, 1]);
+  });
+
+  it('🔴 Mortalidad (con sala): las muertes REGISTRADAS por sexo, y su total es la acumulada del gráfico', () => {
+    for (const f of [F({ sala: 'Sala 1' }), F({ sala: 'Sala 1', tanque: '2' }), F({ sala: 'Sala 4', tanque: '1' }), F({ sala: ['Sala 1', 'Sala 5'] })]) {
+      const g = graficoMortalidad(SERIE, P, f, PARTES);
+      expect([g.resumen.total, g.resumen.hembras + g.resumen.machos], nombre(f)).toEqual([ultimo(g, 'acumulada'), g.resumen.total]);
+      expect([g.resumen.desde, g.resumen.hasta]).toEqual([P.desde, P.hasta]);
+    }
+    expect(tres(graficoMortalidad(SERIE, P, F({ sala: 'Sala 1' }), PARTES).resumen), 'control: 2♀ y 1♂ del 15/09').toEqual([2, 1, 3]);
+    expect(tres(graficoMortalidad(SERIE, P, F({ sala: 'Sala 4', tanque: '1' }), PARTES).resumen), 'control: la ♀ del 18/09').toEqual([1, 0, 1]);
+  });
+
+  it('donde el gráfico no aplica, tampoco hay fila; los demás gráficos no la traen', () => {
+    expect(graficoVivos(SERIE, P, F({ codigo: 'CA' })).resumen).toBeUndefined();
+    expect(graficoMortalidad(SERIE, P, F({ codigo: 'CA' }), PARTES).resumen).toBeUndefined();
+    expect(graficoLotes(SERIE, P, F()).resumen).toBeUndefined();
+  });
+});

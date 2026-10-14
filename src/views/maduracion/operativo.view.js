@@ -1251,7 +1251,7 @@ function kpiPanelHTML(M, memo, p, F) {
   else if (g.tipo === 'tabla') cuerpo = salasKpiHTML(g.filas);
   else {
     _kpiGraf = g;
-    cuerpo = '<div class="mc-chart" style="height:240px"><canvas id="mopKpiCurva"></canvas></div>';
+    cuerpo = '<div class="mc-chart" style="height:240px"><canvas id="mopKpiCurva"></canvas></div>' + resumenKpiHTML(g.resumen);
   }
   const notas = [];
   if (g.aplica && k.clave === 'mortalidad') {
@@ -1264,6 +1264,24 @@ function kpiPanelHTML(M, memo, p, F) {
       <button type="button" class="mc-pill mop-lienzo-x" data-mop-kpi-cerrar aria-label="Cerrar el gráfico">✕</button></div>
     ${cuerpo}${notas.map((n) => `<p class="mc-note">${esc(n)}</p>`).join('')}
   </div>`;
+}
+/** Punto 3 de la tanda del 13-10 (usuario, 2026-10-14) · bajo el gráfico de Vivos y el de Mortalidad, su fila de cifras
+ *  (`resumen`, de operativo.kpis.js): los vivos al inicio del período, al cierre y la diferencia; los muertos del período.
+ *  El sexo que el filtro deja fuera sale como «—», no como 0. Sin resumen (los demás gráficos), nada. */
+function resumenKpiHTML(r) {
+  if (!r) return '';
+  const fuera = (s) => (r.sexo === 'hembras' && s === 'machos') || (r.sexo === 'machos' && s === 'hembras');
+  const conSigno = (n) => (n > 0 ? '+' : n < 0 ? '−' : '') + nf(Math.abs(n));
+  const celdas = (x, signo) => ['hembras', 'machos', 'total'].map((s) => `<td class="r">${fuera(s) ? '<span class="muted">—</span>'
+    : signo ? conSigno(x[s]) : nf(x[s])}</td>`).join('');
+  const filas = r.inicio
+    ? `<tr data-fila="inicio"><th scope="row">Inicio · ${esc(dm(r.inicio.fecha))}</th>${celdas(r.inicio)}</tr>
+      <tr data-fila="actual"><th scope="row">Actual · ${esc(dm(r.actual.fecha))}</th>${celdas(r.actual)}</tr>
+      <tr data-fila="diferencia"><th scope="row">Diferencia</th>${celdas(r.diferencia, true)}</tr>`
+    : `<tr data-fila="muertos"><th scope="row">Muertos · ${esc(dm(r.desde))}–${esc(dm(r.hasta))}</th>${celdas(r)}</tr>`;
+  return `<div class="mc-tablewrap mop-kpi-resumen"><table class="mc-table mc-table-sm">
+    <thead><tr><th></th><th class="r">♀ Hembras</th><th class="r">♂ Machos</th><th class="r">Total</th></tr></thead>
+    <tbody>${filas}</tbody></table></div>`;
 }
 /** 0f · 5 · Salas: sala por sala, lo registrado en la hoja frente a lo que propone el libro. */
 function salasKpiHTML(filas) {
