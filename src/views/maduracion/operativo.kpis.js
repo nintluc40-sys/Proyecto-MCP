@@ -16,7 +16,8 @@
    ============================================================ */
 import { ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_MIXTO, sumarDias, ubicKey } from '../registros/lib/mad-libro.js';
 import { SALAS_VISIBLES } from './operativo.data.js';
-import { tasaEntre, kpiBiomasa, posicionEnFiltro, codigoEnFiltro, loteElegido, hayLote, hayCodigo, haySala, hayTanque, salaElegida, tanqueElegido } from './operativo.tablero.js';
+import { tasaEntre, kpiBiomasa, posicionEnFiltro, codigoEnFiltro, loteElegido, hayLote, hayCodigo, haySala, hayTanque, salaElegida, tanqueElegido,
+  hayPiscina, hayCamaronera } from './operativo.tablero.js';
 
 /** Las siete tarjetas que tienen gráfico, en su orden, con su título. */
 export const KPIS_CON_GRAFICO = [
@@ -41,7 +42,7 @@ const diasDe = (serie, p) => (serie || []).filter((d) => d.fecha >= p.desde && d
 const noAplica = (nota) => ({ aplica: false, nota });
 /** Filtros que estrechan las posiciones sin que la serie los guarde día a día (el libro lleva los vivos por total, sala,
  *  lote, lote·sala y tanque, no por código, estado ni origen). */
-const sinSerie = (F) => !!(hayCodigo(F) || F.estado || F.piscina || F.camaronera);
+const sinSerie = (F) => !!(hayCodigo(F) || F.estado || hayPiscina(F) || hayCamaronera(F));
 
 /** VIVOS · la curva diaria ♀ / ♂ / total del período, del desglose de la serie que corresponde al filtro. */
 export function graficoVivos(serie, periodo, F) {
@@ -124,7 +125,7 @@ export function graficoSalas(salas, F) {
 export function graficoOcupacion(salas, libro, F) {
   if (hayTanque(F)) return noAplica(F.tanques.length === 1 ? 'Con un tanque elegido, la ocupación es la de ese tanque: no hay salas que comparar.'
     : 'Con tanques elegidos, la ocupación es la de esos tanques (la cifra de la tarjeta): no hay salas que comparar.');
-  const estrecha = !!(hayLote(F) || hayCodigo(F) || F.estado || F.sexo || F.piscina || F.camaronera);
+  const estrecha = !!(hayLote(F) || hayCodigo(F) || F.estado || F.sexo || hayPiscina(F) || hayCamaronera(F));
   const ss = (salas || []).filter((s) => salaElegida(s.sala, F));
   const filas = ss.map((s) => {
     const total = ent(s.propuesto && s.propuesto.total);

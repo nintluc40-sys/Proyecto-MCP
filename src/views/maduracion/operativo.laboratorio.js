@@ -298,7 +298,7 @@ export function filtroDeLaVentana(fi) {
   const periodo = mes
     ? { desde: mes + '-01', hasta: mes + '-' + pad2(new Date(Date.UTC(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 0)).getUTCDate()) }
     : { desde: '0000-01-01', hasta: '9999-12-31' };
-  const F = { salas: txt(f.sala) ? [txt(f.sala)] : [], tanques: [], sexo: txt(f.sexo), lotes: txt(f.lote) ? [normLote(f.lote)] : [], codigos: [], estado: '', piscina: '', camaronera: '' };
+  const F = { salas: txt(f.sala) ? [txt(f.sala)] : [], tanques: [], sexo: txt(f.sexo), lotes: txt(f.lote) ? [normLote(f.lote)] : [], codigos: [], estado: '', piscinas: [], camaroneras: [] };
   return { periodo, F };
 }
 /** Los tres bloques de la ventana (`resumenMicro`) con SUS filtros; la piscina, sólo en ① reproductores. */
@@ -559,7 +559,7 @@ export function resumenBiomolDeLaVentana(filasNorm, fi) {
   const fechas = filas.map((r) => r.f).sort();
   const acotado = fechas.length ? { desde: fechas[0], hasta: fechas[fechas.length - 1] }
     : periodo.desde > '1000' ? periodo : { desde: '1970-01-05', hasta: '1970-01-05' };
-  const neutro = { salas: [], tanques: [], sexo: '', lotes: [], codigos: [], estado: '', piscina: '', camaronera: '' };
+  const neutro = { salas: [], tanques: [], sexo: '', lotes: [], codigos: [], estado: '', piscinas: [], camaroneras: [] };
   const r = resumenBiomol(filas, acotado, neutro);
   const porLote = new Map();
   for (const x of filas) { const k = loteBiomol(x) || '(sin lote)'; if (!porLote.has(k)) porLote.set(k, []); porLote.get(k).push(x); }

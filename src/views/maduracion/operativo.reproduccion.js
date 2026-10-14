@@ -41,7 +41,7 @@ import { diasEntre } from '../registros/lib/mad-resumen.js';
 import { normPiscina } from '../registros/lib/ficha-maduracion-broodstock.schema.js';   // punto 5 · la piscina canónica
 import { fechaDeFila } from './operativo.data.js';
 import { cociente } from './operativo.indicadores.js';
-import { kpiReproduccion, codigoEnFiltro, loteElegido, haySala, hayTanque } from './operativo.tablero.js';
+import { kpiReproduccion, codigoEnFiltro, loteElegido, haySala, hayTanque, hayPiscina, hayCamaronera, origenEnFiltro } from './operativo.tablero.js';
 import { reproduccionDeLote } from './operativo.lotes.js';
 
 const txt = (v) => String(v == null ? '' : v).trim();
@@ -76,11 +76,7 @@ function enFiltro(r, F) {
   if (!F) return true;
   if (!loteElegido(r.Lote, F)) return false;
   if (!codigoEnFiltro(r['Código genético'], F)) return false;
-  if (F.indice && (F.piscina || F.camaronera)) {
-    const o = F.indice.origen.get(normLote(r.Lote));
-    if (F.piscina && !(o && o.piscinas.has(F.piscina))) return false;
-    if (F.camaronera && !(o && o.camaroneras.has(F.camaronera))) return false;
-  }
+  if (F.indice && (hayPiscina(F) || hayCamaronera(F)) && !origenEnFiltro(F.indice.origen.get(normLote(r.Lote)), F)) return false;
   return true;
 }
 

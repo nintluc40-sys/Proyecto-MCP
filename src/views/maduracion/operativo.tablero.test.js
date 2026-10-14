@@ -65,7 +65,7 @@ const PLANTA = [
 ];
 const M = modeloOperativo(PLANTA, { hoy: FOTO, fecha: FOTO });
 /* F2.3 · el filtro ganó cuatro dimensiones; vacías, son la ausencia de filtro. */
-const SIN_DIM = { estado: '', sexo: '', piscina: '', camaronera: '' };
+const SIN_DIM = { estado: '', sexo: '', piscinas: [], camaroneras: [] };   // etapa C · la piscina y la camaronera, listas
 const SIN = normalizarFiltro({});
 const F = (o) => normalizarFiltro(o);
 

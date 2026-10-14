@@ -809,8 +809,8 @@ describe('Maduración · operativo · F2.3 · filtros, etiquetas, ciclo y biomas
     expect(filtro('estado')).not.toBeNull();
     expect([...filtro('estado').options].map((o) => o.value)).toEqual(['', 'Cuarentena', 'Producción', 'Cerrado']);
     expect([...filtro('sexo').options].map((o) => [o.value, o.textContent])).toEqual([['', 'Los dos sexos'], ['hembras', '♀ Hembras'], ['machos', '♂ Machos']]);
-    expect([...filtro('piscina').options].map((o) => o.value)).toEqual(['', 'P1', 'P2']);
-    expect([...filtro('camaronera').options].map((o) => o.value)).toEqual(['', 'CX', 'CY']);
+    expect(opcionesDe('piscina')).toEqual(['P1', 'P2']);   // etapa C · con casillas
+    expect(opcionesDe('camaronera')).toEqual(['CX', 'CY']);
   });
 
   it('🔴 el filtro de SEXO cambia los vivos, se anuncia como etiqueta, y quitarla lo deshace', async () => {
@@ -830,7 +830,7 @@ describe('Maduración · operativo · F2.3 · filtros, etiquetas, ciclo y biomas
     await montar(PLANTA_F3);
     cambiar(filtro('estado'), 'Cuarentena');
     expect(kpi('Vivos')).toBe('10');
-    cambiar(filtro('piscina'), 'P1');
+    marcar('piscina', 'P1');
     expect(kpi('Vivos')).toBe('0');          // LB es de P2: nada cumple las dos
     expect(chips()).toEqual(['Estado: Cuarentena ✕', 'Piscina: P1 ✕']);
     click(root.querySelector('[data-mop-quitar="estado"]'));
@@ -861,10 +861,33 @@ describe('Maduración · operativo · F2.3 · filtros, etiquetas, ciclo y biomas
     expect(root.textContent).toContain('sin pesos registrados');
   });
 
+  /* Punto 2 · etapa C (2026-10-14, usuario) · la piscina y la camaronera de origen, VARIAS a la vez, con casillas. LA es de
+     P1 · CX y LB de P2 · CY. */
+  it('🔴 etapa C · dos piscinas: los vivos de las dos JUNTAS; una etiqueta por valor; con la camaronera, las dos a la vez', async () => {
+    await montar(PLANTA_F3);
+    marcar('piscina', ['P1', 'P2']);
+    expect(kpi('Vivos')).toBe('60');
+    expect(chips()).toEqual(['Piscina: P1 ✕', 'Piscina: P2 ✕']);
+    expect(root.querySelector('[data-mop-limpiar]'), 'con sólo el origen, también hay qué limpiar').not.toBeNull();
+    marcar('camaronera', 'CY');
+    expect(kpi('Vivos')).toBe('10');          // sólo LB es de CY
+    click(root.querySelector('[data-mop-quitar="piscina"][data-mop-valor="P2"]'));
+    expect([marcados('piscina'), marcados('camaronera'), kpi('Vivos')]).toEqual([['P1'], ['CY'], '0']);
+    marcar('camaronera', ['CX', 'CY']);
+    expect(kpi('Vivos')).toBe('50');
+    // Con datos nuevos sin LB (la única de P2 y de CY), lo que ya no existe se suelta solo; lo demás se queda.
+    marcar('piscina', ['P1', 'P2']);
+    store.globalData = PLANTA_F3.filter((r) => r.Lote !== 'LB');
+    operativoView(root);
+    expect([opcionesDe('piscina'), marcados('piscina'), marcados('camaronera')]).toEqual([['P1'], ['P1'], ['CX']]);
+    expect(chips()).toEqual(['Piscina: P1 ✕', 'Camaronera: CX ✕']);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
   it('✕ Limpiar suelta también los cuatro filtros nuevos', async () => {
     await montar(PLANTA_F3);
     cambiar(filtro('sexo'), 'machos');
-    cambiar(filtro('camaronera'), 'CX');
+    marcar('camaronera', 'CX');
     expect(chips()).toHaveLength(2);
     click(root.querySelector('[data-mop-limpiar]'));
     expect(chips()).toEqual([]);

@@ -34,7 +34,7 @@
 import { fechaDeFila } from './operativo.data.js';
 import { supervivencia } from './operativo.indicadores.js';
 import { loteDelLibro, estadoDeLoteEntero, desempenoPorPiscina } from './operativo.lotes.js';
-import { codigoEnFiltro, loteElegido, hayLote, haySala, hayTanque } from './operativo.tablero.js';   // 0r·4 · H2 · la pareja de códigos cuenta como sus dos
+import { codigoEnFiltro, loteElegido, hayLote, haySala, hayTanque, hayPiscina, hayCamaronera } from './operativo.tablero.js';   // 0r·4 · H2 · la pareja de códigos cuenta como sus dos
 import { normPiscina, faseCanonica } from '../registros/lib/ficha-maduracion-broodstock.schema.js';
 import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 
@@ -100,8 +100,8 @@ function piscinasPorLote(ingresos) {
 function filaEnFiltro(r, F, deLote) {
   if (!F) return true;
   const p = normPiscina(r.Piscina);
-  if (F.piscina && p !== normPiscina(F.piscina)) return false;
-  if (F.camaronera && plano(r.Camaronera) !== plano(F.camaronera)) return false;
+  if (hayPiscina(F) && !F.piscinas.some((x) => normPiscina(x) === p)) return false;   // etapa C · una de las elegidas
+  if (hayCamaronera(F) && !F.camaroneras.some((x) => plano(x) === plano(r.Camaronera))) return false;
   if (!codigoEnFiltro(r['Código genético'], F)) return false;
   if (hayLote(F) && !F.lotes.some((l) => (deLote.get(l) || new Set()).has(p))) return false;   // etapa A · de alguno de los lotes
   return true;
@@ -110,8 +110,8 @@ function filaEnFiltro(r, F, deLote) {
 /** ¿Pasa esta fila de Ingreso por el filtro? Con sus propias columnas: es el origen que declara el lote. */
 function ingresoEnFiltro(r, F) {
   if (!F) return true;
-  if (F.piscina && normPiscina(r['Piscina Broodstock']) !== normPiscina(F.piscina)) return false;
-  if (F.camaronera && plano(r['Camaronera origen']) !== plano(F.camaronera)) return false;
+  if (hayPiscina(F) && !F.piscinas.some((x) => normPiscina(x) === normPiscina(r['Piscina Broodstock']))) return false;
+  if (hayCamaronera(F) && !F.camaroneras.some((x) => plano(x) === plano(r['Camaronera origen']))) return false;
   if (!codigoEnFiltro(r['Código genético'], F)) return false;
   if (!loteElegido(r.Lote, F)) return false;
   return true;

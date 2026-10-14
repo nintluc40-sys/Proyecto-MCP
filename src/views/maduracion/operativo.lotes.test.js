@@ -470,6 +470,11 @@ describe('Maduración · lotes · la comparativa', () => {
     // Piscina P3 (filtro con su índice, como en la vista): sólo QI.
     const FP = normalizarFiltro({ piscina: 'P3' }, indiceDeFiltro(M));
     expect(comparativa(M, FP, P30, 'piscina', 'separadas').filas.map((f) => [f.origen, f.lotes])).toEqual([['P3', ['QI']]]);
+    // Etapa C · con VARIAS piscinas, las filas de cada una (una inexistente delante no le quita nada a la buena).
+    const filasDe = (p) => comparativa(M, normalizarFiltro({ piscina: p }, indiceDeFiltro(M)), P30, 'piscina', 'separadas').filas.map((f) => [f.origen, f.lotes]);
+    expect(filasDe(['NO-EXISTE', 'P3'])).toEqual([['P3', ['QI']]]);
+    expect(filasDe(['P2', 'P3'])).toEqual([...filasDe('P2'), ...filasDe('P3')]);
+    expect(filasDe('P2').length).toBeGreaterThan(0);
     expect(comparativa(M, F({ lote: 'QE' }), P30, 'codigo').filas.map((f) => f.origen)).toEqual(['CA']);
     // El período: con «Hoy» (el 19/09) no entra ningún desove de QE (12 y 14/09).
     expect(comparativa(M, SIN, periodoDe('hoy', FOTO, M.fuentes), 'codigo').filas.find((f) => f.origen === 'CA').desoves).toBe(0);

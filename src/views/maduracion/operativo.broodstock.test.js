@@ -223,6 +223,12 @@ describe('Maduración · broodstock · el filtro elige piscinas', () => {
     expect(nombres(tablaDePiscinas(M, F({ codigo: 'cb' })))).toEqual(['PZ12']);
   });
 
+  it('🔴 etapa C · VARIAS piscinas o camaroneras: las filas de cualquiera de ellas (y del Ingreso, igual)', () => {
+    expect(nombres(tablaDePiscinas(M, F({ piscina: ['PZ 12', '9701'] })))).toEqual(['9701', 'PZ12']);   // PZ3 no
+    expect(nombres(tablaDePiscinas(M, F({ camaronera: ['playa inventada', 'RIO FICTICIO'] })))).toEqual(['9701', 'PZ12']);   // «Otra» no
+    expect(tablaDePiscinas(M, F({ piscina: ['9701', 'PZ99'] })).sinBroodstock, 'la segunda también cuenta en el Ingreso').toEqual(['PZ99']);
+  });
+
   it('lote: las piscinas de las que ENTRÓ ese lote', () => {
     expect(nombres(tablaDePiscinas(M, F({ lote: 'qa' })))).toEqual(['9701']);
     expect(nombres(tablaDePiscinas(M, F({ lote: 'QD' })))).toEqual(['PZ12']);

@@ -14,6 +14,8 @@
    Etapa B (2026-10-14, usuario) · la SALA y el TANQUE, también varios (`salas`, `tanques`: pares «sala|n»), con la regla
    de Lote → Código (decisión del usuario): la unión dentro de cada una; entre las dos, ambas a la vez —con tanques
    marcados se ven SÓLO esos; una sala sin ninguno de sus tanques no suma—. La guarda vigila también `F.sala` / `F.tanque`.
+   Etapa C (2026-10-14) · la PISCINA y la CAMARONERA de origen, igual (`piscinas`, `camaroneras`); una lista VACÍA no es un
+   filtro puesto (`!!F[d]` diría que sí). La guarda vigila también `F.piscina` / `F.camaronera`.
    Datos FICTICIOS.
    ============================================================ */
 import { describe, it, expect } from 'vitest';
@@ -22,7 +24,10 @@ import {
   normalizarFiltro, hayFiltro, hayLote, hayCodigo, loteUnico, dimensionActiva, loteElegido, codigoEnFiltro,
   etiquetasDeFiltro, kpiVivos, kpiOcupacion, kpiMortalidad, kpiReproduccion, periodoDe,
   haySala, hayTanque, salaUnica, salaElegida, tanqueElegido, mapaDePlanta,
+  hayPiscina, hayCamaronera, origenEnFiltro, indiceDeFiltro,
 } from './operativo.tablero.js';
+import { ignoraDeCruce } from './operativo.cruce.js';
+import { ignoraDeCalidad } from './operativo.calidad.js';
 import { modeloOperativo, serieDiaria, diasDeTanque } from './operativo.data.js';
 import { MAD_OP_ORIGEN } from './operativo.fuentes.js';
 import { sumarDias } from '../registros/lib/mad-libro.js';
@@ -231,6 +236,61 @@ describe('Maduración · operativo · etapa B · el filtro con VARIAS salas y VA
   });
 });
 
+/* ── ETAPA C ── varias piscinas y varias camaroneras de ORIGEN. En este fixture, QA viene de P1 · CX, QB de P2 · CY y QC de
+   P3 · CX (de la misma camaronera que QA). */
+const INGP = (fecha, lote, sala, tanque, machos, hembras, cg, piscina, camaronera) => ({ ...ING(fecha, lote, sala, tanque, machos, hembras, cg),
+  'Piscina Broodstock': piscina, 'Camaronera origen': camaronera });
+const MC = modeloOperativo([
+  INGP('2026-09-01', 'QA', 'Sala 1', 1, 50, 50, 'CA', 'P1', 'CX'),
+  INGP('2026-09-01', 'QB', 'Sala 4', 1, 20, 20, 'CB', 'P2', 'CY'),
+  INGP('2026-09-01', 'QC', 'Sala 2', 16, 10, 10, 'CC', 'P3', 'CX'),
+], { hoy: FOTO, fecha: FOTO });
+const FC = (o) => normalizarFiltro(o, indiceDeFiltro(MC));
+describe('Maduración · operativo · etapa C · el filtro con VARIAS piscinas y VARIAS camaroneras de origen', () => {
+  it('listas sin repetir; 🔴 una lista VACÍA no cuenta como filtro puesto (ni en las etiquetas ni en lo que «no se aplica»)', () => {
+    expect(F({ piscina: ['P1', ' P2 ', 'P1'], camaronera: 'CX' })).toMatchObject({ piscinas: ['P1', 'P2'], camaroneras: ['CX'] });
+    expect([hayPiscina(SIN), hayCamaronera(SIN), hayFiltro(F({ piscina: [], camaronera: [] }))]).toEqual([false, false, false]);
+    expect(['piscina', 'camaronera'].map((d) => dimensionActiva(SIN, d))).toEqual([false, false]);
+    expect(['piscina', 'camaronera'].map((d) => dimensionActiva(F({ piscina: 'P1', camaronera: ['CX'] }), d))).toEqual([true, true]);
+    expect(etiquetasDeFiltro(F({ piscina: ['P1', 'P2'], camaronera: 'CX' })).map((e) => [e.dim, e.valor, e.clave]))
+      .toEqual([['piscina', 'P1', 'P1'], ['piscina', 'P2', 'P2'], ['camaronera', 'CX', 'CX']]);
+    expect([ignoraDeCruce(SIN), ignoraDeCalidad(SIN, [])]).toEqual([[], []]);
+    expect(ignoraDeCruce(F({ piscina: ['P1', 'P2'] }))).toEqual(['piscina']);
+  });
+
+  it('el ORIGEN de un lote pasa con UNA de sus piscinas entre las elegidas (y una de sus camaroneras); sin origen, no', () => {
+    const o = { piscinas: new Set(['P1']), camaroneras: new Set(['CX']) };
+    expect([origenEnFiltro(o, F({ piscina: ['P2', 'P1'] })), origenEnFiltro(o, F({ piscina: ['P2'] })), origenEnFiltro(o, SIN)]).toEqual([true, false, true]);
+    expect([origenEnFiltro(o, F({ piscina: 'P1', camaronera: ['CY', 'CX'] })), origenEnFiltro(o, F({ piscina: 'P1', camaronera: 'CY' }))]).toEqual([true, false]);
+    expect([origenEnFiltro(undefined, F({ piscina: 'P1' })), origenEnFiltro(undefined, SIN)]).toEqual([false, true]);
+  });
+
+  it('🔴 vivos: P1 + P2 es la suma de cada una, sin P3; dos camaroneras, igual; y piscina Y camaronera, las dos a la vez', () => {
+    const v = (o) => kpiVivos(MC.libro, FC(o)).total;
+    expect([v({ piscina: 'P1' }), v({ piscina: 'P2' }), v({ piscina: ['P1', 'P2'] })]).toEqual([100, 40, 140]);
+    expect(v({ piscina: ['P1', 'P2'] })).toBeLessThan(v({}));
+    expect([v({ camaronera: 'CX' }), v({ camaronera: ['CX', 'CY'] })]).toEqual([120, 160]);
+    expect(v({ piscina: ['P1', 'P2'], camaronera: 'CX' })).toBe(100);   // QB es de CY; QC, de P3
+    expect(kpiOcupacion(MC.salas, MC.libro, FC({ piscina: ['P1', 'P2'] }))).toMatchObject({ modo: 'filtro', ocupados: 2 });
+  });
+
+  /* Tres reglas del origen que NINGUNA prueba vigilaba (las destapó el banco de la etapa C): con piscina o camaronera los
+     gráficos que salen de la serie no aplican (la serie no guarda el origen); el gráfico de Ocupación cuenta los tanques
+     de lo filtrado, como la tarjeta; y la tabla de 🥚 Reproducción sólo trae los desoves de esos orígenes. */
+  it('🔴 con origen: los gráficos de la serie no aplican, la ocupación es la de lo filtrado y los desoves, los de esos orígenes', () => {
+    const p = periodoDe('7d', FOTO, MC.fuentes);
+    const serie = serieDiaria(MC.fuentes, sumarDias(p.desde, -1), p.hasta);
+    expect([graficoVivos(serie, p, FC({})).aplica, graficoVivos(serie, p, FC({ piscina: 'P1' })).aplica, graficoVivos(serie, p, FC({ camaronera: ['CX'] })).aplica])
+      .toEqual([true, false, false]);
+    const ocupados = (o) => graficoDeKpi('ocupacion', { M: MC, serie, partes: [], periodo: p, F: FC(o) }).series.find((x) => x.clave === 'ocupados').datos.reduce((a, n) => a + n, 0);
+    expect([ocupados({}), ocupados({ piscina: ['P1', 'P2'] }), ocupados({ camaronera: 'CY' })]).toEqual([3, 2, 1]);
+    const DES = [['QA', 2], ['QB', 3], ['QC', 4]].map(([Lote, Desoves]) => ({ Fecha: '2026-09-15', Lote, 'Código genético': 'CA', Desoves,
+      'Total de huevos': 1000, N2: 500, N5: 300, 'Hembras no viables': 0 }));
+    const lotes = (o) => tablaDeReproduccion({ fuentes: { ...MC.fuentes, desoves: DES }, fecha: FOTO }, p, FC(o)).map((f) => f.lote);
+    expect([lotes({}), lotes({ piscina: ['P1', 'P2'] }), lotes({ camaronera: 'CX' })]).toEqual([['QA', 'QB', 'QC'], ['QA', 'QB'], ['QA', 'QC']]);
+  });
+});
+
 /* ── LA GUARDA ── ningún módulo del tablero lee el filtro con la forma vieja ni la arma. */
 const DIR = new URL('./', import.meta.url);
 const sinComentarios = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
@@ -254,12 +314,12 @@ describe('Maduración · operativo · etapa A · la forma vieja del filtro no vu
      como estaba `observacionesDeTanque`). En planta/estado.js `F` es OTRA cosa —los nombres de columna: `F.tanque` es
      «Tanque»— y su filtro del tablero es `normalizarFiltro({})`: por eso no entra aquí. */
   for (const n of [...MODULOS, '../visitante/maduracion.produccion.js']) {
-    it(`🔴 etapa B · ${n}: ni \`F.sala\` / \`F.tanque\` ni un filtro armado con \`sala\` / \`tanque\``, () => {
+    it(`🔴 etapas B y C · ${n}: ni \`F.sala\` / \`F.tanque\` / \`F.piscina\` / \`F.camaronera\` ni un filtro armado con esas claves`, () => {
       const s = sinComentarios(readFileSync(new URL(n, DIR), 'utf8'));
-      expect(s.match(/\bF\.(sala|tanque)\b/g), 'lee la forma vieja').toBeNull();
-      expect(s.match(/\.\.\.\s*\(?\s*F\b(?:[^}]|\{\})*\b(sala|tanque)\b\s*[:,}]/g), 'arma un filtro con la clave vieja').toBeNull();
+      expect(s.match(/\bF\.(sala|tanque|piscina|camaronera)\b/g), 'lee la forma vieja').toBeNull();
+      expect(s.match(/\.\.\.\s*\(?\s*F\b(?:[^}]|\{\})*\b(sala|tanque|piscina|camaronera)\b\s*[:,}]/g), 'arma un filtro con la clave vieja').toBeNull();
       // el FILTRO es el segundo argumento: una posición o una fila sí llevan `sala` / `tanque` (`posicionEnFiltro({ sala, … }, F)`)
-      expect(s.match(/(EnFiltro|Elegid[oa])\(\s*[^,;()]+,\s*\{\s*(sala|tanque)\b\s*[:,}]/g), 'pasa un filtro con la clave vieja').toBeNull();
+      expect(s.match(/(EnFiltro|Elegid[oa])\(\s*[^,;()]+,\s*\{\s*(sala|tanque|piscina|camaronera)\b\s*[:,}]/g), 'pasa un filtro con la clave vieja').toBeNull();
     });
   }
 });

@@ -149,13 +149,29 @@ export const salaElegida = (sala, F) => !haySala(F) || F.salas.includes(sala);
 /** ¿Es este tanque (de esta sala) uno de los del filtro? Sin tanque en el filtro, todo casa. */
 export const tanqueElegido = (sala, tanque, F) => !hayTanque(F) || F.tanques.includes(claveTanque(sala, tanque));
 
-/** ¿Está puesta esta dimensión del filtro? El lote, el código, la sala y el tanque son listas. */
+/* 2026-10-14 (usuario, punto 2 · etapa C) · la PISCINA y la CAMARONERA de origen, también VARIAS: `piscinas` y
+   `camaroneras` (el texto del Ingreso, como antes). La unión dentro de cada una; entre las dos y con lo demás, todo a la
+   vez. Siguen sin cascada entre ellas. El ORIGEN de un lote (del índice) pasa por `origenEnFiltro`. */
+export const hayPiscina = (F) => !!(F && F.piscinas && F.piscinas.length);
+export const hayCamaronera = (F) => !!(F && F.camaroneras && F.camaroneras.length);
+/** ¿El ORIGEN de un lote (`{ piscinas, camaroneras }`, conjuntos de su Ingreso) pasa el filtro? Basta UNA de sus piscinas
+ *  entre las elegidas, y UNA de sus camaroneras. Un lote sin Ingreso no tiene origen: con el filtro puesto, no pasa. */
+export function origenEnFiltro(o, F) {
+  if (hayPiscina(F) && !(o && F.piscinas.some((x) => o.piscinas.has(x)))) return false;
+  if (hayCamaronera(F) && !(o && F.camaroneras.some((x) => o.camaroneras.has(x)))) return false;
+  return true;
+}
+
+/** ¿Está puesta esta dimensión del filtro? El lote, el código, la sala, el tanque, la piscina y la camaronera son
+ *  LISTAS: una vacía no cuenta (por eso no vale el `!!F[d]` de las demás, que daría por puesta una lista vacía). */
 export function dimensionActiva(F, d) {
   if (!F) return false;
   if (d === 'lote') return hayLote(F);
   if (d === 'codigo') return hayCodigo(F);
   if (d === 'sala') return haySala(F);
   if (d === 'tanque') return hayTanque(F);
+  if (d === 'piscina') return hayPiscina(F);
+  if (d === 'camaronera') return hayCamaronera(F);
   return !!F[d];
 }
 
@@ -170,21 +186,21 @@ function tanqueDelFiltro(t, salas) {
 }
 
 /** El filtro con la forma con que se compara: el tanque sólo con su sala (sin ella no identifica nada); los lotes y
- *  los códigos, canónicos. Los cuatro llegan como un valor o como una lista. */
+ *  los códigos, canónicos. Los seis llegan como un valor o como una lista. */
 export function normalizarFiltro(f, indice) {
   const x = f || {};
   const salas = sinRepetir(comoLista(x.sala).map(txt));
   const F = { salas, tanques: sinRepetir(comoLista(x.tanque).map((t) => tanqueDelFiltro(t, salas))),
     lotes: sinRepetir(comoLista(x.lote).map((l) => normLote(l))), codigos: sinRepetir(comoLista(x.codigo).map((c) => normCodigoGenetico(c))),
     estado: txt(x.estado), sexo: x.sexo === 'machos' || x.sexo === 'hembras' ? x.sexo : '',
-    piscina: txt(x.piscina), camaronera: txt(x.camaronera) };
+    piscinas: sinRepetir(comoLista(x.piscina).map(txt)), camaroneras: sinRepetir(comoLista(x.camaronera).map(txt)) };
   /* El ÍNDICE viaja dentro del filtro a propósito: el estado y el origen no están en una posición del libro, y
      así `posicionEnFiltro` no cambia de firma en los nueve sitios que la llaman. Sin índice, esos dos filtros
      no pueden aplicarse y se ignoran (es lo que pasa en las pruebas puras, que no lo necesitan). */
   if (indice) F.indice = indice;
   return F;
 }
-export const hayFiltro = (F) => !!(F && (haySala(F) || hayTanque(F) || hayLote(F) || hayCodigo(F) || F.estado || F.sexo || F.piscina || F.camaronera));
+export const hayFiltro = (F) => !!(F && (haySala(F) || hayTanque(F) || hayLote(F) || hayCodigo(F) || F.estado || F.sexo || hayPiscina(F) || hayCamaronera(F)));
 
 /** Lo que los filtros nuevos necesitan y una posición no lleva encima: el ESTADO del lote en cada sala (del
  *  libro) y el ORIGEN con que entró (del Ingreso). Se construye UNA vez por pintada. */
@@ -203,8 +219,8 @@ export function indiceDeFiltro(M) {
   return { origen, lotes: ((M && M.libro) || {}).lotes || new Map() };
 }
 
-/** Los filtros ACTIVOS, para enseñarlos como etiquetas quitables. Un lote, un código, una sala o un tanque elegidos
- *  entre varios llevan UNA etiqueta cada uno (se quitan de uno en uno, por su `clave`). El tanque se lee «3» con una
+/** Los filtros ACTIVOS, para enseñarlos como etiquetas quitables. Un lote, un código, una sala, un tanque, una piscina o
+ *  una camaronera elegidos entre varios llevan UNA etiqueta cada uno (se quitan de uno en uno, por su `clave`). El tanque se lee «3» con una
  *  sala y «Sala 1 · T3» con varias. */
 export const DIMENSIONES_FILTRO = [
   { dim: 'sala', rotulo: 'Sala' }, { dim: 'tanque', rotulo: 'Tanque' }, { dim: 'lote', rotulo: 'Lote' },
@@ -212,7 +228,7 @@ export const DIMENSIONES_FILTRO = [
   { dim: 'piscina', rotulo: 'Piscina' }, { dim: 'camaronera', rotulo: 'Camaronera' },
 ];
 const SEXO_ETIQUETA = { machos: '♂ Machos', hembras: '♀ Hembras' };
-const LISTA_DE = { lote: 'lotes', codigo: 'codigos', sala: 'salas', tanque: 'tanques' };
+const LISTA_DE = { lote: 'lotes', codigo: 'codigos', sala: 'salas', tanque: 'tanques', piscina: 'piscinas', camaronera: 'camaroneras' };
 /** Un tanque del filtro («Sala 1|3»), para leerlo: su número con una sala; «Sala 1 · T3» con varias. */
 export function textoDeTanque(clave, F) {
   const i = clave.lastIndexOf('|');
@@ -255,11 +271,7 @@ export function posicionEnFiltro(p, F) {
   const ix = F.indice;
   if (ix) {
     if (F.estado && estadoEnSala(ix.lotes.get(p.lote), p.sala) !== F.estado) return false;
-    if (F.piscina || F.camaronera) {
-      const o = ix.origen.get(normLote(p.lote));
-      if (F.piscina && !(o && o.piscinas.has(F.piscina))) return false;
-      if (F.camaronera && !(o && o.camaroneras.has(F.camaronera))) return false;
-    }
+    if ((hayPiscina(F) || hayCamaronera(F)) && !origenEnFiltro(ix.origen.get(normLote(p.lote)), F)) return false;
   }
   return true;
 }
@@ -397,7 +409,7 @@ export function kpiOcupacion(salas, libro, F) {
      sexo, el de estado o el de origen, la ocupación seguía enseñando la FÍSICA de la sala y contradecía a los
      vivos de al lado («30 hembras, 2 tanques ocupados» con un solo tanque con hembras). Con VARIOS tanques elegidos
      (etapa B, decisión del usuario), también: «tanques con lo filtrado», de los elegidos. */
-  if (hayTanque(F) || hayLote(F) || hayCodigo(F) || F.estado || F.sexo || F.piscina || F.camaronera) {
+  if (hayTanque(F) || hayLote(F) || hayCodigo(F) || F.estado || F.sexo || hayPiscina(F) || hayCamaronera(F)) {
     const con = new Set();
     for (const p of libro.posiciones) if (vivo(p) && posicionEnFiltro(p, F)) con.add(ubicKey(p.sala, p.tanque));
     return { modo: 'filtro', ocupados: con.size, total, pct: ocupacion(con.size, total) };

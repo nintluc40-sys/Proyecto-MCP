@@ -143,7 +143,7 @@ const SUBS = [
 /** 2 · las sub-vistas con sus propios filtros: sin la barra ni las etiquetas del tablero, que no les aplican. */
 const PROPIOS = new Set(['micro', 'biomol', 'mareas']);
 const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: [], tanque: [], lote: [], codigo: [], color: 'estado', salaDetalle: '', tanqueSel: '', loteSel: '', agrupacion: 'lote',
-  estado: '', sexo: '', piscina: '', camaronera: '', agrupacionBajas: 'sala',
+  estado: '', sexo: '', piscina: [], camaronera: [], agrupacionBajas: 'sala',
   /* 2026-10-03 (punto 5, usuario) · el «Desde» del período «Rango» (su «Hasta» es la foto); '' = aún sin elegir. */
   desde: '',
   /* 5 (2026-09-29, usuario) · la comparativa por código o por piscina: las parejas 'juntas' (por defecto) o 'separadas'. */
@@ -376,8 +376,8 @@ function depurarFiltros(o) {
   const codigos = codigosDe(o, vOp.lote);
   vOp.codigo = vOp.codigo.filter((c) => codigos.includes(c));
   if (vOp.estado && !(o.estados || []).includes(vOp.estado)) vOp.estado = '';
-  if (vOp.piscina && !(o.piscinas || []).includes(vOp.piscina)) vOp.piscina = '';
-  if (vOp.camaronera && !(o.camaroneras || []).includes(vOp.camaronera)) vOp.camaronera = '';
+  vOp.piscina = vOp.piscina.filter((x) => (o.piscinas || []).includes(x));   // etapa C · listas
+  vOp.camaronera = vOp.camaronera.filter((x) => (o.camaroneras || []).includes(x));
 }
 
 /** Los filtros ACTIVOS, como etiquetas quitables. Lo que se quita es SÓLO esa dimensión: «✕ Limpiar» sigue
@@ -401,9 +401,9 @@ const codigosDe = (o, lotes) => (lotes.length ? [...new Set(lotes.flatMap((l) =>
    de la de 🖨 Reportes, que comparten el estado. */
 /* Etapa B (2026-10-14) · la sala y el tanque, igual. El tanque es el par «sala|n» y se LEE «3» con una sala y «Sala 1 ·
    T3» con varias (`texto`); sin sala marcada no hay tanques que ofrecer (`vacio`). */
-const MULTI = new Set(['lote', 'codigo', 'sala', 'tanque']);
+const MULTI = new Set(['lote', 'codigo', 'sala', 'tanque', 'piscina', 'camaronera']);   // etapa C (2026-10-14) · y la piscina y la camaronera
 const mismo = (x) => x;
-const NORM_MULTI = { lote: normLote, codigo: normCodigoGenetico, sala: mismo, tanque: mismo };
+const NORM_MULTI = { lote: normLote, codigo: normCodigoGenetico, sala: mismo, tanque: mismo, piscina: mismo, camaronera: mismo };
 function multiHTML(dim, elegidos, valores, rotulo, id = dim, { texto = mismo, vacio = 'Sin opciones' } = {}) {
   const sel = valores.filter((v) => elegidos.includes(v)).map(texto);   // en el orden de las opciones
   const resumen = !sel.length ? rotulo : sel.length <= 2 ? sel.join(', ') : `${sel.slice(0, 2).join(', ')} +${sel.length - 2}`;
@@ -433,7 +433,7 @@ function filtrosHTML(M, hoy, fecha, p) {
       }).join('')}
     </select>`;
   const cambiado = vOp.periodo !== INICIAL.periodo || vOp.fecha || vOp.sala.length || vOp.lote.length || vOp.codigo.length
-    || vOp.estado || vOp.sexo || vOp.piscina || vOp.camaronera;
+    || vOp.estado || vOp.sexo || vOp.piscina.length || vOp.camaronera.length;
   return `<div class="mop-filtros">
     <div class="mop-f-grupo"><span class="mop-f-lbl">Período</span>
       <div class="mc-seg mc-seg-sm" role="group" aria-label="Período">${PERIODOS.map((x) => {
@@ -456,8 +456,8 @@ function filtrosHTML(M, hoy, fecha, p) {
       ${sel('estado', vOp.estado, o.estados || [], 'Todos los estados')}
       ${sel('sexo', vOp.sexo, [{ v: 'hembras', t: '♀ Hembras' }, { v: 'machos', t: '♂ Machos' }], 'Los dos sexos')}</div>
     <div class="mop-f-grupo"><span class="mop-f-lbl">Origen del lote</span>
-      ${sel('piscina', vOp.piscina, o.piscinas || [], 'Todas las piscinas')}
-      ${sel('camaronera', vOp.camaronera, o.camaroneras || [], 'Todas las camaroneras')}</div>
+      ${multiHTML('piscina', vOp.piscina, o.piscinas || [], 'Todas las piscinas')}
+      ${multiHTML('camaronera', vOp.camaronera, o.camaroneras || [], 'Todas las camaroneras')}</div>
     ${cambiado ? '<button class="mop-limpiar" data-mop-limpiar>✕ Limpiar</button>' : ''}
   </div>`;
 }
@@ -3476,7 +3476,7 @@ function bind(root) {
     if (t.closest('[data-mop-rep-pdf]')) { imprimirParte(); return; }
     if (t.closest('[data-mop-rep-xlsx]')) { descargarParte(); return; }
     if (t.closest('[data-mop-limpiar]')) {
-      Object.assign(vOp, { periodo: INICIAL.periodo, fecha: '', sala: [], tanque: [], lote: [], codigo: [], tanqueSel: '', salaDetalle: '', piscinaSel: '', loteSel: '', tqFicha: '', estado: '', sexo: '', piscina: '', camaronera: '' });
+      Object.assign(vOp, { periodo: INICIAL.periodo, fecha: '', sala: [], tanque: [], lote: [], codigo: [], tanqueSel: '', salaDetalle: '', piscinaSel: '', loteSel: '', tqFicha: '', estado: '', sexo: '', piscina: [], camaronera: [] });
       vOp.desde = '';   // punto 5 · el «Desde» del Rango (aparte: las dos puntas de la línea de arriba son anclas)
       repintar();
       return;

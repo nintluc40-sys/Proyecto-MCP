@@ -28,7 +28,7 @@ import { estadoDeLote, ESTADO_MIXTO, ubicKey, pesosDeAlimentacion } from '../reg
 import { diasEntre } from '../registros/lib/mad-resumen.js';
 import { fechaDeFila, diasDeTanque } from './operativo.data.js';
 import { cociente, proporcionHM, supervivencia, tasaDescarte, tasaEnPartesDelLote } from './operativo.indicadores.js';
-import { posicionEnFiltro, codigoEnFiltro, normalizarFiltro, loteElegido, hayCodigo, haySala, hayTanque } from './operativo.tablero.js';
+import { posicionEnFiltro, codigoEnFiltro, normalizarFiltro, loteElegido, hayCodigo, haySala, hayTanque, hayPiscina } from './operativo.tablero.js';
 import { normPiscina } from '../registros/lib/ficha-maduracion-broodstock.schema.js';   // 5 · la piscina canónica
 
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
@@ -481,7 +481,7 @@ function origenesDeLotes(M, dim) {
 function comparativaPorOrigen(M, F, periodo, dim, modo) {
   const O = origenesDeLotes(M, dim);
   const sinDato = dim === 'codigo' ? '(sin código)' : '(sin piscina)';
-  const enFiltro = (o) => (dim === 'codigo' ? codigoEnFiltro(o, F) : !(F && F.piscina) || o === normPiscina(F.piscina));
+  const enFiltro = (o) => (dim === 'codigo' ? codigoEnFiltro(o, F) : !hayPiscina(F) || F.piscinas.some((x) => normPiscina(x) === o));
   const acc = new Map();
   const de = (o) => acc.get(o) || (acc.set(o, { origen: o, lotes: new Set(), ingresados: 0, vivos: 0, desoves: 0, huevos: 0,
     n2: 0, n5: 0, huevosConN2: 0, n2ConHuevos: 0, desovesConN5: 0, compartido: false,
