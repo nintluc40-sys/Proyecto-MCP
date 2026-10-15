@@ -16,7 +16,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   esMortalidad, esRevision, esAlcalinidad, VARIABLES_REVISION, ETAPAS_REVISION, TOPES_REVISION,
-  revisionesDeNauplios, alcalinidadPorArea, mortalidadEnDesove, frecuenciaDeObservaciones,
+  revisionesDeNauplios, alcalinidadPorArea, mortalidadEnDesove, frecuenciaDeObservaciones, lotesDeRevisiones,
 } from './operativo.revisiones.js';
 import { modeloOperativo, diasDeTanque } from './operativo.data.js';
 import { normalizarFiltro, periodoDe } from './operativo.tablero.js';
@@ -219,5 +219,26 @@ describe('Maduración · revisiones · la temperatura del tanque de desove (2026
 
   it('sin lecturas de temperatura, null (la tarjeta no pinta nada)', () => {
     expect(mortalidadEnDesove(M.fuentes, SIN, P30).tempDesove).toBeNull();
+  });
+});
+
+/* Punto 6 de la tanda del 13-10 (usuario, 2026-10-14) · los lotes que ofrece el filtro PROPIO de la sub-vista: los de las
+   revisiones y las mortalidades en desove/recuperación DEL PERÍODO, en la forma canónica del filtro; la alcalinidad (de un
+   área) no aporta lotes aunque una fila traiga uno. */
+describe('Maduración · revisiones · punto 6 · los lotes del filtro propio', () => {
+  it('🔴 los de revisiones y mortalidades del período, canónicos y en orden; ni los de fuera del período ni la alcalinidad', () => {
+    const M6 = modeloOperativo([...PLANTA, REV('2026-09-19', ' lb ', 'Entrada', { Hongos: 'Ausente' }), MORT('2026-09-18', 'LC', 'Desove', 10, 1),
+      REV('2026-08-02', 'LZ', 'Entrada', { Hongos: 'Ausente' }), MORT('2026-08-02', 'LY', 'Desove', 5, 1),
+      { ...ALC('2026-09-18', 'Sala 3', 120, 121), Lote: 'LW' }], { hoy: FOTO, fecha: FOTO });
+    expect(lotesDeRevisiones(M6.fuentes, periodoDe('30d', FOTO, M6.fuentes))).toEqual(['LA', 'LB', 'LC']);
+    expect(lotesDeRevisiones(M.fuentes, P30)).toEqual(['LA']);
+    expect(lotesDeRevisiones({}, P30)).toEqual([]);
+  });
+
+  it('con el lote elegido como filtro, las revisiones y la mortalidad son SÓLO las suyas', () => {
+    const M6 = modeloOperativo([...PLANTA, REV('2026-09-19', 'LB', 'Entrada', { Hongos: 'Ausente' }), MORT('2026-09-18', 'LB', 'Desove', 10, 1)], { hoy: FOTO, fecha: FOTO });
+    const P = periodoDe('30d', FOTO, M6.fuentes);
+    expect(revisionesDeNauplios(M6.fuentes, F({ lote: 'LB' }), P).filas.map((f) => f.lote)).toEqual(['LB']);
+    expect(mortalidadEnDesove(M6.fuentes, F({ lote: 'LB' }), P).filas.find((t) => t.tipo === 'Desove')).toMatchObject({ entran: 10, muertas: 1 });
   });
 });

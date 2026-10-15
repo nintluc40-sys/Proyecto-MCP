@@ -36,6 +36,7 @@ import { fechaDeFila } from './operativo.data.js';
 import { loteElegido, hayLote, hayCodigo, haySala, hayTanque, salaElegida, tanqueElegido } from './operativo.tablero.js';   // punto 2 · etapas A y B · uno o varios
 import { cociente } from './operativo.indicadores.js';
 import { umbralVigente, evaluar } from './operativo.umbrales.js';
+import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';   // punto 6 · el lote del filtro propio
 
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
 const esIso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -57,6 +58,18 @@ export const esMortalidad = (r) => MAD_MORT_TIPOS.includes(txt((r || {})['Tipo d
 export const esRevision = (r) => !!txt((r || {})['Revisión']) && !txt((r || {})['Tipo de tanque']);
 /** Una fila de ALCALINIDAD: la que dice de qué área es. */
 export const esAlcalinidad = (r) => !!txt((r || {})['Área']);
+
+/** Punto 6 de la tanda del 13-10 (usuario, 2026-10-14) · los lotes que ofrece el filtro PROPIO de 🔍 Revisiones: los que
+ *  tienen en el período alguna revisión de nauplios o alguna mortalidad en desove o recuperación —las dos clases de fila a
+ *  las que se aplica—, en su forma canónica (`normLote`, la del filtro) y en orden. La alcalinidad es de un área: no cuenta. */
+export function lotesDeRevisiones(fuentes, periodo) {
+  const lotes = new Set();
+  for (const r of ((fuentes || {}).mortDesove || [])) {
+    if (!esRevision(r) && !esMortalidad(r)) continue;
+    if (enPeriodo(fechaDeFila('mortDesove', r), periodo) && normLote(r.Lote)) lotes.add(normLote(r.Lote));
+  }
+  return [...lotes].sort(porNombre);
+}
 
 /* ── LA REVISIÓN DE NAUPLIOS ────────────────────────────────── */
 

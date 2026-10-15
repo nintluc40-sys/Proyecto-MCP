@@ -1266,6 +1266,41 @@ describe('Maduración · operativo · 🔍 Revisiones', () => {
     expect(hist().querySelector('[data-mop-rev-antes]').open, 'cerrado, sigue cerrado').toBe(false);
   });
 
+  /* Punto 6 de la tanda del 13-10 (usuario, 2026-10-14) · el filtro PROPIO de 🔍 Revisiones, por lote: elegido, sustituye al
+     lote del tablero en la revisión de nauplios, su historial y la mortalidad en desove/recuperación; la alcalinidad y las
+     observaciones siguen el tablero; «los del tablero» es lo de siempre; se entra siempre con «los del tablero». */
+  it('🔴 punto 6 · el lote propio filtra revisiones, historial y mortalidad en desove, y nada más', async () => {
+    await montar([...PLANTA_B,
+      INF('19/09/2026', { 'Revisión': 'Entrada', Lote: 'LB', Hongos: 'Ausente', Salinidad: 30, Temperatura: 28 }),
+      INF('18/09/2026', { 'Tipo de tanque': 'Desove', Lote: 'LB', 'Hembras que entran': 20, 'Hembras muertas': 5 })]);
+    abrir('revisiones');
+    const sel = () => root.querySelector('[data-mop-rev-lote]');
+    const lotesHist = () => [...card('Historial de revisiones').querySelectorAll('tbody tr')].map((t) => t.cells[1].textContent);
+    const desove = () => [...card('Mortalidad en desove y recuperación').querySelectorAll('tbody tr')].find((t) => t.textContent.includes('Desove'))
+      .querySelectorAll('td');
+    const alc = () => card('Alcalinidad').textContent;
+    expect([...sel().options].map((o) => [o.value, o.textContent])).toEqual([['', 'Todos'], ['LA', 'LA'], ['LB', 'LB']]);
+    expect(lotesHist().sort(), 'control: sin lote propio, los dos').toEqual(['LA', 'LB']);
+    expect([desove()[1].textContent, desove()[2].textContent], 'control: los dos lotes').toEqual(['50', '8']);
+    const alcAntes = alc();
+    cambiar(sel(), 'LB');
+    expect(lotesHist()).toEqual(['LB']);
+    expect([desove()[1].textContent, desove()[2].textContent], 'sólo LB').toEqual(['20', '5']);
+    expect(alc(), 'la alcalinidad sigue el tablero').toBe(alcAntes);
+    expect(card('Observaciones de tanque').textContent, 'las observaciones también').toContain('En recambio');
+    expect(document.activeElement, 'el foco vuelve al selector').toBe(sel());
+    // Con un lote en el tablero, «los del tablero» lo dice; y el propio lo SUSTITUYE.
+    marcar('lote', 'LA');
+    expect(sel().options[0].textContent).toBe('Los del tablero (LA)');
+    expect(lotesHist(), 'el propio (LB) manda sobre el del tablero (LA)').toEqual(['LB']);
+    cambiar(sel(), '');
+    expect(lotesHist(), 'sin propio, el del tablero').toEqual(['LA']);
+    cambiar(sel(), 'LB');
+    abrir('lotes');
+    abrir('revisiones');
+    expect(sel().value, 'se entra con «los del tablero»').toBe('');
+  });
+
   it('sin revisiones lo dice', async () => {
     await montar([ING('01/09/2026', 'LA', 'Sala 1', 1, 10, 10)]);
     abrir('revisiones');

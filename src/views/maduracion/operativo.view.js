@@ -81,6 +81,7 @@ import { pendientesDeN5, tablaDeReproduccion, destinosDeDespacho, totalesDeRepro
 import { repartoDeLotePorDestino } from './operativo.reproduccion.js';   // 0q·3
 import {
   VARIABLES_REVISION, revisionesDeNauplios, alcalinidadPorArea, mortalidadEnDesove, frecuenciaDeObservaciones,
+  lotesDeRevisiones,
 } from './operativo.revisiones.js';
 import {
   matrizDeMovimientos, registroDeMovimientos, alimentacionPorProducto, procedenciaDelPeso,
@@ -168,6 +169,8 @@ const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: [], 
   /* Punto 5 de la tanda del 13-10 (usuario, 2026-10-14) · si las revisiones ANTERIORES al último día (🗓️ Historial de
      revisiones) están desplegadas. Empieza plegado. */
   revAntesAbierto: false,
+  /* Punto 6 de la tanda · el lote del filtro PROPIO de 🔍 Revisiones ('' = los del tablero). */
+  revLote: '',
   /* 2026-10-03 (punto 5, usuario) · por qué se divide el N5 de cada destino en «A dónde fueron»: '' (no se divide),
      'lote', 'codigo', 'piscina' o 'fechaN5' (DIVISIONES_DESTINO). */
   destDividir: '',
@@ -2440,12 +2443,19 @@ function cerradosHTML(c, p) {
 
 /* ── 🔍 REVISIONES ──────────────────────────────────────────── */
 
+/* Punto 6 de la tanda del 13-10 (usuario, 2026-10-14) · un filtro PROPIO, por lote, para la revisión de nauplios
+   (deformidad, actividad, hongos, fototropismo, aireación, salinidad y temperatura), su historial y la mortalidad en desove
+   y recuperación. Elegido, SUSTITUYE al lote del tablero en esas tres tarjetas; en «los del tablero» ('') manda el
+   tablero, como hasta ahora (uno, varios o todos). La alcalinidad (de un área) y las observaciones (de un tanque) siguen
+   el tablero. Se entra siempre con «los del tablero», como 🦠/🧬 entran con su lote. */
 function revisionesHTML(M, memo, p, F) {
-  const r = revisionesDeNauplios(M.fuentes, F, p);
+  const FR = vOp.revLote ? { ...F, lotes: [vOp.revLote] } : F;
+  const r = revisionesDeNauplios(M.fuentes, FR, p);
   const a = alcalinidadPorArea(M.fuentes, F, p);
-  const m = mortalidadEnDesove(M.fuentes, F, p);
+  const m = mortalidadEnDesove(M.fuentes, FR, p);
   const o = frecuenciaDeObservaciones(memo.partes, F, p);
   return `<div class="mc-body">
+    ${revFiltroHTML(lotesDeRevisiones(M.fuentes, p), F)}
     ${semaforoHTML(r, p)}
     <div class="mc-grid">
       ${alcalinidadHTML(a, p)}
@@ -2454,6 +2464,17 @@ function revisionesHTML(M, memo, p, F) {
     ${observacionesHTML(o, p)}
     ${historialRevHTML(r, p)}
   </div>`;
+}
+
+/** Punto 6 · la barra del filtro propio: el lote elegido se enseña aunque ya no tenga filas (como en 🦠/🧬). */
+function revFiltroHTML(lotes, F) {
+  const v = vOp.revLote;
+  const lista = v && !lotes.includes(v) ? [v, ...lotes] : lotes;
+  const todos = F.lotes && F.lotes.length ? 'Los del tablero (' + F.lotes.join(', ') + ')' : 'Todos';
+  return `<div class="mop-labf" role="group" aria-label="Filtro de las revisiones">
+      <label class="mop-labf-c">Lote de las revisiones<select class="mc-select" data-mop-rev-lote><option value="">${esc(todos)}</option>${lista.map((l) =>
+        `<option value="${esc(l)}"${l === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label></div>
+    <p class="mop-lab-per">Se aplica a la revisión de nauplios (deformidad, actividad, hongos, fototropismo, aireación, salinidad y temperatura), a su historial y a la mortalidad en desove y recuperación; la alcalinidad y las observaciones de tanque siguen el filtro del tablero.</p>`;
 }
 
 function semaforoHTML(r, p) {
@@ -3493,6 +3514,7 @@ function bind(root) {
          al abrir sus ventanas. Pulsar la que ya está a la vista no borra lo elegido. */
       if (LAB[nueva] && nueva !== vOp.sub) vOp.labF = { ...LABF_VACIO, lote: vOp.lote.length === 1 ? vOp.lote[0] : '', sala: vOp.sala.length === 1 ? vOp.sala[0] : '', sexo: vOp.sexo || '' };
       if (nueva === 'mareas' && vOp.sub !== 'mareas') _mareas.estado = undefined;
+      if (nueva === 'revisiones' && vOp.sub !== 'revisiones') vOp.revLote = '';   // punto 6 · se entra con los del tablero
       vOp.sub = nueva;
       repintar();
       return;
@@ -3675,6 +3697,15 @@ function bind(root) {
     if (e.target.matches && e.target.matches('[data-mop-amb-dia]')) {   // 3 · el día del ambiente de la sala
       vOp.ambDia = e.target.value || '';
       repintarYEnfocar('[data-mop-amb-dia]');
+      return;
+    }
+    // Punto 6 de la tanda · el lote propio de 🔍 Revisiones (repinta y devuelve el foco, como los de 🦠/🧬).
+    const rl = e.target.closest && e.target.closest('[data-mop-rev-lote]');
+    if (rl) {
+      vOp.revLote = rl.value || '';
+      repintar();
+      const x = root.querySelector('[data-mop-rev-lote]');
+      if (x) x.focus();
       return;
     }
     const lf = e.target.closest && e.target.closest('[data-mop-labf]');
