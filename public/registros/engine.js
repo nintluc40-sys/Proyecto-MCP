@@ -19323,8 +19323,8 @@ function buildAstPayload(records){
       numOrEmpty(a.noviables),
       sanitizeStr(a.observaciones||""),
       sanitizeStr(a.accion||""),
-      sanitizeStr(a.comentario||""),
-      sanitizeStr(a.comentario_vesp||""),
+      sanitizeStr(a.comentario||"", 500),        // 2026-10-15: 500 = el tope del GAS (antes 200, sin aviso)
+      sanitizeStr(a.comentario_vesp||"", 500),
       numOrEmpty(a.flacidez),
       numOrEmpty(a.necrosis),
       numOrEmpty(a.disparidad),
@@ -19642,9 +19642,9 @@ function renderAst(){
     </div>
     <div class="ffoot">
       <div class="ff" style="min-width:260px"><label>Comentario matutino *</label>
-        <textarea name="comentario" placeholder="Comentario del turno matutino (obligatorio)…">${escapeHtml(d.comentario||"")}</textarea></div>
+        <textarea name="comentario" maxlength="500" placeholder="Comentario del turno matutino (obligatorio)…">${escapeHtml(d.comentario||"")}</textarea></div>
       <div class="ff" style="min-width:260px"><label>Comentario vespertino</label>
-        <textarea name="comentario_vesp" placeholder="Comentario del turno vespertino (opcional)…">${escapeHtml(d.comentario_vesp||"")}</textarea></div>
+        <textarea name="comentario_vesp" maxlength="500" placeholder="Comentario del turno vespertino (opcional)…">${escapeHtml(d.comentario_vesp||"")}</textarea></div>
     </div>
     <div class="sa">
       <div class="sa-info">
@@ -30231,7 +30231,7 @@ function _renderBlancoCalidadAgua(fp, d, _tqn, tec, _corrida, fecha, lbl){
     <td><input type="number" name="ep_${i}" value="${vl(d,"ep_"+i)}" min="0" max="100" step="0.1" placeholder="%"></td>
     <td><input type="number" name="sc_${i}" value="${vl(d,"sc_"+i)}" min="0" max="100" step="0.1" placeholder="%"></td>
     <td><input type="number" name="rc_${i}" value="${vl(d,"rc_"+i)}" min="0" max="100" step="0.1" placeholder="%"></td>
-    <td><input type="text" name="ob_${i}" value="${vl(d,"ob_"+i)}" placeholder="Observación del tanque" style="min-width:140px"></td>
+    <td><input type="text" name="ob_${i}" value="${vl(d,"ob_"+i)}" maxlength="200" placeholder="Observación del tanque" style="min-width:140px"></td>
     <td><input type="number" name="tn_${i}" value="${vl(d,"tn_"+i)}" min="0" step="1" placeholder="t"></td>
   </tr>`;});
 

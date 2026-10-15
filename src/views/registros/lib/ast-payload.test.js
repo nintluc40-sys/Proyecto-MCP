@@ -35,6 +35,7 @@ import { createContext, Script } from 'node:vm';
    must be of scheme file», medido) y el archivo entero cae al recolectarse. ⚠ Y no escribir aquí la directiva de
    entorno tal cual, ni siquiera citada: Vitest la busca en CUALQUIER comentario del archivo y la aplicaría. */
 import { Window } from 'happy-dom';
+import { sanitizeStr as sanitizeStrReal } from '../../../core/trovan.js';
 
 const ENGINE = new URL('../../../../public/registros/engine.js', import.meta.url);
 const GAS = new URL('../../../../GAS/Code.gs', import.meta.url);
@@ -54,13 +55,13 @@ const COLUMNAS_HISTORICAS = [
   '% No viables', 'Observaciones', 'Acción', 'Comentario (matutino)', 'Comentario (vespertino)',
 ];
 
-function buildPayload(records) {
+function buildPayload(records, sanitizeStr = (s) => String(s == null ? '' : s).trim()) {
   const code = bloque(leer(ENGINE), 'function buildAstPayload(records){', 'return { sheetName: AST_SHEET, headers, rows };\n}');
   const ctx = {
     String, Number, Object, Array, JSON, Math, parseFloat, isFinite,
     AST_SHEET: 'Registro_Supervisión',
     isValidDate: (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')),
-    sanitizeStr: (s) => String(s == null ? '' : s).trim(),
+    sanitizeStr,
     astRevisionType: () => 'Completa',
   };
   ctx.globalThis = ctx;
@@ -109,6 +110,41 @@ describe('registros · AsT · payload de Registro_Supervisión', () => {
   it('un valor no numérico se descarta en vez de ensuciar la hoja', () => {
     const { rows } = buildPayload(registro({ flacidez: 'abc' }));
     expect(rows[0][23]).toBe('');
+  });
+});
+
+/* Pauta 3.1 (2026-10-15) · los comentarios matutino y vespertino se cortaban a 200 (el tope por defecto de
+   `sanitizeStr`) sin aviso, aunque el GAS admite 500. Ahora viajan hasta 500 y la casilla no deja escribir más. */
+describe('registros · AsT · los comentarios: tope de 500, el mismo en el envío, la casilla y el GAS', () => {
+  const COMENTARIO = 21, VESPERTINO = 22;
+
+  it('un comentario de 450 caracteres llega ENTERO (antes se cortaba en 200)', () => {
+    const { rows } = buildPayload(registro({ comentario: 'a'.repeat(450), comentario_vesp: 'b'.repeat(450) }), sanitizeStrReal);
+    expect(rows[0][COMENTARIO]).toHaveLength(450);
+    expect(rows[0][VESPERTINO]).toHaveLength(450);
+  });
+
+  it('uno de 600 llega en 500, y los demás campos de texto siguen en 200', () => {
+    const { rows } = buildPayload(registro({
+      comentario: 'a'.repeat(600), comentario_vesp: 'b'.repeat(600), supervisor: 'c'.repeat(600),
+    }), sanitizeStrReal);
+    expect(rows[0][COMENTARIO]).toHaveLength(500);
+    expect(rows[0][VESPERTINO]).toHaveLength(500);
+    expect(rows[0][1]).toHaveLength(200);
+  });
+
+  it('las dos casillas llevan maxlength = el tope del envío, y ése no pasa del tope del GAS', () => {
+    const src = leer(ENGINE);
+    const i = src.indexOf('function renderAst(){');
+    const seg = src.slice(i, src.indexOf('\nfunction ', i + 10));
+    const pago = src.slice(src.indexOf('function buildAstPayload(records){'));
+    const topeEnvio = Number(/sanitizeStr\(a\.comentario\|\|"", (\d+)\)/.exec(pago)[1]);
+    expect(Number(/sanitizeStr\(a\.comentario_vesp\|\|"", (\d+)\)/.exec(pago)[1])).toBe(topeEnvio);
+    expect(seg).toContain(`<textarea name="comentario" maxlength="${topeEnvio}"`);
+    expect(seg).toContain(`<textarea name="comentario_vesp" maxlength="${topeEnvio}"`);
+    const topeGas = Number(/function cleanCell\(val\)[\s\S]*?\.slice\(0, (\d+)\)/.exec(leer(GAS))[1]);
+    expect(topeEnvio).toBe(500);
+    expect(topeEnvio).toBeLessThanOrEqual(topeGas);
   });
 });
 

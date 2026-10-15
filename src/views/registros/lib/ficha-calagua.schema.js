@@ -24,7 +24,9 @@ export const CALAGUA_COLUMNS = [
   { code: 'ep', label: '% Espuma', kind: 'number', min: 0, max: 100, step: 0.1, placeholder: '%' },
   { code: 'sc', label: '% Suciedad', kind: 'number', min: 0, max: 100, step: 0.1, placeholder: '%' },
   { code: 'rc', label: '% Recambio', kind: 'number', min: 0, max: 100, step: 0.1, placeholder: '%' },
-  { code: 'ob', label: 'Observaciones', kind: 'text', placeholder: 'Observación del tanque' },
+  // 2026-10-15 (pauta 3.1) · `maxlength` = el tope del envío (`sanitizeStr`, 200): sin él, lo que pasaba de 200 se
+  // perdía sin aviso; así la casilla no deja escribirlo.
+  { code: 'ob', label: 'Observaciones', kind: 'text', placeholder: 'Observación del tanque', maxlength: 200 },
   // 2026-08. Va la ÚLTIMA, igual que en la hoja (col 48, tras Observaciones), para que
   // el orden visual de la ficha y el del Sheet no se contradigan. Entero ≥ 0 y sin
   // máximo: son toneladas, no un porcentaje.

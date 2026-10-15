@@ -50,7 +50,8 @@ function cell(col, i, data, colorSelect) {
     return `<td><input type="number" name="${name}" value="${vl(data, name)}"${range} step="${col.step}" placeholder="${escapeHtml(col.placeholder)}"></td>`;
   }
   // text
-  return `<td><input type="text" name="${name}" value="${vl(data, name)}" placeholder="${escapeHtml(col.placeholder)}" style="min-width:140px"></td>`;
+  const max = col.maxlength ? ` maxlength="${col.maxlength}"` : '';
+  return `<td><input type="text" name="${name}" value="${vl(data, name)}"${max} placeholder="${escapeHtml(col.placeholder)}" style="min-width:140px"></td>`;
 }
 
 function tankRow(i, data, tankNames, colorSelect) {
