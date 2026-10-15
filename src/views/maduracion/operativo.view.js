@@ -165,6 +165,9 @@ const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: [], 
   kpiSel: '',
   /* 0q·3 · si «A dónde fueron» (🥚 Reproducción) está desplegada. Empieza plegada: eran 13 destinos y 573 px. */
   destAbierto: false,
+  /* Punto 5 de la tanda del 13-10 (usuario, 2026-10-14) · si las revisiones ANTERIORES al último día (🗓️ Historial de
+     revisiones) están desplegadas. Empieza plegado. */
+  revAntesAbierto: false,
   /* 2026-10-03 (punto 5, usuario) · por qué se divide el N5 de cada destino en «A dónde fueron»: '' (no se divide),
      'lote', 'codigo', 'piscina' o 'fechaN5' (DIVISIONES_DESTINO). */
   destDividir: '',
@@ -2547,17 +2550,26 @@ function observacionesHTML(o, p) {
   </div>`;
 }
 
+/* Punto 5 de la tanda del 13-10 (usuario, 2026-10-14) · «sólo las más actuales; el resto en un desplegable»: a la vista,
+   las revisiones del ÚLTIMO día con revisiones (decisión del usuario; `r.filas` va de la más reciente a la más antigua);
+   las anteriores del período, en un desplegable plegado que se recuerda abierto al repintar (como «A dónde fueron»). */
 function historialRevHTML(r, p) {
   if (!r.filas.length) return '';
-  return `<div class="mc-card mc-card-wide">
-    <h4 class="mc-card-h">🗓️ Historial de revisiones <span class="mc-h-note">${nf(r.filas.length)} en ${esc(etiquetaPeriodo(p))}</span></h4>
-    <div class="mc-tablewrap"><table class="mc-table mc-table-sm">
+  const dia = r.filas[0].fecha;
+  const ultimas = r.filas.filter((f) => f.fecha === dia);
+  const antes = r.filas.filter((f) => f.fecha !== dia);
+  const tabla = (filas) => `<div class="mc-tablewrap"><table class="mc-table mc-table-sm">
       <thead><tr><th>Fecha</th><th>Lote</th><th>Etapa</th>${VARIABLES_REVISION.map((v) => `<th>${esc(v.etiqueta)}</th>`).join('')}<th class="r">Salinidad</th><th class="r">Temp.</th></tr></thead>
-      <tbody>${r.filas.map((f) => `<tr class="${f.hongos || f.salinidad.aviso || f.temperatura.aviso ? 'mop-atrasada' : ''}">
+      <tbody>${filas.map((f) => `<tr class="${f.hongos || f.salinidad.aviso || f.temperatura.aviso ? 'mop-atrasada' : ''}">
         <td>${esc(dma(f.fecha))}</td><td>${esc(f.lote || '—')}</td><td>${esc(f.etapa)}</td>
         ${VARIABLES_REVISION.map((v) => `<td>${f.valores[v.id] ? esc(f.valores[v.id]) : '<span class="muted">—</span>'}</td>`).join('')}
         <td class="r">${f.salinidad.valor === null ? '—' : nf(f.salinidad.valor, 2) + (f.salinidad.aviso ? ' ⚠' : '')}</td>
-        <td class="r">${f.temperatura.valor === null ? '—' : nf(f.temperatura.valor, 2) + (f.temperatura.aviso ? ' ⚠' : '')}</td></tr>`).join('')}</tbody></table></div>
+        <td class="r">${f.temperatura.valor === null ? '—' : nf(f.temperatura.valor, 2) + (f.temperatura.aviso ? ' ⚠' : '')}</td></tr>`).join('')}</tbody></table></div>`;
+  return `<div class="mc-card mc-card-wide">
+    <h4 class="mc-card-h">🗓️ Historial de revisiones <span class="mc-h-note">último día ${esc(dma(dia))} (${nf(ultimas.length)}) · ${nf(r.filas.length)} en ${esc(etiquetaPeriodo(p))}</span></h4>
+    ${tabla(ultimas)}
+    ${antes.length ? `<details class="mop-det-avisos" data-mop-rev-antes${vOp.revAntesAbierto ? ' open' : ''}>
+      <summary data-mop-rev-antes-sum>Ver las ${nf(antes.length)} anteriores del período</summary>${tabla(antes)}</details>` : ''}
   </div>`;
 }
 
@@ -3558,6 +3570,9 @@ function bind(root) {
     /* 0q·3 · el título de «A dónde fueron» la pliega y despliega sin repintar; el estado se recuerda en la sesión. */
     const dsum = t.closest('[data-mop-dest-sum]');
     if (dsum) { e.preventDefault(); vOp.destAbierto = !vOp.destAbierto; dsum.parentElement.open = vOp.destAbierto; return; }
+    // Punto 5 de la tanda · las revisiones anteriores al último día, igual: sin repintar y recordado.
+    const rsum = t.closest('[data-mop-rev-antes-sum]');
+    if (rsum) { e.preventDefault(); vOp.revAntesAbierto = !vOp.revAntesAbierto; rsum.parentElement.open = vOp.revAntesAbierto; return; }
     // Punto 5 · «Dividir el N5 de cada destino por»: la tarjeta sigue abierta (está abierta para poder pulsarlo).
     const ddiv = t.closest('[data-mop-dest-div]');
     if (ddiv) { vOp.destDividir = ddiv.dataset.mopDestDiv || ''; vOp.destAbierto = true; repintar(); return; }

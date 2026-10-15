@@ -1234,6 +1234,36 @@ describe('Maduración · operativo · 🔍 Revisiones', () => {
     const hist = card('Historial de revisiones');
     expect(hist.querySelectorAll('tbody tr')).toHaveLength(1);
     expect(hist.querySelector('tbody tr').classList.contains('mop-atrasada')).toBe(true);
+    expect(hist.querySelector('[data-mop-rev-antes]'), 'todas son del último día: no hay desplegable').toBeNull();
+  });
+
+  /* Punto 5 de la tanda del 13-10 (usuario, 2026-10-14) · a la vista, sólo las revisiones del ÚLTIMO día; las anteriores del
+     período, en un desplegable plegado que sigue abierto si se repinta. */
+  it('🔴 punto 5 · el historial enseña el último día y pliega las anteriores; abierto, sigue abierto al repintar', async () => {
+    await montar([...PLANTA_B,
+      INF('18/09/2026', { 'Revisión': 'Entrada', Lote: 'LA', Hongos: 'Ausente', Salinidad: 30, Temperatura: 28 }),
+      INF('16/09/2026', { 'Revisión': 'Entrada', Lote: 'LA', Hongos: 'Ausente', Salinidad: 31, Temperatura: 28 }),
+      INF('12/09/2026', { 'Revisión': 'Lavado', Lote: 'LA', Hongos: 'Presente', Salinidad: 30, Temperatura: 28 })]);
+    abrir('revisiones');
+    const hist = () => card('Historial de revisiones');
+    const fechas = (cont) => [...cont.querySelectorAll(':scope > .mc-tablewrap tbody tr')].map((t) => t.cells[0].textContent);
+    expect(fechas(hist()), 'las dos del 18/09, a la vista').toEqual(['18/09/2026', '18/09/2026']);
+    expect(hist().querySelector('.mc-h-note').textContent).toContain('último día 18/09/2026 (2) · 4 en');
+    const d = hist().querySelector('[data-mop-rev-antes]');
+    expect(d.open, 'plegado al llegar').toBe(false);
+    expect(d.querySelector('summary').textContent).toBe('Ver las 2 anteriores del período');
+    expect(fechas(d), 'las anteriores, de la más reciente a la más antigua').toEqual(['16/09/2026', '12/09/2026']);
+    expect(d.querySelectorAll('tbody tr.mop-atrasada'), 'el aviso de hongos se marca también dentro').toHaveLength(1);
+    click(d.querySelector('summary'));
+    expect(hist().querySelector('[data-mop-rev-antes]').open).toBe(true);
+    cambiar(filtro('sexo'), 'hembras');                     // repinta la sub-vista
+    expect(hist().querySelector('[data-mop-rev-antes]'), 'control: de verdad se repintó (otro nodo)').not.toBe(d);
+    expect(hist().querySelector('[data-mop-rev-antes]').open, 'sigue abierto tras repintar').toBe(true);
+    const abierto = hist().querySelector('[data-mop-rev-antes]');
+    click(abierto.querySelector('summary'));
+    cambiar(filtro('sexo'), '');
+    expect(hist().querySelector('[data-mop-rev-antes]'), 'control: de verdad se repintó').not.toBe(abierto);
+    expect(hist().querySelector('[data-mop-rev-antes]').open, 'cerrado, sigue cerrado').toBe(false);
   });
 
   it('sin revisiones lo dice', async () => {
