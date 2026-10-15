@@ -277,7 +277,7 @@ function patRows() {
    que alguien registre un análisis. Medido el 2026-08-31 contra el despliegue real
    (GET ?p=rows + enumeración de pestañas): el documento tiene 35 hojas y NINGUNA casa
    /patolog/i. Y eso es prueba, no indicio: el GAS crea la hoja en el primer envío
-   (`if (!ws) ss.insertSheet(...)`, Code.gs:273-275), así que «sin pestaña» equivale a
+   (`if (!ws) ss.insertSheet(...)`, en el doPost de Code.gs), así que «sin pestaña» equivale a
    «nunca se ha capturado». El mensaje de abajo es, pues, CIERTO hoy.
    ⚠ Por eso mismo NO puede ser una constante, que es lo que era: el día que entre el
    primer análisis la hoja nacerá y sus filas llegarán al store, y un cartel fijo

@@ -14103,8 +14103,8 @@ function madBsVaciar(){
 // ── Maduración · Registro reproductivo (desoves/mortalidades por lote de Trovan) ──
 // Ficha de ACCIÓN (no grilla): el usuario pega los Trovan, elige fecha+tipo y procesa.
 // La lógica pura vive en __rgLib.reproductivo (esquemas + buildEventBatch); aquí solo
-// UI + envío por postPayload. NOTA: aún sin lectura de la MATRIZ → sin validación de
-// existencia/estado (llega en una tanda posterior); por ahora registra lo pegado.
+// UI + envío por postPayload. Cada código se valida contra la MATRIZ leída (buildEventBatch:
+// no existe, sin ubicación, ya muerta, dos vivas…); sin MATRIZ no se registra nada.
 const _RINP = "padding:6px 8px;font-size:13px;border:1px solid #cbd5e1;border-radius:6px";
 const _RLBL = "display:flex;flex-direction:column;gap:3px;font-size:11px;font-weight:600;color:#475569";
 let _reproSub = "eventos"; // sub-sección activa: eventos | alta (transferencias en T4)
@@ -15091,8 +15091,8 @@ function _madReproShowAltaReport(rep, okSent){
   el.innerHTML=h;
 }
 
-// TR-ID secuencial local (TR-000NNN). Sin lectura de la hoja, se lleva un contador en
-// localStorage; en una tanda posterior se reconcilia contra el máximo real del Sheet.
+// TR-ID secuencial (TR-000NNN). El que manda es el siguiente al máximo de la hoja de traslados
+// (nextTrIdFromRows, en madReproTransfer); este contador en localStorage sólo se usa si no se pudo leer.
 function _reproNextTrId(){ const last=localStorage.getItem("larv4_mad_trseq")||""; return window.__rgLib.nextTrId(last?[last]:[]); }
 function _reproBumpTrSeq(trId){ try{ localStorage.setItem("larv4_mad_trseq", trId); }catch(_){} }
 function madReproAddDest(){ const c=document.getElementById("repro-t-dests"); if(c) c.insertAdjacentHTML("beforeend", _reproDestBlockHTML()); }

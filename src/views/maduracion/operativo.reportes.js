@@ -46,7 +46,7 @@ import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { fnv1a } from '../supervisor/fichaPdf.js';
 
 /** Los reportes disponibles, en su orden. La sub-vista se pinta desde esta lista, y una pastilla que no hiciera
- *  nada engaña más que una lista corta: el de Broodstock (F7.3) se añade AQUÍ cuando exista.
+ *  nada engaña más que una lista corta: un reporte entra AQUÍ cuando existe (así entró el de Broodstock, F7.3).
  *  `lote` marca los que se imprimen de UN lote y necesitan elegirlo. `filtros` (0r·4, 2026-09-28) marca los que llevan
  *  en su barra el «Lote → Código genético» del tablero: los MISMOS filtros, no unos propios (F7.1·6 y ·8). */
 export const REPORTES = [

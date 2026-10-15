@@ -77,7 +77,7 @@ let _ctxCache = null;
 
 /**
  * Construye el contexto compartido por todas las sub-vistas.
- * `larvCM`/`tanqCM` → filtrados por corrida+mes (línea base poblacional).
+ * `larvCM`/`tanqCM` → filtrados por corrida (línea base poblacional).
  * `larvWin`/`tanqWin` → además por el filtro de fecha global (ventana visible).
  */
 export function buildContext(vState) {

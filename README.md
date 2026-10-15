@@ -18,8 +18,9 @@ npm test           # Vitest (tests de la capa de datos)
 npm run lint       # ESLint
 ```
 
-> SheetJS (XLSX) y D3 se sirven desde `public/vendor/` —el mismo origen, con su `integrity` en
-> `index.html`—, no desde un CDN (las versiones de npm están deprecadas/desactualizadas). Chart.js sí
+> SheetJS (XLSX) y D3 se sirven desde `public/vendor/` —el mismo origen, con su `integrity`: SheetJS en
+> su etiqueta de `index.html` y D3 en `src/main.js` (`cargarD3`, que lo carga al abrir Biología Molecular;
+> desde el 2026-10-01)—, no desde un CDN (las versiones de npm están deprecadas/desactualizadas). Chart.js sí
 > es dependencia de npm. El gemelo `index (8)` no tiene servidor del que pedirlo: lleva SheetJS
 > **incrustado**, byte a byte el de `public/vendor/` (lo vigila `verificar-xlsx-index8`).
 
@@ -29,6 +30,11 @@ npm run lint       # ESLint
 `dependencies` sólo lleva `chart.js` y `leaflet`, y ninguno de los paquetes señalados
 —vitest, vite, esbuild, postcss, nanoid, js-yaml, brace-expansion— entra en el bundle. **Exposición
 en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midió:
+
+- 🆕 **Re-medido el 2026-10-15: 11 avisos (3 moderate, 6 high, 2 critical)**, todos de desarrollo: a los de
+  arriba se suman `@vitest/mocker`, `vite-node`, `tinypool` y `source-map-js`, que vienen con vitest y vite.
+  `npm audit --omit=dev` da **0**. `dependencies` lleva ahora también `three` y `qrcode-generator` (🏭 Planta,
+  04/05-10), y ninguno de los dos está entre los avisos.
 
 - **`npm audit fix` (sin `--force`) NO cambia ni un paquete**: 0 añadidos, 0 quitados, 0 cambiados
   sobre 142 auditados. ⚠ Y aun así npm imprime «fix available via `npm audit fix`» en cuatro de
@@ -113,7 +119,8 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   Matriz patógeno×ubicación, tendencias y export Excel. Restyle tipo SCADA.
   Incluye el panorama **General** (tablero-scorecard por área) y **Calidad de
   Agua** (analizador multiparamétrico con WQI, doble lente Por parámetro/Por
-  ubicación). Sub-vista **Patología en fresco** pendiente (a la espera de su
+  ubicación, y **⚗️ Ensayo** —promedio antes/después, diferencia y % de cambio de S‰, pH, calcio,
+  magnesio y potasio— cuando hay parejas antes/después, p. ej. Maduración). Sub-vista **Patología en fresco** pendiente (a la espera de su
   hoja en el Google Sheet).
   La barra de mes de General, Bacteriología y Calidad de Agua acaba, tras el último mes, en
   **📅 Todo el registro**, y una muestra SIN corrida (Maduración, Algas, Otras) va al mes de su fecha
@@ -763,7 +770,9 @@ Dos consecuencias que conviene tener presentes al desplegar:
 
 - **Vitest** (`npm test`): la capa de datos (`core/*`, `supervisor/stats`, `microbiologia/data`,
   las fichas de Registros…) y el monolito `public/registros/engine.js`, que se arranca entero en
-  happy-dom sobre el shell real. **ESLint flat v9 + Prettier** (`npm run lint`).
+  happy-dom sobre el shell real. **ESLint flat v9** (`npm run lint` = `eslint src`, lo que corre la CI;
+  desde el 2026-10-15 `eslint .` también sale limpio: `public/vendor/` fuera y con sus globales `public/sw.js`
+  y `scripts/`). **Prettier** va aparte, con `npm run format`: no lo corre ni `lint` ni la CI.
 - ⚠ **La CI corre las pruebas con Node 24** (`deploy.yml`; hasta el 2026-09-19, con Node 20), no con el
   Node de tu equipo, y happy-dom no se comporta igual en todas las versiones: el 2026-09-18 una prueba en
   verde aquí tumbó la CI —y con ella el despliegue— porque su simulación del `localStorage` no

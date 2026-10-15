@@ -111,7 +111,7 @@ export function mountShell(appEl) {
   on(EV.DATA, () => { renderDateBar(); if (viewRepaintsOnData(store.currentView)) renderCurrentView({ conservarPosicion: true }); });
 }
 
-// Vistas principales del sistema. Las DIEZ están desarrolladas (la décima, 🏭 Planta, en construcción por tandas): aquí ya no queda ninguna
+// Vistas principales del sistema. Las DIEZ están desarrolladas (la décima, 🏭 Planta, desde el 2026-10-04): aquí ya no queda ninguna
 // «pendiente», y ninguna entrada declara esa marca.
 // ⚠ Esta línea decía «(las pendientes aún no están desarrolladas)» y llevaba tiempo siendo falsa,
 // exactamente igual que el respaldo que la acompañaba —el que esquivaba las vistas marcadas como

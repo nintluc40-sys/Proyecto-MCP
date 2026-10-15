@@ -57,7 +57,7 @@ export const CAL_PARAMS = [
   P('cl_total', 'Cloro total (mg/L)', 'Cloro total', 'mg/L', 'cloro'),
   P('cl_comb', 'Cloro combinado (mg/L)', 'Cloro combinado', 'mg/L', 'cloro'),
 ];
-// Ensayo antes/después (Maduración): pares para la comparativa iónica (tanda posterior).
+// Ensayo antes/después (Maduración): pares para la comparativa iónica del apartado ⚗️ Ensayo (calEnsayoData).
 export const CAL_PARAMS_ENSAYO = [
   P('sal_a', 'S‰ antes', 'S‰ antes', '‰', 'ensayo'), P('sal_d', 'S‰ después', 'S‰ después', '‰', 'ensayo', ['S‰ despues']),
   P('ph_a', 'pH antes', 'pH antes', '', 'ensayo'), P('ph_d', 'pH después', 'pH después', '', 'ensayo', ['pH despues']),
