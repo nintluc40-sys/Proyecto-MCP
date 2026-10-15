@@ -905,6 +905,22 @@ function resize() {
   renderer.setSize(W, H, false); camera.aspect = W / H; camera.updateProjectionMatrix();
   wasFar = null;   // el ancho decide si el rótulo va corto: rehacerlos
   if (!userMoved && !selected && camera.position.lengthSq() > 0) { frameView('iso'); fly.dur = 1; }
+  medirFranjaMenu();
+}
+/* 3.7 (2026-10-15) · en pantalla angosta el ☰ del menú (`.nav-toggle`, fijo a la izquierda) tapaba el borde de los rótulos
+   pegados a la izquierda —el punto de color de la etapa—. `franjaMenu` = lo que invade la maqueta, y `despejarRotulos`
+   corre a su derecha los rótulos de módulo y sala que no choquen al correrse. 0 si la pantalla es ancha o el ☰ no se ve
+   (pantalla completa). Se mide en `resize`, que además rehace los rótulos (`wasFar = null`). */
+let franjaMenu = 0;
+function medirFranjaMenu() {
+  franjaMenu = 0;
+  const t = document.querySelector('.nav-toggle');
+  if (!t || !compacto()) return;
+  const q = t.getBoundingClientRect();
+  if (!q.width) return;
+  const arriba = document.elementFromPoint(q.left + q.width / 2, q.top + q.height / 2);
+  if (!arriba || !t.contains(arriba)) return;
+  franjaMenu = Math.max(0, Math.ceil(q.right + 2 - vp.getBoundingClientRect().left));
 }
 controls.addEventListener('start', () => { userMoved = true; fly = null; hideTip(); });
 function hideTip() { const tp = $('#tip'); if (tp) tp.hidden = true; if (hovered) { hovered = null; paintWater(); } }
@@ -1463,8 +1479,12 @@ function place(el, p) {
   if (el._v !== 1) { el.style.visibility = ''; el._v = 1; cambio = true; }
   const x = Math.round((tmp.x + 1) / 2 * W * 2) / 2, y = Math.round((1 - tmp.y) / 2 * H * 2) / 2;
   if (x === el._x && y === el._y) return cambio;
-  el._x = x; el._y = y; el.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0) translate(-50%,' + (el.dataset.ty || '-50%') + ')';
+  el._x = x; el._y = y; ponRotulo(el, x, y);
   return true;
+}
+/** Pinta el rótulo en (x, y); `_xr` es la x pintada (despejarRotulos puede correrlo de su punto, `_x`, por el ☰). */
+function ponRotulo(el, x, y) {
+  el._xr = x; el.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0) translate(-50%,' + (el.dataset.ty || '-50%') + ')';
 }
 /* Rótulos que aún chocan: se ocultan (clase .tapado) los de menor prioridad. Gana el módulo o sala elegido, luego el que
    tiene más alertas (⚠ y ⏳), luego larvicultura sobre maduración, y a igualdad el orden del plano. El rótulo va
@@ -1477,12 +1497,18 @@ const porPrioridad = (a, b) => b.p[0] - a.p[0] || b.p[1] - a.p[1] || b.p[2] - a.
 function despejarRotulos() {
   if (labelsEl.style.display === 'none') return;
   const puestos = [], M = 2;
+  const caja = (el, x) => [x - el._w / 2 - M, el._y - el._h - M, x + el._w / 2 + M, el._y + M];
+  const chocaCon = (r) => puestos.some((q) => r[0] < q[2] && r[2] > q[0] && r[1] < q[3] && r[3] > q[1]);
   groups.map((g, i) => ({ g, i, p: prioridadRotulo(g) })).sort(porPrioridad).forEach(({ g }) => {
     const el = g.label;
     if (el._v !== 1) { el.classList.remove('tapado'); return; }
     if (!el._w) { el._w = el.offsetWidth; el._h = el.offsetHeight; }
-    const r = [el._x - el._w / 2 - M, el._y - el._h - M, el._x + el._w / 2 + M, el._y + M];
-    const choca = puestos.some((q) => r[0] < q[2] && r[2] > q[0] && r[1] < q[3] && r[3] > q[1]);
+    // 3.7 · bajo el ☰, a su derecha, pero sólo si ahí no choca: si chocaría, en su sitio (como antes, con el borde tapado)
+    let x = el._x;
+    if (franjaMenu > 0 && el._x - el._w / 2 < franjaMenu && !chocaCon(caja(el, franjaMenu + el._w / 2))) x = franjaMenu + el._w / 2;
+    if (x !== el._xr) ponRotulo(el, x, el._y);
+    const r = caja(el, x);
+    const choca = chocaCon(r);
     el.classList.toggle('tapado', choca);
     if (!choca) puestos.push(r);
   });
