@@ -2,8 +2,8 @@ import js from '@eslint/js';
 import globals from 'globals';
 
 export default [
-  // El monolito heredado y los artefactos no se lintan.
-  { ignores: ['dist/**', 'public/registros/**', 'node_modules/**'] },
+  // El monolito heredado, los artefactos y las librerías de terceros (minificadas) no se lintan.
+  { ignores: ['dist/**', 'public/registros/**', 'public/vendor/**', 'node_modules/**'] },
 
   js.configs.recommended,
 
@@ -33,6 +33,30 @@ export default [
   // Tests (Vitest) y archivos de config (Node).
   {
     files: ['**/*.test.js', '*.config.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: { ...globals.node },
+    },
+  },
+
+  // El service worker (script clásico: `register('./sw.js')` sin `type`). `globals.serviceworker` no trae AbortController.
+  {
+    files: ['public/sw.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'script',
+      globals: { ...globals.serviceworker, AbortController: 'readonly' },
+    },
+    rules: {
+      // La misma convención que en src: `catch (_) {}` es un fallback silencioso intencional.
+      'no-unused-vars': ['error', { caughtErrorsIgnorePattern: '^_' }],
+    },
+  },
+
+  // Las auditorías que corre la CI (Node).
+  {
+    files: ['scripts/**/*.mjs'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
