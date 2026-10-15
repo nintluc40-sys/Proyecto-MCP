@@ -141,15 +141,27 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   - **📋 Operativo** — el TABLERO del registro operativo, cargado DIFERIDO. Barra de filtros común
     (período —con **Rango** (2026-10-03): desde la fecha elegida hasta la foto, que es su «Hasta»— · foto al día ·
     sala → tanque · lote → código · estado · sexo · piscina · camaronera, con los
-    activos como etiquetas quitables) y sus sub-vistas (la lista viva es `SUBS`, en `operativo.view.js`):
-    **📊 Estado actual** (siete indicadores; el mapa de planta, que se colorea por el lote, por el tanque o por
+    activos como etiquetas quitables) y sus sub-vistas (la lista viva es `SUBS`, en `operativo.view.js`).
+    🔑 **Sala, tanque, lote, código, piscina y camaronera admiten VARIOS valores a la vez** (usuario, 2026-10-13/14,
+    etapas A, B y C): un desplegable de casillas por dimensión y una etiqueta por valor; lo elegido se SUMA (BA + BC se
+    ven juntos, no se comparan), y entre dimensiones manda la regla de siempre (Lote → Código; con tanques marcados se
+    ven SÓLO esos, y una sala marcada sin ninguno de sus tanques no suma). El filtro guarda listas —`F.lotes`,
+    `F.codigos`, `F.salas`, `F.tanques` (pares «sala|n»: los números se repiten entre salas), `F.piscinas`,
+    `F.camaroneras`; vacía = todos— y `normalizarFiltro` acepta un valor o una lista. Estado y sexo siguen de UN valor.
+    Con varios: «Ciclo» pide un solo lote, Ocupación con varios tanques es «tanques con lo filtrado», el detalle de sala
+    sólo se abre solo con UNA sala, y 🦠/🧬/🌊 heredan lote o sala sólo si hay UNO.
+    **📊 Estado actual** (siete indicadores —bajo el gráfico de Vivos, los vivos ♀/♂/total al INICIO del período, los
+    ACTUALES (la cifra de la tarjeta) y la diferencia; bajo el de Mortalidad, los muertos ♀/♂ del período, con la regla
+    de la tarjeta (2026-10-14)—; el mapa de planta, que se colorea por el lote, por el tanque o por
     sus partes —los modos viven en `MODOS_MAPA`— y abre bajo él el LIENZO del tanque pulsado; las alertas, con
     📉 Tendencias y ⏳ Permanencia; últimos registros y ⏳ **Cuarentena por lote y sala**, una barra por par con su
     fecha de ingreso —la de la sala, y la del lote si entró antes en otra—), **🏠 Salas** (tarjeta por sala y su detalle
     —con la hora de su último parte—,
     con la temperatura y el oxígeno por hora de UN día —«Día», por defecto el de la foto, con ◀ ▶— o del período
     entero —«Período»: el mapa de calor y las líneas por día—),
-    **🧬 Lotes** (tabla maestra —con el peso ♀ y ♂ de cada lote, el del ⚖️ Saldo al cierre de la foto—,
+    **🧬 Lotes** (tabla maestra —con el peso ♀ y ♂ de cada lote, el del ⚖️ Saldo al cierre de la foto, y desde el
+    2026-10-14 en la MISMA fila: cada fecha de Ingreso con su piscina, los vivos ♀ y ♂, los muertos acumulados (sin los
+    descartes) y la fertilidad, N2 y N5 del CICLO del lote, de su ingreso a la foto o a su cierre—,
     ficha de un lote —origen, CASCADA DEL CUADRE, curva de vivos y reproducción—,
     comparativa por lote, código genético o piscina —por código y por piscina, cada lote con el origen de su Ingreso:
     sus parejas «juntas» (la fila «A/B», por defecto) o «separadas» (los desoves de la pareja, enteros en cada uno y con
@@ -160,7 +172,10 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     desglose cruzado por sala · tanque · lote, Pareto de motivos de cierre, distribución por hora, calor
     sala × día y lotes cerrados), **🔍 Revisiones del supervisor** (nauplios en sus 4 etapas, alcalinidad por área día y
     noche, mortalidad en desove y recuperación —con la temperatura del tanque de desove: la última y la media del período,
-    avisando por encima de 40 °C—, y frecuencia de observaciones de tanque), **🛢 Tanques** (tabla
+    avisando por encima de 40 °C—, y frecuencia de observaciones de tanque; desde el 2026-10-14 su historial enseña
+    las revisiones del ÚLTIMO día y pliega las anteriores del período, y la sub-vista tiene un filtro PROPIO, «Lote de
+    las revisiones», que sustituye al lote del tablero en la revisión de nauplios, su historial y la mortalidad en
+    desove y recuperación —la alcalinidad y las observaciones siguen el tablero—), **🛢 Tanques** (tabla
     maestra de los ocupados —con el día y la HORA de su último parte— y, al pulsar una fila, su ficha:
     composición, curva de vivos, partes con su hora,
     observaciones y movimientos), **🥚 Reproducción** (totales, los desoves pendientes de N5 arriba, la tabla
@@ -232,7 +247,9 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     **Hembras** (ranking por desoves, buscador de Trovan, hembras que nunca han
     desovado, distribución del intervalo de recuperación e historial completo por
     individuo) y **🩺 Calidad** (comprobaciones del registro, con su contador en la pastilla).
-    Filtros de período (mes o todo) + Sala + Tanque.
+    Filtros de período (mes o todo) + Sala + Tanque + Lote + Código genético, en un solo sentido: desde el 2026-10-13,
+    con sala o tanque elegidos, el Lote y el Código ofrecen sólo los de esa ubicación (las hembras que están HOY ahí y
+    los desoves y mortalidades registrados ahí; `lotesOf`/`codigosOf`, en `src/views/maduracion/data.js`).
     *(0o y 0p, 2026-09-27: mapa de salas por bandas de tasa que filtra al pulsarlo, calendario de desoves
     tanque × día —sustituido el 2026-09-29 por «Hembras por su último desove»: las vivas de cada tanque en
     ≤ 7 · 8–21 · > 21 días desde su último desove, o que nunca desovaron—, línea de vida de cada hembra, familias, supervivencia por familia, alerta de reemplazo por
@@ -350,7 +367,7 @@ del módulo se quede sin contraparte en el monolito.
 | Ficha | Hoja | Grano |
 |---|---|---|
 | 📥 **Ingreso** | `Maduración Ingreso` | (lote, composición, sala, tanque) |
-| ⚖️ **Saldo** | *(derivada)* | vista del libro mayor y resumen por sala y lote —sus PDF («🖨 PDF de todo» y el de cada sala o lote) en **dos presentaciones**, elegidas en ⚙️ Variables (usuario, 2026-10-04): la **estándar** en tarjetas y la **tabulada** «como el Último parte» (por sala, su franja y la tabla de sus tanques con su total —un tanque de dos lotes es UNA fila—; los lotes en tablas por tema; totales sólo de lo que se suma, los % en «—»; A4 horizontal)—, y «🖨 Último parte»: el PDF del último parte de mortalidad registrado en cada sala (la ronda de hora más tardía de la fecha, con todos sus tanques y los vivos del libro); no escribe |
+| ⚖️ **Saldo** | *(derivada)* | vista del libro mayor y resumen por sala y lote —con, desde el 2026-10-13, variables nuevas: por sala, su último día con partes (cuántos y a qué horas, bajas, cópulas y mudas con su %) y el alimento de su último día; por lote, descartes del día, biomasa, alimento (en tanques compartidos, por animales), huevos y N2, y desoves por 100 ♀—; sus PDF («🖨 PDF de todo» y el de cada sala o lote) en **tres presentaciones**, elegidas en ⚙️ Variables (usuario, 2026-10-04 y 2026-10-13): la **estándar** en tarjetas, la **tabulada** «como el Último parte» (por sala, su franja y la tabla de sus tanques con su total —un tanque de dos lotes es UNA fila—; los lotes en tablas por tema; totales sólo de lo que se suma, los % en «—»; A4 horizontal) y la **Administrativa**, como los reportes del MCP (A4 vertical; indicadores «del día» = el día más reciente de las salas del alcance; tablas compactas; discrepancias del libro; código verificador `MAD-SAL-AAAAMMDD-XXXXXX` por huella del contenido; firma «Responsable del turno»)—, y «🖨 Último parte»: el PDF del último parte de mortalidad registrado en cada sala (la ronda de hora más tardía de la fecha, con todos sus tanques y los vivos del libro); no escribe |
 | 🔄 **Movimientos** | `Maduración Movimientos` | el **tramo** origen → destino |
 | 🥚 **Desoves** | `Maduración Lotes` | (fecha, lote, código genético) |
 | 📋 **Inf. Supervisor** | `Maduración Mortalidad Desove` | (fecha, lote, código genético): mortalidad ♀ + una fila por revisión de nauplios |
@@ -479,6 +496,11 @@ la última guardada en el equipo, aunque sea de otro día—, un tanque con 0 vi
 deshabilitadas; tras un ingreso o una transferencia, 🔄 Ver vivos con cantidad lo habilita. Sin desbloqueo a mano; sólo en la
 fecha de hoy (también entre las 00:00 y las 02:00, el día de trabajo de la grilla); un tanque que ya trae cifras no se
 bloquea (va en ámbar, avisado); y sin referencia o con el libro incompleto no se bloquea nada (`_madTqAplicarBloqueo`).
+📊 **«Partes del día · todas las salas»** (usuario, 2026-10-13): tras 🔄 Ver vivos, debajo de la grilla de Tanques, cada
+parte que llegó a la hoja ese día —sala, parte, hora y tanques— con sus seis cifras (muertos, descarte, cópulas y muda),
+el total de cada sala con cuántos partes se enviaron y el total del día, como el «Resumen general» de Alimentación. Sale
+de las mismas filas que acaba de leer el libro y la fecha es la de la grilla; lo de este dispositivo sin enviar se avisa
+aparte; 🖨 PDF con la misma tabla.
 
 🔑 Dos reglas que explican casi todo el diseño y no se deducen del código:
 
@@ -808,6 +830,12 @@ rechazado por su entorno (esquema, hoja no permitida…) lo olvida; entre medias
 
 ⚙ Config → **«🔗 Probar conexión»** es quien dice si el sello entró, sin escribir nada.
 
+🔑 **El sello ata los ENVÍOS, no las LECTURAS** (3.15 b, 2026-10-12): el ⚖️ Saldo lee «Maduración Mortalidad Desove» y
+su resumen lee «Maduración Tratamientos» SIEMPRE, sin preguntar a `?p=ver`; sólo una respuesta «Hoja no permitida» (un
+GAS que de verdad no conoce la hoja) las da por vacías. Hasta ese día, con el sello del GAS distinto del de la app, las
+daba por vacías sin pedirlas —un atajo de cuando eran hojas nuevas— y el Saldo descuadraba (medido el 09-10: +2 ♀ en
+Sala 4 · T1 · BP).
+
 ### 2 · La FIRMA (`MAD_ESQUEMA_FIRMA`) — «¿el CLIENTE trae el esquema de hoy?»
 
 Un cliente viejo que cree una hoja le fija la cabecera equivocada **para siempre**, y desde ahí el
@@ -1039,6 +1067,14 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   del día llevan una cifra que la hoja leída aún no tiene. Sin la hoja leída (o si la relectura falla) no sale: le
   faltarían los lotes de los demás equipos. Motor `madDesTotalesDia` y gemelo `desovesTotalesPorDia`; los dos
   fusionan con la misma función que la lista (`madDesFundidos` / `desovesFundidos`).
+- **Desoves · «⚠ ¿Desove REPETIDO?»** (H1 de la auditoría del 2026-10-13): la llave del GAS lleva la Fecha, así que
+  el mismo desove enviado con una fecha y reenviado con la del día de al lado deja DOS filas (pasó el 08/09-10 y el
+  11/12-10). Antes de enviar —en el ☁️ de la ficha, con lo de pantalla y lo guardado con 💾, y en el 🔄 global—, cada
+  fila que va a CREAR una llave nueva se compara con la hoja recién leída y con el resto del envío: mismo lote y
+  código, día anterior o siguiente, mismos desoves y huevos (> 0). Si casa, se pregunta: «Cancelar» no envía nada de
+  Desoves; «Aceptar» envía y recuerda que la fila de la otra fecha hay que BORRARLA a mano en la hoja (la app no
+  borra filas). Si la hoja no se puede leer, se envía como antes. Motor `madDesRepetidos` y gemelo `desovesRepetidos`
+  (con su paridad); la lectura fresca es `_madHojaFresca`, la misma del aviso de ronda repetida de Tanques.
 - **Desoves · «📥 Cargar»** (usuario, 2026-09-24), al lado de «✕ Quitar»: lista lo que está en
   **producción** a la fecha del desove —cada composición del Ingreso con vivos en una sala donde su
   lote produce— y un toque rellena lote, código genético y piscina **a la vez**, para que no se
