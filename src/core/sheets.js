@@ -746,7 +746,6 @@ function commit(d, firstLoad) {
 // toda la vista sin que hubiera cambios reales.
 let _lastFingerprint = '';
 export function getLastFingerprint() { return _lastFingerprint; }
-export function setLastFingerprint(fp) { _lastFingerprint = fp; }
 
 /** Hash rodante barato (djb2) sobre las claves y los valores de todas las filas.
  *

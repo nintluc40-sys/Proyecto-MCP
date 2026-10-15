@@ -24,6 +24,7 @@ import {
   ACTIVIDAD_OPTS,
   MODULO_OPTS,
   LUGAR_OPTS,
+  CHECK_ITEMS,
   buildTrasladoPayload,
 } from './ficha-traslado.schema.js';
 
@@ -56,7 +57,8 @@ function motorTraslado() {
   createContext(ctx);
   new Script(
     code + '\n;globalThis.__api = { buildTrasPayload, TRAS_HEADERS, TRAS_SHEET, TRAS_ACTIVIDAD_OPTS,'
-    + ' TRAS_REV_MIN, TRAS_REV_INI, TRAS_MODULO_OPTS, TRAS_LUGAR_OPTS, trasFilaId, trasMinutosEntre, trasNum, trasTxt, trasCamiones };',
+    + ' TRAS_REV_MIN, TRAS_REV_INI, TRAS_MODULO_OPTS, TRAS_LUGAR_OPTS, TRAS_CHECK_ITEMS, trasFilaId, trasMinutosEntre, trasNum,'
+    + ' trasTxt, trasCamiones };',
   ).runInContext(ctx);
   return ctx.__api;
 }
@@ -148,6 +150,14 @@ describe('Traslado · el monolito y el módulo ES coinciden', () => {
     // Los genéricos se retiraron el 2026-08-25 y no pueden volver por ninguno de los dos lados.
     expect(m.TRAS_LUGAR_OPTS).not.toContain('Peaje');
     expect(m.TRAS_LUGAR_OPTS).not.toContain('Gabarra');
+  });
+
+  /* 2026-10-15 (pauta 2.7) · el catálogo «Check» del módulo no lo importaba nadie y nada lo comparaba con el del
+     motor: podía divergir en silencio. Ahora es la misma costura que el de Lugar. */
+  it('comparten el catálogo de Check (lo que se revisa)', () => {
+    const m = motorTraslado();
+    expect(m.TRAS_CHECK_ITEMS).toEqual(CHECK_ITEMS);
+    expect(m.TRAS_CHECK_ITEMS).toEqual(['Oxigenómetro', 'Linterna', 'Bandeja', 'Esfero']);
   });
 
   it('comparten el catálogo de Actividad y el mínimo de revisiones', () => {

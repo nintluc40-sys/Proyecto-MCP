@@ -115,6 +115,8 @@ export const LUGAR_OPTS = [
   'Camaronera',
   'Precría',
 ];
+/** Lo que se revisa antes de salir. ⚠ DUPLICADA en `TRAS_CHECK_ITEMS` del monolito: la vigila
+ *  `ficha-traslado.paridad.test.js`, como `LUGAR_OPTS`. */
 export const CHECK_ITEMS = ['Oxigenómetro', 'Linterna', 'Bandeja', 'Esfero'];
 
 /** Camaroneras de destino. ES LA MISMA LISTA que `DESTINO_OPTS` del monolito
