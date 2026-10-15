@@ -6125,8 +6125,57 @@ function _madCerrarPartesDe(fecha, sala){
   list.forEach(function(r){ const d = r && r.data; if(d && d.fecha === fecha && d.sala === sala && !d.cerrado){ d.cerrado = 1; n++; } });
   if(n) saveMadList("tanques", list);
 }
-/** «⚠ no es hoy» junto al campo de fecha de la grilla, cuando su fecha no es la de hoy. */
-function _madGridNoEsHoyHTML(ficha, fecha){
+/* 2.12-B (2026-10-15, usuario) · EL RELOJ DEL EQUIPO FRENTE A LA HORA DE INTERNET. «Hoy» sale del reloj del equipo
+   (`today()`): con el DÍA mal puesto, la grilla abría en ese día y «⚠ no es hoy» no saltaba. Servida la app por HTTPS
+   (Pages: el MCP y el index (8) de los equipos), la cabecera `Date` de un HEAD al propio sitio da la hora real
+   (`no-store`: una respuesta guardada traería su fecha vieja). En file:// no se mide y todo sigue como antes. Al volver a
+   la app se vuelve a medir (como mucho cada 10 min); menos de 2 min de diferencia es ruido (la cabecera va en segundos). */
+const _RELOJ_CADA_MS = 600000, _RELOJ_RUIDO_MS = 120000, _RELOJ_AVISO_MS = 300000;
+let _relojDesfase = null, _relojMedidoEn = 0, _relojAvisado = false;   // desfase = hora real − reloj del equipo (ms)
+async function _relojMedir(){
+  // ni en file:// ni en localhost (pruebas y desarrollo: no hay servidor que dé la hora, y las pruebas no tocan la red)
+  if(!/^https?:$/.test(location.protocol) || /^(localhost|127\.|\[::1\])/.test(location.hostname)
+    || Date.now() - _relojMedidoEn < _RELOJ_CADA_MS) return;
+  _relojMedidoEn = Date.now();
+  const ctl = typeof AbortController === "function" ? new AbortController() : null;
+  const corte = ctl ? setTimeout(function(){ ctl.abort(); }, 8000) : null;
+  try{
+    const t0 = Date.now();
+    const r = await fetch(location.href.split("#")[0], { method:"HEAD", cache:"no-store", signal: ctl ? ctl.signal : undefined });
+    const t1 = Date.now(), srv = Date.parse((r.headers && r.headers.get("Date")) || "");
+    if(!isFinite(srv)) return;
+    const d = srv + 500 + (t1 - t0) / 2 - t1;   // la cabecera trunca al segundo: +500 ms de media
+    _relojDesfase = Math.abs(d) < _RELOJ_RUIDO_MS ? 0 : d;
+  }catch(_){ return; }
+  finally{ if(corte) clearTimeout(corte); }
+  if(isMadMod(curMod) && (curTab === "salas" || curTab === "tanques")) _madGridMarcar(curTab);
+  if(!_relojAvisado && Math.abs(_relojDesfase) >= _RELOJ_AVISO_MS){
+    _relojAvisado = true;
+    toast("⚠ El reloj de este equipo va " + _relojTexto(_relojDesfase) + " frente a la hora de internet: corrige su fecha y hora (de ahí salen el día de las grillas y la hora de los partes).", "warn", 15000);
+  }
+}
+/** «3 min atrasado», «2 h adelantado», «1 día(s) atrasado»: `d` = hora real − reloj del equipo. */
+function _relojTexto(d){
+  // por lo REDONDEADO: un día medido con la cabecera (en segundos) puede quedarse unos ms corto y no debe salir «24 h»
+  const a = Math.abs(d), h = Math.round(a / 36e5), m = Math.round(a / 6e4);
+  return (h >= 24 ? Math.round(a / 864e5) + " día(s)" : m >= 60 ? h + " h" : m + " min") + (d > 0 ? " atrasado" : " adelantado");
+}
+/** El día real según internet; null si no se pudo medir o si el reloj va bien. */
+function _relojHoy(){
+  if(!_relojDesfase) return null;
+  const n = new Date(Date.now() + _relojDesfase);
+  return n.getFullYear() + '-' + pad(n.getMonth()+1) + '-' + pad(n.getDate());
+}
+try{
+  setTimeout(function(){ _relojMedir(); }, 3000);
+  document.addEventListener("visibilitychange", function(){ if(document.visibilityState === "visible") _relojMedir(); });
+}catch(_){}
+/** «⚠ no es hoy» junto al campo de fecha de la grilla, cuando su fecha no es la de hoy. 2.12-B: si el DÍA del equipo no es
+ *  el real (`_relojHoy`), manda el real, con la misma marca y su propio título (`sinReloj` evita volver a esta rama). */
+function _madGridNoEsHoyHTML(ficha, fecha, sinReloj){
+  const real = sinReloj ? null : _relojHoy();
+  if(real && real !== today()) return fecha === real ? "" : _madGridNoEsHoyHTML(ficha, "", true)
+    .replace('title="La fecha de esta grilla no es la de hoy', 'title="El reloj de este equipo marca otro día (hoy es ' + real + ' según internet)');
   return fecha === today() ? "" : '<span id="mad-' + ficha + '-noeshoy" title="La fecha de esta grilla no es la de hoy: lo que se guarde irá a ese día"'
     + ' style="font-size:11px;font-weight:600;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:1px 6px;margin-left:6px;white-space:nowrap">⚠ no es hoy</span>';
 }
