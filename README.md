@@ -706,7 +706,9 @@ Dos consecuencias que conviene tener presentes al desplegar:
    ningún dato de Google (¿sin conexión?).» con ⟳ para reintentar. Medido con la red colgada y un equipo nuevo: se rinde a
    los 262 s (antes 7,2 min, ~17 min con las pestañas en caché, y acababa en «Sin datos en las hojas.»).
 1. **Cada hoja por su CSV de exportación** (2026-10-11, punto 4.2-B; `sheets.js · hojasPorCsv`, en el Worker): las
-   pestañas salen de `/htmlview` y cada hoja se pide por `export?format=csv&gid=` (6 a la vez; ~1,4 MB comprimidos las
+   pestañas salen de `/htmlview` y cada hoja se pide por `export?format=csv&gid=` (10 a la vez, `CSV_A_LA_VEZ`, desde el
+   2026-10-15 —antes 6—: en el PC 4,6 → 3,2 s, con 4G lento simulado 25 → 22 s y con 3G 79 → 72 s, sin fallos; el CSV
+   sólo se abandona si falla la primera tanda ENTERA; ~1,4 MB comprimidos las
    44 frente a los 14,5 MB del XLSX), se lee con SheetJS sin adivinar tipos y con las MISMAS opciones de filas que el
    XLSX, y `valorDeCsv` pasa el formato regional del libro (coma decimal, punto de miles) a la forma del XLSX. Medido con
    el libro real: mismas filas y claves en las 44 hojas, 99,998 % de celdas idénticas (difieren 32 celdas con separador

@@ -8,14 +8,14 @@
      espacios, saltos de línea entre comillas);
    · hojasPorCsv: todas las hojas con su origen; la que no llega por CSV —o trae menos filas que lo aplicado— por su XLSX;
      `completo`; y que se aparta (null → el libro entero, como antes) sin pestañas, con una sin nombre, si el formato
-     regional no es el esperado o si nada llega (deja de insistir a los 6 fallos);
+     regional no es el esperado o si nada llega (deja de insistir cuando falla la primera tanda entera, CSV_A_LA_VEZ);
    · el Worker lo usa PRIMERO y sólo pide el libro entero si no sirve o queda incompleto.
    Google simulado (fetch); datos ficticios.
    ============================================================ */
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { valorDeCsv, filasDeCsv, hojasPorCsv, workbookToSheets, XLSX_LECTURA, textoProgreso } from './sheets.js';
+import { valorDeCsv, filasDeCsv, hojasPorCsv, workbookToSheets, XLSX_LECTURA, textoProgreso, CSV_A_LA_VEZ } from './sheets.js';
 import { atenderLectura } from './sheets.worker.js';
 
 const VENDOR = join(process.cwd(), 'public/vendor/xlsx.full.min.js');
@@ -133,11 +133,26 @@ describe('hojasPorCsv', () => {
     expect(await hojasPorCsv(ids, xlsx)).toBe(null);
   });
 
-  it('si nada llega, deja de insistir a los 6 fallos y se aparta', async () => {
-    html = HTML(Array.from({ length: 10 }, (_, i) => 'Hoja ' + i));
+  it('si nada llega, deja de insistir cuando falla la primera tanda entera y se aparta', async () => {
+    expect(CSV_A_LA_VEZ).toBe(10);   // pauta 3.5 (2026-10-15): 10 a la vez
+    html = HTML(Array.from({ length: 30 }, (_, i) => 'Hoja ' + i));
     csvPorGid = {};
     expect(await hojasPorCsv(ids, xlsx)).toBe(null);
-    expect(pedidas.filter((u) => /export\?format=csv/.test(u)).length).toBeLessThanOrEqual(12);   // no 10 hojas × 2
+    // no 30 hojas × 2 intentos: como mucho la primera tanda y su reintento
+    expect(pedidas.filter((u) => /export\?format=csv/.test(u)).length).toBeLessThanOrEqual(2 * CSV_A_LA_VEZ);
+  });
+
+  it('unos rechazos RÁPIDOS al empezar no tiran el CSV si el resto de la primera tanda llega (pauta 3.5)', async () => {
+    // 10 hojas: las 6 primeras rechazan al instante (p. ej. un 429 de Google) y las 4 siguientes llegan. Con un umbral
+    // menor que la tanda (los 6 de antes con 10 a la vez) se abandonaba todo y se bajaba el libro entero.
+    const titulos = Array.from({ length: 10 }, (_, i) => 'Hoja ' + i);
+    html = HTML(titulos);
+    csvPorGid = {}; xlsxPorGid = {};
+    titulos.forEach((_, i) => { csvPorGid[1111 * (i + 1)] = i < 6 ? 429 : 'Fecha,Valor\n01/09/2026,"' + i + ',5"\n'; });
+    const r = await hojasPorCsv(ids, xlsx);
+    expect(r).not.toBe(null);
+    expect(Object.keys(r.sheets)).toEqual(['Hoja 6', 'Hoja 7', 'Hoja 8', 'Hoja 9']);
+    expect(r.completo).toBe(false);   // las 6 rechazadas tampoco llegan por su XLSX: falta, y el Worker pedirá el libro
   });
 });
 
