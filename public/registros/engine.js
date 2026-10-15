@@ -13172,10 +13172,10 @@ function _madAlimFuenteTxt(p){ return (p && p.fuente) ? p.fuente+(p.fecha ? " "+
 function _madAlimTomaFilaHTML(t){
   const x=t||{}, prod=madAlimProducto(x.producto), pct=(x.pct===""||x.pct===null||x.pct===undefined) ? "" : String(x.pct);
   return '<tr class="ma-toma">'
-    + '<td><input class="ma-hora" type="time" value="'+escapeHtml(madAlimHora(x.hora))+'" onchange="madAlimTomaCambio(this)" onblur="madAlimTomaOrdenar(this)" style="'+_MAD_ING_INP+';width:110px"></td>'
-    + '<td><select class="ma-prod" data-v="'+escapeHtml(prod)+'" onchange="madAlimTomaCambio(this)" style="'+_MAD_ING_INP+';width:130px"><option value="">— sin alimento —</option>'
+    + '<td><input class="ma-hora" type="time" value="'+escapeHtml(madAlimHora(x.hora))+'" onchange="madAlimTomaCambio(this)" onblur="madAlimTomaOrdenar(this)" style="'+_MAD_ING_INP+';width:88px"></td>'
+    + '<td><select class="ma-prod" data-v="'+escapeHtml(prod)+'" onchange="madAlimTomaCambio(this)" style="'+_MAD_ING_INP+';width:100px"><option value="">— sin alimento —</option>'
     +   MAD_ALIM_PRODUCTOS.map(function(p){ return '<option value="'+escapeHtml(p)+'"'+(prod===p ? ' selected' : '')+'>'+escapeHtml(p)+'</option>'; }).join("")+'</select></td>'
-    + '<td><input class="ma-pct" type="number" min="0" max="'+MAD_ALIM_PCT_MAX+'" step="0.05" inputmode="decimal" value="'+escapeHtml(pct)+'" oninput="madAlimTomaCambio(this)" style="'+_MAD_ING_INP+';width:80px"></td>'
+    + '<td><input class="ma-pct" type="number" min="0" max="'+MAD_ALIM_PCT_MAX+'" step="0.05" inputmode="decimal" value="'+escapeHtml(pct)+'" oninput="madAlimTomaCambio(this)" style="'+_MAD_ING_INP+';width:52px"></td>'
     + '<td class="ma-kg-toma" style="text-align:right;white-space:nowrap">—</td>'
     + '<td><button class="btn" type="button" onclick="madAlimTomaQuitar(this)" title="Quitar esta toma" style="font-size:11px">✕</button></td></tr>';
 }
