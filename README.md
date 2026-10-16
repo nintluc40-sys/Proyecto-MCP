@@ -24,7 +24,7 @@ npm run lint       # ESLint
 > es dependencia de npm. El gemelo `index (8)` no tiene servidor del que pedirlo: lleva SheetJS
 > **incrustado**, byte a byte el de `public/vendor/` (lo vigila `verificar-xlsx-index8`).
 
-### `npm audit` avisa de 9, y se quedan · MEDIDO el 2026-09-21
+### `npm audit` avisa de 11 (todos de desarrollo), y se quedan · MEDIDO el 2026-09-21, re-medido el 2026-10-15
 
 `npm audit` da **9 avisos (3 moderate, 5 high, 1 critical)**. Los nueve son de **desarrollo**:
 `dependencies` sólo lleva `chart.js` y `leaflet`, y ninguno de los paquetes señalados
@@ -312,6 +312,9 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   `public/registros/engine.js`) que escriben al Sheet vía Google Apps Script.
   Incluye el **registro operativo de Maduración**, que tiene su propia sección aquí abajo
   por ser lo único del sistema que además CALCULA.
+  Los comentarios matutino y vespertino de la supervisión del AsT viajan hasta **500 caracteres** —el tope del GAS— y su
+  casilla no deja escribir más; la observación por tanque de Calidad de Agua (col. 47 de Datos Larvicultura) sigue en
+  **200**, también con la casilla topada: antes lo que pasaba de 200 se cortaba al enviar sin aviso (2026-10-15, pauta 3.1).
   En el módulo **AsT** (As Técnico), junto a la supervisión, Traslado y Mareas, está **🎯 Score** (2026-10-02): la
   planilla «CONTROL DE CALIDAD POST - LARVAS - 12C» por tanque (1–12) —cada uno de sus 13 criterios, un toque entre
   sus 5 puntos; el Score es su suma (máx. 100) y la interpretación sale de los tramos de la planilla (95 · 85 · 70)—.
@@ -416,6 +419,15 @@ medio teclear; y en Tanques, un parte que quedó **abierto** del día anterior (
 cerrarlo) se **cierra** al renovar —lo no enviado sigue pendiente, con su fecha y su hora—, para que
 la ronda de la mañana no se escriba encima de la de la noche. Una fecha elegida a mano se respeta, y
 la grilla dice **«⚠ no es hoy»** mientras su fecha no sea la de hoy.
+
+🆕 **«Hoy» frente a la hora de internet (2026-10-15, usuario, pauta 2.12-B).** «Hoy» sale del reloj del equipo, y con
+su DÍA mal puesto la grilla abría en ese día sin marcar nada. Con la app servida por HTTPS (Pages: el MCP y el
+`index (8)` de los equipos), la cabecera `Date` de un HEAD al propio sitio da la hora real (`_relojMedir`, en
+`engine.js`): a los 3 s de abrir y al volver a la app, como mucho cada 10 min; menos de 2 min de diferencia es ruido. Si
+el día del equipo no es el real, **«⚠ no es hoy»** decide con el real y su título lo dice (`_madGridNoEsHoyHTML`); si el
+reloj va desfasado **5 min o más**, un aviso —una vez por sesión— pide corregir la fecha y la hora del equipo. En
+`file://` y en localhost no se mide y todo sigue como antes. ⚠ La CSP de `index (8)` lleva `'self'` en `connect-src`:
+sin él, el HEAD se bloquea (happy-dom no aplica la CSP, las pruebas no lo ven).
 
 En **🛢️ Tanques**, los pesos ♂ y ♀ **bajan por su columna**: al teclear uno se copia a las filas
 de abajo que tengan animales vivos. Las observaciones sanitarias y operativas bajan igual (a todas
@@ -1195,7 +1207,8 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
    - Las hojas que aún no existen nacen con su primer envío y tienen que nacer con la cabecera actual.
      Cuáles existen ya, y con cuántas columnas, lo dice `estado-maduracion.mjs`, no esta lista.
    - Un parte de Tanques REENVIADO tiene que corregir su fila, no añadir otra: es la llave nueva de P12
-     (`[0,1,2,13,14]`), y todavía no se ha ejercido en producción.
+     (`[0,1,2,13,14]`). Medido el 2026-10-15: en producción no ha dejado ninguna llave repetida (1 908 filas); las 9
+     que se repiten SIN «Parte» son del 29-09 (Sala 3), la misma ronda desde dos dispositivos, cada uno con su parte.
    - En cada dispositivo, recargar la app y pasar ⚙ Config → «🔗 Probar conexión»: tiene que mostrar
      ese sello. Una copia de `index (8)` con OTRO sello no envía las fichas selladas —calcula, guarda
      en el dispositivo y lo dice— y se sustituye por la actual.
@@ -1224,10 +1237,10 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
 
 **Abierto**
 
-4. **`Maduración Transferencias` se estrenó el 2026-09-26** (primer traslado): queda contrastar su panel con
-   dato real, y hace falta una comprobación propia: `auditar-tablero-mad-real.mjs` no lee esa hoja (lee
-   las diez del operativo; Transferencias es del reproductivo). Cuántas filas tiene, lo dice
-   `estado-maduracion.mjs`.
+4. ~~**`Maduración Transferencias` se estrenó el 2026-09-26** (primer traslado): queda contrastar su panel con
+   dato real~~ — **descartado por el usuario el 2026-10-12**: no se contrasta. Si se retomara, haría falta una
+   comprobación propia: `auditar-tablero-mad-real.mjs` no lee esa hoja (lee las diez del operativo;
+   Transferencias es del reproductivo). Cuántas filas tiene, lo dice `estado-maduracion.mjs`.
 5. **Microbiología · Patología en fresco** espera a que los usuarios estrenen su hoja.
 6. **Paridad · las funciones que sólo se comparan por NOMBRE** entre `engine.js` e `index (8)`. Desde el
    2026-09-22, `verificar-3copias-v3` saca las funciones con un parser y compara las que delegan en `__rgLib`

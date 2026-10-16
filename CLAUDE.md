@@ -8,9 +8,11 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
 
 - `src/config.js` — constantes (URL del Sheet, timeouts, umbrales de semáforo, orden de estadios).
 - `src/core/` — **capa de datos SIN DOM**, pura y testeable: `store`, `dates`, `fields`, `format`,
-  `sheets`, `refresh`, `charts`, `prodCalendar`, `aguaColor`, `trovan`, `util`.
+  `sheets`, `sheets.worker` y `sheets.lector` (la lectura del libro en segundo plano), `libroGuardado`,
+  `marcaLibro`, `refresh`, `charts`, `prodCalendar`, `aguaColor`, `trovan`, `util`.
 - `src/ui/` — `router` (registro/cambio de vistas), `shell` (cabecera, drawer, roles, filtro de
-  fecha) y las piezas transversales que tocan el DOM: `modal`, `modalEscape`, `toast`.
+  fecha), `accesoRol` (la entrada directa por enlace `?rol=`) y las piezas transversales que tocan
+  el DOM: `modal`, `modalEscape`, `toast`.
 - `src/views/<vista>/` — cada vista es un módulo con su `index.js` orquestador y su `.css` propio.
   ⚠ **Estas tres listas se comprueban con `ls src/core src/ui src/views`, no se leen de aquí.**
   Se dice porque caducaron las tres a la vez: `core/` llegó a nombrar 7 módulos de 11, `ui/` 2
@@ -105,6 +107,10 @@ que este repo ya vigila a mano en los tres sitios donde no le queda más remedio
 
 ## Datos / integraciones (no cambiar sin querer)
 
-- Origen: Google Sheet (XLSX-first, fallback CSV por gid). URL en `config.js`.
+- Origen: Google Sheet. URL en `config.js`. En segundo plano (`sheets.worker.js`), primero cada hoja
+  por su CSV de exportación (`hojasPorCsv`: las pestañas salen de `/htmlview`); si no llega completo,
+  el XLSX del libro entero (`fetchXlsxSheets`) y, si tampoco, el respaldo hoja a hoja
+  (`respaldoPorHojas`). Sin Worker (`leerTodoAqui`, en `sheets.js`), el XLSX primero y luego el
+  respaldo.
 - La vista Registros persiste en `localStorage` con claves `larv4_` y sincroniza con un Apps
   Script (GAS) desplegado. Es un **contrato externo**: no renombrar claves ni endpoints.
