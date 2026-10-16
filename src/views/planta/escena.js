@@ -26,7 +26,8 @@
    la pantalla normal (1×) y vuelve a subir cuando va holgada (ver «Nitidez según el ritmo», junto al bucle).
    Aparición progresiva (2026-10-06, usuario): la maqueta se arma por partes —suelo y tanques, naves, entorno, vida— con
    como mucho UN sombreador nuevo por cuadro, en vez de congelar la pantalla varios segundos al compilar los 26 de golpe
-   (ver «Aparición progresiva», junto al arranque).
+   (ver «Aparición progresiva», junto al arranque). Desde el 2026-10-16 (usuario, plan A1) se arma DETRÁS de una cortina con
+   el % y se descubre entera, con sus sombras, en un fundido: ver las piezas salir se veía como parpadeo («Cortina», abajo).
    Selector de mes (2026-10-04, usuario): ◀ ▶ y un deslizador como la tabla Producción Omarsa, que mueven TODA la vista:
    en un mes pasado, la maqueta con las corridas de ese mes y maduración a su cierre, y las alertas «al cierre de <mes>».
    Reflejos del cielo (2026-10-04, usuario, opción A): un mapa de entorno generado del propio cielo (PMREM), uno por hora
@@ -1641,6 +1642,7 @@ function frameBody(now) {
   const r0 = armando ? performance.now() : 0, p0 = armando ? renderer.info.programs.length : 0;
   renderer.render(scene, camera);
   if (armando && cupo === 0) { const n = renderer.info.programs.length - p0; if (n > 0) cupo = (performance.now() - r0) / n < 60 ? 4 : 1; }
+  if (armando && !porRevelar.length) vp.classList.remove('is-armando');   // cortina: este cuadro ya la trae entera, con sus sombras
 }
 setTod('day'); paintWater(); renderer.shadowMap.needsUpdate = true;
 /* Aparición progresiva (2026-10-06, usuario): three r128 compila cada sombreador la primera vez que dibuja un material y
@@ -1683,6 +1685,13 @@ const porRevelar = [], yaVistas = new Set(), hint = $('.hintline'), HINT = hint.
   lotes.forEach((l) => { if (l.length) l[l.length - 1].finDeFase = true; porRevelar.push(...l); });
 }
 const totalLotes = porRevelar.length;
+/* Cortina (2026-10-16, usuario, plan A1): el armado sigue por partes y sin congelar, pero DETRÁS de una cortina con el %. Ver
+   las piezas mientras salían era lo que se veía como parpadeo al abrir (medido: saltos del 8 % de la imagen al aparecer las
+   naves y el fondo que pasaba de arena a agua al ~69 %; las sombras, de golpe al cerrar cada fase). La maqueta se descubre
+   ENTERA, con sus sombras, en el cuadro que revela el último bloque, con un fundido (planta.css · .is-armando). */
+const cortina = document.createElement('p'); cortina.className = 'armando';   // sin role="status": el % cambia en cada cuadro
+cortina.textContent = 'Preparando la maqueta…'; vp.append(cortina);
+if (totalLotes) vp.classList.add('is-armando');
 // Cuántos sombreadores nuevos admite cada paso: se decide UNA vez, con el primer dibujo que crea programas (el cielo y el
 // suelo). Si costaron < 60 ms cada uno, el navegador ya los tenía guardados (2.ª visita) y salen de a 4 (medido: de a
 // uno alargaba el armado 0,6 s en escritorio y ~5 s en celular sin evitar ningún bloqueo); si no, de a uno. Se mira lo
@@ -1702,6 +1711,7 @@ function revelarPaso() {
   despertar();        // a ritmo pleno mientras se arma (sin el reposo de ~15 cps)
   esperarNitidez();   // los cuadros que compilan son del procesador, no de la tarjeta gráfica: no bajan la nitidez
   hint.textContent = porRevelar.length ? 'Preparando la maqueta… ' + Math.round(100 * (totalLotes - porRevelar.length) / totalLotes) + ' %' : HINT;
+  if (porRevelar.length) cortina.textContent = hint.textContent;
 }
 if (reduced) animateLife(0, 0);
 camera.position.set(-30, 150, 175); controls.target.set(0, 0, 0);
