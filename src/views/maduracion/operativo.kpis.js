@@ -20,7 +20,7 @@
 import { ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_MIXTO, sumarDias, ubicKey } from '../registros/lib/mad-libro.js';
 import { SALAS_VISIBLES } from './operativo.data.js';
 import { tasaEntre, kpiBiomasa, posicionEnFiltro, codigoEnFiltro, loteElegido, hayLote, hayCodigo, haySala, hayTanque, salaElegida, tanqueElegido,
-  hayPiscina, hayCamaronera } from './operativo.tablero.js';
+  hayPiscina, hayCamaronera, desoveEnOrigen } from './operativo.tablero.js';
 
 /** Las siete tarjetas que tienen gráfico, en su orden, con su título. */
 export const KPIS_CON_GRAFICO = [
@@ -214,7 +214,8 @@ function muertosDelPeriodo(a, b, lotes, desde, hasta) {
 }
 
 /** REPRODUCCIÓN · desoves y N5 de cada día del período, por la fecha del desove, con los filtros de la tarjeta
- *  (`kpiReproduccion`: lote y código; un desove no es de una sala). La suma es la cifra de la tarjeta. */
+ *  (`kpiReproduccion`: lote, código y, por el origen del lote, piscina y camaronera; un desove no es de una sala). La
+ *  suma es la cifra de la tarjeta. */
 export function graficoReproduccion(filasDesoves, periodo, F) {
   const des = new Map();
   const n5 = new Map();
@@ -222,6 +223,7 @@ export function graficoReproduccion(filasDesoves, periodo, F) {
     const f = fecha10(r.Fecha);
     if (!enPeriodo(f, periodo)) continue;
     if (!loteElegido(r.Lote, F)) continue;
+    if (!desoveEnOrigen(r, F)) continue;
     if (!codigoEnFiltro(r['Código genético'], F)) continue;
     des.set(f, (des.get(f) || 0) + ent(r.Desoves));
     n5.set(f, (n5.get(f) || 0) + ent(r.N5));

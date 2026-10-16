@@ -155,6 +155,9 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     ven SÓLO esos, y una sala marcada sin ninguno de sus tanques no suma). El filtro guarda listas —`F.lotes`,
     `F.codigos`, `F.salas`, `F.tanques` (pares «sala|n»: los números se repiten entre salas), `F.piscinas`,
     `F.camaroneras`; vacía = todos— y `normalizarFiltro` acepta un valor o una lista. Estado y sexo siguen de UN valor.
+    La piscina y la camaronera se aplican por el ORIGEN del lote (su Ingreso, `origenEnFiltro`), también en 🥚
+    Reproducción: la tarjeta, su gráfico y la cabecera de la sub-vista suman lo mismo que su tabla (`desoveEnOrigen`;
+    antes de la pauta 3.1, 2026-10-15, sumaban todos los desoves).
     Con varios: «Ciclo» pide un solo lote, Ocupación con varios tanques es «tanques con lo filtrado», el detalle de sala
     sólo se abre solo con UNA sala, y 🦠/🧬/🌊 heredan lote o sala sólo si hay UNO.
     **📊 Estado actual** (siete indicadores —bajo el gráfico de Vivos, los vivos ♀/♂/total al INICIO del período, los

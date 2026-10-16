@@ -34,7 +34,7 @@ import { sumarDias } from '../registros/lib/mad-libro.js';
 import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { revisionesDeNauplios } from './operativo.revisiones.js';
 import { graficoVivos, graficoDeKpi } from './operativo.kpis.js';
-import { tablaDeReproduccion } from './operativo.reproduccion.js';
+import { tablaDeReproduccion, totalesDeReproduccion } from './operativo.reproduccion.js';
 
 const O = MAD_OP_ORIGEN;
 const ING = (fecha, lote, sala, tanque, machos, hembras, cg) => ({ _SheetOrigin: O, 'Camaronera origen': 'X', Fecha: fecha,
@@ -288,6 +288,28 @@ describe('Maduración · operativo · etapa C · el filtro con VARIAS piscinas y
       'Total de huevos': 1000, N2: 500, N5: 300, 'Hembras no viables': 0 }));
     const lotes = (o) => tablaDeReproduccion({ fuentes: { ...MC.fuentes, desoves: DES }, fecha: FOTO }, p, FC(o)).map((f) => f.lote);
     expect([lotes({}), lotes({ piscina: ['P1', 'P2'] }), lotes({ camaronera: 'CX' })]).toEqual([['QA', 'QB', 'QC'], ['QA', 'QB'], ['QA', 'QC']]);
+  });
+
+  /* 2026-10-15 (usuario, pauta 3.1) · la TARJETA de 🥚 Reproducción, su gráfico y la cabecera de la sub-vista aplican el
+     origen como la tabla: antes, con una piscina o una camaronera puesta, sumaban TODOS los desoves y no cuadraban con ella.
+     QZ no tiene Ingreso: sin filtro cuenta; con origen puesto, no pasa. */
+  it('🔴 con origen: la tarjeta de Reproducción, su gráfico y su cabecera suman lo mismo que la tabla', () => {
+    const p = periodoDe('7d', FOTO, MC.fuentes);
+    const DES = [['QA', 2], ['QB', 3], ['QC', 4], ['QZ', 5]].map(([Lote, Desoves]) => ({ Fecha: '2026-09-15', Lote, 'Código genético': 'CA',
+      Desoves, 'Total de huevos': 1000, N2: 500, N5: 300 * Desoves, 'Hembras no viables': 0 }));
+    const M2 = { fuentes: { ...MC.fuentes, desoves: DES }, fecha: FOTO };
+    const suma = (xs) => xs.reduce((a, n) => a + n, 0);
+    const tarjeta = (o) => kpiReproduccion(DES, p, FC(o)).desoves;
+    const grafico = (o) => suma(graficoDeKpi('reproduccion', { M: M2, periodo: p, F: FC(o) }).series.find((x) => x.clave === 'desoves').datos);
+    const cabecera = (o) => totalesDeReproduccion(M2, p, FC(o)).desoves;
+    const tabla = (o) => suma(tablaDeReproduccion(M2, p, FC(o)).map((f) => f.desoves));
+    const casos = [{}, { piscina: 'P1' }, { piscina: ['P1', 'P2'] }, { camaronera: 'CX' }, { piscina: 'P2', camaronera: 'CX' }];
+    expect(casos.map(tarjeta)).toEqual([14, 2, 5, 6, 0]);   // P2 + CX: QB es de CY → nada
+    for (const o of casos) expect([grafico(o), cabecera(o)]).toEqual([tabla(o), tabla(o)]);
+    expect(casos.map(tarjeta)).toEqual(casos.map(tabla));
+    expect(kpiReproduccion(DES, p, FC({ piscina: ['P1', 'P2'] })).n5).toBe(1500);   // 600 + 900: el N5 también se filtra
+    // Sin índice (pruebas puras) el origen no puede aplicarse y se ignora, como en el resto del tablero.
+    expect(kpiReproduccion(DES, p, F({ piscina: 'P1' })).desoves).toBe(14);
   });
 });
 

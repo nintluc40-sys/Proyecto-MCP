@@ -161,6 +161,11 @@ export function origenEnFiltro(o, F) {
   if (hayCamaronera(F) && !(o && F.camaroneras.some((x) => o.camaroneras.has(x)))) return false;
   return true;
 }
+/** 2026-10-15 (usuario, pauta 3.1) · ¿Pasa un DESOVE por la piscina y la camaronera del filtro? Por el ORIGEN de su lote
+ *  (`origenEnFiltro`), la regla de la tabla de 🥚 Reproducción y de todo el tablero; sin índice (pruebas puras), no se
+ *  aplica. Lo usan la tarjeta (`kpiReproduccion`) y su gráfico, que antes no lo aplicaban y no cuadraban con la tabla. */
+export const desoveEnOrigen = (r, F) => !(F && F.indice && (hayPiscina(F) || hayCamaronera(F)))
+  || origenEnFiltro(F.indice.origen.get(normLote(r.Lote)), F);
 
 /** ¿Está puesta esta dimensión del filtro? El lote, el código, la sala, el tanque, la piscina y la camaronera son
  *  LISTAS: una vacía no cuenta (por eso no vale el `!!F[d]` de las demás, que daría por puesta una lista vacía). */
@@ -473,13 +478,14 @@ export function kpiMortalidad(serie, periodo, F, partes) {
 
 /** Los desoves del período (por su fecha de desove), con la fertilidad y los nauplios por hembra con la regla del
  *  Saldo: sólo sobre los desoves que ya tienen su N2 / su N5 —la fertilidad, desde el 2026-10-01, sólo de los que traen
- *  su N2 Y sus huevos contados—. Admite lote y código; un desove no es de una sala, así que el filtro de sala no se aplica
- *  y se DICE (`ignora`). */
+ *  su N2 Y sus huevos contados—. Admite lote, código y, por el origen del lote, piscina y camaronera (`desoveEnOrigen`,
+ *  2026-10-15); un desove no es de una sala, así que el filtro de sala no se aplica y se DICE (`ignora`). */
 export function kpiReproduccion(filasDesoves, periodo, F) {
   const a = { desoves: 0, huevos: 0, noViables: 0, n2: 0, n5: 0, huevosConN2: 0, n2ConHuevos: 0, desovesConN5: 0 };
   for (const r of filasDesoves || []) {
     if (!enPeriodo(fecha10(r.Fecha), periodo)) continue;
     if (!loteElegido(r.Lote, F)) continue;
+    if (!desoveEnOrigen(r, F)) continue;
     if (!codigoEnFiltro(r['Código genético'], F)) continue;
     const n2 = ent(r.N2);
     const n5 = ent(r.N5);
