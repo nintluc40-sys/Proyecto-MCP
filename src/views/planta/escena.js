@@ -22,8 +22,9 @@
    Sombras más baratas (2026-10-05, usuario, velocidad · 1): mapa de 2048 con borde normal (no suave), recalculado sólo
    cuando cambia algo que las proyecta; personas, técnicos y autos sin sombra. Medido: las sombras eran el mayor coste
    de la tarjeta gráfica (sin ellas, el giro pasaba de ~21 a ~38 cuadros por segundo).
-   Nitidez según el ritmo (2026-10-05, usuario, velocidad · 4): si va lenta, la imagen baja de nitidez en 1–2 s hasta la de
-   la pantalla normal (1×) y vuelve a subir cuando va holgada (ver «Nitidez según el ritmo», junto al bucle).
+   Nitidez según el ritmo (2026-10-05, usuario, velocidad · 4): si va lenta mientras se mueve la cámara, la imagen baja de
+   nitidez en 1–2 s hasta la de la pantalla normal (1×); con la cámara quieta 5 s vuelve a la completa, y al moverla de nuevo
+   pasa a la que aguantó el último movimiento (A3, 2026-10-18; ver «Nitidez según el ritmo», junto al bucle).
    Aparición progresiva (2026-10-06, usuario): la maqueta se arma por partes —suelo y tanques, naves, entorno, vida— con
    como mucho UN sombreador nuevo por cuadro, en vez de congelar la pantalla varios segundos al compilar los 26 de golpe
    (ver «Aparición progresiva», junto al arranque). Desde el 2026-10-16 (usuario, plan A1) se arma DETRÁS de una cortina con
@@ -1557,9 +1558,10 @@ let rafId = 0, disposed = false;
    cerró, para liberarla igual (el router no avisa al salir). */
 const REPOSO_MS = 5000, REPOSO_FPS = 15;
 let ultimoToque = performance.now(), ultimoCuadro = 0, enPantalla = true, timerFuera = 0;
+let ultimoMovimiento = performance.now();   // A3 · la última vez que se movió la cámara (giro, zoom, inercia o vuelo)
 const despertar = () => { ultimoToque = performance.now(); };
 ['pointerdown', 'pointermove', 'wheel', 'touchstart', 'keydown'].forEach((ev) => canvas.addEventListener(ev, despertar, { passive: true }));
-controls.addEventListener('change', despertar);   // también mientras la inercia sigue moviendo la cámara
+controls.addEventListener('change', () => { despertar(); ultimoMovimiento = performance.now(); });   // también mientras la inercia sigue moviendo la cámara
 const io = new IntersectionObserver((es) => {
   enPantalla = es[es.length - 1].isIntersecting;
   if (enPantalla && timerFuera) { clearTimeout(timerFuera); timerFuera = 0; despertar(); rafId = requestAnimationFrame(loop); }
@@ -1610,6 +1612,14 @@ function ajustarNitidez(now, dtMs) {
   else holgados = 0;
   if (nuevo !== pr) { renderer.setPixelRatio(nuevo); renderer.setSize(W, H, false); }
 }
+/* A3 (2026-10-18, usuario, opción a) · nítida en reposo y fluida al moverse. Antes la nitidez sólo se medía con actividad y
+   sólo subía con cuatro segundos holgados MIENTRAS tanto —justo cuando más cuesta—: lo que bajaba al girar no volvía nunca
+   (medido en una pantalla de 2×: 2 → 1,5 → 1,25 → 1, a escalones y en mitad del uso). Ahora, con la cámara QUIETA 5 s, la
+   imagen vuelve a la nitidez completa (un salto, sin nada moviéndose); al volver a moverla, pasa de golpe a la que aguantó
+   el último movimiento (`dprMovimiento`) y desde ahí sigue el ajuste de arriba. Cuenta que se mueva la CÁMARA (giro, zoom,
+   inercia o vuelo): pasar el ratón por encima ni la baja ni se mide. */
+let dprMovimiento = DPR_MAX, quieta = false;
+function ponerNitidez(v) { if (v !== renderer.getPixelRatio()) { renderer.setPixelRatio(v); renderer.setSize(W, H, false); } }
 function loop(now) {
   if (!root.isConnected) { dispose(); return; }
   // con la pantalla de elegir rol encima (shell.js · showEntry pone .is-entry en .app) la maqueta no se ve, aunque para el
@@ -1617,11 +1627,15 @@ function loop(now) {
   if (!enPantalla || root.closest('.is-entry')) { timerFuera = setTimeout(() => { timerFuera = 0; rafId = requestAnimationFrame(loop); }, 1000); return; }
   rafId = requestAnimationFrame(loop);
   const activo = !!fly || now - ultimoToque < REPOSO_MS;
+  const mueve = !!fly || now - ultimoMovimiento < REPOSO_MS;   // A3
+  if (!mueve && !quieta) { quieta = true; dprMovimiento = renderer.getPixelRatio(); ponerNitidez(DPR_MAX); }
+  else if (mueve && quieta) { quieta = false; ponerNitidez(dprMovimiento); esperarNitidez(); }
   if (!activo && now - ultimoCuadro < 1000 / REPOSO_FPS - 2) return;
   ultimoCuadro = now;
   const rawDt = (now - last) / 1000;
-  // la nitidez se ajusta sólo con el ritmo pleno: los cuadros espaciados del reposo no son «equipo lento»
-  if (activo) ajustarNitidez(now, rawDt * 1000); else reiniciarRitmo();
+  // la nitidez se ajusta sólo con el ritmo pleno y la cámara en movimiento (A3): los cuadros espaciados del reposo no son
+  // «equipo lento», y pasar el ratón por encima no mueve nada
+  if (mueve) ajustarNitidez(now, rawDt * 1000); else reiniciarRitmo();
   try { frameBody(now); } catch (err) { console.error(err); }
 }
 function frameBody(now) {

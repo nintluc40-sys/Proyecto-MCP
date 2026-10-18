@@ -302,8 +302,9 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   oculta (la maqueta, en pausa) y vuelve al instante con su cámara, lo elegido y el mes. La primera vez, la maqueta se
   arma por partes —suelo y tanques, naves, entorno, vida— con «Preparando la maqueta… %», sin congelar la pantalla al
   compilar sus sombreadores; desde el 2026-10-16 (plan A1) se arma DETRÁS de una cortina con ese % al centro (también en el
-  celular) y aparece entera, con sus sombras, en un fundido: ver las piezas salir se veía como parpadeo. La maqueta baja su nitidez cuando va lenta, hasta la de la pantalla normal (1×), y la recupera
-  cuando va holgada. Con datos a la vista, el refresco AUTOMÁTICO no la repinta sola: sale «Hay datos nuevos (hh:mm) ·
+  celular) y aparece entera, con sus sombras, en un fundido: ver las piezas salir se veía como parpadeo. La maqueta baja su nitidez cuando va lenta mientras se mueve, hasta la de la pantalla normal (1×);
+  con la cámara quieta 5 s vuelve a la completa, y al moverla de nuevo pasa de golpe a la que aguantó el último movimiento
+  (plan A3, 2026-10-18: antes no la recuperaba nunca). Con datos a la vista, el refresco AUTOMÁTICO no la repinta sola: sale «Hay datos nuevos (hh:mm) ·
   🔄 Actualizar» y se recalcula al tocarlo (o al cambiar de mes), con el desplazamiento y lo abierto en su sitio; al
   abrir con el libro guardado del equipo, su puesta al día se aplica sola si la vista aún no se usó (2026-10-07). Lo
   pedido con ⟳ o la píldora se pinta ya, igual que «Actualizar» (A1, 2026-10-11).
