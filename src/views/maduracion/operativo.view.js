@@ -412,11 +412,14 @@ const codigosDe = (o, lotes) => (lotes.length ? [...new Set(lotes.flatMap((l) =>
 const MULTI = new Set(['lote', 'codigo', 'sala', 'tanque', 'piscina', 'camaronera']);   // etapa C (2026-10-14) · y la piscina y la camaronera
 const mismo = (x) => x;
 const NORM_MULTI = { lote: normLote, codigo: normCodigoGenetico, sala: mismo, tanque: mismo, piscina: mismo, camaronera: mismo };
+// Observación 8 (auditoría del 1.1, 2026-10-18) · el lector de pantalla anuncia la dimensión y TODO lo marcado (la vista abrevia «+N»)
+const NOMBRE_MULTI = { lote: 'Lote', codigo: 'Código genético', sala: 'Sala', tanque: 'Tanque', piscina: 'Piscina', camaronera: 'Camaronera' };
 function multiHTML(dim, elegidos, valores, rotulo, id = dim, { texto = mismo, vacio = 'Sin opciones' } = {}) {
   const sel = valores.filter((v) => elegidos.includes(v)).map(texto);   // en el orden de las opciones
   const resumen = !sel.length ? rotulo : sel.length <= 2 ? sel.join(', ') : `${sel.slice(0, 2).join(', ')} +${sel.length - 2}`;
+  const anuncio = !sel.length ? rotulo : `${NOMBRE_MULTI[dim] || dim}: ${sel.join(', ')}`;
   return `<details class="mop-multi${sel.length ? ' is-on' : ''}" data-mop-multi="${esc(id)}"${vOp.multiAbierto === id ? ' open' : ''}>
-      <summary class="mc-select mop-multi-s" aria-label="${esc(rotulo)}">${esc(resumen)}</summary>
+      <summary class="mc-select mop-multi-s" aria-label="${esc(anuncio)}">${esc(resumen)}</summary>
       <div class="mop-multi-p" role="group" aria-label="${esc(rotulo)}">${valores.length
         ? valores.map((v) => `<label class="mop-multi-o"><input type="checkbox" data-mop-multi-v="${esc(dim)}" value="${esc(v)}"${elegidos.includes(v) ? ' checked' : ''}> ${esc(texto(v))}</label>`).join('')
         : `<span class="mc-note">${esc(vacio)}</span>`}${sel.length ? `<button type="button" class="mc-mini mop-multi-todos" data-mop-multi-todos="${esc(dim)}">${esc(rotulo)}</button>` : ''}</div>

@@ -1053,6 +1053,21 @@ describe('Maduración · operativo · etapa B · varias salas y varios tanques',
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  /* Observación 8 (auditoría del 1.1, 2026-10-18) · el lector de pantalla: sin nada marcado, el rótulo de «todos»; con algo
+     marcado, la dimensión y TODO lo marcado (la vista abrevia «+N»). Antes anunciaba «Todas las salas» con salas marcadas. */
+  it('el desplegable anuncia lo marcado («Sala: Sala 1, Sala 4»), no «Todas las salas»', async () => {
+    await montar(PLANTA);
+    const anuncio = (id) => root.querySelector(`[data-mop-multi="${id}"] summary`).getAttribute('aria-label');
+    expect(anuncio('sala')).toBe('Todas las salas');
+    marcar('sala', ['Sala 1', 'Sala 4']);
+    expect(anuncio('sala')).toBe('Sala: Sala 1, Sala 4');
+    marcar('tanque', ['Sala 1|1', 'Sala 1|2', 'Sala 4|1']);
+    expect(root.querySelector('[data-mop-multi="tanque"] summary').textContent, 'la vista abrevia').toBe('Sala 1 · T1, Sala 1 · T2 +1');
+    expect(anuncio('tanque')).toBe('Tanque: Sala 1 · T1, Sala 1 · T2, Sala 4 · T1');
+    marcar('sala', []);
+    expect(anuncio('sala')).toBe('Todas las salas');
+  });
+
   it('🔴 como Lote → Código: con tanques marcados se ven SÓLO esos; una sala sin ninguno de sus tanques no suma', async () => {
     await montar(PLANTA);
     marcar('sala', ['Sala 1', 'Sala 2']);
