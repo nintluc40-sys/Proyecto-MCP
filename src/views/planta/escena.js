@@ -194,7 +194,17 @@ const TXN = {
   // la junta es un surco de 2 px de cada lado de las líneas de la baldosa (0 y 128 de 256 = 0 y 512 de 1024)
   concrete: normalDeAltura(256, (x, y) => { const d = (v) => Math.min(v % 128, 128 - (v % 128)); return -Math.max(0, 2.5 - Math.min(d(x), d(y))); }, 1.1),
 };
-const repN = (t, x, y) => { const c = t.clone(); c.needsUpdate = true; c.repeat.set(x, y); return c; };
+/* C3a (2026-10-18) · UNA copia por (imagen, repetición): en three r128 cada copia se sube ENTERA a la tarjeta gráfica (con sus
+   mipmaps), así que pedir dos veces la misma repetición la duplicaba (medido: 156 texturas de 42 imágenes, ~116 MiB). ⚠ Lo que
+   devuelve es COMPARTIDO: no cambiarle la repetición ni el desplazamiento; si se anima, `copiaAnimada`. */
+const copias = new Map();
+const repN = (t, x, y) => {
+  let m = copias.get(t); if (!m) copias.set(t, (m = new Map()));
+  const k = x + '|' + y; let c = m.get(k);
+  if (!c) { c = t.clone(); c.needsUpdate = true; c.repeat.set(x, y); m.set(k, c); }
+  return c;
+};
+const copiaAnimada = (t, x, y) => { const c = t.clone(); c.needsUpdate = true; c.repeat.set(x, y); return c; };   // propia: se le anima el desplazamiento
 function windowsTex(wallHex, lit) { // fachada con ventanas; de noche se usa como mapa de luz
   return canvasTex(256, (g, n) => {
     if (lit) { g.fillStyle = '#000'; g.fillRect(0, 0, n, n); } else { grain(g, n, wallHex, 14, 2500, 1.4); g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(0, n - 10, n, 10); }
@@ -208,7 +218,7 @@ const waterNormal = (() => { // relieve de olas suaves y repetible
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { const dx = h(x + 1, y) - h(x - 1, y), dy = h(x, y + 1) - h(x, y - 1); const nx = -dx * .9, ny = -dy * .9, nz = 1; const l = Math.hypot(nx, ny, nz); const i = (y * n + x) * 4; img.data[i] = (nx / l * .5 + .5) * 255; img.data[i + 1] = (ny / l * .5 + .5) * 255; img.data[i + 2] = (nz / l * .5 + .5) * 255; img.data[i + 3] = 255; }
   g.putImageData(img, 0, 0); const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
 })();
-const rep = (t, x, y) => { const c = t.clone(); c.needsUpdate = true; c.repeat.set(x, y); return c; };
+const rep = repN;   // C3a · eran idénticas: la misma, con la misma memoria de copias
 
 /* ---------- Cielo con sol y estrellas ---------- */
 const sky = new THREE.Mesh(new THREE.SphereGeometry(1800, 32, 16), new THREE.ShaderMaterial({
@@ -248,19 +258,19 @@ function generarEntorno(T) {
 const std = (o) => new THREE.MeshStandardMaterial(Object.assign({ roughness: .9, envMapIntensity: ENV_REFLEJO }, o));
 const M = {
   sand: std({ map: rep(TX.sand, 90, 90), roughness: 1 }),
-  site: std({ map: rep(TX.concrete, 30, 15), normalMap: repN(TXN.concrete, 30, 15), normalScale: new THREE.Vector2(.6, .6) }),
+  site: std({ map: rep(TX.concrete, 30, 15), normalMap: TXN.concrete, normalScale: new THREE.Vector2(.6, .6) }),
   asphalt: std({ map: rep(TX.asphalt, 40, 2) }),
   gravel: std({ map: rep(TX.gravel, 40, 2), roughness: 1 }),
   grass: std({ map: rep(TX.grass, 4, 4), roughness: 1 }),
   paint: std({ color: col('#f2f0e8') }), yellow: std({ color: col('#e8c34a') }),
   fence: std({ map: rep(TX.wallBlock, 40, 1) }),
-  slabL: std({ map: rep(TX.concrete, 4, 4), color: col('#f2efe8'), normalMap: repN(TXN.concrete, 4, 4), normalScale: new THREE.Vector2(.6, .6) }),
-  slabM: std({ map: rep(TX.concrete, 4, 4), color: col('#c8ccc6'), normalMap: repN(TXN.concrete, 4, 4), normalScale: new THREE.Vector2(.6, .6) }),
+  slabL: std({ map: rep(TX.concrete, 4, 4), color: col('#f2efe8'), normalMap: TXN.concrete, normalScale: new THREE.Vector2(.6, .6) }),
+  slabM: std({ map: rep(TX.concrete, 4, 4), color: col('#c8ccc6'), normalMap: TXN.concrete, normalScale: new THREE.Vector2(.6, .6) }),
   wall: std({ map: rep(TX.wallBlock, 6, 1), roughness: .85 }),
   canal: std({ color: col('#4e5a5e'), roughness: .5 }),
   steel: std({ color: col('#a7b0b5'), roughness: .45, metalness: .5 }),
   film: std({ map: TX.film, color: col('#f7f8f2'), roughness: .5, transparent: true, opacity: .42, side: THREE.DoubleSide, depthWrite: false }),
-  zinc: std({ map: rep(TX.zinc, 6, 1), roughness: .5, metalness: .4, normalMap: repN(TXN.zinc, 6, 1), normalScale: new THREE.Vector2(.7, .7) }),
+  zinc: std({ map: rep(TX.zinc, 6, 1), roughness: .5, metalness: .4, normalMap: TXN.zinc, normalScale: new THREE.Vector2(.7, .7) }),
   tankWall: std({ map: rep(TX.concrete, 1, 1), color: col('#f4f2ee'), roughness: .75 }),
   waterL: std({ color: 0xffffff, roughness: .08, metalness: .1, normalMap: waterNormal, normalScale: new THREE.Vector2(.35, .35), emissive: 0x000000, transparent: true, opacity: .62 }),
   waterM: std({ color: 0xffffff, roughness: .08, metalness: .1, normalMap: waterNormal, normalScale: new THREE.Vector2(.35, .35), emissive: 0x000000, transparent: true, opacity: .72 }),
@@ -290,7 +300,7 @@ const SHORE = 127, CH = [-26, -10], DIKE = [-37, -26];
    como arena y el canal desaparecía. Ahora termina en la orilla y va a −10 cm, más lejos del canal, el terreno y el frente.
    Su textura se repetía 90×90 sobre 3000×3000 (baldosas de 33 m): al acortarlo, la repetición en z se acorta igual, o la
    arena saldría aplastada 1,9× (revisión de la maqueta, 2026-10-18). `M.sand` sólo lo usa este plano. */
-{ const [, zOrilla] = P(0, SHORE + 1); const g = new THREE.Mesh(new THREE.PlaneGeometry(3000, zOrilla + 1500), M.sand); g.rotation.x = -Math.PI / 2; g.position.set(0, -.1, (zOrilla - 1500) / 2); g.receiveShadow = true; M.sand.map.repeat.y = 90 * (zOrilla + 1500) / 3000; scene.add(g); }
+{ const [, zOrilla] = P(0, SHORE + 1); const g = new THREE.Mesh(new THREE.PlaneGeometry(3000, zOrilla + 1500), M.sand); g.rotation.x = -Math.PI / 2; g.position.set(0, -.1, (zOrilla - 1500) / 2); g.receiveShadow = true; M.sand.map = rep(TX.sand, 90, 90 * (zOrilla + 1500) / 3000); scene.add(g); }
 plane(SITE[0], SITE[1], SITE[2], SITE[3], .01, M.site);
 plane(-60, 89.4, 240, STREET[0] - 1.2, .015, M.gravel);                  // piedra 3/4 entre el cerramiento y la calle
 plane(-60, STREET[0] - 1.2, 240, STREET[0], .03, M.paint);              // bordillo
@@ -339,7 +349,7 @@ const lenguas = [0, .5].map((ph) => { const m = std({ map: rep(encajeTex, 60, 1)
 // usuario: «suavizarlos»): ya no titilan, van a la mitad de su máximo y las chispas son el doble de grandes (antes 170/207 ×
 // 46/57 repeticiones: puntos de menos de un píxel a lo lejos)
 const chispaTex = canvasTex(256, (g, n) => { g.clearRect(0, 0, n, n); for (let i = 0; i < 26; i++) { const x = R(8, n - 8), y = R(8, n - 8), r = R(.5, 1.3); const gr = g.createRadialGradient(x, y, 0, x, y, r * 3); gr.addColorStop(0, 'rgba(255,255,245,1)'); gr.addColorStop(1, 'rgba(255,255,245,0)'); g.fillStyle = gr; g.fillRect(x - r * 3, y - r * 3, r * 6, r * 6); } });
-const brillos = [0, 1].map((i) => plane(-1500, SHORE + 4, 1500, SHORE + 700, .1 + i * .005, new THREE.MeshBasicMaterial({ map: rep(chispaTex, (170 + i * 37) / 2, (46 + i * 11) / 2), color: col('#fff4d6'), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }), coast));
+const brillos = [0, 1].map((i) => plane(-1500, SHORE + 4, 1500, SHORE + 700, .1 + i * .005, new THREE.MeshBasicMaterial({ map: copiaAnimada(chispaTex, (170 + i * 37) / 2, (46 + i * 11) / 2), color: col('#fff4d6'), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }), coast));
 let brilloBase = .32;
 // atrás: tierra con matorral, canal de salida de agua, dique con camino y piscina de sal
 plane(-1500, CH[1], 1500, .8, .012, std({ map: rep(TX.sand, 90, 1), color: col('#b9aa86'), roughness: 1 }), coast);
@@ -416,9 +426,9 @@ OTHERS.forEach(([a, b, c, d, h, type, , forma], k) => {
   }
   if (type === 'bld') {
     const hex = WALLS[k % WALLS.length], side = windowsTex(hex, false), lit = windowsTex(hex, true);
-    const mk = (len) => { const m = std({ map: rep(side, Math.max(1, Math.round(len / 4)), 1), emissiveMap: rep(lit, Math.max(1, Math.round(len / 4)), 1), emissive: col('#ffffff'), emissiveIntensity: 0 }); nightMats.push(m); return m; };
-    const roof = std({ map: rep(TX.zinc, Math.max(1, w / 3), 1), roughness: .5, metalness: .35, normalMap: repN(TXN.zinc, Math.max(1, w / 3), 1), normalScale: new THREE.Vector2(.7, .7) });
-    const mats = [mk(dd), mk(dd), roof, roof, mk(w), mk(w)];
+    const mk = (len) => { const m = std({ map: rep(side, Math.max(1, Math.round(len / 4)), 1), emissiveMap: lit, emissive: col('#ffffff'), emissiveIntensity: 0 }); nightMats.push(m); return m; };
+    const roof = std({ map: rep(TX.zinc, Math.max(1, w / 3), 1), roughness: .5, metalness: .35, normalMap: TXN.zinc, normalScale: new THREE.Vector2(.7, .7) });
+    const md = mk(dd), mw = mk(w), mats = [md, md, roof, roof, mw, mw];   // C3a · las caras del mismo largo, el mismo material
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, dd), mats); const [x, z] = P(a + w / 2, b + dd / 2); m.position.set(x, h / 2, z); m.castShadow = m.receiveShadow = true; others.add(m);
   } else if (type === 'res') {
     box(a, b, c, d, 0, h, M.tankWall, true, others); box(a + .3, b + .3, c - .3, d - .3, h, .12, M.lid, true, others);
