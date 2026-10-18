@@ -2477,6 +2477,23 @@ describe('Maduración · operativo · 0f · 5 · el gráfico de cada KPI', () =>
     expect(panel().querySelector('.mop-kpi-resumen')).toBeNull();
   });
 
+  /* D2 (auditoría del 1.1, 2026-10-18, usuario: opción b) · el filtro de sexo no llega a la mortalidad (tarjeta, gráfico y
+     fila cuentan los dos): con Sexo elegido el panel lo DICE y las cifras no cambian; sin Sexo, no hay nota; Vivos, tampoco. */
+  it('D2 · Mortalidad con Sexo: la nota de que no se separa por sexo, con las mismas cifras', async () => {
+    await montar([...PLANTA, TQ('18/09/2026', 'Sala 1', 1, { Hora: '06:30', Parte: 1, 'Machos muertos': 2, 'Hembras muertas': 3 })]);
+    click(tarjeta('mortalidad'));
+    marcar('sala', 'Sala 1');   // con sala, los partes: ese día, ♀ 3 y ♂ 2
+    const NOTA = 'La mortalidad no se separa por sexo';
+    expect(panel().textContent).not.toContain(NOTA);
+    const antes = cifras(fila('muertos'));
+    expect(antes.map(numero), 'control: hay muertos de los dos sexos').toEqual([3, 2, 5]);
+    cambiar(filtro('sexo'), 'hembras');
+    expect(panel().textContent).toContain(NOTA);
+    expect(cifras(fila('muertos'))).toEqual(antes);
+    click(tarjeta('vivos'));
+    expect(panel().textContent).not.toContain(NOTA);
+  });
+
   it('🔑 sus clases están DEFINIDAS en el CSS', async () => {
     const { readFileSync } = await import('node:fs');
     const css = readFileSync('src/views/maduracion/operativo.css', 'utf8');

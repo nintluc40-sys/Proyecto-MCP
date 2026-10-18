@@ -1265,6 +1265,8 @@ function kpiPanelHTML(M, memo, p, F) {
   if (g.aplica && k.clave === 'mortalidad') {
     notas.push(g.unidad === '%' ? 'Tasa del día = muertos ÷ animales en riesgo (la regla del ⚖️ Saldo); la acumulada cuenta desde la víspera del período.'
       : 'Con sala o tanque: las muertes REGISTRADAS en la hoja Tanques, de todos sus lotes.');
+    // D2 (auditoría del 1.1, 2026-10-18, usuario: opción b) · el filtro de sexo no llega a la mortalidad: se dice
+    if (F.sexo) notas.push('La mortalidad no se separa por sexo: la tarjeta, el gráfico y la fila de muertos cuentan los dos sexos.');
   }
   if (g.aplica && g.ignora && g.ignora.length) notas.push('Un desove es de su lote y código genético, no de una sala: el filtro de sala no se aplica.');
   return `<div class="mop-lienzo mop-kpi-lienzo">
@@ -1275,7 +1277,8 @@ function kpiPanelHTML(M, memo, p, F) {
 }
 /** Punto 3 de la tanda del 13-10 (usuario, 2026-10-14) · bajo el gráfico de Vivos y el de Mortalidad, su fila de cifras
  *  (`resumen`, de operativo.kpis.js): los vivos al inicio del período, al cierre y la diferencia; los muertos del período.
- *  El sexo que el filtro deja fuera sale como «—», no como 0. Sin resumen (los demás gráficos), nada. */
+ *  En Vivos, el sexo que el filtro deja fuera sale como «—», no como 0; la mortalidad no se separa por sexo (lleva los
+ *  dos, como su tarjeta, y su panel lo dice: D2). Sin resumen (los demás gráficos), nada. */
 function resumenKpiHTML(r) {
   if (!r) return '';
   const fuera = (s) => (r.sexo === 'hembras' && s === 'machos') || (r.sexo === 'machos' && s === 'hembras');
