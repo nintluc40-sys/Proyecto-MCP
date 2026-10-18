@@ -636,11 +636,11 @@ async function csvDeHoja(ids, gid) {
 // Hojas que se piden A LA VEZ (pauta 3.5, 2026-10-15; antes 6): manda la latencia de Google por petición, no el tamaño, y
 // con 10 las 44 hojas llegan en ~3,2 s frente a ~4,6 s, sin fallos (medido en el PC con el libro real).
 export const CSV_A_LA_VEZ = 10;
-// Si la PRIMERA TANDA entera falla sin que llegue NINGUNA hoja (sin red, o el CSV bloqueado), se deja el camino del CSV:
-// con la red colgada, cada intento espera su tiempo máximo y 44 hojas lo multiplicarían (A1 del 07-10). ⚠ Va atado a
-// CSV_A_LA_VEZ: con un umbral menor que la tanda, unos pocos rechazos rápidos de Google tirarían el CSV entero aunque el
-// resto de la tanda fuese a llegar (y se bajaría el libro de 14,5 MB).
-const CSV_FALLOS_SIN_EXITO = CSV_A_LA_VEZ;
+// Si la PRIMERA TANDA entera (las CSV_A_LA_VEZ primeras hojas) falla a la primera sin que llegue NINGUNA hoja (sin red, o
+// el CSV bloqueado), se deja el camino del CSV: con la red colgada, cada intento espera su tiempo máximo y 44 hojas lo
+// multiplicarían (A1 del 07-10). R1 (auditoría del 1.1, 2026-10-18): se cuentan HOJAS de esa tanda, una vez cada una, no
+// intentos: antes 5 hojas que rechazaban rápido dos veces (o las de tandas siguientes) sumaban 10 y se abandonaba aunque el
+// resto de la primera tanda fuese a llegar; se descartaba lo que llegaba y se bajaba el libro de 14,5 MB.
 /** Todas las hojas por su CSV: { sheets, completo, porXlsx } o null si este camino no sirve (sin pestanas o alguna sin
  *  nombre, formato regional que no es el esperado, o nada llega): entonces se lee el libro entero, como antes. Cada hoja
  *  cuyo CSV no llega —o trae MENOS filas que lo aplicado— se pide por su XLSX (`filasPorXlsxDeHoja`); `completo`: todas
@@ -653,14 +653,15 @@ export async function hojasPorCsv(ids, obtenerXLSX = getXLSX, avisar = null, pre
   const pestanas = await discoverGids(ids);
   if (!pestanas.length || pestanas.some((p) => !p.title)) return null;
   const senales = { es: 0, en: 0 };
-  let exitos = 0, fallos = 0, perdidas = 0, porXlsx = 0, hechas = 0, abandonado = false;
+  const primeraTanda = new Set(pestanas.slice(0, CSV_A_LA_VEZ).map((p) => p.gid));
+  let exitos = 0, fallidasDeLaPrimera = 0, perdidas = 0, porXlsx = 0, hechas = 0, abandonado = false;
   const leidas = await mapLimit(pestanas, CSV_A_LA_VEZ, async ({ gid, title }) => {
     try {
       let filas = null;
       for (let intento = 0; intento < 2 && !filas && !abandonado; intento++) {
         try { filas = filasDeCsv(await csvDeHoja(ids, gid), XLSX, senales); exitos++; } catch (_) {
-          fallos++;
-          if (!exitos && fallos >= CSV_FALLOS_SIN_EXITO) abandonado = true;
+          if (intento === 0 && primeraTanda.has(gid)) fallidasDeLaPrimera++;
+          if (!exitos && fallidasDeLaPrimera >= primeraTanda.size) abandonado = true;
           else if (intento < 1) await new Promise((res) => setTimeout(res, 600));
         }
       }

@@ -42,7 +42,11 @@ beforeAll(() => {
     const u = String(url); pedidas.push(u);
     const gid = (u.match(/[?&]gid=(\d+)/) || [])[1];
     if (/\/htmlview/.test(u)) return html === null ? error(500) : ok(html);
-    if (/export\?format=csv/.test(u)) { const r = csvPorGid[gid]; return typeof r === 'string' ? ok(r) : error(r || 404); }
+    if (/export\?format=csv/.test(u)) {
+      let r = csvPorGid[gid];
+      if (r && typeof r === 'object') { await new Promise((res) => setTimeout(res, r.tarda)); r = r.r; }   // R1 · { tarda: ms, r }: llega tarde
+      return typeof r === 'string' ? ok(r) : error(r || 404);
+    }
     if (/export\?format=xlsx/.test(u)) {
       if (!gid) return libroEntero ? ok(libroEntero.slice(0)) : error(403);
       const r = xlsxPorGid[gid]; return r && typeof r !== 'number' ? ok(r.slice(0)) : error(r || 404);
@@ -138,8 +142,9 @@ describe('hojasPorCsv', () => {
     html = HTML(Array.from({ length: 30 }, (_, i) => 'Hoja ' + i));
     csvPorGid = {};
     expect(await hojasPorCsv(ids, xlsx)).toBe(null);
-    // no 30 hojas × 2 intentos: como mucho la primera tanda y su reintento
-    expect(pedidas.filter((u) => /export\?format=csv/.test(u)).length).toBeLessThanOrEqual(2 * CSV_A_LA_VEZ);
+    // no 30 hojas × 2 intentos: la primera tanda, una vez cada hoja (R1, 2026-10-18: antes valía «hasta el doble», y un
+    // umbral doblado —el doble de espera con la red colgada— pasaba sin que nadie lo viera)
+    expect(pedidas.filter((u) => /export\?format=csv/.test(u)).length).toBe(CSV_A_LA_VEZ);
   });
 
   it('unos rechazos RÁPIDOS al empezar no tiran el CSV si el resto de la primera tanda llega (pauta 3.5)', async () => {
@@ -153,6 +158,24 @@ describe('hojasPorCsv', () => {
     expect(r).not.toBe(null);
     expect(Object.keys(r.sheets)).toEqual(['Hoja 6', 'Hoja 7', 'Hoja 8', 'Hoja 9']);
     expect(r.completo).toBe(false);   // las 6 rechazadas tampoco llegan por su XLSX: falta, y el Worker pedirá el libro
+  });
+
+  it('R1 · se cuentan HOJAS de la primera tanda, no intentos: los rechazos rápidos no tiran el CSV mientras el resto de esa tanda llega', async () => {
+    // 15 hojas: las 5 primeras rechazan al instante (con su reintento, 10 intentos fallidos), las 5 siguientes llegan TARDE
+    // (después del reintento) y las 5 últimas —que entran en cuanto quedan huecos— rechazan también al instante. Antes
+    // (auditoría del 1.1, 2026-10-18) se abandonaba al 10.º intento fallido, se descartaban las que estaban llegando y el
+    // Worker bajaba el libro entero.
+    const titulos = Array.from({ length: 15 }, (_, i) => 'Hoja ' + i);
+    html = HTML(titulos);
+    csvPorGid = {}; xlsxPorGid = {};
+    titulos.forEach((_, i) => { csvPorGid[1111 * (i + 1)] = i >= 5 && i < 10 ? { tarda: 1500, r: 'Fecha,Valor\n01/09/2026,"' + i + ',5"\n' } : 429; });
+    const r = await hojasPorCsv(ids, xlsx);
+    expect(r).not.toBe(null);
+    expect(Object.keys(r.sheets)).toEqual(['Hoja 5', 'Hoja 6', 'Hoja 7', 'Hoja 8', 'Hoja 9']);
+    expect(r.completo).toBe(false);
+    // las rechazadas siguieron su camino: su reintento por CSV y su XLSX propio
+    expect(pedidas.filter((u) => /export\?format=csv/.test(u)).length).toBe(10 * 2 + 5);
+    expect(pedidas.filter((u) => /export\?format=xlsx&gid=/.test(u)).length).toBe(10 * 2);   // su XLSX, también con reintento
   });
 });
 
