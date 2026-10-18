@@ -1648,11 +1648,18 @@ function loop(now) {
   ultimoCuadro = now;
   const rawDt = (now - last) / 1000;
   // la nitidez se ajusta sólo con el ritmo pleno y la cámara en movimiento (A3): los cuadros espaciados del reposo no son
-  // «equipo lento», y pasar el ratón por encima no mueve nada
-  if (mueve) ajustarNitidez(now, rawDt * 1000); else reiniciarRitmo();
+  // «equipo lento», y pasar el ratón por encima no mueve nada. C2 (2026-10-18): y sólo mientras se mueve DE VERDAD (su último
+  // cambio, hace < 0,3 s), no en los 5 s de quietud tras soltar: ahí un equipo lento la bajaba sin que nada se moviera
+  if (!!fly || now - ultimoMovimiento < 300) ajustarNitidez(now, rawDt * 1000); else reiniciarRitmo();
   try { frameBody(now); } catch (err) { console.error(err); }
 }
 function frameBody(now) {
+  /* C2 (2026-10-18) · la inercia por TIEMPO: los controles frenan un 8 % por actualización, así que a 10 cuadros por segundo
+     la cámara seguía deslizándose 6 veces más (medido en un celular lento: 12 s, y la nitidez completa volvía a los ~20 s).
+     Con el freno según el cuadro (a 60 cps, exactamente .08) dura lo mismo en segundos en cualquier equipo (~2 s). El giro
+     total no cambia, pero en un equipo de menos de 60 cps la cámara sigue el arrastre más pegada y desliza menos al soltar
+     (en este PC, a ~30 cps: 6,2 → 2,0 s). Referencia de 60 cps: decisión del usuario (opción a). */
+  controls.dampingFactor = 1 - Math.pow(.92, Math.min(.25, (now - last) / 1000) * 60);
   const dt = Math.min(.08, (now - last) / 1000); last = now; const t = now / 1000;   // .08: el paso del reposo (~15 cps) sin frenar a la gente
   if (fly) { const k = Math.min(1, (now - fly.t0) / fly.dur), e = ease(k); camera.position.lerpVectors(fly.p0, fly.p1, e); controls.target.lerpVectors(fly.c0, fly.c1, e); if (k >= 1) fly = null; }
   controls.update();
