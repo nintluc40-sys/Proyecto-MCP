@@ -283,7 +283,12 @@ function box(x0, z0, x1, z1, y0, h, mat, cast, parent) {
 function plane(x0, z0, x1, z1, y, mat, parent) { const m = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, z1 - z0), mat); m.rotation.x = -Math.PI / 2; const [x, z] = P((x0 + x1) / 2, (z0 + z1) / 2); m.position.set(x, y, z); m.receiveShadow = true; (parent || scene).add(m); return m; }
 
 /* ---------- Terreno, calle, parqueadero y cerramiento ---------- */
-{ const g = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), M.sand); g.rotation.x = -Math.PI / 2; g.position.y = -.03; g.receiveShadow = true; scene.add(g); }
+// A5 (2026-10-18) · las constantes de la costa, aquí: la arena base las necesita (antes se declaraban más abajo, con la costa)
+const SHORE = 127, CH = [-26, -10], DIKE = [-37, -26];
+/* A5 (2026-10-18, usuario) · la arena base es un plano de fondo. Antes, 3000×3000 a −3 cm, también bajo TODO el mar (1 400 m):
+   con poca precisión de profundidad (16 bits, el mínimo que garantiza WebGL; medido con una «lupa» de near) el mar se veía
+   como arena y el canal desaparecía. Ahora termina en la orilla y va a −10 cm, más lejos del canal, el terreno y el frente. */
+{ const [, zOrilla] = P(0, SHORE + 1); const g = new THREE.Mesh(new THREE.PlaneGeometry(3000, zOrilla + 1500), M.sand); g.rotation.x = -Math.PI / 2; g.position.set(0, -.1, (zOrilla - 1500) / 2); g.receiveShadow = true; scene.add(g); }
 plane(SITE[0], SITE[1], SITE[2], SITE[3], .01, M.site);
 plane(-60, 89.4, 240, STREET[0] - 1.2, .015, M.gravel);                  // piedra 3/4 entre el cerramiento y la calle
 plane(-60, STREET[0] - 1.2, 240, STREET[0], .03, M.paint);              // bordillo
@@ -303,8 +308,7 @@ box(71.5, 88.6, 71.9, 89.4, 0, 2.8, M.wall, true); box(77.8, 88.6, 78.2, 89.4, 0
 // césped y jardineras junto a oficinas
 
 /* ---------- Entorno real: playa y mar al frente; canal de salida, dique y piscina de sal atrás ---------- */
-const SHORE = 127, CH = [-26, -10], DIKE = [-37, -26];
-const coast = new THREE.Group(); scene.add(coast);
+const coast = new THREE.Group(); scene.add(coast);   // SHORE, CH y DIKE se declaran arriba, junto a la arena base (A5)
 plane(-1500, STREET[1] + 1.4, 1500, SHORE - 7, .012, std({ map: rep(TX.sand, 90, 2), color: col('#f3e7c8'), roughness: 1 }), coast);       // playa seca
 plane(-1500, SHORE - 7, 1500, SHORE + 1, .014, std({ color: col('#b59f78'), roughness: .3, metalness: .05 }), coast);                       // arena húmeda
 // A2 (2026-10-18, usuario) · olas el doble de grandes (antes 260×70): la rejilla (moiré) a media distancia se nota menos y el
@@ -314,11 +318,13 @@ const seaM = std({ color: col('#2c7290'), roughness: .1, metalness: .2, normalMa
 plane(-1500, SHORE, 1500, SHORE + 1400, .02, seaM, coast);
 const shallowTex = canvasTex(64, (g, n) => { const gr = g.createLinearGradient(0, 0, 0, n); gr.addColorStop(0, 'rgba(126,206,196,.8)'); gr.addColorStop(1, 'rgba(126,206,196,0)'); g.fillStyle = gr; g.fillRect(0, 0, n, n); });
 const bajoM = std({ map: shallowTex, transparent: true, depthWrite: false, roughness: .2 });
-plane(-1500, SHORE, 1500, SHORE + 50, .024, bajoM, coast);
+// A5 (2026-10-18, usuario) · las capas transparentes del mar, a CENTÍMETROS del agua (.02): poco profunda .06, espuma y lenguas
+// .09, destellos .10/.105 (antes .024–.03: a partir de ~200 m la profundidad ya no las distinguía del agua)
+plane(-1500, SHORE, 1500, SHORE + 50, .06, bajoM, coast);
 // espuma de las olas que llegan a la orilla
 const foamTex = canvasTex(512, (g, n) => { g.clearRect(0, 0, n, n); for (let i = 0; i < 1400; i++) { const x = R(0, n), spread = n * (.12 + .18 * Math.abs(Math.sin(x / n * Math.PI * 4 + 1))); const y = n / 2 + R(-1, 1) * spread * R(0, 1); g.fillStyle = 'rgba(255,255,255,' + R(.2, .75).toFixed(2) + ')'; g.beginPath(); g.ellipse(x, y, R(3, 14), R(2, 6), 0, 0, 6.29); g.fill(); } });
 const foams = [];
-for (let k = 0; k < 5; k++) { const m = std({ map: rep(foamTex, 70, 1), transparent: true, depthWrite: false, roughness: .9, opacity: 0 }); const f = plane(-1500, 0, 1500, 7, .03, m, coast); f.userData.ph = k / 5; foams.push(f); }
+for (let k = 0; k < 5; k++) { const m = std({ map: rep(foamTex, 70, 1), transparent: true, depthWrite: false, roughness: .9, opacity: 0 }); const f = plane(-1500, 0, 1500, 7, .09, m, coast); f.userData.ph = k / 5; foams.push(f); }
 // orilla viva (opción L): la espuma que rompe sube por la arena húmeda y se retira; dos lenguas desfasadas con borde de encaje
 const encajeTex = canvasTex(512, (g, n) => {
   g.clearRect(0, 0, n, n);
@@ -326,12 +332,12 @@ const encajeTex = canvasTex(512, (g, n) => {
   for (let i = 0; i < 2600; i++) { const x = R(0, n), y = borde(x) + Math.pow(rnd(), 1.7) * n * .5; g.fillStyle = 'rgba(255,255,255,' + R(.2, .8).toFixed(2) + ')'; g.beginPath(); g.arc(x, y, R(1.2, 4.5), 0, 6.2832); g.fill(); }
   for (let x = 0; x < n; x += 2) { const y = borde(x); g.fillStyle = 'rgba(255,255,255,.75)'; g.fillRect(x, y - 2, 2, 5); }   // la línea del frente de la espuma
 });
-const lenguas = [0, .5].map((ph) => { const m = std({ map: rep(encajeTex, 60, 1), transparent: true, depthWrite: false, roughness: .85, opacity: 0 }); const f = plane(-1500, 0, 1500, 5, .03, m, coast); f.userData.ph = ph; return f; });
+const lenguas = [0, .5].map((ph) => { const m = std({ map: rep(encajeTex, 60, 1), transparent: true, depthWrite: false, roughness: .85, opacity: 0 }); const f = plane(-1500, 0, 1500, 5, .09, m, coast); f.userData.ph = ph; return f; });
 // destellos del sol en el mar: dos capas de chispas que se cruzan; su intensidad la pone la hora del día. A2 (2026-10-18,
 // usuario: «suavizarlos»): ya no titilan, van a la mitad de su máximo y las chispas son el doble de grandes (antes 170/207 ×
 // 46/57 repeticiones: puntos de menos de un píxel a lo lejos)
 const chispaTex = canvasTex(256, (g, n) => { g.clearRect(0, 0, n, n); for (let i = 0; i < 26; i++) { const x = R(8, n - 8), y = R(8, n - 8), r = R(.5, 1.3); const gr = g.createRadialGradient(x, y, 0, x, y, r * 3); gr.addColorStop(0, 'rgba(255,255,245,1)'); gr.addColorStop(1, 'rgba(255,255,245,0)'); g.fillStyle = gr; g.fillRect(x - r * 3, y - r * 3, r * 6, r * 6); } });
-const brillos = [0, 1].map((i) => plane(-1500, SHORE + 4, 1500, SHORE + 700, .026 + i * .001, new THREE.MeshBasicMaterial({ map: rep(chispaTex, (170 + i * 37) / 2, (46 + i * 11) / 2), color: col('#fff4d6'), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }), coast));
+const brillos = [0, 1].map((i) => plane(-1500, SHORE + 4, 1500, SHORE + 700, .1 + i * .005, new THREE.MeshBasicMaterial({ map: rep(chispaTex, (170 + i * 37) / 2, (46 + i * 11) / 2), color: col('#fff4d6'), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }), coast));
 let brilloBase = .32;
 // atrás: tierra con matorral, canal de salida de agua, dique con camino y piscina de sal
 plane(-1500, CH[1], 1500, .8, .012, std({ map: rep(TX.sand, 90, 1), color: col('#b9aa86'), roughness: 1 }), coast);
