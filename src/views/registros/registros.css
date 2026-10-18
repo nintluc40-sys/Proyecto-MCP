@@ -524,6 +524,10 @@
 .registros-app .mad-item-actions{display:flex;flex-direction:column;gap:4px;align-self:flex-start;flex-shrink:0}
 @media(max-width:768px){.registros-app .mad-item-actions{flex-direction:row}
 }
+/* 2.12-A (2026-10-18) · la «%» de las Tomas del día (🍤 Alimentación) mide 52 px para caber en el celular: sin las
+   flechitas del campo numérico, que en el ordenador se comían el texto («0,25» se veía «0,2»). ↑/↓ siguen sumando 0,05. */
+.registros-app .ma-pct{-moz-appearance:textfield;appearance:textfield}
+.registros-app .ma-pct::-webkit-inner-spin-button, .registros-app .ma-pct::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 .registros-app .alg-add-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;
   border-radius:20px;background:linear-gradient(135deg,#16a34a,#22c55e);
   color:#fff;border:1.5px solid #16a34a;font-size:12px;font-weight:700;cursor:pointer;
