@@ -287,8 +287,10 @@ function plane(x0, z0, x1, z1, y, mat, parent) { const m = new THREE.Mesh(new TH
 const SHORE = 127, CH = [-26, -10], DIKE = [-37, -26];
 /* A5 (2026-10-18, usuario) · la arena base es un plano de fondo. Antes, 3000×3000 a −3 cm, también bajo TODO el mar (1 400 m):
    con poca precisión de profundidad (16 bits, el mínimo que garantiza WebGL; medido con una «lupa» de near) el mar se veía
-   como arena y el canal desaparecía. Ahora termina en la orilla y va a −10 cm, más lejos del canal, el terreno y el frente. */
-{ const [, zOrilla] = P(0, SHORE + 1); const g = new THREE.Mesh(new THREE.PlaneGeometry(3000, zOrilla + 1500), M.sand); g.rotation.x = -Math.PI / 2; g.position.set(0, -.1, (zOrilla - 1500) / 2); g.receiveShadow = true; scene.add(g); }
+   como arena y el canal desaparecía. Ahora termina en la orilla y va a −10 cm, más lejos del canal, el terreno y el frente.
+   Su textura se repetía 90×90 sobre 3000×3000 (baldosas de 33 m): al acortarlo, la repetición en z se acorta igual, o la
+   arena saldría aplastada 1,9× (revisión de la maqueta, 2026-10-18). `M.sand` sólo lo usa este plano. */
+{ const [, zOrilla] = P(0, SHORE + 1); const g = new THREE.Mesh(new THREE.PlaneGeometry(3000, zOrilla + 1500), M.sand); g.rotation.x = -Math.PI / 2; g.position.set(0, -.1, (zOrilla - 1500) / 2); g.receiveShadow = true; M.sand.map.repeat.y = 90 * (zOrilla + 1500) / 3000; scene.add(g); }
 plane(SITE[0], SITE[1], SITE[2], SITE[3], .01, M.site);
 plane(-60, 89.4, 240, STREET[0] - 1.2, .015, M.gravel);                  // piedra 3/4 entre el cerramiento y la calle
 plane(-60, STREET[0] - 1.2, 240, STREET[0], .03, M.paint);              // bordillo
@@ -1634,7 +1636,9 @@ function loop(now) {
   rafId = requestAnimationFrame(loop);
   const activo = !!fly || now - ultimoToque < REPOSO_MS;
   const mueve = !!fly || now - ultimoMovimiento < REPOSO_MS;   // A3
-  if (!mueve && !quieta) { quieta = true; dprMovimiento = renderer.getPixelRatio(); ponerNitidez(DPR_MAX); }
+  // al pasar a reposo se dibuja YA (`ultimoCuadro = 0`): cambiar la nitidez borra el lienzo, y el freno del reposo de abajo
+  // dejaría ese cuadro sin pintar (en Chrome no se ve, en otros navegadores podría salir negro; revisión, 2026-10-18)
+  if (!mueve && !quieta) { quieta = true; dprMovimiento = renderer.getPixelRatio(); ponerNitidez(DPR_MAX); ultimoCuadro = 0; }
   else if (mueve && quieta) { quieta = false; ponerNitidez(dprMovimiento); esperarNitidez(); }
   if (!activo && now - ultimoCuadro < 1000 / REPOSO_FPS - 2) return;
   ultimoCuadro = now;
@@ -1668,7 +1672,7 @@ function frameBody(now) {
   if (armando && cupo === 0) { const n = renderer.info.programs.length - p0; if (n > 0) cupo = (performance.now() - r0) / n < 60 ? 4 : 1; }
   // cortina: este cuadro ya la trae entera, con sus sombras. Sin `armando` (punto 4, 2026-10-18): si `render` fallara en el
   // cuadro que vacía la lista, el siguiente que dibuje bien la quita (antes quedaba puesta para siempre)
-  if (!porRevelar.length) vp.classList.remove('is-armando');
+  if (!porRevelar.length && vp.classList.contains('is-armando')) vp.classList.remove('is-armando');   // una vez, no en cada cuadro
 }
 /* A4 (2026-10-18, usuario) · las aristas no parpadean de cerca. Línea y cara estaban a la MISMA profundidad y, al mover la
    cámara, la tarjeta gráfica dudaba cuál dibujar: `polygonOffset` empuja un poco hacia atrás las caras que llevan aristas
