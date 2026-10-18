@@ -256,3 +256,40 @@ describe('🏭 Planta · datos nuevos: se avisan y se actualizan al tocar (2026-
     await vi.waitFor(() => expect(calculos).toHaveLength(2));
   });
 });
+
+describe('🏭 Planta · pintar puede fallar sin colgar el panel (C5, 2026-10-18, usuario)', () => {
+  const conDatos = (v) => v.pintarEstado.mock.calls.filter((c) => c[0]);
+  const ultimoAviso = (v) => v.aviso.mock.calls.at(-1)[0];
+  /** Monta con un libro y deja su cálculo esperando; devuelve la Maqueta. */
+  const montarConLibro = async () => {
+    store.connected = true; store.globalData = [{ a: 1 }];
+    plantaView(root);
+    await vi.waitFor(() => expect(calculos).toHaveLength(1));
+    return montarPlanta.mock.results[0].value;
+  };
+
+  it('los pasos que la vista no pudo pintar se nombran en el aviso, en lugar de «puestos al día»', async () => {
+    const maqueta = await montarConLibro();
+    maqueta.pintarEstado.mockImplementation((E) => (E ? ['cifras', 'balizas'] : undefined));
+    calculos[0]({ modulos: { m: 1 }, resumen: null });
+    await vi.waitFor(() => expect(conDatos(maqueta)).toHaveLength(1));
+    expect(ultimoAviso(maqueta)).toBe('No se pudo pintar: cifras · balizas');
+  });
+
+  it('si pintar falla entera: lo avisa, no queda como pintada y el siguiente refresco vuelve a pintar (no sólo avisa)', async () => {
+    const maqueta = await montarConLibro();
+    maqueta.pintarEstado.mockImplementation((E) => { if (E) throw new Error('dato raro'); });
+    calculos[0]({ modulos: { m: 1 }, resumen: null });
+    await vi.waitFor(() => expect(conDatos(maqueta)).toHaveLength(1));
+    await espera();
+    expect(ultimoAviso(maqueta)).toBe('No se pudieron pintar los datos: dato raro');
+
+    maqueta.pintarEstado.mockImplementation(() => {});
+    store.globalData = [{ a: 2 }]; emit(EV.DATA, { firstLoad: false });   // refresco automático
+    await vi.waitFor(() => expect(calculos).toHaveLength(2));
+    calculos[1]({ modulos: { m: 2 }, resumen: null });
+    await vi.waitFor(() => expect(conDatos(maqueta)).toHaveLength(2));
+    expect(root.querySelector('.planta-nuevos').hidden).toBe(true);
+    expect(ultimoAviso(maqueta)).toMatch(/^Datos del MCP · puestos al día/);
+  });
+});

@@ -195,12 +195,19 @@ export function plantaView(root) {
   };
   const pintarCalculo = (calc) => {
     const { cifras, pasado, larv, mad, crono, fallos } = calc;
-    vista.pintarEstado({ modulos: larv ? larv.modulos : {}, resumen: larv ? larv.resumen : null, mad, cifras, crono,
-      mes: pasado ? { mes: pasado.mes, cierre: pasado.cierre } : null });
+    // C5 (2026-10-18, usuario) · pintar también puede fallar: la vista devuelve los pasos que no pudo pintar (la Maqueta
+    // pinta los demás) y, si falla entera, se avisa y NO queda como pintada (el próximo pintado lo reintenta). Antes el
+    // error subía sin control y el panel se quedaba en «Cargando datos de producción…».
+    let sinPintar;
+    try {
+      sinPintar = vista.pintarEstado({ modulos: larv ? larv.modulos : {}, resumen: larv ? larv.resumen : null, mad, cifras, crono,
+        mes: pasado ? { mes: pasado.mes, cierre: pasado.cierre } : null }) || [];
+    } catch (e) { console.error('[planta] pintar', e); vista.aviso('No se pudieron pintar los datos: ' + e.message); return; }
     yaPintado = true; pintadoCon[modo] = { datos: aceptados, mes: mesElegido, hoy: memo.hoy };
     reponerPosicion();
     const hora = new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
-    vista.aviso(fallos.length ? 'No se pudo calcular: ' + fallos.join(' · ')
+    const problemas = [fallos.length && 'No se pudo calcular: ' + fallos.join(' · '), sinPintar.length && 'No se pudo pintar: ' + sinPintar.join(' · ')].filter(Boolean);
+    vista.aviso(problemas.length ? problemas.join(' — ')
       : 'Datos del MCP · puestos al día a las ' + hora + (pasado ? ' · mostrando ' + pasado.mes + ' (maduración al ' + pasado.cierre.slice(8, 10) + '/' + pasado.cierre.slice(5, 7) + ')' : ''));
   };
   // Cada modo vive en su propia caja y NO se destruye al cambiar (2026-10-06, usuario): el que se deja sólo se oculta

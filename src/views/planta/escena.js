@@ -1370,11 +1370,19 @@ function pintarEstado(E) {
     g.st = !E ? null : g.kind === 'larv' ? E.modulos[g.id] || null : (E.mad && E.mad.salas[g.id]) || null;
     g.tanks.forEach((t) => { t.st = g.st && g.st.tanques ? g.st.tanques[t.num] || null : null; });
   });
-  paintWater(); pintarBalizas(); pintarCamiones(); pintarLuces(); pintarPersonal(); pintarCifras(E); pintarProduccion(E && E.cifras); pintarReemplazo(E && E.mad ? E.mad.reemplazo : null); pintarAtender(); groups.forEach(pintarFila);
+  // C5 (2026-10-18, usuario) · cada paso por separado: uno que falle (un dato con forma inesperada) ya no deja sin pintar
+  // a los que siguen ni sube el error sin control; se anota en la consola y se devuelve su nombre (index.js lo avisa).
+  const fallidos = [];
+  const paso = (nombre, fn) => { try { fn(); } catch (e) { console.error('[planta] repintado · ' + nombre, e); fallidos.push(nombre); } };
+  paso('agua de los tanques', paintWater); paso('balizas', pintarBalizas); paso('camiones', pintarCamiones); paso('luces', pintarLuces);
+  paso('personal', pintarPersonal); paso('cifras', () => pintarCifras(E)); paso('producción del mes', () => pintarProduccion(E && E.cifras));
+  paso('reemplazo de reproductores', () => pintarReemplazo(E && E.mad ? E.mad.reemplazo : null)); paso('qué atender', pintarAtender);
+  paso('lista de módulos', () => groups.forEach(pintarFila));
   renderer.shadowMap.needsUpdate = true;   // los camiones de despacho cambian con los datos y el mes
   esperarNitidez();   // el cálculo y el repintado traban unos cuadros: no son la tarjeta gráfica
   wasFar = null;   // rehace los rótulos en el próximo cuadro
-  if (selected) { if (tanqueFicha && tanqueFicha.g === selected) (selected.kind === 'larv' ? fichaTanque : fichaTanqueMad)(tanqueFicha); else fichaModulo(selected); }
+  if (selected) paso('ficha abierta', () => { if (tanqueFicha && tanqueFicha.g === selected) (selected.kind === 'larv' ? fichaTanque : fichaTanqueMad)(tanqueFicha); else fichaModulo(selected); });
+  return fallidos;
 }
 /* ---------- Qué atender hoy: las mismas alertas que las balizas y las cifras, en una lista ---------- */
 /** Lleva la cámara a un tanque y abre su ficha. Si el panel está debajo de la maqueta (celular), salta a ella: al
