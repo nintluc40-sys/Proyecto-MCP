@@ -914,11 +914,14 @@ root.querySelectorAll('#tod button').forEach(b => b.addEventListener('click', ()
 
 /* ---------- Cámara ---------- */
 let W = 1, H = 1, fly = null, userMoved = false;
+let ultimaVista = ['iso'];   // C1 (2026-10-18) · los argumentos del último encuadre elegido, para repetirlo al cambiar el tamaño
 function resize() {
   const r = vp.getBoundingClientRect(); W = Math.max(1, r.width); H = Math.max(1, r.height);
   renderer.setSize(W, H, false); camera.aspect = W / H; camera.updateProjectionMatrix();
   wasFar = null;   // el ancho decide si el rótulo va corto: rehacerlos
-  if (!userMoved && !selected && camera.position.lengthSq() > 0) { frameView('iso'); fly.dur = 1; }
+  // C1 · la ÚLTIMA vista elegida (botones, viaje a un tanque o a un módulo), recalculada para el tamaño nuevo; antes, siempre
+  // la general: «Planta» o «Desde atrás» se perdían al girar el celular o entrar en pantalla completa
+  if (!userMoved && !selected && camera.position.lengthSq() > 0) { frameView(...ultimaVista); fly.dur = 1; }
   medirFranjaMenu();
 }
 /* 3.7 (2026-10-15) · en pantalla angosta el ☰ del menú (`.nav-toggle`, fijo a la izquierda) tapaba el borde de los rótulos
@@ -939,6 +942,7 @@ function medirFranjaMenu() {
 controls.addEventListener('start', () => { userMoved = true; fly = null; hideTip(); });
 function hideTip() { const tp = $('#tip'); if (tp) tp.hidden = true; if (hovered) { hovered = null; paintWater(); } }
 function frameView(kind, target, size) {
+  ultimaVista = [kind, target, size]; userMoved = false;   // C1 · elegir una vista es elegir un encuadre (hasta el próximo arrastre)
   const tH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
   const dir = (kind === 'top' ? new THREE.Vector3(0, 1, .002) : kind === 'back' ? new THREE.Vector3(0, .74, -.95) : new THREE.Vector3(0, .8, .95)).normalize();
   let tgt, dist;
