@@ -306,7 +306,9 @@ const SHORE = 127, CH = [-26, -10], DIKE = [-37, -26];
 const coast = new THREE.Group(); scene.add(coast);
 plane(-1500, STREET[1] + 1.4, 1500, SHORE - 7, .012, std({ map: rep(TX.sand, 90, 2), color: col('#f3e7c8'), roughness: 1 }), coast);       // playa seca
 plane(-1500, SHORE - 7, 1500, SHORE + 1, .014, std({ color: col('#b59f78'), roughness: .3, metalness: .05 }), coast);                       // arena húmeda
-const seaNormal = waterNormal.clone(); seaNormal.needsUpdate = true; seaNormal.repeat.set(260, 70);
+// A2 (2026-10-18, usuario) · olas el doble de grandes (antes 260×70): la rejilla (moiré) a media distancia se nota menos y el
+// mar brilla un 19 % menos al girar (medido con la GPU real; la anisotropía, en cambio, la volvía nítida hasta el horizonte)
+const seaNormal = waterNormal.clone(); seaNormal.needsUpdate = true; seaNormal.repeat.set(130, 35);
 const seaM = std({ color: col('#2c7290'), roughness: .1, metalness: .2, normalMap: seaNormal, normalScale: new THREE.Vector2(.9, .9) });
 plane(-1500, SHORE, 1500, SHORE + 1400, .02, seaM, coast);
 const shallowTex = canvasTex(64, (g, n) => { const gr = g.createLinearGradient(0, 0, 0, n); gr.addColorStop(0, 'rgba(126,206,196,.8)'); gr.addColorStop(1, 'rgba(126,206,196,0)'); g.fillStyle = gr; g.fillRect(0, 0, n, n); });
@@ -324,9 +326,11 @@ const encajeTex = canvasTex(512, (g, n) => {
   for (let x = 0; x < n; x += 2) { const y = borde(x); g.fillStyle = 'rgba(255,255,255,.75)'; g.fillRect(x, y - 2, 2, 5); }   // la línea del frente de la espuma
 });
 const lenguas = [0, .5].map((ph) => { const m = std({ map: rep(encajeTex, 60, 1), transparent: true, depthWrite: false, roughness: .85, opacity: 0 }); const f = plane(-1500, 0, 1500, 5, .03, m, coast); f.userData.ph = ph; return f; });
-// destellos del sol en el mar: dos capas de chispas que se cruzan y titilan; su intensidad la pone la hora del día
+// destellos del sol en el mar: dos capas de chispas que se cruzan; su intensidad la pone la hora del día. A2 (2026-10-18,
+// usuario: «suavizarlos»): ya no titilan, van a la mitad de su máximo y las chispas son el doble de grandes (antes 170/207 ×
+// 46/57 repeticiones: puntos de menos de un píxel a lo lejos)
 const chispaTex = canvasTex(256, (g, n) => { g.clearRect(0, 0, n, n); for (let i = 0; i < 26; i++) { const x = R(8, n - 8), y = R(8, n - 8), r = R(.5, 1.3); const gr = g.createRadialGradient(x, y, 0, x, y, r * 3); gr.addColorStop(0, 'rgba(255,255,245,1)'); gr.addColorStop(1, 'rgba(255,255,245,0)'); g.fillStyle = gr; g.fillRect(x - r * 3, y - r * 3, r * 6, r * 6); } });
-const brillos = [0, 1].map((i) => plane(-1500, SHORE + 4, 1500, SHORE + 700, .026 + i * .001, new THREE.MeshBasicMaterial({ map: rep(chispaTex, 170 + i * 37, 46 + i * 11), color: col('#fff4d6'), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }), coast));
+const brillos = [0, 1].map((i) => plane(-1500, SHORE + 4, 1500, SHORE + 700, .026 + i * .001, new THREE.MeshBasicMaterial({ map: rep(chispaTex, (170 + i * 37) / 2, (46 + i * 11) / 2), color: col('#fff4d6'), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }), coast));
 let brilloBase = .32;
 // atrás: tierra con matorral, canal de salida de agua, dique con camino y piscina de sal
 plane(-1500, CH[1], 1500, .8, .012, std({ map: rep(TX.sand, 90, 1), color: col('#b9aa86'), roughness: 1 }), coast);
@@ -358,7 +362,7 @@ function animateCoast(t) {
   // la lengua de espuma sube hasta ~5,5 m por la arena húmeda (rápido) y se retira (lento), desvaneciéndose al bajar
   lenguas.forEach((l) => { const k = (t * .1 + l.userData.ph) % 1, sube = k < .35, u = sube ? Math.sin(k / .35 * Math.PI / 2) : Math.cos((k - .35) / .65 * Math.PI / 2);
     const [, z] = P(0, SHORE + 1.5 - 5.5 * u); l.position.z = z + 2.5; l.material.opacity = sube ? .9 : .9 * Math.pow(u, .6); });
-  brillos.forEach((b, i) => { b.material.map.offset.set(t * (i ? -.006 : .009), t * (i ? .004 : -.003)); b.material.opacity = brilloBase * (.55 + .45 * Math.sin(t * 1.7 + i * 2.1)); });
+  brillos.forEach((b, i) => { b.material.map.offset.set(t * (i ? -.006 : .009), t * (i ? .004 : -.003)); b.material.opacity = brilloBase * .5; });   // A2 · sin titileo
 }
 
 { const patchTex = canvasTex(128, (g, n) => { const gr = g.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2); gr.addColorStop(0, 'rgba(150,135,95,.55)'); gr.addColorStop(1, 'rgba(150,135,95,0)'); g.fillStyle = gr; g.fillRect(0, 0, n, n); });
