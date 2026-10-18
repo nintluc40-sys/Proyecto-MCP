@@ -1642,7 +1642,9 @@ function frameBody(now) {
   const r0 = armando ? performance.now() : 0, p0 = armando ? renderer.info.programs.length : 0;
   renderer.render(scene, camera);
   if (armando && cupo === 0) { const n = renderer.info.programs.length - p0; if (n > 0) cupo = (performance.now() - r0) / n < 60 ? 4 : 1; }
-  if (armando && !porRevelar.length) vp.classList.remove('is-armando');   // cortina: este cuadro ya la trae entera, con sus sombras
+  // cortina: este cuadro ya la trae entera, con sus sombras. Sin `armando` (punto 4, 2026-10-18): si `render` fallara en el
+  // cuadro que vacía la lista, el siguiente que dibuje bien la quita (antes quedaba puesta para siempre)
+  if (!porRevelar.length) vp.classList.remove('is-armando');
 }
 setTod('day'); paintWater(); renderer.shadowMap.needsUpdate = true;
 /* Aparición progresiva (2026-10-06, usuario): three r128 compila cada sombreador la primera vez que dibuja un material y
