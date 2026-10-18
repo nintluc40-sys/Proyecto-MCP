@@ -1503,9 +1503,11 @@ function despejarRotulos() {
     const el = g.label;
     if (el._v !== 1) { el.classList.remove('tapado'); return; }
     if (!el._w) { el._w = el.offsetWidth; el._h = el.offsetHeight; }
-    // 3.7 · bajo el ☰, a su derecha, pero sólo si ahí no choca: si chocaría, en su sitio (como antes, con el borde tapado)
+    // 3.7 · bajo el ☰, a su derecha, pero sólo si ahí no choca: si chocaría, en su sitio (como antes, con el borde tapado).
+    // R2 (auditoría del 1.1, 2026-10-18) · y sólo si su punto está en pantalla: el de un punto ya fuera (al desplazar la
+    // maqueta) se quedaba pegado al borde señalando lo que no se ve; así, el borde lo recorta, como antes del 3.7
     let x = el._x;
-    if (franjaMenu > 0 && el._x - el._w / 2 < franjaMenu && !chocaCon(caja(el, franjaMenu + el._w / 2))) x = franjaMenu + el._w / 2;
+    if (franjaMenu > 0 && el._x >= 0 && el._x - el._w / 2 < franjaMenu && !chocaCon(caja(el, franjaMenu + el._w / 2))) x = franjaMenu + el._w / 2;
     if (x !== el._xr) ponRotulo(el, x, el._y);
     const r = caja(el, x);
     const choca = chocaCon(r);
