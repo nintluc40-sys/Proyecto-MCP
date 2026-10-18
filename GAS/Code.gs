@@ -22,7 +22,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "29b386ac8876";
+const GAS_VERSION = "5296659a1c07";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -165,13 +165,13 @@ const LIMITS = {
 const RATE_MAX = 30, RATE_MS = 60000;
 
 // ── TOKEN COMPARTIDO (autenticación de payload) ────────────────────
-// Si esta constante está vacía → el GAS acepta cualquier petición que
-// pase los demás controles (rate limit, allowlist, sanitización). Esto
-// preserva la compatibilidad con clientes que no tengan token configurado.
-// Para activar la autenticación: pon aquí la MISMA cadena secreta que
-// configures en el cliente (Config → "Token compartido"), guarda y re-
-// despliega el Web App. A partir de ese momento, peticiones sin token o
-// con token distinto se rechazan con 401-like.
+// ⚠ NO pongas aquí el secreto: este archivo está en un repo PÚBLICO y viaja dentro de index (8).
+// Esta constante se queda VACÍA: es sólo lo que vale el token cuando el proyecto de Apps Script
+// no tiene la propiedad SHARED_TOKEN. Sin token, el GAS acepta cualquier petición que pase los
+// demás controles (rate limit, allowlist, sanitización), que es lo que permite a los clientes sin
+// token seguir enviando. El token se ACTIVA creando esa propiedad del script: ver sharedToken_,
+// justo debajo, con su ORDEN OBLIGATORIO (antes, el token en TODOS los dispositivos).
+// (Corregido el 2026-10-18: aquí decía «pon aquí la MISMA cadena secreta», y eso la publicaría.)
 const SHARED_TOKEN = "";
 
 // Lee el token del proyecto de Apps Script (Configuración → Propiedades del script),
