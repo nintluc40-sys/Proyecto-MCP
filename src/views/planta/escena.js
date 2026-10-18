@@ -362,8 +362,9 @@ plane(-1500, CH[0] + 1.2, 1500, CH[1] - 1.2, .016, canalM, coast);
 box(-1500, DIKE[0], 1500, DIKE[1], 0, 1.5, std({ map: rep(TX.gravel, 300, 2), color: col('#c4b08a'), roughness: 1 }), false, coast);
 plane(-1500, DIKE[0] + 3, 1500, DIKE[1] - 3, 1.52, std({ map: rep(TX.gravel, 300, 1), color: col('#ddd0b1'), roughness: 1 }), coast);   // camino del dique
 const saltTex = canvasTex(512, (g, n) => { grain(g, n, '#6f8e84', 10, 5000, 1.5); blotches(g, n, ['rgba(160,190,175,.14)', 'rgba(80,110,98,.14)'], 40, 20, 80); g.strokeStyle = 'rgba(200,220,210,.10)'; for (let i = 0; i < 90; i++) { const y = R(0, n); g.lineWidth = R(.5, 2); g.beginPath(); g.moveTo(0, y); g.bezierCurveTo(n * .3, y + R(-6, 6), n * .7, y + R(-6, 6), n, y); g.stroke(); } });
-const pondNormal = waterNormal.clone(); pondNormal.needsUpdate = true; pondNormal.repeat.set(160, 60);
-const salM = std({ map: rep(saltTex, 60, 18), color: col('#86ad9f'), roughness: .45, metalness: 0, normalMap: pondNormal, normalScale: new THREE.Vector2(.1, .1) });
+// C6 (2026-10-18, usuario) · el relieve, la textura de olas base: three r128 le aplica la repetición y el desplazamiento de
+// `map` y descarta los suyos, así que la copia propia (160×60, animada) no hacía nada (medido: moverla cambia 0 píxeles)
+const salM = std({ map: rep(saltTex, 60, 18), color: col('#86ad9f'), roughness: .45, metalness: 0, normalMap: waterNormal, normalScale: new THREE.Vector2(.1, .1) });
 plane(-1500, -900, 1500, DIKE[0], .45, salM, coast);
 // el reflejo del cielo, sólo en el agua (velocidad · 3): los tanques, el mar con su orilla baja, el canal y la piscina de sal
 const AGUA = [M.waterL, M.waterM, seaM, bajoM, canalM, salM];
@@ -376,7 +377,7 @@ const outlets = [];
   f.rotation.x = -Math.PI / 2; const [, fz] = P(x, -11.6); f.position.set(px, .03, fz); coast.add(f); outlets.push(f);
 });
 function animateCoast(t) {
-  seaNormal.offset.set(t * .004, -t * .02); chNormal.offset.set(t * .03, 0); pondNormal.offset.set(t * .002, t * .001);
+  seaNormal.offset.set(t * .004, -t * .02); chNormal.offset.set(t * .03, 0);
   foams.forEach(f => { const k = (t * .07 + f.userData.ph) % 1; const [, z] = P(0, SHORE + 24 - 26 * k); f.position.z = z + 3.5; f.material.opacity = Math.sin(Math.PI * Math.min(1, k * 1.15)) * .85; f.scale.y = 1 + k * .6; });
   outlets.forEach((o, i) => { const k = .75 + .25 * Math.sin(t * 2.2 + i); o.scale.set(k, k, 1); o.material.opacity = .35 + .25 * Math.sin(t * 2.2 + i + 1); });
   // la lengua de espuma sube hasta ~5,5 m por la arena húmeda (rápido) y se retira (lento), desvaneciéndose al bajar
