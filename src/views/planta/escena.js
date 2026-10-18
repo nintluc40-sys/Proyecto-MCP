@@ -196,7 +196,7 @@ const TXN = {
 };
 /* C3a (2026-10-18) · UNA copia por (imagen, repetición): en three r128 cada copia se sube ENTERA a la tarjeta gráfica (con sus
    mipmaps), así que pedir dos veces la misma repetición la duplicaba (medido: 156 texturas de 42 imágenes, ~116 MiB). ⚠ Lo que
-   devuelve es COMPARTIDO: no cambiarle la repetición ni el desplazamiento; si se anima, `copiaAnimada`. */
+   devuelve es COMPARTIDO: no cambiarle la repetición, el desplazamiento ni el giro; para eso, `copiaPropia`. */
 const copias = new Map();
 const repN = (t, x, y) => {
   let m = copias.get(t); if (!m) copias.set(t, (m = new Map()));
@@ -204,7 +204,7 @@ const repN = (t, x, y) => {
   if (!c) { c = t.clone(); c.needsUpdate = true; c.repeat.set(x, y); m.set(k, c); }
   return c;
 };
-const copiaAnimada = (t, x, y) => { const c = t.clone(); c.needsUpdate = true; c.repeat.set(x, y); return c; };   // propia: se le anima el desplazamiento
+const copiaPropia = (t, x, y) => { const c = t.clone(); c.needsUpdate = true; c.repeat.set(x, y); return c; };   // propia: se le cambia algo (desplazamiento animado, giro…)
 function windowsTex(wallHex, lit) { // fachada con ventanas; de noche se usa como mapa de luz
   return canvasTex(256, (g, n) => {
     if (lit) { g.fillStyle = '#000'; g.fillRect(0, 0, n, n); } else { grain(g, n, wallHex, 14, 2500, 1.4); g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(0, n - 10, n, 10); }
@@ -310,7 +310,7 @@ plane(-60, STREET[1], 240, STREET[1] + 1.4, .03, M.paint);
 for (let x = 30; x < 64; x += 3.2) plane(x, 89.6, x + .12, 95.2, .03, M.paint);  // líneas de parqueo
 // vías internas de evacuación
 // la calle interior va a lo largo de z: la textura gira para que las huellas de rodadura sigan la calle
-const roadM = std({ map: (() => { const t = rep(TX.asphalt, 12, 1); t.center.set(.5, .5); t.rotation = Math.PI / 2; return t; })(), roughness: .95 });
+const roadM = std({ map: (() => { const t = copiaPropia(TX.asphalt, 12, 1); t.center.set(.5, .5); t.rotation = Math.PI / 2; return t; })(), roughness: .95 });
 plane(72, 18.5, 77.6, 89.2, .02, roadM); plane(76, 75.2, 176, 78.6, .02, std({ map: rep(TX.asphalt, 16, 1), roughness: .95 }));
 // cerramiento perimetral con ingreso
 const fenceSegs = [[SITE[0], SITE[1], SITE[2], SITE[1] + .25], [SITE[0], SITE[1], SITE[0] + .25, SITE[3]], [SITE[2] - .25, SITE[1], SITE[2], SITE[3]], [SITE[0], SITE[3] - .25, 71.5, SITE[3]], [78.2, SITE[3] - .25, SITE[2], SITE[3]]];
@@ -349,7 +349,7 @@ const lenguas = [0, .5].map((ph) => { const m = std({ map: rep(encajeTex, 60, 1)
 // usuario: «suavizarlos»): ya no titilan, van a la mitad de su máximo y las chispas son el doble de grandes (antes 170/207 ×
 // 46/57 repeticiones: puntos de menos de un píxel a lo lejos)
 const chispaTex = canvasTex(256, (g, n) => { g.clearRect(0, 0, n, n); for (let i = 0; i < 26; i++) { const x = R(8, n - 8), y = R(8, n - 8), r = R(.5, 1.3); const gr = g.createRadialGradient(x, y, 0, x, y, r * 3); gr.addColorStop(0, 'rgba(255,255,245,1)'); gr.addColorStop(1, 'rgba(255,255,245,0)'); g.fillStyle = gr; g.fillRect(x - r * 3, y - r * 3, r * 6, r * 6); } });
-const brillos = [0, 1].map((i) => plane(-1500, SHORE + 4, 1500, SHORE + 700, .1 + i * .005, new THREE.MeshBasicMaterial({ map: copiaAnimada(chispaTex, (170 + i * 37) / 2, (46 + i * 11) / 2), color: col('#fff4d6'), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }), coast));
+const brillos = [0, 1].map((i) => plane(-1500, SHORE + 4, 1500, SHORE + 700, .1 + i * .005, new THREE.MeshBasicMaterial({ map: copiaPropia(chispaTex, (170 + i * 37) / 2, (46 + i * 11) / 2), color: col('#fff4d6'), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }), coast));
 let brilloBase = .32;
 // atrás: tierra con matorral, canal de salida de agua, dique con camino y piscina de sal
 plane(-1500, CH[1], 1500, .8, .012, std({ map: rep(TX.sand, 90, 1), color: col('#b9aa86'), roughness: 1 }), coast);
@@ -1710,6 +1710,38 @@ function frameBody(now) {
     else if (o.geometry && o.geometry.type === 'PlaneGeometry') ms.forEach((m) => deSuelo.add(m));
   });
   conAristas.forEach((m) => { if (!deSuelo.has(m)) { m.polygonOffset = true; m.polygonOffsetFactor = 1; m.polygonOffsetUnits = 1; } });
+}
+/* C3b (2026-10-18, usuario) · el resto de texturas compartidas: la MISMA imagen con repeticiones distintas de verdad (arena,
+   hormigón, grava, asfalto…) se subía una vez por repetición. Donde es seguro —cada pieza con UN material, su geometría sin
+   compartir con piezas de otro material ni instanciada, y la copia sin animar— la repetición pasa a las coordenadas de la
+   geometría (uv × repetición: la misma cuenta) y el material usa la imagen base; con repetición 1×1, la base sin más. Lo que
+   no cumple se queda como estaba. Nunca las del relieve del agua (su base se anima). Una vez, antes del primer dibujo. */
+{
+  const base = new Map(); copias.forEach((m, b) => { if (b !== waterNormal) m.forEach((c) => base.set(c, b)); });   // copia → imagen base
+  const porMaterial = new Map(), matsDeGeo = new Map();
+  scene.traverse((o) => {
+    if (!o.isMesh) return;
+    const ms = Array.isArray(o.material) ? o.material : [o.material];
+    if (!matsDeGeo.has(o.geometry)) matsDeGeo.set(o.geometry, new Set());
+    ms.forEach((m) => { matsDeGeo.get(o.geometry).add(m); if (!porMaterial.has(m)) porMaterial.set(m, []); porMaterial.get(m).push(o); });
+  });
+  const escaladas = new Set();
+  porMaterial.forEach((piezas, m) => {
+    const c = m.map, b = c && base.get(c);
+    if (!b || c.offset.x || c.offset.y || c.rotation || c.center.x || c.center.y) return;   // ni animadas ni giradas
+    // las demás ranuras siguen la transformación del `map`; si alguna fuese OTRA copia de la memoria, no se toca
+    if (['normalMap', 'emissiveMap', 'roughnessMap', 'metalnessMap', 'alphaMap', 'bumpMap', 'specularMap'].some((k) => m[k] && m[k] !== c && base.has(m[k]))) return;
+    const uno = c.repeat.x === 1 && c.repeat.y === 1;
+    if (!uno && !piezas.every((o) => !Array.isArray(o.material) && !o.isInstancedMesh && matsDeGeo.get(o.geometry).size === 1)) return;
+    if (!uno) piezas.forEach((o) => {
+      if (escaladas.has(o.geometry)) return;
+      escaladas.add(o.geometry);
+      const uv = o.geometry.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * c.repeat.x, uv.getY(i) * c.repeat.y);
+      uv.needsUpdate = true;
+    });
+    m.map = b;
+  });
 }
 setTod('day'); paintWater(); renderer.shadowMap.needsUpdate = true;
 /* Aparición progresiva (2026-10-06, usuario): three r128 compila cada sombreador la primera vez que dibuja un material y
