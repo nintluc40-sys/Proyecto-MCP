@@ -1664,6 +1664,22 @@ function frameBody(now) {
   // cuadro que vacía la lista, el siguiente que dibuje bien la quita (antes quedaba puesta para siempre)
   if (!porRevelar.length) vp.classList.remove('is-armando');
 }
+/* A4 (2026-10-18, usuario) · las aristas no parpadean de cerca. Línea y cara estaban a la MISMA profundidad y, al mover la
+   cámara, la tarjeta gráfica dudaba cuál dibujar: `polygonOffset` empuja un poco hacia atrás las caras que llevan aristas
+   y la línea gana siempre (medido el 16-10 con la GPU real: −27 % de píxeles inestables de cerca, −14 % en la vista
+   inicial). Sobre el material MISMO, no una copia: la hora del día los cambia por referencia (setTod: ventanas, lámparas,
+   agua). Y NO en el que comparten con planos del suelo (casi pegados a la grava, como el bordillo): visto de lado, el
+   desplazamiento podría hundirlos. Una vez, con la escena ya construida y antes del primer dibujo. */
+{
+  const conAristas = new Set(), deSuelo = new Set();
+  scene.traverse((o) => {
+    if (!o.isMesh) return;
+    const ms = Array.isArray(o.material) ? o.material : [o.material];
+    if (o.userData.edged) ms.forEach((m) => conAristas.add(m));
+    else if (o.geometry && o.geometry.type === 'PlaneGeometry') ms.forEach((m) => deSuelo.add(m));
+  });
+  conAristas.forEach((m) => { if (!deSuelo.has(m)) { m.polygonOffset = true; m.polygonOffsetFactor = 1; m.polygonOffsetUnits = 1; } });
+}
 setTod('day'); paintWater(); renderer.shadowMap.needsUpdate = true;
 /* Aparición progresiva (2026-10-06, usuario): three r128 compila cada sombreador la primera vez que dibuja un material y
    ESPERA el resultado en el hilo principal (getProgramInfoLog); la maqueta usa 26, así que el primer cuadro congelaba la
