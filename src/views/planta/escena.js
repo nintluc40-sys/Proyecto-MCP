@@ -69,6 +69,7 @@
    ============================================================ */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { BufferGeometryUtils } from 'three/examples/jsm/utils/BufferGeometryUtils.js';   // C4 · unir geometría
 import { LARV, LARV_H, MAT, OTHERS, SITE, C0, STREET, tanquesDeSala } from './plano.js';
 import { STAGE_CATS } from '../supervisor/etapas.js';
 import { fmtPop } from '../../core/format.js';
@@ -1741,6 +1742,58 @@ function frameBody(now) {
       uv.needsUpdate = true;
     });
     m.map = b;
+  });
+}
+/* C4 (2026-10-18, usuario) · menos llamadas de dibujo: 792 por cuadro en la vista general (623 piezas + 193 juegos de
+   aristas), el freno del celular (10–12 cps). Una vez construida la escena y antes del primer dibujo: (1) las aristas, todas
+   con `edgeMat`, quedan en UN objeto de línea por contenedor (el primer Group antepasado, o la escena); (2) las mallas
+   opacas que no reciben clics ni se mueven se unen dentro de su MISMO padre, con el mismo material, sombras, orden de
+   dibujo y atributos (en la raíz, además, por fase del armado: el unido ocupa el sitio del primero). Nunca: instanciadas,
+   transparentes, de varios materiales, con hijos, reflejadas, las losas (clic), las cajas invisibles de las áreas, el
+   cielo, las estrellas, `life` (aves y los camiones de los datos) ni las balizas. Las originales se descartan antes de
+   subirse a la tarjeta gráfica; las unidas se liberan en `dispose`, como todo lo de la escena. */
+{
+  scene.updateMatrixWorld(true);
+  const dentroDe = (o, g) => { for (let p = o; p; p = p.parent) if (p === g) return true; return false; };
+  const excluida = (o) => o === sky || o === stars || dentroDe(o, life) || dentroDe(o, balizas);
+  const contenedor = (o) => { let p = o.parent; while (p && !p.isGroup && !p.isScene) p = p.parent; return p; };
+  const enPadre = (padre, o) => new THREE.Matrix4().copy(padre.matrixWorld).invert().multiply(o.matrixWorld);
+  const ponJunto = (padre, nuevo, ref) => {   // en la raíz, en el sitio del primero (el armado reparte por posición)
+    let top = ref; while (top.parent !== scene && top.parent) top = top.parent;
+    padre.add(nuevo);
+    if (padre === scene) { scene.children.pop(); scene.children.splice(scene.children.indexOf(top), 0, nuevo); }
+  };
+  const unir = (geos) => { const g = BufferGeometryUtils.mergeBufferGeometries(geos, false); geos.forEach((x) => x.dispose()); return g; };
+  // (1) aristas
+  const lineas = new Map();
+  scene.traverse((o) => { if (o.isLineSegments && o.material === edgeMat && !excluida(o)) { const c = contenedor(o); if (!lineas.has(c)) lineas.set(c, []); lineas.get(c).push(o); } });
+  lineas.forEach((ls, c) => {
+    if (ls.length < 2) return;
+    const g = unir(ls.map((l) => l.geometry.clone().applyMatrix4(enPadre(c, l))));
+    if (!g) return;
+    ponJunto(c, new THREE.LineSegments(g, edgeMat), ls[0]);
+    ls.forEach((l) => { l.parent.remove(l); l.geometry.dispose(); });
+  });
+  // (2) mallas
+  const firma = (g) => Object.keys(g.attributes).sort().join(',') + (g.index ? '|i' : '');
+  const hijos = scene.children, faseDe = (o) => { if (o.parent !== scene) return 0; const k = hijos.indexOf(o);
+    return k < hijos.indexOf(coast) ? 1 : k < hijos.indexOf(roofs) ? 2 : k < hijos.indexOf(nature) ? 3 : k < hijos.indexOf(glows) ? 4 : 5; };
+  const grupos = new Map();
+  scene.traverse((o) => {
+    if (!o.isMesh || o.isInstancedMesh || Array.isArray(o.material) || o.userData.group || o.children.length || excluida(o)) return;
+    const m = o.material;
+    if (m.visible === false || m.transparent || o.matrixWorld.determinant() < 0) return;
+    const k = [o.parent.uuid, m.uuid, o.castShadow, o.receiveShadow, o.renderOrder, firma(o.geometry), faseDe(o)].join('|');
+    if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(o);
+  });
+  grupos.forEach((ms) => {
+    if (ms.length < 2) return;
+    const padre = ms[0].parent, g = unir(ms.map((o) => o.geometry.clone().applyMatrix4(enPadre(padre, o))));
+    if (!g) return;
+    const u = new THREE.Mesh(g, ms[0].material);
+    u.castShadow = ms[0].castShadow; u.receiveShadow = ms[0].receiveShadow; u.renderOrder = ms[0].renderOrder; u.userData.edged = ms.some((o) => o.userData.edged);
+    ponJunto(padre, u, ms[0]);
+    ms.forEach((o) => { padre.remove(o); o.geometry.dispose(); });
   });
 }
 setTod('day'); paintWater(); renderer.shadowMap.needsUpdate = true;
