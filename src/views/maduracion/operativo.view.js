@@ -47,7 +47,7 @@ import {
   PERIODOS, PERIODO_INICIAL, periodoDe, normalizarFiltro, hayFiltro, kpiVivos, kpiLotes, kpiSalas, kpiOcupacion,
   kpiMortalidad, kpiReproduccion, mapaDePlanta, MODOS_MAPA, ESTADO_VACIO, ESTADO_SIN, alertas, ultimosRegistros,
   cuarentenasDeLotes, conIngresoDelLote, curvaDeCuarentena, AVISO_CUARENTENA_DIAS, tarjetasDeSalas, detalleDeSala, ambienteDelDia,
-  indiceDeFiltro, cicloDelLote, etiquetasDeFiltro, kpiBiomasa, loteUnico, salaUnica, textoDeTanque,
+  indiceDeFiltro, cicloDelLote, etiquetasDeFiltro, kpiBiomasa, loteUnico, salaUnica, salaElegida, textoDeTanque,
 } from './operativo.tablero.js';
 import { KPIS_CON_GRAFICO, graficoDeKpi } from './operativo.kpis.js';
 import { BIOMOL_PATOGENOS } from './operativo.laboratorio.js';
@@ -323,6 +323,8 @@ export function operativoView(root) {
   let h = cabeceraHTML(fecha) + barra + subnavHTML() + avisosDelDatoHTML(M);
   let detalle = null;
   if (vOp.sub === 'salas') {
+    // D3 (2026-10-18) · el detalle no sobrevive a su tarjeta: una sala abierta que el filtro deja fuera se cierra (como la ficha del lote o del tanque)
+    if (vOp.salaDetalle && !salaElegida(vOp.salaDetalle, F)) vOp.salaDetalle = '';
     const salaDet = salaUnica(F) || vOp.salaDetalle;   // etapa B · se abre solo sólo con UNA sala (decisión del usuario)
     detalle = salaDet ? detalleDeSala(M, salaDet, periodo, F, memo.partes) : null;
     h += salasHTML(M, F, detalle, periodo);

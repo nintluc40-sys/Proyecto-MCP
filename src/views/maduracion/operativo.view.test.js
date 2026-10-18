@@ -468,6 +468,25 @@ describe('Maduración · operativo · 🏠 Salas', () => {
     expect([...root.querySelectorAll('.mop-sala-card')].map((c) => c.dataset.mopSala)).toEqual(['Sala 2']);
     expect(root.querySelector('.mop-detalle .mc-card-h').textContent).toContain('Sala 2');
   });
+
+  /* D3 (auditoría del 1.1, 2026-10-18) · el detalle no sobrevive a su tarjeta: abierta la Sala 3 sin filtro, marcar las
+     salas 1 y 2 la cierra (antes quedaba el detalle de la 3 bajo las tarjetas de la 1 y la 2), y no vuelve sola al quitar
+     el filtro. Una sala abierta que SÍ está en el filtro sigue abierta. */
+  it('una sala abierta que el filtro deja fuera se cierra; la que sigue dentro, no', async () => {
+    await montar(PLANTA);
+    click(root.querySelector('[data-mop-sub="salas"]'));
+    click(root.querySelector('[data-mop-sala="Sala 3"]'));
+    expect(root.querySelector('.mop-detalle .mc-card-h').textContent, 'control').toContain('Sala 3');
+    marcar('sala', ['Sala 1', 'Sala 2']);
+    expect([...root.querySelectorAll('.mop-sala-card')].map((c) => c.dataset.mopSala)).toEqual(['Sala 1', 'Sala 2']);
+    expect(root.querySelector('.mop-detalle')).toBeNull();
+    marcar('sala', []);
+    expect(root.querySelector('.mop-detalle')).toBeNull();
+    click(root.querySelector('[data-mop-sala="Sala 1"]'));
+    marcar('sala', ['Sala 1', 'Sala 2']);
+    expect(root.querySelector('.mop-detalle .mc-card-h').textContent).toContain('Sala 1');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
 });
 
 /* 3 (2026-09-29, usuario) · «en los gráficos de Temperatura por hora y oxígeno por hora, marcar un filtro para ambos para
