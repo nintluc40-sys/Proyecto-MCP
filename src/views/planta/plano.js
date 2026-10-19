@@ -53,16 +53,25 @@ export function tanquesDeSala(m) {
    entonces, uno por uno. Un edificio nuevo trae el suyo.
    Plan B · B5 (2026-10-19, usuario) · dos nombres que no cuadraban con el plano: la nave de x 118–126 no es un generador
    ni un reservorio (sus rótulos: blowers, área de calderos, diésel, agua purificada, sala de análisis, CIO 2; los
-   generadores están en el frente) y la de x 150–159 tampoco es un reservorio (blowers, bodegas, sala de análisis). */
+   generadores están en el frente) y la de x 150–159 tampoco es un reservorio (blowers, bodegas, sala de análisis).
+   Plan B · B3 (2026-10-19, usuario) · los reservorios con su nombre del plano, partidos DENTRO de sus cajas de antes (los
+   rótulos «1 A», «3 D»… caen en el centro de cada parte, ±1–2 m): 1B–1A y 2B–2A en dos mitades, 3D–3A en cuatro (el área
+   se llamaba «Algas premasivos»: ése es el rótulo de la franja angosta de al lado), 4C–4A y 5C–5A en tres. El
+   «Reservorio» del frente derecho es el biodigestor y el taller de mantenimiento. No entran 8A–8D (cotas junto al Módulo 8),
+   9A–9B (dentro del cuarto de máquinas) ni A–D (al pie de los módulos 8–10: sin rótulo claro). */
 export const OTHERS = [
-  [79.3, 38.2, 84.2, 66.4, 2.2, 'res', 'Algas premasivos'], [85.6, 38.2, 94.1, 66.4, 3.4, 'bld', 'Filtros y tratamiento de agua · Turbidex, tanques elevados, dosificación', 'filtros', '#e7eef0'],
-  [98.6, 38.2, 110.2, 66.4, 1.2, 'alg', 'Algas masivos'], [112, 38.2, 117, 66.4, 2.2, 'res', 'Reservorio'], [118.3, 38.2, 126.4, 66.4, 3.4, 'bld', 'Calderos y CIO 2 · sopladores, diésel, agua purificada, sala de análisis', 'diesel', '#f1ece2'],
-  [130.8, 38.2, 142.5, 66.4, 1.2, 'alg', 'Algas masivos'], [144.3, 38.2, 149.2, 66.4, 2.2, 'res', 'Reservorio'], [150.5, 38.2, 158.6, 66.4, 3.4, 'bld', 'Sopladores y sala de análisis · bodegas', null, '#e8e2f0'],
+  [79.3, 38.2, 84.2, 45.25, 2.2, 'res', 'Reservorio 3D · agua salada'], [79.3, 45.25, 84.2, 52.3, 2.2, 'res', 'Reservorio 3C · agua salada'],
+  [79.3, 52.3, 84.2, 59.35, 2.2, 'res', 'Reservorio 3B · agua salada'], [79.3, 59.35, 84.2, 66.4, 2.2, 'res', 'Reservorio 3A · agua salada'], [85.6, 38.2, 94.1, 66.4, 3.4, 'bld', 'Filtros y tratamiento de agua · Turbidex, tanques elevados, dosificación', 'filtros', '#e7eef0'],
+  [98.6, 38.2, 110.2, 66.4, 1.2, 'alg', 'Algas masivos'], [112, 38.2, 117, 52.3, 2.2, 'res', 'Reservorio 2B · agua salada'], [112, 52.3, 117, 66.4, 2.2, 'res', 'Reservorio 2A · agua salada'], [118.3, 38.2, 126.4, 66.4, 3.4, 'bld', 'Calderos y CIO 2 · sopladores, diésel, agua purificada, sala de análisis', 'diesel', '#f1ece2'],
+  [130.8, 38.2, 142.5, 66.4, 1.2, 'alg', 'Algas masivos'], [144.3, 38.2, 149.2, 52.3, 2.2, 'res', 'Reservorio 1B · agua salada'], [144.3, 52.3, 149.2, 66.4, 2.2, 'res', 'Reservorio 1A · agua salada'], [150.5, 38.2, 158.6, 66.4, 3.4, 'bld', 'Sopladores y sala de análisis · bodegas', null, '#e8e2f0'],
   [164, 38.2, 175.6, 66.4, 1.2, 'alg', 'Algas masivos'],
   [78, 68.6, 95.4, 74.8, 3.4, 'bld', 'Administración · dirección, asistencia, espera', 'admin', '#e7eef0'], [99, 68.6, 128.6, 74.8, 3.4, 'bld', 'Fotobiorreactor y CIO · cisterna de agua salada', null, '#efe6d6'],
-  [131.7, 68.6, 160.4, 74.8, 3.4, 'bld', 'Edificio de servicio', null, '#e8e2f0'], [164.4, 68.6, 173, 74.8, 2.2, 'res', 'Reservorio'],
+  [131.7, 68.6, 160.4, 74.8, 3.4, 'bld', 'Edificio de servicio', null, '#e8e2f0'], [164.4, 68.6, 173, 74.8, 2.2, 'res', 'Biodigestor · y taller de mantenimiento'],
   [78, 79, 170, 88.6, 3.6, 'bld', 'Comedor, cocina y bodegas · insumos, carboys', 'comedor', '#e7eef0'], [56.2, 49.4, 71.7, 88.6, 3.4, 'bld', 'Cuarto de máquinas · bombas, calderos, blowers', 'maquinas', '#efe6d6'],
-  [64.4, 19.3, 70.8, 48.4, 2.2, 'res', 'Reservorio'], [36.3, 13.4, 63.6, 17.2, 2.2, 'res', 'Reservorio de agua dulce'],
+  [64.4, 19.3, 70.8, 29, 2.2, 'res', 'Reservorio 4C · agua salada'], [64.4, 29, 70.8, 38.7, 2.2, 'res', 'Reservorio 4B · agua salada'],
+  [64.4, 38.7, 70.8, 48.4, 2.2, 'res', 'Reservorio 4A · agua salada'],
+  [36.3, 13.4, 45.4, 17.2, 2.2, 'res', 'Reservorio 5C · agua dulce'], [45.4, 13.4, 54.5, 17.2, 2.2, 'res', 'Reservorio 5B · agua dulce'],
+  [54.5, 13.4, 63.6, 17.2, 2.2, 'res', 'Reservorio 5A · agua dulce'],
   [46.9, 2.2, 66.8, 11.6, 3.6, 'bld', 'Laboratorio · microbiología, PCR, fisicoquímico, artemia', 'lab', '#e7eef0'],
   [67.4, 1.6, 83.2, 18, 3.4, 'bld', 'Oficina de maduración · alimentos, paneles eléctricos', null, '#efe6d6'], [111.4, 1.6, 116.4, 17.4, 3.4, 'bld', 'Edificio de servicio', null, '#e8e2f0'],
   [79.2, 18.4, 176.5, 20.1, .6, 'canal', 'Canal sedimentador y recolector'],

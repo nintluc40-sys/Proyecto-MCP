@@ -56,6 +56,32 @@ describe('plano · otras áreas (opción F)', () => {
     expect(titulos).toContain('Calderos y CIO 2');
     expect(titulos).toContain('Sopladores y sala de análisis');
   });
+
+  /* Plan B · B3 (2026-10-19, usuario) · los reservorios con su nombre del plano, partidos DENTRO de las cajas de antes: cada
+     grupo cubre exactamente su caja, sin huecos ni solapes, y nada más se movió. */
+  it('🔴 los reservorios 1A–5C con su nombre y su agua, cada grupo en su caja de antes', () => {
+    const res = (n) => OTHERS.filter((o) => new RegExp('^Reservorio ' + n + '[A-D] · ').test(o[6]));
+    const GRUPOS = [   // [número, letras de la primera a la última parte, caja de antes, eje en que se parte, agua]
+      [1, 'BA', [144.3, 38.2, 149.2, 66.4], 'z', 'salada'], [2, 'BA', [112, 38.2, 117, 66.4], 'z', 'salada'],
+      [3, 'DCBA', [79.3, 38.2, 84.2, 66.4], 'z', 'salada'], [4, 'CBA', [64.4, 19.3, 70.8, 48.4], 'z', 'salada'],
+      [5, 'CBA', [36.3, 13.4, 63.6, 17.2], 'x', 'dulce'],
+    ];
+    for (const [n, letras, caja, eje, agua] of GRUPOS) {
+      const p = res(n);
+      expect(p.map((o) => o[6]), 'grupo ' + n).toEqual([...letras].map((l) => `Reservorio ${n}${l} · agua ${agua}`));
+      const [i0, i1, j0, j1] = eje === 'z' ? [1, 3, 0, 2] : [0, 2, 1, 3];
+      expect(p[0][i0], n + ': empieza donde la caja').toBe(caja[i0]);
+      expect(p[p.length - 1][i1], n + ': acaba donde la caja').toBe(caja[i1]);
+      p.forEach((o, k) => {
+        expect([o[j0], o[j1]], n + ': el otro lado, el de la caja').toEqual([caja[j0], caja[j1]]);
+        if (k) expect(o[i0], n + ': sin hueco ni solape').toBe(p[k - 1][i1]);
+        expect(o[5]).toBe('res');
+      });
+    }
+    expect(OTHERS.some((o) => /^Algas premasivos/.test(o[6])), 'el rótulo era de la franja de al lado').toBe(false);
+    expect(OTHERS.find((o) => o[0] === 164.4)[6]).toBe('Biodigestor · y taller de mantenimiento');
+    expect(OTHERS.filter((o) => o[6] === 'Reservorio'), 'ningún reservorio sin nombre').toEqual([]);
+  });
 });
 
 describe('plano · maduración', () => {
