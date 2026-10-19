@@ -33,8 +33,8 @@ import { MAD_OP_ORIGEN } from './operativo.fuentes.js';
 import { sumarDias } from '../registros/lib/mad-libro.js';
 import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { revisionesDeNauplios } from './operativo.revisiones.js';
-import { graficoVivos, graficoDeKpi } from './operativo.kpis.js';
-import { tablaDeReproduccion, totalesDeReproduccion } from './operativo.reproduccion.js';
+import { graficoVivos, graficoDeKpi, graficoReproduccion } from './operativo.kpis.js';
+import { tablaDeReproduccion, totalesDeReproduccion, pendientesDeN5 } from './operativo.reproduccion.js';
 
 const O = MAD_OP_ORIGEN;
 const ING = (fecha, lote, sala, tanque, machos, hembras, cg) => ({ _SheetOrigin: O, 'Camaronera origen': 'X', Fecha: fecha,
@@ -310,6 +310,47 @@ describe('Maduración · operativo · etapa C · el filtro con VARIAS piscinas y
     expect(kpiReproduccion(DES, p, FC({ piscina: ['P1', 'P2'] })).n5).toBe(1500);   // 600 + 900: el N5 también se filtra
     // Sin índice (pruebas puras) el origen no puede aplicarse y se ignora, como en el resto del tablero.
     expect(kpiReproduccion(DES, p, F({ piscina: 'P1' })).desoves).toBe(14);
+  });
+});
+
+/* ── PAUTA 3.1 (2026-10-19, usuario: «decirlo») ── 🥚 Reproducción no puede honrar el ESTADO (el de un lote en una sala al
+   cierre de la foto: un desove no lo registra) ni el SEXO (un desove es siempre de hembras). Antes los callaba: con
+   «♂ Machos» o «Cuarentena» la tarjeta enseñaba lo mismo que sin filtro y no lo decía. Ahora las cifras siguen iguales y
+   la tarjeta, su gráfico y la sub-vista (totales, Por lote, pendientes, despacho) los nombran entre lo que no aplican. */
+describe('Maduración · operativo · pauta 3.1 · 🥚 Reproducción DICE que no aplica el Estado ni el Sexo', () => {
+  const D = (fecha, lote, cg, desoves, n5) => ({ Fecha: fecha, Lote: lote, 'Código genético': cg, Desoves: desoves,
+    'Total de huevos': 100000 * desoves, N2: 80000 * desoves, N5: n5, 'Hembras no viables': 0 });
+  const DES = [D('2026-09-14', 'QA', 'CA', 3, 300000), D('2026-09-15', 'QB', 'CB', 2, ''), D('2026-09-16', 'QC', 'CC', 5, 400000)];
+  const p = { desde: '2026-09-01', hasta: FOTO };
+  const M = { fuentes: { desoves: DES }, fecha: FOTO };
+  const casos = [[F({ estado: 'Cuarentena' }), ['estado']], [F({ sexo: 'machos' }), ['sexo']], [F({ sexo: 'hembras' }), ['sexo']],
+    [F({ sala: 'Sala 1', estado: 'Producción', sexo: 'machos' }), ['sala', 'estado', 'sexo']]];
+  const sinIgnora = (o) => ({ ...o, ignora: null });
+
+  it('el fixture ejerce algo: sin filtro no se ignora nada, y hay desoves que contar', () => {
+    expect(kpiReproduccion(DES, p, SIN).ignora).toEqual([]);
+    expect(kpiReproduccion(DES, p, SIN).desoves).toBe(10);
+  });
+
+  it('🔴 la tarjeta: las MISMAS cifras que sin filtro, y nombra lo que no aplica', () => {
+    for (const [f, ign] of casos) {
+      expect(sinIgnora(kpiReproduccion(DES, p, f))).toEqual(sinIgnora(kpiReproduccion(DES, p, SIN)));
+      expect(kpiReproduccion(DES, p, f).ignora).toEqual(ign);
+    }
+  });
+
+  it('🔴 su gráfico, lo mismo (las barras no cambian)', () => {
+    for (const [f, ign] of casos) {
+      expect(graficoReproduccion(DES, p, f).series).toEqual(graficoReproduccion(DES, p, SIN).series);
+      expect(graficoReproduccion(DES, p, f).ignora).toEqual(ign);
+    }
+  });
+
+  it('🔴 la sub-vista: los totales y los pendientes de N5 lo dicen, con el tanque si lo hay', () => {
+    const f = F({ sala: 'Sala 1', tanque: 1, estado: 'Producción', sexo: 'hembras' });
+    expect(totalesDeReproduccion(M, p, f).ignora).toEqual(['sala', 'tanque', 'estado', 'sexo']);
+    expect(totalesDeReproduccion(M, p, f).desoves).toBe(totalesDeReproduccion(M, p, SIN).desoves);
+    expect(pendientesDeN5(M.fuentes, p, F({ estado: 'Cuarentena' }), FOTO).ignora).toEqual(['estado']);
   });
 });
 

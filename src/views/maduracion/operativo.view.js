@@ -544,8 +544,8 @@ function estadoHTML(M, memo, p, F) {
       'El libro lleva las bajas por lote, no por código genético.', 'mortalidad');
   }
   const repro = tile('Reproducción', `${nf(r.desoves)} desoves`,
-    `N5 ${r.n5 ? nf(r.n5 / 1e6, 2) + ' M' : '—'} · fert. ${pc(r.fertilidad)}${r.ignora.length ? ' · <span class="mop-nota">sin filtro de sala</span>' : ''}`, 'is-desove',
-    'Desoves del período, por su fecha. Fertilidad = N2 ÷ huevos, sólo de los desoves que ya tienen su N2 (regla del ⚖️ Saldo). Un desove es de su lote y código genético, no de una sala.', 'reproduccion');
+    `N5 ${r.n5 ? nf(r.n5 / 1e6, 2) + ' M' : '—'} · fert. ${pc(r.fertilidad)}${r.ignora.length ? ` · <span class="mop-nota">sin filtro de ${esc(r.ignora.join(', '))}</span>` : ''}`, 'is-desove',
+    'Desoves del período, por su fecha. Fertilidad = N2 ÷ huevos, sólo de los desoves que ya tienen su N2 (regla del ⚖️ Saldo). Un desove es de su lote y código genético, no de una sala, y no lleva estado ni sexo (es de hembras): esos filtros no se le aplican.', 'reproduccion');
 
   const kpis = [
     tile('Vivos', nf(v.total), `♀ ${nf(v.hembras)} · ♂ ${nf(v.machos)} · H:M ${nf(v.hm, 2)} ${dot(v.hmEstado, refUmbral('proporcionHM'))}`, '',
@@ -1271,7 +1271,11 @@ function kpiPanelHTML(M, memo, p, F) {
     // D2 (auditoría del 1.1, 2026-10-18, usuario: opción b) · el filtro de sexo no llega a la mortalidad: se dice
     if (F.sexo) notas.push('La mortalidad no se separa por sexo: la tarjeta, el gráfico y la fila de muertos cuentan los dos sexos.');
   }
-  if (g.aplica && g.ignora && g.ignora.length) notas.push('Un desove es de su lote y código genético, no de una sala: el filtro de sala no se aplica.');
+  /* 🥚 Reproducción (el único gráfico con `ignora`): una nota por filtro que un desove no puede honrar (pauta 3.1, 2026-10-19). */
+  const ign = (g.aplica && g.ignora) || [];
+  if (ign.includes('sala')) notas.push('Un desove es de su lote y código genético, no de una sala: el filtro de sala no se aplica.');
+  if (ign.includes('estado')) notas.push('El estado es el de un lote en una sala al cierre del día y un desove no lo registra: el filtro de estado no se aplica.');
+  if (ign.includes('sexo')) notas.push('Un desove es siempre de hembras: el filtro de sexo no se aplica.');
   return `<div class="mop-lienzo mop-kpi-lienzo">
     <div class="mop-lienzo-h"><b>${esc(k.titulo)}</b> <span class="mop-nota">${esc(cuando)}</span>
       <button type="button" class="mc-pill mop-lienzo-x" data-mop-kpi-cerrar aria-label="Cerrar el gráfico">✕</button></div>

@@ -58,11 +58,14 @@ const ordenDestino = (d) => {
 };
 const porCatalogo = (a, b) => ordenDestino(a) - ordenDestino(b) || porNombre(a, b);
 
-/** Lo que el filtro NO puede aplicar aquí, para que la vista lo rotule. Mismo criterio que `kpiReproduccion`. */
+/** Lo que el filtro NO puede aplicar aquí, para que la vista lo rotule. Mismo criterio que `kpiReproduccion`: tampoco el
+ *  estado (de un lote en una sala, al cierre de la foto) ni el sexo (un desove es de hembras) — 2026-10-19, pauta 3.1. */
 export function ignoraDeReproduccion(F) {
   const x = [];
   if (haySala(F)) x.push('sala');
   if (hayTanque(F)) x.push('tanque');
+  if (F && F.estado) x.push('estado');
+  if (F && F.sexo) x.push('sexo');
   return x;
 }
 

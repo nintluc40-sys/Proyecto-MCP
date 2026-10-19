@@ -20,7 +20,7 @@
 import { ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_MIXTO, sumarDias, ubicKey } from '../registros/lib/mad-libro.js';
 import { SALAS_VISIBLES } from './operativo.data.js';
 import { tasaEntre, kpiBiomasa, posicionEnFiltro, codigoEnFiltro, loteElegido, hayLote, hayCodigo, haySala, hayTanque, salaElegida, tanqueElegido,
-  hayPiscina, hayCamaronera, desoveEnOrigen } from './operativo.tablero.js';
+  hayPiscina, hayCamaronera, desoveEnOrigen, ignoraDeDesoves } from './operativo.tablero.js';
 
 /** Las siete tarjetas que tienen gráfico, en su orden, con su título. */
 export const KPIS_CON_GRAFICO = [
@@ -214,8 +214,8 @@ function muertosDelPeriodo(a, b, lotes, desde, hasta) {
 }
 
 /** REPRODUCCIÓN · desoves y N5 de cada día del período, por la fecha del desove, con los filtros de la tarjeta
- *  (`kpiReproduccion`: lote, código y, por el origen del lote, piscina y camaronera; un desove no es de una sala). La
- *  suma es la cifra de la tarjeta. */
+ *  (`kpiReproduccion`: lote, código y, por el origen del lote, piscina y camaronera; un desove no es de una sala, ni lleva
+ *  estado ni sexo: `ignoraDeDesoves`). La suma es la cifra de la tarjeta. */
 export function graficoReproduccion(filasDesoves, periodo, F) {
   const des = new Map();
   const n5 = new Map();
@@ -230,7 +230,7 @@ export function graficoReproduccion(filasDesoves, periodo, F) {
   }
   const ds = fechas(periodo);
   return {
-    aplica: true, tipo: 'barrasYLinea', unidad: 'desoves', etiquetas: ds, ignora: haySala(F) ? ['sala'] : [],
+    aplica: true, tipo: 'barrasYLinea', unidad: 'desoves', etiquetas: ds, ignora: ignoraDeDesoves(F),
     series: [
       { clave: 'desoves', etiqueta: 'Desoves', datos: ds.map((f) => des.get(f) || 0) },
       { clave: 'n5', etiqueta: 'N5', datos: ds.map((f) => n5.get(f) || 0) },

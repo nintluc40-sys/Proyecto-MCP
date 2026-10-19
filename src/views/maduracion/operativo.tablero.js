@@ -479,7 +479,9 @@ export function kpiMortalidad(serie, periodo, F, partes) {
 /** Los desoves del período (por su fecha de desove), con la fertilidad y los nauplios por hembra con la regla del
  *  Saldo: sólo sobre los desoves que ya tienen su N2 / su N5 —la fertilidad, desde el 2026-10-01, sólo de los que traen
  *  su N2 Y sus huevos contados—. Admite lote, código y, por el origen del lote, piscina y camaronera (`desoveEnOrigen`,
- *  2026-10-15); un desove no es de una sala, así que el filtro de sala no se aplica y se DICE (`ignora`). */
+ *  2026-10-15); un desove no es de una sala, así que el filtro de sala no se aplica y se DICE (`ignora`).
+ *  2026-10-19 (usuario, pauta 3.1) · tampoco el ESTADO —es el de un lote en una sala al cierre de la foto, y un desove no
+ *  lo registra— ni el SEXO —un desove es siempre de hembras—: no se aplican y se DICEN, como en Broodstock. */
 export function kpiReproduccion(filasDesoves, periodo, F) {
   const a = { desoves: 0, huevos: 0, noViables: 0, n2: 0, n5: 0, huevosConN2: 0, n2ConHuevos: 0, desovesConN5: 0 };
   for (const r of filasDesoves || []) {
@@ -502,8 +504,16 @@ export function kpiReproduccion(filasDesoves, periodo, F) {
     desoves: a.desoves, huevos: a.huevos, noViables: a.noViables, n2: a.n2, n5: a.n5,
     fertilidad: cociente(a.n2ConHuevos, a.huevosConN2, 100),
     naupliosPorHembra: a.desovesConN5 > 0 ? Math.round(a.n5 / a.desovesConN5) : '',
-    ignora: haySala(F) ? ['sala'] : [],
+    ignora: ignoraDeDesoves(F),
   };
+}
+/** Lo que el filtro no puede aplicar a un desove (tarjeta y gráfico de 🥚 Reproducción): la sala, el estado y el sexo. */
+export function ignoraDeDesoves(F) {
+  const x = [];
+  if (haySala(F)) x.push('sala');
+  if (F && F.estado) x.push('estado');
+  if (F && F.sexo) x.push('sexo');
+  return x;
 }
 
 /* ── EL MAPA DE PLANTA ──────────────────────────────────────── */

@@ -2516,6 +2516,29 @@ describe('Maduración · operativo · 0f · 5 · el gráfico de cada KPI', () =>
     expect(panel().textContent).not.toContain(NOTA);
   });
 
+  /* Pauta 3.1 (2026-10-19, usuario: «decirlo») · 🥚 Reproducción no aplica el Estado ni el Sexo (un desove no lleva estado
+     y es siempre de hembras): la tarjeta lo dice en su rótulo y su gráfico con una nota por filtro; las cifras no cambian. */
+  it('3.1 · Reproducción con Estado y Sexo: la tarjeta y su gráfico lo DICEN, con las mismas cifras', async () => {
+    await montar(PLANTA);
+    click(tarjeta('reproduccion'));
+    const NE = 'el filtro de estado no se aplica';
+    const NS = 'el filtro de sexo no se aplica';
+    const valor = () => tarjeta('reproduccion').querySelector('.mc-kpi-v').textContent;
+    const sub = () => tarjeta('reproduccion').querySelector('.mc-kpi-sub').textContent;
+    const antes = valor();
+    expect(sub()).not.toContain('sin filtro de');
+    expect(panel().textContent).not.toContain(NE);
+    expect(panel().textContent).not.toContain(NS);
+    cambiar(filtro('estado'), 'Cuarentena');
+    expect(sub()).toContain('sin filtro de estado');
+    expect(panel().textContent).toContain(NE);
+    expect(panel().textContent).not.toContain(NS);
+    cambiar(filtro('sexo'), 'machos');
+    expect(sub()).toContain('sin filtro de estado, sexo');
+    expect(panel().textContent).toContain(NS);
+    expect(valor()).toBe(antes);
+  });
+
   it('🔑 sus clases están DEFINIDAS en el CSS', async () => {
     const { readFileSync } = await import('node:fs');
     const css = readFileSync('src/views/maduracion/operativo.css', 'utf8');
