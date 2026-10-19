@@ -86,10 +86,11 @@ function vigilar(id, q) {
   }, SILENCIO_MS);
 }
 
-/** Lee el libro en el Worker. Nunca rechaza: resuelve { ok: true, orden, huellas, cambiadas } o
+/** Lee el libro en el Worker. Nunca rechaza: resuelve { ok: true, orden, huellas, cambiadas, pestanas } o
  *  { ok: false, motivo: 'no-arranca' | 'sin-xlsx' | 'xlsx' | 'sin-datos' | 'caido' | 'tiempo' }. Con `alAvanzar` (la
- *  primera carga, punto 7), el Worker avisa de cómo va la descarga y de cuándo empieza a leer. */
-export function leerEnWorker({ realId, previas, alAvanzar }) {
+ *  primera carga, punto 7), el Worker avisa de cómo va la descarga y de cuándo empieza a leer. `pestanas` (carga lenta D,
+ *  2026-10-19): la lista que recuerda la página, de ida; la que usó el Worker, de vuelta. */
+export function leerEnWorker({ realId, previas, alAvanzar, pestanas }) {
   return new Promise((resolve) => {
     if (!lectorDisponible()) { resolve({ ok: false, motivo: 'no-arranca' }); return; }
     try {
@@ -103,7 +104,7 @@ export function leerEnWorker({ realId, previas, alAvanzar }) {
     const q = { resolve, timer: 0, alAvanzar };
     enCurso.set(id, q);
     vigilar(id, q);
-    worker.postMessage({ id, realId, xlsxUrl: xlsxSrc(), previas: previas || {}, conProgreso: !!alAvanzar });
+    worker.postMessage({ id, realId, xlsxUrl: xlsxSrc(), previas: previas || {}, pestanas: Array.isArray(pestanas) ? pestanas : [], conProgreso: !!alAvanzar });
   });
 }
 

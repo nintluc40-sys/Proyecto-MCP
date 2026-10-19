@@ -197,6 +197,14 @@ describe('en el Worker: el respaldo se hace allí, no en la página', () => {
     expect(e.guardar).not.toHaveBeenCalled();
   });
 
+  it('carga lenta D (2026-10-19) · con /htmlview caído y la lista que recuerda la página, el respaldo lee TODAS sus pestañas', async () => {
+    htmlCae = true;
+    const r = await atenderLectura({ id: 8, realId: 'X', previas: {}, pestanas: [{ gid: 1111, title: H1 }, { gid: 2222, title: H2 }] }, entorno());
+    expect(r).toMatchObject({ id: 8, ok: true, completo: true });
+    expect(r.orden).toEqual([H1, H2]);
+    expect(r.cambiadas[H1]).toHaveLength(3);                 // por su XLSX, entera
+  });
+
   it('si no llega ninguna hoja: «sin-datos» (A1, 2026-10-07: la página ya no lo repite)', async () => {
     xlsxPorGid = { 1111: 404, 2222: 404 };
     gvizCae = true;

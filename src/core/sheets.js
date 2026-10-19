@@ -466,8 +466,10 @@ async function mapLimit(items, limit, fn) {
 
 /** Descubre las pestañas (gid + nombre) de un documento accesible por enlace, SIN depender
  *  de que esté "publicado en la web": raspa /htmlview (funciona con lectura por enlace),
- *  con /pub como respaldo, y cachea el resultado. Si la enumeración falla, usa la caché. */
-export async function discoverGids(ids) {
+ *  con /pub como respaldo, y cachea el resultado. Si la enumeración falla, usa la caché.
+ *  `recordadas` (carga lenta D, 2026-10-19): la lista que recuerda la PÁGINA. En el Worker —donde se lee desde el 12-10—
+ *  no hay localStorage: sin ella, el rescate de nombres y la caché de abajo no hacían nada (y se bajaba el libro entero). */
+export async function discoverGids(ids, recordadas = null) {
   let realId = ids.type === 'real' ? ids.realId : null;
   if (!realId && ids.type === 'pub') {
     try {
@@ -500,16 +502,17 @@ export async function discoverGids(ids) {
   // producción de Larvicultura habría desaparecido del tablero sin un solo error.
   // El sistema YA sabe cómo se llama esa pestaña —la cacheó en una carga anterior— y no
   // se lo estaba preguntando. Un nombre real recordado gana a cualquier adivinanza.
+  const memoria = Array.isArray(recordadas) && recordadas.length ? recordadas : (docId ? cachedTabs(docId) : []);
   const list = fillTitlesFromCache(
     [...merge.entries()].map(([gid, title]) => ({ gid, title })),
-    docId ? cachedTabs(docId) : [],
+    memoria,
   );
   // Al guardar se escribe la lista YA rellenada, no la cruda: antes un raspado incompleto
   // (30 pestañas con nombre y 3 sin él) machacaba en la caché los nombres buenos de esas 3
   // con cadenas vacías, y a partir de ahí ni la caché podía rescatarlas. La caché se
   // degradaba sola, y el único síntoma habría sido el tablero vacío.
   if (list.length) { if (docId) cacheTabs(docId, list); return list; }
-  return docId ? cachedTabs(docId) : [];
+  return memoria;
 }
 
 /** 2026-10-01 (usuario) · EL RESPALDO LEE CADA HOJA POR SU XLSX, NO POR gviz. Con un FILTRO puesto en la hoja
@@ -548,13 +551,14 @@ async function filasPorXlsxDeHoja(ids, gid, obtenerXLSX = getXLSX) {
  *  CSV. Devuelve { sheets, porCsv, perdidas, sinPestanas }: las hojas leídas; cuántas llegaron por el CSV (pueden venir
  *  recortadas por un filtro); cuántas no llegaron por ningún camino; y si no se pudo saber qué pestañas hay (entonces
  *  sólo se intenta la primera). Lo usan la página (fetchViaCsv) y el Worker (sheets.worker.js), que así lo hace sin
- *  congelar la pantalla: leer una hoja grande por XLSX cuesta ~1,3 s en PC (Control_Tanque M08, 24 743 filas). */
-export async function respaldoPorHojas(ids, obtenerXLSX = getXLSX, avisar = null) {
+ *  congelar la pantalla: leer una hoja grande por XLSX cuesta ~1,3 s en PC (Control_Tanque M08, 24 743 filas).
+ *  `recordadas`: la lista de pestañas que recuerda la página (ver discoverGids). */
+export async function respaldoPorHojas(ids, obtenerXLSX = getXLSX, avisar = null, recordadas = null) {
   if (avisar) avisar({ fase: 'respaldo' });   // punto 9: que el aviso de carga no se quede en «reintento 3 de 3»
   const sheets = {};
   let porCsv = 0;
   let perdidas = 0;
-  const discovered = await discoverGids(ids);
+  const discovered = await discoverGids(ids, recordadas);
   // Con pestañas descubiertas (o cacheadas) se bajan TODAS por gid; sin ninguna, último
   // recurso: la 1ª hoja (gid 0) para no dejar el sistema completamente vacío.
   const targets = discovered.length ? discovered : [{ gid: 0, title: '' }];
@@ -649,16 +653,28 @@ export const CSV_A_LA_VEZ = 16;
 // multiplicarían (A1 del 07-10). R1 (auditoría del 1.1, 2026-10-18): se cuentan HOJAS de esa tanda, una vez cada una, no
 // intentos: antes 5 hojas que rechazaban rápido dos veces (o las de tandas siguientes) sumaban 10 y se abandonaba aunque el
 // resto de la primera tanda fuese a llegar; se descartaba lo que llegaba y se bajaba el libro de 14,5 MB.
-/** Todas las hojas por su CSV: { sheets, completo, porXlsx } o null si este camino no sirve (sin pestanas o alguna sin
- *  nombre, formato regional que no es el esperado, o nada llega): entonces se lee el libro entero, como antes. Cada hoja
- *  cuyo CSV no llega —o trae MENOS filas que lo aplicado— se pide por su XLSX (`filasPorXlsxDeHoja`); `completo`: todas
- *  llegaron. Lo usa el Worker (sheets.worker.js · atenderLectura). `previas`: las huellas aplicadas. */
-export async function hojasPorCsv(ids, obtenerXLSX = getXLSX, avisar = null, previas = {}) {
+/** Todas las hojas por su CSV: { sheets, completo, porXlsx, pestanas } o null si este camino no sirve (sin pestanas o
+ *  alguna sin nombre, formato regional que no es el esperado, o nada llega): entonces se lee el libro entero, como antes.
+ *  Cada hoja cuyo CSV no llega —o trae MENOS filas que lo aplicado— se pide por su XLSX (`filasPorXlsxDeHoja`);
+ *  `completo`: todas llegaron. Lo usa el Worker (sheets.worker.js · atenderLectura). `previas`: las huellas aplicadas.
+ *  `recordadas` (carga lenta D, 2026-10-19, usuario): la lista de pestañas de la lectura anterior (la guarda la página).
+ *  Con ella, la primera tanda se pide YA, mientras llega /htmlview (0,2–4,8 s medidos el 19-10), y /htmlview sigue
+ *  MANDANDO: de lo adelantado sólo se usa lo de las pestañas que él da (una borrada se tira; una nueva se pide; el nombre
+ *  es el suyo); si /htmlview falla, se lee con la recordada (discoverGids). `pestanas`: la lista usada, para recordarla. */
+export async function hojasPorCsv(ids, obtenerXLSX = getXLSX, avisar = null, previas = {}, recordadas = null) {
   if (!ids || ids.type !== 'real') return null;
   let XLSX;
   try { XLSX = obtenerXLSX(); } catch (_) { return null; }
   if (!XLSX) return null;
-  const pestanas = await discoverGids(ids);
+  const adelantadas = new Map();   // gid → la petición de su CSV, hecha antes de saber las pestañas
+  for (const p of (Array.isArray(recordadas) ? recordadas : []).slice(0, CSV_A_LA_VEZ)) {
+    const gid = Number(p && p.gid);
+    if (!Number.isFinite(gid) || adelantadas.has(gid)) continue;
+    const pedida = csvDeHoja(ids, gid);
+    pedida.catch(() => {});   // si falla antes de usarse, lo verá el primer intento de su hoja (o se tira con ella)
+    adelantadas.set(gid, pedida);
+  }
+  const pestanas = await discoverGids(ids, recordadas);
   if (!pestanas.length || pestanas.some((p) => !p.title)) return null;
   const senales = { es: 0, en: 0 };
   const primeraTanda = new Set(pestanas.slice(0, CSV_A_LA_VEZ).map((p) => p.gid));
@@ -667,7 +683,11 @@ export async function hojasPorCsv(ids, obtenerXLSX = getXLSX, avisar = null, pre
     try {
       let filas = null;
       for (let intento = 0; intento < 2 && !filas && !abandonado; intento++) {
-        try { filas = filasDeCsv(await csvDeHoja(ids, gid), senales); exitos++; } catch (_) {
+        try {
+          const adelantada = intento === 0 ? adelantadas.get(Number(gid)) : undefined;
+          if (adelantada) adelantadas.delete(Number(gid));   // su texto no se retiene hasta el final
+          filas = filasDeCsv(await (adelantada || csvDeHoja(ids, gid)), senales); exitos++;
+        } catch (_) {
           if (intento === 0 && primeraTanda.has(gid)) fallidasDeLaPrimera++;
           if (!exitos && fallidasDeLaPrimera >= primeraTanda.size) abandonado = true;
           else if (intento < 1) await new Promise((res) => setTimeout(res, 600));
@@ -689,7 +709,7 @@ export async function hojasPorCsv(ids, obtenerXLSX = getXLSX, avisar = null, pre
   if (senales.en > senales.es) return null;   // el libro ya no está en formato es: la conversión no valdría
   const sheets = {};
   leidas.forEach((h) => { if (h && h.filas.length && !sheets[h.title]) sheets[h.title] = stampRows(h.filas, h.title); });
-  return { sheets, completo: !perdidas, porXlsx };
+  return { sheets, completo: !perdidas, porXlsx, pestanas };
 }
 
 /** El respaldo leído aquí: { sheets, completo } (A4, 2026-10-11: `completo` = llegaron TODAS sus pestañas). */
@@ -883,7 +903,10 @@ export async function descargarLibro({ alAvanzar } = {}) {
   // pestañas): entonces una hoja que falta se vació o se borró y se aplica; si no, isDegraded la descarta (ver allí).
   let sheets, completo = false;
   if (ids.type === 'real' && _lector && _lector.disponible()) {
-    const r = await _lector.leer({ realId: ids.realId, previas: _huellasAplicadas, alAvanzar });
+    // carga lenta D (2026-10-19): el Worker no tiene localStorage; la página le pasa las pestañas que recuerda y guarda
+    // las que él trae (discoverGids · `recordadas`)
+    const r = await _lector.leer({ realId: ids.realId, previas: _huellasAplicadas, alAvanzar, pestanas: cachedTabs(ids.realId) });
+    if (r.ok && Array.isArray(r.pestanas) && r.pestanas.length) cacheTabs(ids.realId, r.pestanas);
     if (r.ok) return { sheets: fundirDelta(_hojasAplicadas, r), huellas: r.huellas, fp: huellaDe(r.huellas, r.orden), completo: r.completo === true };
     /* A1 (2026-10-07, usuario) · NO se repite aquí lo que el Worker ya intentó: si no le llegó nada, o si calló
        SILENCIO_MS (trabado), la página tampoco lo conseguiría y, en la primera carga, volvía a empezar toda la cadena

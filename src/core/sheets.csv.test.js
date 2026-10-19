@@ -198,6 +198,62 @@ describe('hojasPorCsv', () => {
   });
 });
 
+/* Carga lenta D (pauta 2.4, 2026-10-19, usuario) · la lista de pestañas de la lectura anterior (`recordadas`, la guarda la
+   página): la primera tanda sale YA, sin esperar a /htmlview, que sigue MANDANDO; y, como el Worker no tiene localStorage,
+   es la que hace funcionar allí el rescate de nombres y la caché cuando /htmlview falla. */
+describe('hojasPorCsv · carga lenta D: la lista de pestañas recordada', () => {
+  const RECORDADAS = [{ gid: 1111, title: H1 }, { gid: 2222, title: H2 }];
+  const csvs = () => pedidas.filter((u) => /export\?format=csv/.test(u));
+  const indice = (re) => pedidas.findIndex((u) => re.test(u));
+  it('🔴 la primera tanda se pide ANTES que /htmlview, cada CSV una sola vez, y sale lo mismo que sin ella', async () => {
+    const sin = await hojasPorCsv(ids, xlsx);
+    expect(indice(/\/htmlview/), 'control: sin lista, primero /htmlview').toBeLessThan(indice(/export\?format=csv/));
+    pedidas.length = 0;
+    const con = await hojasPorCsv(ids, xlsx, null, {}, RECORDADAS);
+    expect(indice(/export\?format=csv/)).toBeLessThan(indice(/\/htmlview/));
+    expect(csvs().map((u) => u.match(/gid=(\d+)/)[1])).toEqual(['1111', '2222']);   // las adelantadas se usan, no se repiten
+    expect(con.sheets).toEqual(sin.sheets);
+    expect(con.completo).toBe(true);
+    expect(con.pestanas).toEqual(RECORDADAS);   // la que dio /htmlview, para recordarla
+  });
+
+  it('🔑 no adelanta más que una tanda (CSV_A_LA_VEZ): con muchas a la vez Google contesta 429', async () => {
+    const lista = Array.from({ length: CSV_A_LA_VEZ + 4 }, (_, i) => ({ gid: 1111 * (i + 1), title: 'Hoja ' + i }));
+    html = HTML(lista.map((p) => p.title));
+    csvPorGid = {}; lista.forEach((p, i) => { csvPorGid[p.gid] = 'Fecha,Valor\n01/09/2026,"' + i + ',5"\n'; });
+    const r = await hojasPorCsv(ids, xlsx, null, {}, lista);
+    expect(pedidas.slice(0, indice(/\/htmlview/)).filter((u) => /export\?format=csv/.test(u)).length).toBe(CSV_A_LA_VEZ);
+    expect(Object.keys(r.sheets)).toHaveLength(lista.length);
+    expect(csvs().length, 'y ninguna se pide dos veces').toBe(lista.length);
+  });
+
+  it('🔴 /htmlview MANDA: la pestaña borrada se tira, la nueva se pide y el nombre es el suyo', async () => {
+    const viejas = [{ gid: 1111, title: 'Nombre de antes' }, { gid: 9999, title: 'Hoja borrada' }];   // H2 es nueva
+    const r = await hojasPorCsv(ids, xlsx, null, {}, viejas);
+    expect(Object.keys(r.sheets)).toEqual([H1, H2]);
+    expect(r.completo).toBe(true);
+    expect(r.pestanas.map((p) => p.title)).toEqual([H1, H2]);
+    expect(csvs().map((u) => u.match(/gid=(\d+)/)[1]).sort()).toEqual(['1111', '2222', '9999']);   // la borrada sólo se adelantó
+  });
+
+  it('🔴 con /htmlview caído se lee con la lista recordada (antes: null → el libro entero); sin ella, como antes', async () => {
+    html = null;
+    expect(await hojasPorCsv(ids, xlsx), 'control: sin lista').toBe(null);
+    const r = await hojasPorCsv(ids, xlsx, null, {}, RECORDADAS);
+    expect(Object.keys(r.sheets)).toEqual([H1, H2]);
+    expect(r.completo).toBe(true);
+  });
+
+  it('🔴 un gid que /htmlview trae SIN nombre lo rescata la lista recordada (antes: null → el libro entero)', async () => {
+    html = HTML() + '\n"gid":"98765"';
+    csvPorGid[98765] = 'Fecha,Valor\n01/09/2026,"1,5"\n';
+    expect(await hojasPorCsv(ids, xlsx), 'control: sin lista, se aparta').toBe(null);
+    const r = await hojasPorCsv(ids, xlsx, null, {}, [...RECORDADAS, { gid: 98765, title: 'Hoja tres' }]);
+    expect(Object.keys(r.sheets)).toEqual([H1, H2, 'Hoja tres']);
+    expect(r.sheets['Hoja tres'][0].Valor).toBe('1.5');
+  });
+});
+
 describe('el Worker lee PRIMERO por CSV', () => {
   const entorno = () => ({ cargarXLSX: vi.fn(), obtenerXLSX: () => window.XLSX, guardar: vi.fn(async () => {}) });
   const tic = () => new Promise((r) => setTimeout(r, 0));
@@ -210,6 +266,13 @@ describe('el Worker lee PRIMERO por CSV', () => {
     expect(pedidas.some((u) => /export\?format=xlsx/.test(u) && !/gid=/.test(u))).toBe(false);
     await tic();
     expect(e.guardar).toHaveBeenCalledTimes(1);
+  });
+
+  it('carga lenta D · usa las pestañas que le pasa la página (la primera tanda antes que /htmlview) y devuelve las suyas', async () => {
+    const LISTA = [{ gid: 1111, title: H1 }, { gid: 2222, title: H2 }];
+    const r = await atenderLectura({ id: 7, realId: 'X', previas: {}, pestanas: LISTA }, entorno());
+    expect(r).toMatchObject({ id: 7, ok: true, completo: true, pestanas: LISTA });
+    expect(pedidas.findIndex((u) => /export\?format=csv/.test(u))).toBeLessThan(pedidas.findIndex((u) => /\/htmlview/.test(u)));
   });
 
   it('incompleto por CSV: pide el libro entero (y usa ése)', async () => {

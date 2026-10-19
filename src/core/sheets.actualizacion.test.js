@@ -88,4 +88,20 @@ describe('A4 · ⟳ con hojas de menos', () => {
       expect(store.sheetNames).toEqual(['Larvicultura M01']);
     } finally { setLectorLibro(null); }
   });
+
+  it('carga lenta D (2026-10-19) · la página le pasa al Worker las pestañas que recuerda y guarda las que él trae', async () => {
+    const LISTA = [{ gid: 11, title: 'Larvicultura M01' }, { gid: 22, title: 'Larvicultura M02' }];
+    const recibidas = [];
+    const lector = { disponible: () => true, leer: async ({ previas, pestanas }) => { recibidas.push(pestanas); return {
+      ok: true, orden: ['Larvicultura M01'], huellas: { 'Larvicultura M01': previas['Larvicultura M01'] }, cambiadas: {}, completo: true, pestanas: LISTA }; } };
+    try {
+      localStorage.removeItem('larv4_sheet_tabs');
+      setLectorLibro(lector);
+      await connectSheets();
+      expect(recibidas[0], 'la primera vez no recuerda ninguna').toEqual([]);
+      expect(Object.values(JSON.parse(localStorage.getItem('larv4_sheet_tabs')))).toEqual([LISTA]);
+      await connectSheets();
+      expect(recibidas[1], 'la siguiente lleva la que trajo el Worker').toEqual(LISTA);
+    } finally { setLectorLibro(null); localStorage.removeItem('larv4_sheet_tabs'); }
+  });
 });

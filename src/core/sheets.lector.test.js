@@ -78,6 +78,19 @@ describe('lector del libro · protocolo', () => {
     expect(creados.length).toBe(1);
   });
 
+  it('carga lenta D (2026-10-19) · lleva las pestañas que recuerda la página (o [] si ninguna) y devuelve las del Worker', async () => {
+    const LISTA = [{ gid: 1, title: 'A' }];
+    const p = leerEnWorker({ realId: 'R', previas: {}, pestanas: LISTA });
+    const w = creados[0];
+    const ida = w.recibidos.at(-1);
+    expect(ida.pestanas).toEqual(LISTA);
+    w.emitir({ vivo: true });
+    w.emitir({ id: ida.id, ok: true, orden: ['A'], huellas: {}, cambiadas: {}, pestanas: [{ gid: 1, title: 'A2' }] });
+    expect((await p).pestanas).toEqual([{ gid: 1, title: 'A2' }]);
+    leerEnWorker({ realId: 'R' });
+    expect(w.recibidos.at(-1).pestanas).toEqual([]);
+  });
+
   it('las hojas llegan de a una (2026-10-06) y la respuesta final las entrega juntas en `cambiadas`', async () => {
     const p = leerEnWorker({ realId: 'R' });
     const w = creados[0], id = w.recibidos[0].id;

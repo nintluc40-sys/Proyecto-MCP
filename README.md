@@ -723,7 +723,11 @@ Dos consecuencias que conviene tener presentes al desplegar:
    ningún dato de Google (¿sin conexión?).» con ⟳ para reintentar. Medido con la red colgada y un equipo nuevo: se rinde a
    los 262 s (antes 7,2 min, ~17 min con las pestañas en caché, y acababa en «Sin datos en las hojas.»).
 1. **Cada hoja por su CSV de exportación** (2026-10-11, punto 4.2-B; `sheets.js · hojasPorCsv`, en el Worker): las
-   pestañas salen de `/htmlview` y cada hoja se pide por `export?format=csv&gid=` (16 a la vez, `CSV_A_LA_VEZ`: 6 hasta
+   pestañas salen de `/htmlview` (0,2–4,8 s según el momento, medido el 2026-10-19; desde ese día —carga lenta D— la
+   página recuerda la lista de la lectura anterior y se la pasa al Worker, que no tiene localStorage: la primera tanda
+   sale mientras llega `/htmlview`, que sigue mandando —una pestaña borrada se tira, una nueva se pide, el nombre es el
+   suyo—, y si `/htmlview` falla se lee con la recordada en vez de bajar el libro entero) y cada hoja se pide por
+   `export?format=csv&gid=` (16 a la vez, `CSV_A_LA_VEZ`: 6 hasta
    el 2026-10-15, 10 hasta el 2026-10-18 —con 10, en el PC 4,6 → 3,2 s, con 4G lento simulado 25 → 22 s y con 3G
    79 → 72 s—; 16 porque Google ya no sirve la exportación «en caliente»: 44 hojas 16,3 → 13,5 s, sin errores; con 44 a
    la vez Google contesta 429; el CSV sólo se abandona si falla la primera tanda ENTERA, contando hojas y no intentos;

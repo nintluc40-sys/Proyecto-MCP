@@ -57,7 +57,9 @@ export async function atenderLectura(m, entorno) {
     const ids = { type: 'real', realId: m.realId };
     const avisar = m.conProgreso && entorno.avisar ? (p) => entorno.avisar(id, p) : null;
     // 4.2-B: cada hoja por su CSV; completo, vale (y se guarda: el CSV de exportación no recorta por filtros)
-    const porCsv = await hojasPorCsv(ids, obtenerXLSX, avisar, m.previas || {});
+    // carga lenta D (2026-10-19): con la lista de pestañas que recuerda la página (aquí no hay localStorage)
+    const recordadas = Array.isArray(m.pestanas) ? m.pestanas : null;
+    const porCsv = await hojasPorCsv(ids, obtenerXLSX, avisar, m.previas || {}, recordadas);
     let sheets = porCsv && porCsv.completo ? porCsv.sheets : await fetchXlsxSheets(ids, obtenerXLSX, avisar);
     let guardable = !!sheets;
     // A4 (2026-10-11, usuario): ¿la lista de hojas es la de verdad? El libro entero, sí; el respaldo, si llegaron TODAS sus
@@ -68,7 +70,7 @@ export async function atenderLectura(m, entorno) {
        PC. El libro sólo se GUARDA en el equipo (P4) si llegó completo y todo por XLSX: una hoja por CSV puede venir
        recortada por un filtro, y una que faltara se quedaría así hasta 7 días al abrir. */
     if (!sheets) {
-      const r = await respaldoPorHojas(ids, obtenerXLSX, avisar);
+      const r = await respaldoPorHojas(ids, obtenerXLSX, avisar, recordadas);
       if (Object.keys(r.sheets).length) {
         sheets = r.sheets;
         guardable = !r.porCsv && !r.perdidas && !r.sinPestanas;
@@ -84,7 +86,8 @@ export async function atenderLectura(m, entorno) {
       const libro = { sheets, huellas: d.huellas, orden: d.orden, fp: huellaDe(d.huellas, d.orden), t: Date.now() };
       Promise.resolve().then(() => entorno.guardar(libro)).catch(() => { /* se reintenta en la próxima lectura */ });
     }
-    return { id, ok: true, ...d, completo };
+    // la lista de pestañas que usó la lectura por CSV, para que la página la recuerde (D)
+    return { id, ok: true, ...d, completo, ...(porCsv && porCsv.pestanas ? { pestanas: porCsv.pestanas } : {}) };
   } catch (err) {
     return { id, ok: false, motivo: 'xlsx', error: String((err && err.message) || err) };
   }
