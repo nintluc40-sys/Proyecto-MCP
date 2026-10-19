@@ -2480,14 +2480,21 @@ describe('Maduración · operativo · 0f · 5 · el gráfico de cada KPI', () =>
   });
 
   it('🔴 punto 3 · Mortalidad: los muertos ♀/♂ del período, con y sin sala; los demás gráficos, sin fila', async () => {
-    await montar(PLANTA);
+    /* Pauta 1.5 (2026-10-19, usuario): PLANTA no tiene muertes en el período y esta fila comprobaba 0 + 0 = 0. QB está SOLO
+       en el tanque 1 de la Sala 4: su parte del 18/09 (♀ 3, ♂ 2: distintos, para ver si se cruzan) va entero a su lote. */
+    await montar([...PLANTA, TQ('18/09/2026', 'Sala 4', 1, { Hora: '06:30', Parte: 1, 'Machos muertos': 2, 'Hembras muertas': 3 })]);
     click(tarjeta('mortalidad'));
     const suman = () => { const [h, m, t] = cifras(fila('muertos')).map(numero); expect(h + m).toBe(t); return t; };
     expect(fila('muertos').cells[0].textContent).toMatch(/^Muertos · \d\d\/\d\d–19\/09$/);
+    expect(ultimoGrafico().data.datasets[0].label, 'sin sala: la TASA del Saldo').toBe('Tasa del día (%)');
+    expect(cifras(fila('muertos')).map(numero), 'sin sala, los del libro: ♀ 3 y ♂ 2').toEqual([3, 2, 5]);
     suman();
-    marcar('sala', 'Sala 1');
+    marcar('sala', 'Sala 4');
     expect(panel().textContent).toContain('REGISTRADAS en la hoja Tanques');
+    expect(cifras(fila('muertos')).map(numero), 'con sala, los partes').toEqual([3, 2, 5]);
     expect(suman()).toBe(ultimoGrafico().data.datasets[1].data.at(-1));
+    marcar('sala', 'Sala 1');
+    expect(cifras(fila('muertos')).map(numero), 'control: las muertes son de la Sala 4').toEqual([0, 0, 0]);
     click(tarjeta('lotes'));
     expect(panel().querySelector('.mop-kpi-resumen')).toBeNull();
   });
