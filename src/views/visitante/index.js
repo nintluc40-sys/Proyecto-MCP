@@ -292,8 +292,10 @@ function ventanaMad(mIdx) {
   const ultimo = new Date(+hoy.slice(0, 4), +hoy.slice(5, 7), 0).getDate();
   return { rango: { desde: hoy.slice(0, 8) + '01', hasta: hoy.slice(0, 8) + String(ultimo).padStart(2, '0') }, adelantado: { mes: monthLabelAt(mIdx), empieza: r.desde } };
 }
+// El DÍA va en la clave (2026-10-19, pauta 1.1): la ventana (`adelantado`) y el corte del N5 dependen de hoy, y la memoria
+// sólo se vacía con datos nuevos; con la página abierta de un día para otro (de noche no llegan) seguía el día anterior.
 function madSummary(mIdx) {
-  return memo(JSON.stringify(['madSummary', mIdx]), () => {
+  return memo(JSON.stringify(['madSummary', mIdx, hoyIso()]), () => {
     const v = ventanaMad(mIdx), s = madMod.produccionDelMes(store.globalData, v.rango, hoyIso());
     return s && { ...s, adelantado: v.adelantado };
   });

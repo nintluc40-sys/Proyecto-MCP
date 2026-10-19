@@ -268,6 +268,20 @@ describe('Visitante · 🥚 un mes de producción que aún no empieza en calenda
     expect(root.querySelector('[data-vt-mad] .vt-card-title').textContent).toContain('mes de calendario en curso (01/08 al 20/08): Septiembre empieza el 01/09');
     expect(detalle('madLotes').textContent).toContain('Septiembre empieza el 01/09: son los del mes en curso.');
   });
+  it('🔴 con la página abierta de un día para otro y SIN datos nuevos, sigue al día: el 01/09 Septiembre deja de ir adelantado (2026-10-19)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(2026, 7, 31, 23, 30));   // 31/08/2026: Septiembre empieza mañana
+    await abrir([...LARV(), ...PLANTA(), DES('01/09/2026', 'LA', 2, 100000)]);
+    const titulo = () => root.querySelector('[data-vt-mad] .vt-card-title').textContent;
+    expect(mes()).toBe('Septiembre');
+    expect(titulo()).toContain('Septiembre empieza el 01/09');
+    expect(tarjeta('madLotes').textContent).toContain('400K');
+    vi.setSystemTime(new Date(2026, 8, 1, 0, 30));   // pasada la medianoche, con el MISMO store.globalData (de noche no llegan datos)
+    await atras(); click(root.querySelector('[data-vtnext]')); await cargada();
+    expect(mes()).toBe('Septiembre');
+    expect(titulo()).toContain('producción de nauplios por lote y sala');
+    expect(tarjeta('madLotes').textContent).toContain('100K');
+    expect(tarjeta('madLotes').textContent).toContain('2 desoves · 1 lote(s)');
+  });
   it('con la fecha real (meses ya empezados), como siempre: sin la nota', async () => {
     await abrir([...LARV(), ...PLANTA()]);
     expect(root.querySelector('[data-vt-mad] .vt-card-title').textContent).toContain('producción de nauplios por lote y sala');
