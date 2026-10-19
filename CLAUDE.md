@@ -8,12 +8,20 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
 
 - `src/config.js` — constantes (URL del Sheet, timeouts, umbrales de semáforo, orden de estadios).
 - `src/core/` — **capa de datos SIN DOM**, pura y testeable: `store`, `dates`, `fields`, `format`,
-  `sheets`, `sheets.worker` y `sheets.lector` (la lectura del libro en segundo plano), `libroGuardado`,
-  `marcaLibro`, `refresh`, `charts`, `prodCalendar`, `aguaColor`, `trovan`, `util`.
+  `sheets`, `sheets.worker` y `sheets.lector` (la lectura del libro en segundo plano), `csvLector` (el
+  lector de CSV propio), `libroGuardado`, `marcaLibro`, `refresh`, `charts`, `prodCalendar`,
+  `aguaColor`, `trovan`, `util`.
 - `src/ui/` — `router` (registro/cambio de vistas), `shell` (cabecera, drawer, roles, filtro de
   fecha), `accesoRol` (la entrada directa por enlace `?rol=`) y las piezas transversales que tocan
   el DOM: `modal`, `modalEscape`, `toast`.
 - `src/views/<vista>/` — cada vista es un módulo con su `index.js` orquestador y su `.css` propio.
+  - `src/views/planta/plano.js` es la **fuente única de la geometría**: la maqueta 3D (`escena.js`) y el
+    plano de 📊 Análisis salen de él (módulos, salas y las áreas `OTHERS` del plano ARQ-A3 V4). Cada
+    área lleva su color en su propia fila, y la semilla aleatoria se repone después de las áreas. Así,
+    añadir o partir un área no recolorea ni mueve nada más; `plano.test.js` lo vigila, junto con que
+    ninguna área pise a otra. En `escena.js`, todo lo que el montaje cree ANTES del `return`
+    (recursos de la tarjeta, escuchas del documento o de la ventana) se apunta en `alFallar`, para
+    liberarlo si el montaje falla.
   ⚠ **Estas tres listas se comprueban con `ls src/core src/ui src/views`, no se leen de aquí.**
   Se dice porque caducaron las tres a la vez: `core/` llegó a nombrar 7 módulos de 11, `ui/` 2
   de 5, y el `README.md` listaba 8 vistas de 9. Es la misma lección que la cifra de `engine.js`
@@ -25,7 +33,8 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
   `src/sw.test.js`, que lo carga en un ámbito falso y comprueba qué hace con cada petición.
 - `public/registros/engine.js` — **DEUDA TÉCNICA**: monolito heredado embebido de
   decenas de miles de líneas (`wc -l public/registros/engine.js` da la cifra del día). No seguir su
-  estilo. Ver `docs/analisis/04-refactor-plan.md`.
+  estilo. Su plan de retirada es `docs/analisis/04-refactor-plan.md`, pero su cabecera lo declara
+  OBSOLETO: sirve para saber de dónde salió la red de pruebas, no como estado actual.
   ⚠ Aquí vivía la cifra exacta y caducaba cada pocos días, igual que la del número de
   pruebas en `.github/workflows/deploy.yml`. Se deja el orden de magnitud —que es lo
   único que informa una decisión: «esto es un monolito, no un módulo»— y el comando.
@@ -43,6 +52,12 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
    - `core/refresh.js` — detecta interacción del usuario para pausar el auto-refresco:
      escucha eventos en `document` y consulta `.modal-open`.
    - `core/sheets.js` — usa `window.XLSX` (SheetJS servido desde `public/vendor/` con su `integrity`, no por CDN) y `localStorage` (caché de gids).
+   - `core/sheets.lector.js` — crea el Worker (`new Worker`) y busca en `document` el `<script>`
+     de SheetJS para pasarle su dirección.
+   - `core/sheets.worker.js` — corre DENTRO del Worker: carga SheetJS con `importScripts` y guarda
+     el libro leído en IndexedDB. Allí no hay `localStorage`: la lista de pestañas se la pasa la página.
+   - `core/libroGuardado.js` — el libro guardado en IndexedDB (`almacenIDB`, inyectable).
+   - `core/marcaLibro.js` — pregunta por red (`fetch`, inyectable) si el libro cambió.
 
    **Criterio para lo nuevo:** un módulo de `core/` solo puede tocar el navegador si es de
    esa misma naturaleza —un adaptador de una capacidad del entorno— y debe degradar sin
@@ -86,7 +101,7 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
 análisis de `docs/analisis/`; su procedencia y hash están en `skills-lock.json`.
 
 ⚠ **Hubo una SEGUNDA copia, `.agents/skills/`, byte a byte idéntica**, y las dos estaban
-versionadas: 110 archivos en un repo público para 55 skills, sin tocar desde julio y sin ningún
+versionadas: 110 archivos (55 por copia, 29 skills) en un repo público, sin tocar desde julio y sin ningún
 `settings.json` que cableara su hook. Se retiró la de `.agents/` el 2026-09-16. **No se re-crea el
 espejo**: si alguna herramienta necesitara leerlas desde otra ruta, se resuelve con un enlace o
 con su configuración, no duplicando el árbol —dos copias divergen en silencio, que es justo lo
@@ -108,7 +123,8 @@ que este repo ya vigila a mano en los tres sitios donde no le queda más remedio
 ## Datos / integraciones (no cambiar sin querer)
 
 - Origen: Google Sheet. URL en `config.js`. En segundo plano (`sheets.worker.js`), primero cada hoja
-  por su CSV de exportación (`hojasPorCsv`: las pestañas salen de `/htmlview`); si no llega completo,
+  por su CSV de exportación, leído con `csvLector` y no con SheetJS (`hojasPorCsv`). Las pestañas salen
+  de `/htmlview`; si no responde, de la lista que recuerda la página (`larv4_sheet_tabs`). Si no llega completo,
   el XLSX del libro entero (`fetchXlsxSheets`) y, si tampoco, el respaldo hoja a hoja
   (`respaldoPorHojas`). Sin Worker (`leerTodoAqui`, en `sheets.js`), el XLSX primero y luego el
   respaldo.
