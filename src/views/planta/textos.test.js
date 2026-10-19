@@ -115,9 +115,9 @@ describe('producción del mes', () => {
     expect(textoMes(C)).toEqual({ mes: 'Octubre', corridas: 'corridas 597–601' });
     expect(textoMes(null)).toEqual({ mes: '—', corridas: '' });
   });
-  it('18-10 (opción A): un mes que aún no empieza en calendario da los nauplios del mes en curso, y lo dice', () => {
+  it('18-10 (opción A): un mes que aún no empieza en calendario da los nauplios del mes en curso; la tarjeta, sólo sus fechas, y la sección N5 lo dice', () => {
     const adel = { ...C, mes: 'Noviembre', nauplios: { ...C.nauplios, desde: '2026-10-01', hasta: '2026-10-18', adelantado: { mes: 'Noviembre', empieza: '2026-11-01' } } };
-    expect(textosProduccion(adel, 400e6, HOY).n5sub).toBe('nauplios N5 · 01/10 al 18/10 (Noviembre empieza el 01/11)');
+    expect(textosProduccion(adel, 400e6, HOY).n5sub).toBe('nauplios N5 · 01/10 al 18/10');   // sin la nota: 2 líneas (con ella, 5)
     expect(textosNauplios({ n5: 767.1e6, dias: [], desde: '2026-10-01', hasta: '2026-10-18', adelantado: { mes: 'Noviembre', empieza: '2026-11-01' } }, 65e6, 26, HOY, null).mes.sub)
       .toBe('mes de calendario en curso (01/10 al 18/10): Noviembre empieza el 01/11 · meta del mes: 65 M por día × 26 días de producción');
   });

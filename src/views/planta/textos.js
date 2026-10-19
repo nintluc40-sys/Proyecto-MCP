@@ -212,8 +212,9 @@ export function textosProduccion(C, meta, ctx) {
     cult: 'en cultivo ' + millones(C.enCultivo),
     sv: C.supervivencia === null ? '—' : fmt(C.supervivencia, 1) + ' %',
     n5: millones(C.nauplios.n5),
-    n5sub: 'nauplios N5' + (C.nauplios.desde ? ' · ' + dm(C.nauplios.desde) + ' al ' + dm(C.nauplios.hasta) : '')
-      + (C.nauplios.adelantado ? ' (' + C.nauplios.adelantado.mes + ' empieza el ' + dm(C.nauplios.adelantado.empieza) + ')' : ''),   // 18-10, opción A
+    // 18-10 (usuario, opción A del texto): con `adelantado`, aquí SÓLO las fechas (2 líneas, como cualquier mes); la nota de que
+    // el mes aún no empieza va en la sección «Nauplios N5», justo debajo (con ella, este rótulo ocupaba 5 líneas)
+    n5sub: 'nauplios N5' + (C.nauplios.desde ? ' · ' + dm(C.nauplios.desde) + ' al ' + dm(C.nauplios.hasta) : ''),
     des: ent(C.nauplios.desoves),
     nota: [
       C.enCultivo > 0 ? 'Lo que sigue en cultivo aún puede bajar con la supervivencia.' : '',
