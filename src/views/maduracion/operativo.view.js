@@ -3454,7 +3454,7 @@ function imprimirParte() {
 function descargarParte() {
   if (!_reporte) { toast('Todavía no hay reporte que descargar.', 'warn'); return; }
   const XLSX = window.XLSX;
-  if (!XLSX) { toast('Exportación no disponible: SheetJS (XLSX) no se cargó. Revisa el <script> del CDN en index.html o tu conexión.', 'err'); return; }
+  if (!XLSX) { toast('Exportación no disponible: SheetJS (XLSX) no se cargó. Revisa tu conexión y recarga la página.', 'err'); return; }
   const A = ARMADO[_reporte.clave];
   const parte = conSello(_reporte.modelo);
   const hojas = A.hojas(parte);

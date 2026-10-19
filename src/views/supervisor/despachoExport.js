@@ -227,7 +227,7 @@ export function bindDespachoExport(root, rows, { mod, bindModal, toast }) {
 
   overlay.querySelector('[data-despx-download]')?.addEventListener('click', () => {
     const XLSX = window.XLSX;
-    if (!XLSX) { toast('Exportación no disponible: SheetJS (XLSX) no se cargó. Revisa el <script> del CDN en index.html o tu conexión.', 'err'); return; }
+    if (!XLSX) { toast('Exportación no disponible: SheetJS (XLSX) no se cargó. Revisa tu conexión y recarga la página.', 'err'); return; }
     const { mIdx: mi, mod: mo } = sel();
     if (mi < 0) { toast('Elige un mes con datos.', 'warn'); return; }
     const aoa = despachoExportAoa(rows, { mIdx: mi, mod: mo });

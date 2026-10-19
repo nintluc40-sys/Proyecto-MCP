@@ -231,7 +231,7 @@ function stampRows(rows, name) {
 // ---------- XLSX (camino principal) ----------
 function getXLSX() {
   const X = window.XLSX;
-  if (!X) throw new Error('SheetJS (XLSX) no disponible — revisa el <script> CDN en index.html.');
+  if (!X) throw new Error('SheetJS (XLSX) no se cargó: revisa la conexión y recarga');
   return X;
 }
 

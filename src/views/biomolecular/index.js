@@ -761,7 +761,7 @@ function renderRSDetail(data) {
    ============================================================ */
 // `window` puede no existir al importar el módulo fuera del navegador (tests de la
 // capa de datos pura). Además, este módulo se importa de forma DIFERIDA (al abrir la
-// vista): si el CDN de D3 aún no había cargado al importar, capturar el valor UNA vez
+// vista): si D3 aún no había cargado al importar, capturar el valor UNA vez
 // dejaría `d3` en undefined para siempre. Por eso es `let` y se re-sincroniza en
 // biomolecularView() (tras el guard `!window.d3`), garantizando la instancia cargada.
 let d3 = (typeof window !== 'undefined') ? window.d3 : undefined;
@@ -1756,7 +1756,7 @@ function openExportModal() {
 function closeExportModal() { $('bm-export-modal')?.classList.remove('open'); document.body.classList.remove('modal-open'); }
 function runExport() {
   const XLSX = window.XLSX;
-  if (!XLSX) { toast('Exportación no disponible: SheetJS (XLSX) no se cargó. Revisa el <script> del CDN en index.html o tu conexión.', 'err'); return; }
+  if (!XLSX) { toast('Exportación no disponible: SheetJS (XLSX) no se cargó. Revisa tu conexión y recarga la página.', 'err'); return; }
   const data = exportRangeRows();
   if (!data.length) { toast('Sin registros en el rango de fechas elegido.', 'warn'); return; }
   const ws = XLSX.utils.aoa_to_sheet(biomolExportAoa(data)); const wb = XLSX.utils.book_new();
@@ -2588,13 +2588,13 @@ export function biomolecularView(root) {
   // que reaplicar la simulación sobre las filas nuevas (misma semilla = mismos resultados).
   if (audMode) audSimulate(RAW, audSeed);
 
-  // La vista depende de D3 (CDN en index.html). Si no cargó (firewall/offline), un
+  // La vista depende de D3 (se carga al abrir la vista: cargarD3 en main.js). Si no cargó (firewall/offline), un
   // mensaje accionable es mejor que el "Error al cargar" genérico del import diferido.
   if (!window.d3) {
-    root.innerHTML = '<div class="empty-state" style="padding:60px 20px">🧬 No se pudo cargar la librería de gráficos <b>D3</b>.<br><small class="muted">Revisa el &lt;script&gt; del CDN en index.html o tu conexión a internet.</small></div>';
+    root.innerHTML = '<div class="empty-state" style="padding:60px 20px">🧬 No se pudo cargar la librería de gráficos <b>D3</b>.<br><small class="muted">Revisa tu conexión a internet y vuelve a abrir la vista.</small></div>';
     return;
   }
-  // Re-sincroniza D3 por si el CDN cargó DESPUÉS del import diferido de este módulo
+  // Re-sincroniza D3 por si D3 cargó DESPUÉS del import diferido de este módulo
   // (el guard de arriba mira window.d3, pero las funciones de dibujo usan `d3`).
   d3 = window.d3;
 
