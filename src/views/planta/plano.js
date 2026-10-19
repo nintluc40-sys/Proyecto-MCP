@@ -50,11 +50,14 @@ export function tanquesDeSala(m) {
    El canal sedimentador era una caja de 2,8 m: es tipo 'canal' (abierto, con agua).
    COLOR (sólo los edificios, 2026-10-19, tarea 7 · B0, usuario): el de su fachada. Antes salía de su POSICIÓN en esta lista
    (`WALLS[k % 4]` en escena.js) y añadir o partir un área recoloreaba todos los edificios de después; éstos son los de
-   entonces, uno por uno. Un edificio nuevo trae el suyo. */
+   entonces, uno por uno. Un edificio nuevo trae el suyo.
+   Plan B · B5 (2026-10-19, usuario) · dos nombres que no cuadraban con el plano: la nave de x 118–126 no es un generador
+   ni un reservorio (sus rótulos: blowers, área de calderos, diésel, agua purificada, sala de análisis, CIO 2; los
+   generadores están en el frente) y la de x 150–159 tampoco es un reservorio (blowers, bodegas, sala de análisis). */
 export const OTHERS = [
   [79.3, 38.2, 84.2, 66.4, 2.2, 'res', 'Algas premasivos'], [85.6, 38.2, 94.1, 66.4, 3.4, 'bld', 'Filtros y tratamiento de agua · Turbidex, tanques elevados, dosificación', 'filtros', '#e7eef0'],
-  [98.6, 38.2, 110.2, 66.4, 1.2, 'alg', 'Algas masivos'], [112, 38.2, 117, 66.4, 2.2, 'res', 'Reservorio'], [118.3, 38.2, 126.4, 66.4, 3.4, 'bld', 'Generador diésel · y reservorio de agua salada', 'diesel', '#f1ece2'],
-  [130.8, 38.2, 142.5, 66.4, 1.2, 'alg', 'Algas masivos'], [144.3, 38.2, 149.2, 66.4, 2.2, 'res', 'Reservorio'], [150.5, 38.2, 158.6, 66.4, 3.4, 'bld', 'Reservorio de agua salada', null, '#e8e2f0'],
+  [98.6, 38.2, 110.2, 66.4, 1.2, 'alg', 'Algas masivos'], [112, 38.2, 117, 66.4, 2.2, 'res', 'Reservorio'], [118.3, 38.2, 126.4, 66.4, 3.4, 'bld', 'Calderos y CIO 2 · sopladores, diésel, agua purificada, sala de análisis', 'diesel', '#f1ece2'],
+  [130.8, 38.2, 142.5, 66.4, 1.2, 'alg', 'Algas masivos'], [144.3, 38.2, 149.2, 66.4, 2.2, 'res', 'Reservorio'], [150.5, 38.2, 158.6, 66.4, 3.4, 'bld', 'Sopladores y sala de análisis · bodegas', null, '#e8e2f0'],
   [164, 38.2, 175.6, 66.4, 1.2, 'alg', 'Algas masivos'],
   [78, 68.6, 95.4, 74.8, 3.4, 'bld', 'Administración · dirección, asistencia, espera', 'admin', '#e7eef0'], [99, 68.6, 128.6, 74.8, 3.4, 'bld', 'Fotobiorreactor y CIO · cisterna de agua salada', null, '#efe6d6'],
   [131.7, 68.6, 160.4, 74.8, 3.4, 'bld', 'Edificio de servicio', null, '#e8e2f0'], [164.4, 68.6, 173, 74.8, 2.2, 'res', 'Reservorio'],

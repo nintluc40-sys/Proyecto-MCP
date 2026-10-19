@@ -47,6 +47,15 @@ describe('plano · otras áreas (opción F)', () => {
     expect(OTHERS.filter((o) => o[5] !== 'bld').every((o) => o[8] === undefined)).toBe(true);
     expect(OTHERS.every((o) => o[7] === undefined || o[7] === null || typeof o[7] === 'string'), 'la forma va antes del color').toBe(true);
   });
+
+  /* Plan B · B5 (2026-10-19, usuario) · dos naves de servicio se llamaban «Generador diésel · y reservorio de agua salada» y
+     «Reservorio de agua salada»: los rótulos del plano dicen calderos, CIO 2, sopladores, sala de análisis y bodegas. */
+  it('🔴 ningún edificio se llama como lo que no es: ni «Reservorio…» ni «Generador…»', () => {
+    const titulos = OTHERS.filter((o) => o[5] === 'bld').map((o) => o[6].split(' · ')[0]);
+    expect(titulos.filter((t) => /^(Reservorio|Generador)/i.test(t))).toEqual([]);
+    expect(titulos).toContain('Calderos y CIO 2');
+    expect(titulos).toContain('Sopladores y sala de análisis');
+  });
 });
 
 describe('plano · maduración', () => {
