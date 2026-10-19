@@ -212,7 +212,8 @@ export function textosProduccion(C, meta, ctx) {
     cult: 'en cultivo ' + millones(C.enCultivo),
     sv: C.supervivencia === null ? '—' : fmt(C.supervivencia, 1) + ' %',
     n5: millones(C.nauplios.n5),
-    n5sub: 'nauplios N5' + (C.nauplios.desde ? ' · ' + dm(C.nauplios.desde) + ' al ' + dm(C.nauplios.hasta) : ''),
+    n5sub: 'nauplios N5' + (C.nauplios.desde ? ' · ' + dm(C.nauplios.desde) + ' al ' + dm(C.nauplios.hasta) : '')
+      + (C.nauplios.adelantado ? ' (' + C.nauplios.adelantado.mes + ' empieza el ' + dm(C.nauplios.adelantado.empieza) + ')' : ''),   // 18-10, opción A
     des: ent(C.nauplios.desoves),
     nota: [
       C.enCultivo > 0 ? 'Lo que sigue en cultivo aún puede bajar con la supervivencia.' : '',
@@ -242,7 +243,9 @@ export function textosNauplios(N, metaDia, diasProduccion, ctx, elegido) {
   const dias = (N && N.dias) || [];
   if (!ctx.cargado || !N) return { vacia: true, nota: ctx.cargado ? 'Sin datos de maduración en el mes.' : 'Cargando datos…', mes: { txt: '—', metaTxt, pct: '', ok: false, ancho: '0%', sub }, barras: [], metaAlto: '0%', eje: ['', ''], dia: null, pendientes: '' };
   const p = N.n5 / metaMes * 100;
-  const mes = { txt: millones(N.n5), metaTxt, pct: fmt(p, 0) + ' % de la meta del mes', ok: p >= 100, ancho: Math.min(p, 100) + '%', sub };
+  // 18-10 (usuario, opción A) · el mes de producción aún no empezó en calendario: son los nauplios del mes en curso, y se dice
+  const adel = N.adelantado ? 'mes de calendario en curso (' + dm(N.desde) + ' al ' + dm(N.hasta) + '): ' + N.adelantado.mes + ' empieza el ' + dm(N.adelantado.empieza) + ' · ' : '';
+  const mes = { txt: millones(N.n5), metaTxt, pct: fmt(p, 0) + ' % de la meta del mes', ok: p >= 100, ancho: Math.min(p, 100) + '%', sub: adel + sub };
   const conDesove = dias.filter((d) => d.desoves > 0);
   const completos = conDesove.filter((d) => !d.pendientes);
   const ultimo = completos[completos.length - 1] || null;

@@ -134,3 +134,22 @@ describe('cifras de gerencia · nauplios y meta', () => {
     expect(normalizarMeta('70000000', META_N5_DIA)).toBe(70e6);
   });
 });
+
+describe('cifras de gerencia · un mes de producción cuyo mes de calendario aún no empieza (2026-10-18, usuario, opción A)', () => {
+  it('sus nauplios son los del mes de calendario EN CURSO, recortado a hoy, y lo dice (`adelantado`)', () => {
+    const antes = store.globalData;
+    store.globalData = [...antes, DES('2030-08-10', 'LB', 5, 3000000)];   // un desove de agosto, antes de «hoy»
+    try {
+      const A = cifrasGerencia(store.globalData, '2030-08-20');   // el último mes de producción (Septiembre…) empieza el 01/09
+      expect(A.mes).toBe(C.mes);
+      expect(A.nauplios).toMatchObject({ n5: 3000000, desoves: 5, desde: '2030-08-01', hasta: '2030-08-20',
+        adelantado: { mes: C.mes, empieza: '2030-09-01' } });
+      expect(A.nauplios.dias.map((d) => d.fecha)).toEqual(Array.from({ length: 20 }, (_, i) => '2030-08-' + String(i + 1).padStart(2, '0')));
+    } finally { store.globalData = antes; }
+  });
+  it('con su mes de calendario empezado o pasado, como siempre: sin `adelantado`', () => {
+    expect(C.nauplios.adelantado).toBeNull();
+    expect(cifrasGerencia(store.globalData, '2030-09-01').nauplios).toMatchObject({ desde: '2030-09-01', adelantado: null });   // el día 1 ya es el suyo
+    expect(cifrasGerencia(store.globalData, '2030-09-20', C.meses[0].mIdx).nauplios.adelantado).toBeNull();
+  });
+});

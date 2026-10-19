@@ -16,6 +16,7 @@
    · Los nauplios (N5) y los desoves son los de Visitante (`produccionDelMes` de visitante/maduracion.produccion.js):
      el mes de CALENDARIO que corresponde al de producción (`calendarRangeOfMonth`), recortado a hoy. Con cada DÍA del
      mes (`porDia`, punto 10 del 07-10 noche: el N5 diario por lote frente a su meta, en la sección «Nauplios N5»).
+     2026-10-18 (usuario, opción A): mientras ese mes de calendario no haya empezado, el de calendario EN CURSO, dicho.
    · La meta es de 400 millones al mes y se edita en la vista (⚙), guardada en el equipo: aquí sólo su valor por
      defecto y su validación; guardarla es cosa de la vista.
    Nada se recalcula con otra fórmula: si la tabla del Supervisor o Visitante cambian su regla, esto la sigue.
@@ -62,7 +63,12 @@ export function cifrasGerencia(filas, hoy, mIdxElegido) {
     if (modsCor && entera) despachadoCorridas += cosechaCor;   // B1: el criterio del «Subtotal actual» de la tabla
   }
   const rango = calendarRangeOfMonth(mIdx);
-  const mad = rango ? produccionDelMes(filas, rango, hoy, { porDia: true }) : null;   // porDia: punto 10 (N5 de cada día)
+  // 2026-10-18 (usuario, opción A) · el mes de producción arranca ~2 semanas antes que el de calendario de su nombre: mientras
+  // éste no haya empezado, los nauplios y desoves son los del mes de calendario EN CURSO, y se dice (`adelantado`). Antes,
+  // esas 2 semanas de cada mes, la tarjeta por defecto daba la maduración en cero («01/11 al 30/11»: aún no había llegado).
+  const adelantado = rango && rango.desde > hoy ? { mes: monthLabelAt(mIdx), empieza: rango.desde } : null;
+  const ventana = adelantado ? mesDeCalendario(hoy) : rango;
+  const mad = ventana ? produccionDelMes(filas, ventana, hoy, { porDia: true }) : null;   // porDia: punto 10 (N5 de cada día)
   return {
     mes: monthLabelAt(mIdx), mIdx, pos, meses: meses.map((m) => ({ mIdx: m, mes: monthLabelAt(m) })), corridas,
     // el mes en curso (el último) es HOY; uno pasado se pinta al cierre de su mes de calendario, sin pasar de hoy
@@ -72,7 +78,13 @@ export function cifrasGerencia(filas, hoy, mIdxElegido) {
     supervivencia: siembra > 0 ? Math.min(total / siembra * 100, 100) : null,
     modulos, modulosDespachados,
     nauplios: { n5: mad ? mad.total.n5 : 0, desoves: mad ? mad.total.desoves : 0,
-      desde: mad ? mad.periodo.desde : rango ? rango.desde : '', hasta: mad ? mad.periodo.hasta : rango ? rango.hasta : '',
-      dias: mad ? mad.dias : [] },
+      desde: mad ? mad.periodo.desde : ventana ? ventana.desde : '', hasta: mad ? mad.periodo.hasta : ventana ? ventana.hasta : '',
+      dias: mad ? mad.dias : [], adelantado },
   };
+}
+
+/** El mes de calendario de `hoy` (`aaaa-mm-dd`), del día 1 al último. */
+function mesDeCalendario(hoy) {
+  const ultimo = new Date(+hoy.slice(0, 4), +hoy.slice(5, 7), 0).getDate();
+  return { desde: hoy.slice(0, 8) + '01', hasta: hoy.slice(0, 8) + String(ultimo).padStart(2, '0') };
 }
