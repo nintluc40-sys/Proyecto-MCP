@@ -96,6 +96,28 @@ describe('plano · otras áreas (opción F)', () => {
     expect(frente[0][5], 'la cisterna es un reservorio').toBe('res');
     expect(OTHERS.some((o) => /^Comedor, cocina y bodegas/.test(o[6]))).toBe(false);
   });
+
+  /* Plan B · B2 (2026-10-19, usuario) · el R.A.S. de Maduración y su cuarto de control, pegados al Módulo 3 (x 79,2), en el
+     arranque de la calle interior. */
+  it('🔴 el R.A.S. de Maduración y su cuarto de control, pegados al Módulo 3', () => {
+    const ras = OTHERS.find((o) => /^R\.A\.S\. de Maduración · /.test(o[6]));
+    const control = OTHERS.find((o) => o[6] === 'Cuarto de control del RAS');
+    expect(ras.slice(0, 4)).toEqual([73.2, 20.4, 79.2, 28]);
+    expect(control.slice(0, 4)).toEqual([77.3, 28, 79.2, 32.4]);
+    expect([ras[2], control[2]], 'pegados al Módulo 3').toEqual([LARV.find((m) => m.id === 'M3').box[0], LARV.find((m) => m.id === 'M3').box[0]]);
+  });
+
+  /* Plan B (2026-10-19) · con áreas que se parten y se añaden, una red general: ninguna área pisa a otra, ni a un módulo de
+     larvicultura ni a una sala de maduración (medido antes del B2: ningún solape). */
+  it('🔑 ninguna área pisa a otra, ni a un módulo ni a una sala', () => {
+    const cajas = [...OTHERS.map((o) => [o[6], o.slice(0, 4)]), ...LARV.map((m) => [m.id, m.box]), ...MAT.map((m) => [m.id, m.box])];
+    const solapes = [];
+    cajas.forEach(([n1, a], i) => cajas.slice(i + 1).forEach(([n2, b]) => {
+      const ox = Math.min(a[2], b[2]) - Math.max(a[0], b[0]), oz = Math.min(a[3], b[3]) - Math.max(a[1], b[1]);
+      if (ox > 1e-9 && oz > 1e-9) solapes.push(n1 + ' × ' + n2);
+    }));
+    expect(solapes).toEqual([]);
+  });
 });
 
 describe('plano · maduración', () => {

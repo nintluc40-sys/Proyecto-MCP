@@ -326,9 +326,10 @@ for (let x = -58; x < 238; x += 7) plane(x, (STREET[0] + STREET[1]) / 2 - .08, x
 plane(-60, STREET[1], 240, STREET[1] + 1.4, .03, M.paint);
 for (let x = 30; x < 64; x += 3.2) plane(x, 89.6, x + .12, 95.2, .03, M.paint);  // líneas de parqueo
 // vías internas de evacuación
-// la calle interior va a lo largo de z: la textura gira para que las huellas de rodadura sigan la calle
+// la calle interior va a lo largo de z: la textura gira para que las huellas de rodadura sigan la calle. Plan B · B2
+// (2026-10-19): arranca en z 28,4, al pie del R.A.S. de Maduración y su cuarto de control (antes, en z 18,5)
 const roadM = std({ map: (() => { const t = copiaPropia(TX.asphalt, 12, 1); t.center.set(.5, .5); t.rotation = Math.PI / 2; return t; })(), roughness: .95 });
-plane(72, 18.5, 77.6, 89.2, .02, roadM); plane(76, 75.2, 176, 78.6, .02, std({ map: rep(TX.asphalt, 16, 1), roughness: .95 }));
+plane(72, 28.4, 77.6, 89.2, .02, roadM); plane(76, 75.2, 176, 78.6, .02, std({ map: rep(TX.asphalt, 16, 1), roughness: .95 }));
 // cerramiento perimetral con ingreso
 const fenceSegs = [[SITE[0], SITE[1], SITE[2], SITE[1] + .25], [SITE[0], SITE[1], SITE[0] + .25, SITE[3]], [SITE[2] - .25, SITE[1], SITE[2], SITE[3]], [SITE[0], SITE[3] - .25, 71.5, SITE[3]], [78.2, SITE[3] - .25, SITE[2], SITE[3]]];
 fenceSegs.forEach(([a, b, c, d]) => box(a, b, c, d, 0, 2.4, M.fence, true));
@@ -844,7 +845,8 @@ nature.add(shrubI);
 })();
 
 /* ---------- Postes de luz ---------- */
-const lampSpots = [[74.8, 22], [74.8, 40], [74.8, 58], [74.8, 76], [92, 76.8], [112, 76.8], [132, 76.8], [152, 76.8], [172, 76.8], [26, 87.5], [46, 87.5], [6, 47], [6, 13], [100, 19.2], [150, 19.2], [20, 93], [60, 93], [100, 93], [140, 93]];
+// B2 (2026-10-19) · el primero, al arranque de la calle interior (estaba en x 74,8 · z 22: hoy dentro del R.A.S.)
+const lampSpots = [[72.6, 29.5], [74.8, 40], [74.8, 58], [74.8, 76], [92, 76.8], [112, 76.8], [132, 76.8], [152, 76.8], [172, 76.8], [26, 87.5], [46, 87.5], [6, 47], [6, 13], [100, 19.2], [150, 19.2], [20, 93], [60, 93], [100, 93], [140, 93]];
 const poleI = new THREE.InstancedMesh(new THREE.CylinderGeometry(.08, .12, 1, 6), M.steel, lampSpots.length);
 const headI = new THREE.InstancedMesh(new THREE.BoxGeometry(.9, .18, .35), M.lamp, lampSpots.length); poleI.castShadow = true;
 lampSpots.forEach(([x, z], i) => { const [px, pz] = P(x, z); m4.compose(v.set(px, 3.5, pz), q0, s.set(1, 7, 1)); poleI.setMatrixAt(i, m4); m4.compose(v.set(px + .3, 7, pz), q0, s.set(1, 1, 1)); headI.setMatrixAt(i, m4); });
@@ -857,7 +859,7 @@ const nightLights = [[74.8, 40], [74.8, 76], [120, 76.8], [160, 76.8], [36, 87.5
 /* ---------- Vida: personal, vehículos y aves ---------- */
 const life = new THREE.Group(); scene.add(life);
 const PATHS = [
-  [[74.5, 21], [74.5, 87]], [[78, 77], [172, 77]], [[23.8, 50.5], [23.8, 85]], [[39.7, 50.5], [39.7, 85]], [[8, 86.6], [55, 86.6]],
+  [[74.5, 29], [74.5, 87]], [[78, 77], [172, 77]], [[23.8, 50.5], [23.8, 85]], [[39.7, 50.5], [39.7, 85]], [[8, 86.6], [55, 86.6]],
   [[80, 19.3], [175, 19.3]], [[2, 14.6], [63, 14.6]], [[46.8, 18], [46.8, 49]], [[15.6, 16], [15.6, 49]], [[112, 37.6], [112, 20.8]], [[128, 37.4], [175, 37.4]], [[60, 52], [60, 86]], [[113, 26.7], [143, 26.7]], [[80.5, 32.1], [110, 32.1]], [[30.5, 30.4], [46, 30.4]], [[8.5, 61.7], [23, 61.7]], [[40.6, 73.4], [55, 73.4]], [[146, 9.9], [153, 9.9]],
 ];
 const people = []; const SHIRTS = ['#f4f4f0', '#2f5d8f', '#1f3f6b', '#8a6d4f', '#f4f4f0', '#3c8a5c'];   // sin naranja: es el chaleco del personal de tarea (opción K)

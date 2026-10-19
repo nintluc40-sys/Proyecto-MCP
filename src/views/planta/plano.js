@@ -63,7 +63,9 @@ export function tanquesDeSala(m) {
    10 recintos del plano, de oeste a este, en la misma franja z 79–88,6 (paredes leídas del dibujo, ±0,7 m): la cisterna de
    agua dulce (reservorio bajo), generadores, carboys, medio de cultivo, bodega de cloro, bodega de insumos, capacitación,
    comedor y cocina, bodega y dormitorio, y el taller de mantenimiento, que llega a x 176 (la franja estaba vacía). Los
-   detalles van con su edificio: escapes en los generadores, portones en la bodega de insumos, chimenea sobre la cocina. */
+   detalles van con su edificio: escapes en los generadores, portones en la bodega de insumos, chimenea sobre la cocina.
+   Plan B · B2 (2026-10-19, usuario) · el R.A.S. de Maduración (x 73,2–79,2 · z 20,4–28) y su cuarto de control (x 77,3–79,2
+   · z 28–32,4), pegados al Módulo 3, en el arranque de la calle interior: la calle (escena.js) empieza ahora en z 28,4. */
 export const OTHERS = [
   [79.3, 38.2, 84.2, 45.25, 2.2, 'res', 'Reservorio 3D · agua salada'], [79.3, 45.25, 84.2, 52.3, 2.2, 'res', 'Reservorio 3C · agua salada'],
   [79.3, 52.3, 84.2, 59.35, 2.2, 'res', 'Reservorio 3B · agua salada'], [79.3, 59.35, 84.2, 66.4, 2.2, 'res', 'Reservorio 3A · agua salada'], [85.6, 38.2, 94.1, 66.4, 3.4, 'bld', 'Filtros y tratamiento de agua · Turbidex, tanques elevados, dosificación', 'filtros', '#e7eef0'],
@@ -88,7 +90,9 @@ export const OTHERS = [
   [36.3, 13.4, 45.4, 17.2, 2.2, 'res', 'Reservorio 5C · agua dulce'], [45.4, 13.4, 54.5, 17.2, 2.2, 'res', 'Reservorio 5B · agua dulce'],
   [54.5, 13.4, 63.6, 17.2, 2.2, 'res', 'Reservorio 5A · agua dulce'],
   [46.9, 2.2, 66.8, 11.6, 3.6, 'bld', 'Laboratorio · microbiología, PCR, fisicoquímico, artemia', 'lab', '#e7eef0'],
-  [67.4, 1.6, 83.2, 18, 3.4, 'bld', 'Oficina de maduración · alimentos, paneles eléctricos', null, '#efe6d6'], [111.4, 1.6, 116.4, 17.4, 3.4, 'bld', 'Edificio de servicio', null, '#e8e2f0'],
+  [67.4, 1.6, 83.2, 18, 3.4, 'bld', 'Oficina de maduración · alimentos, paneles eléctricos', null, '#efe6d6'],
+  [73.2, 20.4, 79.2, 28, 3, 'bld', 'R.A.S. de Maduración · tanques, filtros y bombas', null, '#e7eef0'],
+  [77.3, 28, 79.2, 32.4, 2.6, 'bld', 'Cuarto de control del RAS', null, '#f1ece2'], [111.4, 1.6, 116.4, 17.4, 3.4, 'bld', 'Edificio de servicio', null, '#e8e2f0'],
   [79.2, 18.4, 176.5, 20.1, .6, 'canal', 'Canal sedimentador y recolector'],
 ];
 export const SITE = [0.9, 0.9, 176.6, 89.2], C0 = [88.7, 45], STREET = [97, 107];
