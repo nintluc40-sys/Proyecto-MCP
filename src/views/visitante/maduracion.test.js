@@ -256,3 +256,21 @@ describe('calendarRangeOfMonth · el mes de calendario de un mes interno', () =>
     expect(calendarRangeOfMonth(8), 'sin año base no hay mes de calendario').toBeNull();
   });
 });
+
+describe('Visitante · 🥚 un mes de producción que aún no empieza en calendario (2026-10-18, usuario, opción A)', () => {
+  afterEach(() => { vi.useRealTimers(); });
+  it('el bloque sale con los nauplios del mes de calendario EN CURSO, recortado a hoy, y lo dice (tarjeta y detalle)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(2026, 7, 20, 12));   // 20/08/2026: Septiembre empieza el 01/09
+    await abrir([...LARV(), ...PLANTA()]);
+    expect(mes()).toBe('Septiembre');
+    expect(tarjeta('madLotes').textContent).toContain('400K');
+    expect(tarjeta('madLotes').textContent).toContain('10 desoves · 1 lote(s)');
+    expect(root.querySelector('[data-vt-mad] .vt-card-title').textContent).toContain('mes de calendario en curso (01/08 al 20/08): Septiembre empieza el 01/09');
+    expect(detalle('madLotes').textContent).toContain('Septiembre empieza el 01/09: son los del mes en curso.');
+  });
+  it('con la fecha real (meses ya empezados), como siempre: sin la nota', async () => {
+    await abrir([...LARV(), ...PLANTA()]);
+    expect(root.querySelector('[data-vt-mad] .vt-card-title').textContent).toContain('producción de nauplios por lote y sala');
+    expect(detalle('madLotes').textContent).not.toContain('son los del mes en curso');
+  });
+});

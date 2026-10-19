@@ -283,8 +283,20 @@ function cargarMaduracion() {
   return madCarga;
 }
 const hoyIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+/* 2026-10-18 (usuario, opción A, como Planta · cifras.js) · el mes de producción arranca ~2 semanas antes que el de calendario
+   de su nombre: mientras éste no haya empezado, los nauplios son los del mes de calendario EN CURSO, y se dice (`adelantado`).
+   Antes, esas 2 semanas de cada mes, el bloque 🥚 Maduración no salía en el mes por defecto (su ventana aún no llegaba). */
+function ventanaMad(mIdx) {
+  const r = calendarRangeOfMonth(mIdx), hoy = hoyIso();
+  if (!r || r.desde <= hoy) return { rango: r, adelantado: null };
+  const ultimo = new Date(+hoy.slice(0, 4), +hoy.slice(5, 7), 0).getDate();
+  return { rango: { desde: hoy.slice(0, 8) + '01', hasta: hoy.slice(0, 8) + String(ultimo).padStart(2, '0') }, adelantado: { mes: monthLabelAt(mIdx), empieza: r.desde } };
+}
 function madSummary(mIdx) {
-  return memo(JSON.stringify(['madSummary', mIdx]), () => madMod.produccionDelMes(store.globalData, calendarRangeOfMonth(mIdx), hoyIso()));
+  return memo(JSON.stringify(['madSummary', mIdx]), () => {
+    const v = ventanaMad(mIdx), s = madMod.produccionDelMes(store.globalData, v.rango, hoyIso());
+    return s && { ...s, adelantado: v.adelantado };
+  });
 }
 const nfMad = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v).toLocaleString('es-EC') : '—');
 // La fertilidad del tablero con un decimal; «—» cuando no hay ningún desove con N2 y huevos (no es un 0 %).
@@ -299,7 +311,9 @@ function madBlock(mIdx) {
   if (!s) return '';
   const top = s.salas.reduce((a, x) => (!a || x.n5 > a.n5 ? x : a), null);
   return `<div class="card vt-card">
-    <div class="vt-card-title" style="color:${MAD_AC}">🥚 Maduración · ${esc(monthLabelAt(mIdx))} <span class="muted" style="font-weight:600;font-size:12px">· producción de nauplios por lote y sala</span></div>
+    <div class="vt-card-title" style="color:${MAD_AC}">🥚 Maduración · ${esc(monthLabelAt(mIdx))} <span class="muted" style="font-weight:600;font-size:12px">· ${s.adelantado
+      ? esc(`mes de calendario en curso (${dmMad(s.periodo.desde)} al ${dmMad(s.periodo.hasta)}): ${s.adelantado.mes} empieza el ${dmMad(s.adelantado.empieza)}`)
+      : 'producción de nauplios por lote y sala'}</span></div>
     <div style="display:flex;gap:12px;flex-wrap:wrap">
       ${sumCard('🦐', 'Nauplios producidos (N5)', fmtK(s.total.n5), `${nfMad(s.total.desoves)} desoves · ${s.lotes.length} lote(s)`, 'madLotes', MAD_AC)}
       ${sumCard('🏠', 'Producción por sala', `${s.salas.length} sala(s)`, top ? `más nauplios: ${top.sala}` : 'sin sala conocida', 'madSalas', MAD_AC)}
@@ -705,7 +719,8 @@ function sumDetail(key, mIdx, monthSup) {
     const s = madMod ? madSummary(mIdx) : null;
     if (!s) return { title: '🥚 Maduración', html: '<p style="color:var(--c-text-muted)">Sin desoves este mes.</p>' };
     const madP = (txt) => `<p style="font-size:12px;color:${MAD_AC};font-weight:700;margin:14px 0 6px">${esc(txt)}</p>`;
-    const periodo = `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">Desoves del ${dmMad(s.periodo.desde)} al ${dmMad(s.periodo.hasta)}: Maduración no tiene corrida, así que el mes es el de la fecha del desove.</p>`;
+    const periodo = `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">Desoves del ${dmMad(s.periodo.desde)} al ${dmMad(s.periodo.hasta)}: Maduración no tiene corrida, así que el mes es el de la fecha del desove.${s.adelantado
+      ? ` ${esc(s.adelantado.mes)} empieza el ${dmMad(s.adelantado.empieza)}: son los del mes en curso.` : ''}</p>`;
     const chart = '<div class="vt-lab-chart"><canvas id="vtMadChart"></canvas></div>';
     if (key === 'madLotes') {
       const pend = s.total.pendientes;
