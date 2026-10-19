@@ -84,7 +84,7 @@ describe('filasDeCsv · las mismas filas y claves que el camino del XLSX', () =>
       + ',,,,,\n'
       + '02/09/2026, TQ 2 ,80,,,"con ""comillas"""\n';
     const senales = { es: 0, en: 0 };
-    const filas = filasDeCsv(texto, xlsx(), senales);
+    const filas = filasDeCsv(texto, senales);
     expect(filas).toEqual([
       { Fecha: '01/09/2026', Tanque: 'TQ 1', Supervivencia: '85.5', __EMPTY: 'x', Tanque_1: 'dup', Observaciones: 'línea 1\nlínea 2' },
       { Fecha: '02/09/2026', Tanque: ' TQ 2 ', Supervivencia: '80', __EMPTY: '', Tanque_1: '', Observaciones: 'con "comillas"' },
@@ -93,6 +93,18 @@ describe('filasDeCsv · las mismas filas y claves que el camino del XLSX', () =>
     // las mismas claves que sheet_to_json de un XLSX con esa cabecera
     const X = xlsx(), wb = X.read(xlsxDe('H', [['Fecha', 'Tanque', 'Supervivencia', null, 'Tanque', 'Observaciones'], ['01/09/2026', 'TQ 1', 85.5, 'x', 'dup', 'a']]), XLSX_LECTURA);
     expect(Object.keys(workbookToSheets(wb, X).H[0]).filter((k) => k !== '_SheetOrigin')).toEqual(Object.keys(filas[0]));
+  });
+
+  it('carga lenta C (2026-10-19) · saltarse los textos que no empiezan por «-» ni cifra no cambia nada: valor a valor = valorDeCsv, y las señales', () => {
+    const valores = ['-3,25', '-1.061', '-8,48', '8,48', '8.48', '7.400.000,0', '12,5%', '1,5E-3', 'x 3,5', '3,5 x', '+3,5', ' 3,5',
+      '01/09/2026', '10:30', 'TQ 1', '-', '-x', 'BM+BO', '0', '-0,5', '0,5', '9,75', '9.999'];
+    const texto = valores.map((_, i) => 'c' + i).join(',') + '\n' + valores.map((v) => '"' + v + '"').join(',') + '\n';
+    const senales = { es: 0, en: 0 };
+    const [fila] = filasDeCsv(texto, senales);
+    expect(Object.values(fila)).toEqual(valores.map(valorDeCsv));
+    expect(Object.values(fila).filter((v, i) => v !== valores[i]).length, 'control: hay valores que SÍ se convierten').toBeGreaterThan(5);
+    expect(senales, 'las señales: las de las dos expresiones, valor a valor').toEqual({
+      es: valores.filter((v) => /^-?\d+,\d{1,2}$/.test(v)).length, en: valores.filter((v) => !/^-?\d+,\d{1,2}$/.test(v) && /^-?\d+\.\d{1,2}$/.test(v)).length });
   });
 });
 

@@ -18,6 +18,7 @@ import { store, emit, EV } from './store.js';
 import { autoCalcMortalidad, getField, F } from './fields.js';
 import { parseAnyDate, clearDateCache } from './dates.js';
 import { isUnsafeKey } from './util.js';
+import { leerCsv } from './csvLector.js';
 
 // ---------- utilidades de red ----------
 // Cada respuesta con el control que puede cortarla: su reloj (`ms`) cubre sólo hasta las cabeceras; el cuerpo lo vigila
@@ -587,8 +588,11 @@ export async function respaldoPorHojas(ids, obtenerXLSX = getXLSX, avisar = null
    44, y leerlas cuesta ~2 s. Medido con el libro real el 11-10: mismas filas y mismas columnas en las 44 hojas y el
    99,998 % de las celdas idénticas al camino del XLSX; difieren 32 celdas con separador de miles que el XLSX deja como
    «7,400,000.0» y la app leía 7,4 (ahora se leen bien, decidido por el usuario) y 24 redondeos en los que el CSV da lo que
-   se ve en Sheets (pH 8,475 → «8,48»; SheetJS daba 8.47). Se lee con SheetJS (`raw`: sin adivinar tipos) y las MISMAS
-   opciones de filas que el XLSX, así que cabeceras, columnas sin nombre y filas en blanco salen igual. */
+   se ve en Sheets (pH 8,475 → «8,48»; SheetJS daba 8.47). Se lee sin adivinar tipos y con las MISMAS opciones de filas
+   que el XLSX, así que cabeceras, columnas sin nombre y filas en blanco salen igual: hasta el 19-10 con SheetJS (`raw`);
+   desde entonces con el lector propio (csvLector.js, carga lenta C), que da lo mismo en menos de la mitad del tiempo. */
+// ⚠ Estas dos expresiones y las dos SENAL_ de abajo empiezan por «-» o una cifra: filasDeCsv salta sin probarlas los
+// textos que no empiezan así. Si alguna cambia de comienzo, hay que quitar ese filtro.
 const CSV_DECIMAL = /^-?\d+,\d+(E[+-]?\d+)?%?$/;
 const CSV_MILES = /^-?\d{1,3}(\.\d{3})+(,\d+)?%?$/;
 /** Un valor del CSV, que sale con el formato regional del libro (es: coma decimal, punto de miles), en la forma en que
@@ -602,16 +606,17 @@ export function valorDeCsv(s) {
 const SENAL_ES = /^-?\d+,\d{1,2}$/;
 const SENAL_EN = /^-?\d+\.\d{1,2}$/;
 /** Las filas de una hoja a partir del texto de su CSV, como las da sheet_to_json del XLSX (FILAS_LECTURA), con los
- *  valores ya convertidos. `senales` (opcional) cuenta cuántos valores parecen es y cuántos en-US. */
-export function filasDeCsv(texto, XLSX, senales = null) {
+ *  valores ya convertidos. `senales` (opcional) cuenta cuántos valores parecen es y cuántos en-US. Carga lenta C
+ *  (2026-10-19): ya no recibe SheetJS; lee el lector propio (csvLector.js). */
+export function filasDeCsv(texto, senales = null) {
   const t = texto.charCodeAt(0) === 0xFEFF ? texto.slice(1) : texto;
-  const wb = XLSX.read(t, { type: 'string', raw: true, dense: true });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const filas = ws ? XLSX.utils.sheet_to_json(ws, FILAS_LECTURA) : [];
+  const filas = leerCsv(t);
   for (const f of filas) {
     for (const k in f) {
       const v = f[k];
       if (typeof v !== 'string' || !v) continue;
+      const c0 = v.charCodeAt(0);
+      if (c0 !== 45 && (c0 < 48 || c0 > 57)) continue;   // ni «-» ni cifra: no casa con ninguna expresión (ver arriba)
       if (senales) { if (SENAL_ES.test(v)) senales.es++; else if (SENAL_EN.test(v)) senales.en++; }
       f[k] = valorDeCsv(v);
     }
@@ -662,7 +667,7 @@ export async function hojasPorCsv(ids, obtenerXLSX = getXLSX, avisar = null, pre
     try {
       let filas = null;
       for (let intento = 0; intento < 2 && !filas && !abandonado; intento++) {
-        try { filas = filasDeCsv(await csvDeHoja(ids, gid), XLSX, senales); exitos++; } catch (_) {
+        try { filas = filasDeCsv(await csvDeHoja(ids, gid), senales); exitos++; } catch (_) {
           if (intento === 0 && primeraTanda.has(gid)) fallidasDeLaPrimera++;
           if (!exitos && fallidasDeLaPrimera >= primeraTanda.size) abandonado = true;
           else if (intento < 1) await new Promise((res) => setTimeout(res, 600));

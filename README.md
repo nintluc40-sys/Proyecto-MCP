@@ -723,16 +723,21 @@ Dos consecuencias que conviene tener presentes al desplegar:
    ningún dato de Google (¿sin conexión?).» con ⟳ para reintentar. Medido con la red colgada y un equipo nuevo: se rinde a
    los 262 s (antes 7,2 min, ~17 min con las pestañas en caché, y acababa en «Sin datos en las hojas.»).
 1. **Cada hoja por su CSV de exportación** (2026-10-11, punto 4.2-B; `sheets.js · hojasPorCsv`, en el Worker): las
-   pestañas salen de `/htmlview` y cada hoja se pide por `export?format=csv&gid=` (10 a la vez, `CSV_A_LA_VEZ`, desde el
-   2026-10-15 —antes 6—: en el PC 4,6 → 3,2 s, con 4G lento simulado 25 → 22 s y con 3G 79 → 72 s, sin fallos; el CSV
-   sólo se abandona si falla la primera tanda ENTERA; ~1,4 MB comprimidos las
-   44 frente a los 14,5 MB del XLSX), se lee con SheetJS sin adivinar tipos y con las MISMAS opciones de filas que el
-   XLSX, y `valorDeCsv` pasa el formato regional del libro (coma decimal, punto de miles) a la forma del XLSX. Medido con
+   pestañas salen de `/htmlview` y cada hoja se pide por `export?format=csv&gid=` (16 a la vez, `CSV_A_LA_VEZ`: 6 hasta
+   el 2026-10-15, 10 hasta el 2026-10-18 —con 10, en el PC 4,6 → 3,2 s, con 4G lento simulado 25 → 22 s y con 3G
+   79 → 72 s—; 16 porque Google ya no sirve la exportación «en caliente»: 44 hojas 16,3 → 13,5 s, sin errores; con 44 a
+   la vez Google contesta 429; el CSV sólo se abandona si falla la primera tanda ENTERA, contando hojas y no intentos;
+   ~1,4 MB comprimidos las 44 frente a los 14,5 MB del XLSX), se lee sin adivinar tipos y con las MISMAS opciones de
+   filas que el XLSX —desde el 2026-10-19 (carga lenta C) con un lector propio, `core/csvLector.js`, que da lo mismo que
+   SheetJS (44 hojas reales y 60 000 CSV al azar idénticos) en bastante menos tiempo: las 44, en Node en el PC,
+   2,7 → 1,2 s; en el Worker de Chrome 2,2–2,7 → 1,5–1,8 s y la fase CSV 5,3–5,5 → 4,6 s; antes, con SheetJS, que se
+   sigue cargando para el respaldo XLSX—, y `valorDeCsv` pasa el formato regional del libro (coma decimal, punto de
+   miles) a la forma del XLSX. Medido con
    el libro real: mismas filas y claves en las 44 hojas, 99,998 % de celdas idénticas (difieren 32 celdas con separador
    de miles, que el XLSX dejaba como «7,400,000.0» y se leían 7,4, y 24 redondeos en los que el CSV da lo que se ve en
    Sheets); lectura ~2 s frente a 12–16 s; primera carga en PC 17,7 s frente a 32,7 s. La hoja cuyo CSV no llega (o trae
    menos filas que lo aplicado) va por su XLSX; sin pestañas, con alguna sin nombre, con el formato regional cambiado o
-   si los 6 primeros intentos fallan sin ninguna hoja, se lee el libro entero como antes; y sólo se usa si llegó
+   si falla la primera tanda entera sin ninguna hoja, se lee el libro entero como antes; y sólo se usa si llegó
    COMPLETO (si no, el libro entero y el respaldo; como último recurso, lo parcial).
    Si no, `connectSheets()` descarga el libro **completo** vía `export?format=xlsx`
    (1 petición, todas las hojas), con reintento y backoff. Si falla, el **respaldo** pide CADA hoja
