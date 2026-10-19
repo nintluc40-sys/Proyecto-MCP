@@ -80,8 +80,19 @@ import { fmt, pct, num, ent, dec, dm, millones, ESTADO_TXT, MAD_HEX, colorGrupo,
   textosProduccion, textoMes, alertasParaAtender, reproductoresPorDias } from './textos.js';
 
 /** Monta la maqueta en `root` (que ya trae el marcado de planta/index.js).
- *  Devuelve { dispose, pintarEstado(estado|null), aviso(texto), alElegirMes(fn(mIdx, esUltimo)) }. */
+ *  Devuelve { dispose, pintarEstado(estado|null), aviso(texto), alElegirMes(fn(mIdx, esUltimo)) }.
+ *  Pauta 3.17 (2026-10-19) · si el montaje FALLA a medias, libera lo que ya había creado —el contexto WebGL, las escuchas
+ *  del documento, los observadores— y relanza el error (planta/index.js enseña su cartel). Antes quedaba todo vivo: las
+ *  escuchas retenían la escena entera y cada vez que se volvía a elegir 🏭 Maqueta se abría OTRO contexto. `dispose` no
+ *  sirve aquí: lee variables que aún no existen si el fallo llega antes. Montada, manda su `dispose` de siempre. */
 export function montarPlanta(root) {
+  const alFallar = [];
+  try { return montarCuerpo(root, alFallar); } catch (e) {
+    for (const f of alFallar.reverse()) { try { f(); } catch (_) { /* lo siguiente se libera igual */ } }
+    throw e;
+  }
+}
+function montarCuerpo(root, alFallar) {
 const $ = s => root.querySelector(s);
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 let seed = 7; const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
@@ -110,6 +121,7 @@ groups.forEach(g => { g.vol = g.tanks.reduce((s, t) => s + t.vol, 0); const nums
 /* ---------- Renderizador, cámara y luz ---------- */
 const vp = $('#vp'), canvas = $('#c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+alFallar.push(() => { renderer.dispose(); if (renderer.forceContextLoss) renderer.forceContextLoss(); });
 const DPR_MAX = Math.min(devicePixelRatio || 1, 2), DPR_MIN = Math.min(DPR_MAX, 1);   // de la nitidez de la pantalla (hasta 2×) a la normal (1×)
 renderer.setPixelRatio(DPR_MAX);
 renderer.outputEncoding = THREE.sRGBEncoding;
@@ -120,6 +132,7 @@ renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(35, 1, .5, 4000);
 const controls = new OrbitControls(camera, canvas);
+alFallar.push(() => controls.dispose());
 controls.enableDamping = true; controls.dampingFactor = .08; controls.maxPolarAngle = Math.PI * .47; controls.minDistance = 8; controls.maxDistance = 420; controls.screenSpacePanning = false;
 const col = hx => new THREE.Color(hx).convertSRGBToLinear();
 const hemi = new THREE.HemisphereLight(0xeaf2f4, 0x9a917e, .75); scene.add(hemi);
@@ -241,6 +254,7 @@ stars.visible = false; scene.add(stars);
    ~+8. El cielo pinta sus colores tal cual (toneMapped: false), así que su
    copia los recibe pasados a lineal: si no, el reflejo saldría más claro que el cielo que se ve. */
 const pmrem = new THREE.PMREMGenerator(renderer);
+alFallar.push(() => pmrem.dispose());
 const envSkyMat = sky.material.clone();
 // el cielo de la pantalla escribe su color en crudo; dentro del mapa de entorno (codificado en RGBE) eso se lee como una
 // intensidad enorme y el reflejo sale negro (medido): su copia lo codifica como cualquier material, con linearToOutputTexel
@@ -1509,6 +1523,10 @@ const alPopstate = () => { if (root.classList.contains('expandida')) { entradaHi
 const alTeclaFS = (e) => { if (e.key === 'Escape' && root.classList.contains('expandida')) salirDePantallaCompleta(); };
 document.addEventListener('fullscreenchange', alCambiarPantallaCompleta); document.addEventListener('webkitfullscreenchange', alCambiarPantallaCompleta);
 window.addEventListener('popstate', alPopstate); document.addEventListener('keydown', alTeclaFS);
+alFallar.push(() => {
+  document.removeEventListener('fullscreenchange', alCambiarPantallaCompleta); document.removeEventListener('webkitfullscreenchange', alCambiarPantallaCompleta);
+  window.removeEventListener('popstate', alPopstate); document.removeEventListener('keydown', alTeclaFS);
+});
 
 /* ---------- Bucle ---------- */
 const tmp = new THREE.Vector3(); let wasFar = null, last = performance.now();
@@ -1603,6 +1621,23 @@ const io = new IntersectionObserver((es) => {
   if (enPantalla && timerFuera) { clearTimeout(timerFuera); timerFuera = 0; despertar(); rafId = requestAnimationFrame(loop); }
 });
 io.observe(vp);
+alFallar.push(() => io.disconnect());
+/* Pauta 3.17 (2026-10-19, usuario: aviso y recuperación, sin botón) · CONTEXTO WEBGL PERDIDO. Un celular con poca memoria,
+   o al volver de otra app, puede quitarle la tarjeta gráfica a la página: three.js deja de dibujar sin decir nada y la
+   maqueta se queda congelada o en blanco (y, si pasa en el armado, la cortina con su último %). Se DICE encima de la
+   maqueta; si el navegador devuelve el contexto, se rehacen los reflejos del agua (`envRTs`: su contenido vivía en la
+   tarjeta y se perdió con ella) y las sombras (`setTod`), y el aviso se va. Si no vuelve, el aviso pide recargar. */
+const avisoContexto = document.createElement('p');
+avisoContexto.className = 'contexto-perdido'; avisoContexto.setAttribute('role', 'alert'); avisoContexto.hidden = true;
+avisoContexto.textContent = 'La maqueta se detuvo: el equipo liberó la memoria gráfica. Suele volver sola en unos segundos; si no, recarga la página.';
+vp.append(avisoContexto);
+canvas.addEventListener('webglcontextlost', () => { avisoContexto.hidden = false; });
+canvas.addEventListener('webglcontextrestored', () => {
+  Object.keys(envRTs).forEach((k) => { delete envRTs[k]; });
+  const b = root.querySelector('#tod button[aria-pressed="true"]');
+  setTod((b && b.dataset.t) || 'day');
+  avisoContexto.hidden = true; despertar();
+});
 /* Libera todo lo de la tarjeta gráfica: el router vacía el contenedor al cambiar de vista y no avisa. */
 function dispose() {
   if (disposed) return;
@@ -1880,7 +1915,8 @@ function revelarPaso() {
 }
 if (reduced) animateLife(0, 0);
 camera.position.set(-30, 150, 175); controls.target.set(0, 0, 0);
-const ro = new ResizeObserver(resize); ro.observe(vp); resize(); frameView('iso'); fly.dur = 1;
+const ro = new ResizeObserver(resize); ro.observe(vp); alFallar.push(() => ro.disconnect());
+resize(); frameView('iso'); fly.dur = 1;
 rafId = requestAnimationFrame(loop);
 return { dispose, pintarEstado, aviso, alElegirMes: (fn) => { alMes = fn; } };
 }

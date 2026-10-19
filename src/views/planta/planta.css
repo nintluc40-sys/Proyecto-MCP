@@ -184,6 +184,10 @@
 .planta .viewport.is-armando .hintline { visibility: hidden; }
 .planta .armando { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0; font: 500 13px/1.3 var(--font-mono); color: #24363b; background: rgba(255, 255, 255, .72); padding: 6px 10px; border-radius: 6px; pointer-events: none; white-space: nowrap; }
 .planta .viewport:not(.is-armando) .armando { display: none; }
+/* contexto WebGL perdido (pauta 3.17, 2026-10-19): al CENTRO de la maqueta, libre de controles también en el celular (allí
+   los botones de vista ocupan dos filas); encima de la cortina si coinciden: la tapa y explica por qué no avanza */
+.planta .contexto-perdido { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2; margin: 0; width: max-content; max-width: min(92%, 440px); font: 500 13px/1.4 var(--font-mono); color: #24363b; background: rgba(255, 255, 255, .92); padding: 8px 12px; border-radius: 6px; text-align: center; box-shadow: 0 2px 8px rgba(0, 0, 0, .18); }
+.planta .contexto-perdido[hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) { .planta #c, .planta .labels { transition: none; } }
 
 /* ---- Celular: maqueta arriba, panel debajo ---- */

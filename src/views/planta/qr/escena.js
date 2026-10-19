@@ -13,8 +13,17 @@
 import * as THREE from 'three';
 import qrcode from 'qrcode-generator';
 
-/** Monta el QR 3D en `root` (que trae el marcado de qr/index.js) con el enlace `enlace`. Devuelve { dispose }. */
-export function montarQR(root, { enlace }) {
+/** Monta el QR 3D en `root` (que trae el marcado de qr/index.js) con el enlace `enlace`. Devuelve { dispose }.
+ *  Pauta 3.17 (2026-10-19) · si el montaje falla a medias, libera el contexto WebGL y su observador y relanza el error (el
+ *  cartel lo pone qr/index.js), como la maqueta (planta/escena.js). */
+export function montarQR(root, opciones) {
+  const alFallar = [];
+  try { return montarQRCuerpo(root, opciones, alFallar); } catch (e) {
+    for (const f of alFallar.reverse()) { try { f(); } catch (_) { /* lo siguiente se libera igual */ } }
+    throw e;
+  }
+}
+function montarQRCuerpo(root, { enlace }, alFallar) {
 const $ = s => root.querySelector(s);
 const loading = $('#loading');
 qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
@@ -602,6 +611,7 @@ function pieceColor(pc, sid, r, out) {
 /* ---------- Escena ---------- */
 const stage = $('#stage'), canvas = $('#scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+alFallar.push(() => { renderer.dispose(); if (renderer.forceContextLoss) renderer.forceContextLoss(); });
 renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.setClearColor(0x000000, 0);
@@ -727,7 +737,7 @@ function resize() {
   camera.position.set(0, 0, camera.aspect >= 1 ? CARD / (fit * t) : CARD / (fit * t * camera.aspect));
   camera.lookAt(0, 0, 0); camera.updateProjectionMatrix();
 }
-const ro = new ResizeObserver(resize); ro.observe(stage);
+const ro = new ResizeObserver(resize); ro.observe(stage); alFallar.push(() => ro.disconnect());
 resize();
 
 /* ---------- Bucle de animación ---------- */
@@ -978,7 +988,16 @@ $('#save').addEventListener('click', async () => {
   if (tokens.includes('qr')) { phase = 1; setTarget(1); } else setTarget(0);
   loading.hidden = true;
   rafId = requestAnimationFrame(t => { last = t; frame(t); });
-})();
+})().catch((e) => {
+  /* Pauta 3.17 (2026-10-19) · el arranque es asíncrono y su error no llegaba al catch de qr/index.js: la página se quedaba
+     en «Armando…» para siempre y el error, sin capturar. Ahora lo dice, como el fallo del montaje, y libera la escena. */
+  console.error('[qr] arranque', e);
+  dispose();
+  const d = document.createElement('div'); d.className = 'loading';
+  const s = document.createElement('small'); s.textContent = (e && e.message) || String(e);
+  d.append('No se pudo mostrar el QR 3D en este equipo.', document.createElement('br'), s);
+  stage.replaceChildren(d);
+});
 
 function dispose() {
   if (disposed) return; disposed = true;
