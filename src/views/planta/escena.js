@@ -438,13 +438,14 @@ OTHERS.forEach(([a, b, c, d, h, type, , forma], k) => {
   } else {
     // piletas de algas: cada una con agua verde de microalgas. 2026-10-18 (usuario) · HUECAS, como el canal sedimentador:
     // cuatro muros de 25 cm y el agua 15 cm bajo el borde. Antes el muro era un bloque macizo y el agua quedaba DENTRO de él:
-    // desde el 04-10 se veían como bloques de concreto blancos.
+    // desde el 04-10 se veían como bloques de concreto blancos. Tonos «profundos» (opción B del usuario, 18-10): los de antes,
+    // con el tono ACES y el sol, se veían lima (#4f9a35 → #84c651); éstos, verde denso de cultivo.
     const n = Math.max(3, Math.round(dd / 4.6)), step = dd / n;
     for (let i = 0; i < n; i++) {
       const z0 = b + i * step + .3, z1 = b + (i + 1) * step - .3;
       box(a, z0, c, z0 + .25, 0, h, M.tankWall, true, others); box(a, z1 - .25, c, z1, 0, h, M.tankWall, true, others);
       box(a, z0 + .25, a + .25, z1 - .25, 0, h, M.tankWall, true, others); box(c - .25, z0 + .25, c, z1 - .25, 0, h, M.tankWall, true, others);
-      const wm = M.algae.clone(); wm.color = col(['#4f9a35', '#6a9a2e', '#8a8a3a', '#3f8f4a'][i % 4]);
+      const wm = M.algae.clone(); wm.color = col(['#2f5e22', '#41601d', '#555524', '#27592e'][i % 4]);
       plane(a + .25, z0 + .25, c - .25, z1 - .25, h - .15, wm, others);
     }
   }
