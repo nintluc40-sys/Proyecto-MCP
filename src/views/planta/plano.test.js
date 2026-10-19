@@ -36,7 +36,7 @@ describe('plano · otras áreas (opción F)', () => {
   it('cada área lleva nombre; el canal sedimentador es un canal, no un edificio', () => {
     expect(OTHERS.every((o) => typeof o[6] === 'string' && o[6].length > 3)).toBe(true);
     expect(OTHERS.find((o) => /Canal sedimentador/.test(o[6]))[5]).toBe('canal');
-    expect(OTHERS.filter((o) => o[7]).map((o) => o[7]).sort()).toEqual(['admin', 'comedor', 'diesel', 'filtros', 'lab', 'maquinas']);
+    expect(OTHERS.filter((o) => o[7]).map((o) => o[7]).sort()).toEqual(['admin', 'bodega', 'comedor', 'diesel', 'filtros', 'generadores', 'lab', 'maquinas']);
   });
 
   /* Tarea 7 · B0 (2026-10-19, usuario) · el color de un edificio va CON él: antes salía de su posición en la lista y añadir un
@@ -50,11 +50,12 @@ describe('plano · otras áreas (opción F)', () => {
 
   /* Plan B · B5 (2026-10-19, usuario) · dos naves de servicio se llamaban «Generador diésel · y reservorio de agua salada» y
      «Reservorio de agua salada»: los rótulos del plano dicen calderos, CIO 2, sopladores, sala de análisis y bodegas. */
-  it('🔴 ningún edificio se llama como lo que no es: ni «Reservorio…» ni «Generador…»', () => {
+  it('🔴 ningún edificio se llama «Reservorio…», y las dos naves de servicio, con su nombre del plano', () => {
     const titulos = OTHERS.filter((o) => o[5] === 'bld').map((o) => o[6].split(' · ')[0]);
-    expect(titulos.filter((t) => /^(Reservorio|Generador)/i.test(t))).toEqual([]);
-    expect(titulos).toContain('Calderos y CIO 2');
-    expect(titulos).toContain('Sopladores y sala de análisis');
+    expect(titulos.filter((t) => /^Reservorio/i.test(t))).toEqual([]);
+    // los generadores de verdad están en el FRENTE (B4); las naves de x 118 y 150 no lo son
+    expect(OTHERS.find((o) => o[0] === 118.3)[6]).toMatch(/^Calderos y CIO 2 · /);
+    expect(OTHERS.find((o) => o[0] === 150.5)[6]).toMatch(/^Sopladores y sala de análisis · /);
   });
 
   /* Plan B · B3 (2026-10-19, usuario) · los reservorios con su nombre del plano, partidos DENTRO de las cajas de antes: cada
@@ -81,6 +82,19 @@ describe('plano · otras áreas (opción F)', () => {
     expect(OTHERS.some((o) => /^Algas premasivos/.test(o[6])), 'el rótulo era de la franja de al lado').toBe(false);
     expect(OTHERS.find((o) => o[0] === 164.4)[6]).toBe('Biodigestor · y taller de mantenimiento');
     expect(OTHERS.filter((o) => o[6] === 'Reservorio'), 'ningún reservorio sin nombre').toEqual([]);
+  });
+
+  /* Plan B · B4 (2026-10-19, usuario) · el frente era UN bloque (x 78–170, «Comedor, cocina y bodegas»): ahora sus 10 recintos
+     del plano, contiguos en la misma franja z 79–88,6, de x 78 a 176. */
+  it('🔴 el frente, en sus 10 recintos contiguos de x 78 a 176, de oeste a este', () => {
+    const frente = OTHERS.filter((o) => o[1] === 79 && o[3] === 88.6).sort((p, q) => p[0] - q[0]);
+    expect(frente.map((o) => o[6].split(' · ')[0])).toEqual(['Cisterna de agua dulce', 'Generadores', 'Sala de carboys', 'Medio de cultivo',
+      'Bodega de cloro', 'Bodega de insumos', 'Sala de capacitación', 'Comedor y cocina', 'Bodega y dormitorio', 'Taller de mantenimiento']);
+    expect([frente[0][0], frente[frente.length - 1][2]]).toEqual([78, 176]);
+    frente.forEach((o, k) => { if (k) expect(o[0], o[6] + ': pegado al anterior').toBe(frente[k - 1][2]); });
+    expect(frente.map((o) => o[7] || '').filter(Boolean)).toEqual(['generadores', 'bodega', 'comedor']);
+    expect(frente[0][5], 'la cisterna es un reservorio').toBe('res');
+    expect(OTHERS.some((o) => /^Comedor, cocina y bodegas/.test(o[6]))).toBe(false);
   });
 });
 

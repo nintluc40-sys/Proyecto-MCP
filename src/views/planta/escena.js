@@ -55,6 +55,8 @@
    Otras áreas (2026-10-04, usuario, opción F): cada área con su nombre del plano (globo al pasar o tocar) y su forma:
    cuarto de máquinas con sopladores y chimeneas, generador diésel con tanque y escape, filtros Turbidex y tanques elevados,
    laboratorio y administración con alero de ingreso y aire acondicionado, comedor con portones y chimenea, canal abierto.
+   Plan B · B4 (2026-10-19): el frente, en sus 10 recintos; generadores con escapes, bodega de insumos con portones y
+   comedor con su puerta y la chimenea sobre la cocina, cada detalle sobre su edificio (antes, con x fijas del bloque).
    Fachadas (2026-10-04, usuario, opción E): los invernaderos cierran sus dos culatas con lámina, con marco y puerta
    corrediza; las salas suman puerta metálica al frente, columnas y zócalo. Todo en mallas de instancias.
    Sol y luna reales (2026-10-04, usuario, opción C): Día, Tarde y Noche ponen el sol (o la luna) donde están hoy en Mar
@@ -440,10 +442,13 @@ OTHERS.forEach(([a, b, c, d, h, type, , forma, color]) => {
     [d - 7, d - 3.5].forEach((zz) => { box(a + w / 2 - 1, zz - 1, a + w / 2 + 1, zz + 1, h, .8, M.steel, true, others); cil(a + w / 2, zz, 1.2, 1.8, h + .8, M.paint); });
   } else if (forma === 'lab' || forma === 'admin') {   // alero de ingreso con puerta de vidrio hacia el interior del predio y aires en el techo
     ingreso(a + w / 2, d, 1); aires(a, b, c, d, h, forma === 'lab' ? 4 : 3);
-  } else if (forma === 'comedor') {   // portones de bodega y puerta de servicio hacia la calle, chimenea de cocina
-    [140, 146, 152, 158].forEach((x) => box(x - 1.6, d, x + 1.6, d + .08, 0, 3, M_PORTON, true, others));
-    box(99.4, d, 100.6, d + .06, 0, 2.2, M.lid, true, others);
-    cil(105, b + 3, .32, 2.2, h, M_ACERO);
+  } else if (forma === 'comedor') {   // B4 · puerta de servicio hacia la calle y chimenea sobre la cocina (su extremo este)
+    box(a + w * .35 - .6, d, a + w * .35 + .6, d + .06, 0, 2.2, M.lid, true, others);
+    cil(c - 2.2, b + 3, .32, 2.2, h, M_ACERO);
+  } else if (forma === 'bodega') {   // B4 · dos portones de bodega hacia la calle
+    [a + w * .3, a + w * .7].forEach((x) => box(x - 1.6, d, x + 1.6, d + .08, 0, 3, M_PORTON, true, others));
+  } else if (forma === 'generadores') {   // B4 · los escapes de los generadores en el techo
+    [a + w * .35, a + w * .65].forEach((x) => cil(x, b + 3, .28, 2.6, h, M_ACERO));
   }
   if (type === 'bld') {
     const hex = color, side = windowsTex(hex, false), lit = windowsTex(hex, true);

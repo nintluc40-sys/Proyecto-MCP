@@ -58,7 +58,12 @@ export function tanquesDeSala(m) {
    rótulos «1 A», «3 D»… caen en el centro de cada parte, ±1–2 m): 1B–1A y 2B–2A en dos mitades, 3D–3A en cuatro (el área
    se llamaba «Algas premasivos»: ése es el rótulo de la franja angosta de al lado), 4C–4A y 5C–5A en tres. El
    «Reservorio» del frente derecho es el biodigestor y el taller de mantenimiento. No entran 8A–8D (cotas junto al Módulo 8),
-   9A–9B (dentro del cuarto de máquinas) ni A–D (al pie de los módulos 8–10: sin rótulo claro). */
+   9A–9B (dentro del cuarto de máquinas) ni A–D (al pie de los módulos 8–10: sin rótulo claro).
+   Plan B · B4 (2026-10-19, usuario) · el frente (era UN bloque de x 78 a 170, «Comedor, cocina y bodegas») partido en sus
+   10 recintos del plano, de oeste a este, en la misma franja z 79–88,6 (paredes leídas del dibujo, ±0,7 m): la cisterna de
+   agua dulce (reservorio bajo), generadores, carboys, medio de cultivo, bodega de cloro, bodega de insumos, capacitación,
+   comedor y cocina, bodega y dormitorio, y el taller de mantenimiento, que llega a x 176 (la franja estaba vacía). Los
+   detalles van con su edificio: escapes en los generadores, portones en la bodega de insumos, chimenea sobre la cocina. */
 export const OTHERS = [
   [79.3, 38.2, 84.2, 45.25, 2.2, 'res', 'Reservorio 3D · agua salada'], [79.3, 45.25, 84.2, 52.3, 2.2, 'res', 'Reservorio 3C · agua salada'],
   [79.3, 52.3, 84.2, 59.35, 2.2, 'res', 'Reservorio 3B · agua salada'], [79.3, 59.35, 84.2, 66.4, 2.2, 'res', 'Reservorio 3A · agua salada'], [85.6, 38.2, 94.1, 66.4, 3.4, 'bld', 'Filtros y tratamiento de agua · Turbidex, tanques elevados, dosificación', 'filtros', '#e7eef0'],
@@ -67,7 +72,17 @@ export const OTHERS = [
   [164, 38.2, 175.6, 66.4, 1.2, 'alg', 'Algas masivos'],
   [78, 68.6, 95.4, 74.8, 3.4, 'bld', 'Administración · dirección, asistencia, espera', 'admin', '#e7eef0'], [99, 68.6, 128.6, 74.8, 3.4, 'bld', 'Fotobiorreactor y CIO · cisterna de agua salada', null, '#efe6d6'],
   [131.7, 68.6, 160.4, 74.8, 3.4, 'bld', 'Edificio de servicio', null, '#e8e2f0'], [164.4, 68.6, 173, 74.8, 2.2, 'res', 'Biodigestor · y taller de mantenimiento'],
-  [78, 79, 170, 88.6, 3.6, 'bld', 'Comedor, cocina y bodegas · insumos, carboys', 'comedor', '#e7eef0'], [56.2, 49.4, 71.7, 88.6, 3.4, 'bld', 'Cuarto de máquinas · bombas, calderos, blowers', 'maquinas', '#efe6d6'],
+  [78, 79, 92.9, 88.6, 2.2, 'res', 'Cisterna de agua dulce · y bodega de reciclaje'],
+  [92.9, 79, 104.5, 88.6, 3.6, 'bld', 'Generadores · tanques de combustible de 6 600 y 3 000 gal', 'generadores', '#e7eef0'],
+  [104.5, 79, 120.7, 88.6, 3.6, 'bld', 'Sala de carboys · y sala de UV', null, '#efe6d6'],
+  [120.7, 79, 128, 88.6, 3.6, 'bld', 'Medio de cultivo · preparación, ceparios 1 y 2, esterilización', null, '#e8e2f0'],
+  [128, 79, 130.5, 88.6, 3.6, 'bld', 'Bodega de cloro', null, '#f1ece2'],
+  [130.5, 79, 140.3, 88.6, 3.6, 'bld', 'Bodega de insumos', 'bodega', '#e7eef0'],
+  [140.3, 79, 148.8, 88.6, 3.6, 'bld', 'Sala de capacitación · y bodega de PVC reciclable', null, '#efe6d6'],
+  [148.8, 79, 160, 88.6, 3.6, 'bld', 'Comedor y cocina', 'comedor', '#e8e2f0'],
+  [160, 79, 169.8, 88.6, 3.6, 'bld', 'Bodega y dormitorio', null, '#f1ece2'],
+  [169.8, 79, 176, 88.6, 3.6, 'bld', 'Taller de mantenimiento · y bodega de desechos peligrosos', null, '#e7eef0'],
+  [56.2, 49.4, 71.7, 88.6, 3.4, 'bld', 'Cuarto de máquinas · bombas, calderos, blowers', 'maquinas', '#efe6d6'],
   [64.4, 19.3, 70.8, 29, 2.2, 'res', 'Reservorio 4C · agua salada'], [64.4, 29, 70.8, 38.7, 2.2, 'res', 'Reservorio 4B · agua salada'],
   [64.4, 38.7, 70.8, 48.4, 2.2, 'res', 'Reservorio 4A · agua salada'],
   [36.3, 13.4, 45.4, 17.2, 2.2, 'res', 'Reservorio 5C · agua dulce'], [45.4, 13.4, 54.5, 17.2, 2.2, 'res', 'Reservorio 5B · agua dulce'],
