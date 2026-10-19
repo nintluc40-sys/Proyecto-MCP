@@ -635,7 +635,10 @@ async function csvDeHoja(ids, gid) {
 }
 // Hojas que se piden A LA VEZ (pauta 3.5, 2026-10-15; antes 6): manda la latencia de Google por petición, no el tamaño, y
 // con 10 las 44 hojas llegan en ~3,2 s frente a ~4,6 s, sin fallos (medido en el PC con el libro real).
-export const CSV_A_LA_VEZ = 10;
+// 2026-10-18 (usuario, opción A de «la carga es más lenta») · 16: Google ya no sirve la exportación «en caliente» y con 10
+// el Worker pasaba los primeros 3–4 s de la fase CSV ESPERANDO; medido desde Chrome y desde Node: 10 → 3,8–6,4 s, 15 → 3,5 s,
+// 22 → 2,5–3,1 s, sin errores; con 44 Google empieza a contestar 429 (7 de 44). 16 deja margen frente a ese freno.
+export const CSV_A_LA_VEZ = 16;
 // Si la PRIMERA TANDA entera (las CSV_A_LA_VEZ primeras hojas) falla a la primera sin que llegue NINGUNA hoja (sin red, o
 // el CSV bloqueado), se deja el camino del CSV: con la red colgada, cada intento espera su tiempo máximo y 44 hojas lo
 // multiplicarían (A1 del 07-10). R1 (auditoría del 1.1, 2026-10-18): se cuentan HOJAS de esa tanda, una vez cada una, no

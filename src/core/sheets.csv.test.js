@@ -138,7 +138,7 @@ describe('hojasPorCsv', () => {
   });
 
   it('si nada llega, deja de insistir cuando falla la primera tanda entera y se aparta', async () => {
-    expect(CSV_A_LA_VEZ).toBe(10);   // pauta 3.5 (2026-10-15): 10 a la vez
+    expect(CSV_A_LA_VEZ).toBe(16);   // pauta 3.5 (2026-10-15): 10 a la vez · 2026-10-18 (opción A de la carga lenta): 16
     html = HTML(Array.from({ length: 30 }, (_, i) => 'Hoja ' + i));
     csvPorGid = {};
     expect(await hojasPorCsv(ids, xlsx)).toBe(null);
