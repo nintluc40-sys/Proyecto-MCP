@@ -31,10 +31,10 @@
    ⏳ Sin dato real: la hoja aún no existe en producción (medido el 2026-09-21). Fixtures ficticios, y en pantalla
    vacío hasta la primera carga; el censo de `medir-tablero-mad-real` lo dirá en crudo.
    ============================================================ */
-import { fechaDeFila } from './operativo.data.js';
+import { fechaDeFila, partesDePiscina } from './operativo.data.js';   // pauta 3.2 · la pareja «556/557» son sus dos piscinas
 import { supervivencia } from './operativo.indicadores.js';
 import { loteDelLibro, estadoDeLoteEntero, desempenoPorPiscina } from './operativo.lotes.js';
-import { codigoEnFiltro, loteElegido, hayLote, haySala, hayTanque, hayPiscina, hayCamaronera } from './operativo.tablero.js';   // 0r·4 · H2 · la pareja de códigos cuenta como sus dos
+import { codigoEnFiltro, loteElegido, hayLote, haySala, hayTanque, hayPiscina, hayCamaronera, piscinaEnFiltro } from './operativo.tablero.js';   // 0r·4 · H2 · la pareja de códigos cuenta como sus dos
 import { normPiscina, faseCanonica } from '../registros/lib/ficha-maduracion-broodstock.schema.js';
 import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 
@@ -83,15 +83,15 @@ function hastaLaFoto(M) {
 /** La piscina del Ingreso y de los Desoves en su forma canónica, que es la de Broodstock. */
 const canonica = (filas) => (filas || []).map((r) => ({ ...r, 'Piscina Broodstock': normPiscina(r['Piscina Broodstock']) }));
 
-/** Las piscinas de las que entró cada lote, según su Ingreso. */
+/** Las piscinas de las que entró cada lote, según su Ingreso (una pareja «556/557», las dos: pauta 3.2). */
 function piscinasPorLote(ingresos) {
   const m = new Map();
   for (const r of ingresos || []) {
     const l = normLote(r.Lote);
-    const p = normPiscina(r['Piscina Broodstock']);
-    if (!l || !p) continue;
+    const ps = partesDePiscina(r['Piscina Broodstock']);
+    if (!l || !ps.length) continue;
     if (!m.has(l)) m.set(l, new Set());
-    m.get(l).add(p);
+    for (const p of ps) m.get(l).add(p);
   }
   return m;
 }
@@ -100,7 +100,7 @@ function piscinasPorLote(ingresos) {
 function filaEnFiltro(r, F, deLote) {
   if (!F) return true;
   const p = normPiscina(r.Piscina);
-  if (hayPiscina(F) && !F.piscinas.some((x) => normPiscina(x) === p)) return false;   // etapa C · una de las elegidas
+  if (hayPiscina(F) && !piscinaEnFiltro(p, F)) return false;   // etapa C · una de las elegidas (3.2: también de una pareja)
   if (hayCamaronera(F) && !F.camaroneras.some((x) => plano(x) === plano(r.Camaronera))) return false;
   if (!codigoEnFiltro(r['Código genético'], F)) return false;
   if (hayLote(F) && !F.lotes.some((l) => (deLote.get(l) || new Set()).has(p))) return false;   // etapa A · de alguno de los lotes
@@ -110,7 +110,7 @@ function filaEnFiltro(r, F, deLote) {
 /** ¿Pasa esta fila de Ingreso por el filtro? Con sus propias columnas: es el origen que declara el lote. */
 function ingresoEnFiltro(r, F) {
   if (!F) return true;
-  if (hayPiscina(F) && !F.piscinas.some((x) => normPiscina(x) === normPiscina(r['Piscina Broodstock']))) return false;
+  if (hayPiscina(F) && !piscinaEnFiltro(r['Piscina Broodstock'], F)) return false;
   if (hayCamaronera(F) && !F.camaroneras.some((x) => plano(x) === plano(r['Camaronera origen']))) return false;
   if (!codigoEnFiltro(r['Código genético'], F)) return false;
   if (!loteElegido(r.Lote, F)) return false;
@@ -174,7 +174,7 @@ export function tablaDePiscinas(M, F) {
   const ausentes = [...new Set(todas.filter((r) => previo && corteDe(r) === previo && pasa(r)).map((r) => normPiscina(r.Piscina)))]
     .filter((p) => !enCorte.has(p)).sort(porNombre);
   const nombradas = new Set(todas.map((r) => normPiscina(r.Piscina)));
-  const sinBroodstock = [...new Set(ingresos.filter((r) => ingresoEnFiltro(r, F)).map((r) => r['Piscina Broodstock']))]
+  const sinBroodstock = [...new Set(ingresos.filter((r) => ingresoEnFiltro(r, F)).flatMap((r) => partesDePiscina(r['Piscina Broodstock'])))]
     .filter((p) => p && !nombradas.has(p)).sort(porNombre);
 
   return { corte, previo, cortes: cortes.length, piscinas, ausentes, sinBroodstock, ignora: ignoraDeBroodstock(F) };
@@ -204,7 +204,7 @@ export function fichaDePiscina(M, piscina, periodo) {
   const entraron = new Map();
   for (const r of ingresos) {
     const l = normLote(r.Lote);
-    if (!l || r['Piscina Broodstock'] !== id) continue;
+    if (!l || !partesDePiscina(r['Piscina Broodstock']).includes(id)) continue;   // 3.2 · el de una pareja, en cada una
     const e = entraron.get(l) || { machos: 0, hembras: 0 };
     e.machos += ent(r.Machos);
     e.hembras += ent(r.Hembras);

@@ -523,8 +523,10 @@ describe('Maduración · lotes · la comparativa', () => {
       expect(pis.filas.find((f) => f.origen === 'P3'), modo).toMatchObject({ lotes: ['QI', 'QK'], ingresados: 50 });
     }
     // El filtro trae la piscina como se tecleó («P 3», la del índice del Ingreso): su fila canónica casa igual.
+    // Pauta 3.2 (2026-10-19) · y el filtro del tablero también compara en forma canónica (`piscinaEnFiltro`): QI, cuyo
+    // Ingreso dice «P3», es de la MISMA piscina y entra; antes el texto exacto la dejaba fuera y sólo salía QK.
     const FP = normalizarFiltro({ piscina: 'P 3' }, indiceDeFiltro(M4));
-    expect(comparativa(M4, FP, P30, 'piscina', 'separadas').filas.map((f) => [f.origen, f.lotes])).toEqual([['P3', ['QK']]]);
+    expect(comparativa(M4, FP, P30, 'piscina', 'separadas').filas.map((f) => [f.origen, f.lotes])).toEqual([['P3', ['QI', 'QK']]]);
   });
 
   /* 5 · las reglas que la comparativa HEREDÓ de `desempenoPorOrigen` (retirado el 2026-09-29: se quedó sin uso), que

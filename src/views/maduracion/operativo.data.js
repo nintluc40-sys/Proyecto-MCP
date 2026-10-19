@@ -15,6 +15,7 @@ import { fuentesDesdeFilas, MAD_OP_HOJAS } from './operativo.fuentes.js';
 import { construirLibro, estadoDeSala, estadoPorLoteDeSala, ocupacionDeSala, sumarDias, ubicKey, estadoDeLote, ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_CERRADO } from '../registros/lib/mad-libro.js';
 import { resumenMaduracion, diasEntre } from '../registros/lib/mad-resumen.js';
 import { MAD_SALA_OPTS, MAD_TANQUES_POR_SALA } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
+import { normPiscina } from '../registros/lib/ficha-maduracion-broodstock.schema.js';
 
 /** Días del período por defecto, contando el de hoy (decisión del usuario, 2026-09-19). */
 export const PERIODO_DIAS = 30;
@@ -28,6 +29,12 @@ export const ESTADOS_LOTE = [ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_CERRAD
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
 const esIso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
 const porNombre = (a, b) => a.localeCompare(b, 'es', { numeric: true });
+
+/** 2026-10-19 (usuario, pauta 3.2) · Las piscinas de una «Piscina Broodstock» del Ingreso, en su forma CANÓNICA
+ *  (`normPiscina`). Una PAREJA —«556/557»: el lote entró de las dos— son SUS DOS piscinas, como el código pareja (H2):
+ *  cuenta ENTERA en cada una, y casa con un filtro que tenga cualquiera de ellas. Antes era una piscina más, «556/557»,
+ *  que no casaba ni con la 556 ni con la 557. Vacía, ninguna. */
+export const partesDePiscina = (v) => normPiscina(v).split('/').filter(Boolean);
 
 /** La columna que fecha cada hoja: la de corte en Broodstock (una carga semanal), «Fecha» en las demás. */
 export const COLUMNA_FECHA = { broodstock: 'Fecha de corte' };
@@ -276,12 +283,12 @@ export function opcionesDeFiltro(fuentes) {
   }
   const lotes = [...codigos.keys()].sort(porNombre);
   /* F2.3 · la piscina y la camaronera de origen salen SÓLO del Ingreso: son de la entrada del lote, no de un
-     desove. Un lote puede traer varias (entró en dos tandas), así que el filtro compara por pertenencia. */
+     desove. Un lote puede traer varias (entró en dos tandas), así que el filtro compara por pertenencia.
+     Pauta 3.2 (2026-10-19) · cada piscina UNA vez: una pareja «556/557» ofrece la 556 y la 557, no una tercera opción. */
   const piscinas = new Set();
   const camaroneras = new Set();
   for (const r of ((fuentes || {}).ingresos || [])) {
-    const pi = txt(r['Piscina Broodstock']);
-    if (pi) piscinas.add(pi);
+    for (const pi of partesDePiscina(r['Piscina Broodstock'])) piscinas.add(pi);
     const ca = txt(r['Camaronera origen']);
     if (ca) camaroneras.add(ca);
   }

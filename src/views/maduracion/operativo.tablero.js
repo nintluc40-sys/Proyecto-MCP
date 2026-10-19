@@ -22,7 +22,7 @@ import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-
 import { MAD_TANQUES_POR_SALA } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
 import { sumarDias, ubicKey, pesosDeAlimentacion, CUARENTENA_DIAS, ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_MIXTO } from '../registros/lib/mad-libro.js';
 import { diasEntre, RESUMEN_TEMPS, RESUMEN_OXIGENOS } from '../registros/lib/mad-resumen.js';
-import { PERIODO_DIAS, SALAS_VISIBLES, fechaDeFila } from './operativo.data.js';
+import { PERIODO_DIAS, SALAS_VISIBLES, fechaDeFila, partesDePiscina } from './operativo.data.js';
 import { cociente, proporcionHM, densidadTanque, ocupacion, fueraDeRango, diasDesdeDesinfeccion } from './operativo.indicadores.js';
 import { umbralVigente, evaluar } from './operativo.umbrales.js';
 
@@ -154,10 +154,19 @@ export const tanqueElegido = (sala, tanque, F) => !hayTanque(F) || F.tanques.inc
    vez. Siguen sin cascada entre ellas. El ORIGEN de un lote (del índice) pasa por `origenEnFiltro`. */
 export const hayPiscina = (F) => !!(F && F.piscinas && F.piscinas.length);
 export const hayCamaronera = (F) => !!(F && F.camaroneras && F.camaroneras.length);
+/** Pauta 3.2 (2026-10-19, usuario) · ¿Casa esta «Piscina Broodstock» con la del filtro? Una PAREJA —«556/557»— cuenta
+ *  como SUS DOS piscinas (`partesDePiscina`, la regla del código pareja H2): casa si comparte alguna, en forma canónica.
+ *  Antes se comparaba el texto exacto y el lote de «556/557» sólo salía eligiendo la pareja. Sin piscina, todo casa. */
+export function piscinaEnFiltro(piscina, F) {
+  if (!hayPiscina(F)) return true;
+  const delFiltro = F.piscinas.flatMap(partesDePiscina);
+  return partesDePiscina(piscina).some((p) => delFiltro.includes(p));
+}
 /** ¿El ORIGEN de un lote (`{ piscinas, camaroneras }`, conjuntos de su Ingreso) pasa el filtro? Basta UNA de sus piscinas
- *  entre las elegidas, y UNA de sus camaroneras. Un lote sin Ingreso no tiene origen: con el filtro puesto, no pasa. */
+ *  entre las elegidas (`piscinaEnFiltro`), y UNA de sus camaroneras. Un lote sin Ingreso no tiene origen: con el filtro
+ *  puesto, no pasa. */
 export function origenEnFiltro(o, F) {
-  if (hayPiscina(F) && !(o && F.piscinas.some((x) => o.piscinas.has(x)))) return false;
+  if (hayPiscina(F) && !(o && [...o.piscinas].some((p) => piscinaEnFiltro(p, F)))) return false;
   if (hayCamaronera(F) && !(o && F.camaroneras.some((x) => o.camaroneras.has(x)))) return false;
   return true;
 }

@@ -273,15 +273,16 @@ function resumenDe(prep, periodo, F, rangosCal) {
    los reproductores: en el despacho y en el agua no se aplica, y se dice. */
 /** «Piscina 557», «557», «P557» → «Piscina 557»; lo que no tiene número (un lugar como «Chongón»), vacío. */
 export const nombrePiscina = (v) => { const m = /(\d+)/.exec(txt(v)); return m ? 'Piscina ' + Number(m[1]) : ''; };
-/** Lote (normalizado) → sus piscinas de origen, de las filas de Ingresos. */
+/** Lote (normalizado) → sus piscinas de origen, de las filas de Ingresos. Una PAREJA «556/557» son sus dos piscinas (pauta
+ *  3.2, 2026-10-19: antes `nombrePiscina` se quedaba con el primer número y el lote contaba sólo en la 556). */
 export function piscinasDeLotes(ingresos) {
   const m = new Map();
   for (const r of ingresos || []) {
     const l = normLote(r.Lote);
-    const p = nombrePiscina(r['Piscina Broodstock']);
-    if (!l || !p) continue;
+    const ps = txt(r['Piscina Broodstock']).split('/').map(nombrePiscina).filter(Boolean);
+    if (!l || !ps.length) continue;
     if (!m.has(l)) m.set(l, new Set());
-    m.get(l).add(p);
+    for (const p of ps) m.get(l).add(p);
   }
   return m;
 }

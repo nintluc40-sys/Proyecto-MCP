@@ -35,6 +35,11 @@ import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { revisionesDeNauplios } from './operativo.revisiones.js';
 import { graficoVivos, graficoDeKpi, graficoReproduccion } from './operativo.kpis.js';
 import { tablaDeReproduccion, totalesDeReproduccion, pendientesDeN5 } from './operativo.reproduccion.js';
+import { piscinaEnFiltro } from './operativo.tablero.js';
+import { opcionesDeFiltro } from './operativo.data.js';
+import { tablaDePiscinas, fichaDePiscina } from './operativo.broodstock.js';
+import { tablaDeLotes, comparativa } from './operativo.lotes.js';
+import { piscinasDeLotes } from './operativo.laboratorio.js';
 
 const O = MAD_OP_ORIGEN;
 const ING = (fecha, lote, sala, tanque, machos, hembras, cg) => ({ _SheetOrigin: O, 'Camaronera origen': 'X', Fecha: fecha,
@@ -310,6 +315,61 @@ describe('Maduración · operativo · etapa C · el filtro con VARIAS piscinas y
     expect(kpiReproduccion(DES, p, FC({ piscina: ['P1', 'P2'] })).n5).toBe(1500);   // 600 + 900: el N5 también se filtra
     // Sin índice (pruebas puras) el origen no puede aplicarse y se ignora, como en el resto del tablero.
     expect(kpiReproduccion(DES, p, F({ piscina: 'P1' })).desoves).toBe(14);
+  });
+});
+
+/* ── PAUTA 3.2 (2026-10-19, usuario) ── la piscina en PAREJA del Ingreso («556/557»: el lote entró de las dos) es SUS DOS
+   piscinas, como el código pareja (H2): casa con cualquiera de ellas y cuenta ENTERA en cada una. Como en el libro real:
+   un lote trae la pareja, otro la 557 sola, y Broodstock carga la 556 y la 557 por separado. Antes el filtro comparaba el
+   texto exacto —la pareja sólo salía eligiendo «556/557», que el desplegable ofrecía como otra piscina—, 📈 Piscinas de
+   origen no la enlazaba con ninguna de las dos y la ventana del laboratorio se quedaba con la primera. */
+describe('Maduración · operativo · pauta 3.2 · la piscina en PAREJA son sus dos piscinas', () => {
+  const BS = (piscina) => ({ _SheetOrigin: O, 'Pl/g': '', 'Fecha de corte': FOTO, Piscina: piscina, 'Fase actual': 'Engorde',
+    'Código genético': 'CA', Camaronera: 'CX' });
+  const MP = modeloOperativo([
+    INGP('2026-09-01', 'QP', 'Sala 1', 1, 30, 30, 'CA', '556/557', 'CX'),   // la pareja
+    INGP('2026-09-01', 'QS', 'Sala 4', 1, 10, 10, 'CB', '557', 'CX'),       // la 557 sola
+    INGP('2026-09-01', 'QT', 'Sala 2', 16, 5, 5, 'CC', '558', 'CX'),        // otra: nunca entra
+    BS(556), BS(557),
+  ], { hoy: FOTO, fecha: FOTO });
+  const FP = (o) => normalizarFiltro(o, indiceDeFiltro(MP));
+  const p = { desde: '2026-08-20', hasta: FOTO };
+
+  it('el desplegable: cada piscina UNA vez, sin la pareja como tercera opción', () => {
+    expect(opcionesDeFiltro(MP.fuentes).piscinas).toEqual(['556', '557', '558']);
+  });
+
+  it('🔴 la regla: la pareja casa con cualquiera de las dos; una pareja en el filtro, con las dos; en forma canónica', () => {
+    const casa = (v, o) => piscinaEnFiltro(v, F({ piscina: o }));
+    expect([casa('556/557', '556'), casa('556/557', '557'), casa('556/557', '558'), casa('557', '556/557'), casa('558', '556/557')])
+      .toEqual([true, true, false, true, false]);
+    expect([casa('P 3', 'P3'), casa('557', ['558', '557']), piscinaEnFiltro('556/557', SIN)]).toEqual([true, true, true]);
+  });
+
+  it('🔴 el tablero: con la 556, la pareja entera; con la 557, la pareja y la sola; con las dos, cada lote UNA vez', () => {
+    const lotes = (o) => tablaDeLotes(MP, FP(o)).map((f) => f.lote).sort();
+    expect([lotes({ piscina: '556' }), lotes({ piscina: '557' }), lotes({ piscina: ['556', '557'] }), lotes({ piscina: '556/557' })])
+      .toEqual([['QP'], ['QP', 'QS'], ['QP', 'QS'], ['QP', 'QS']]);
+    const v = (o) => kpiVivos(MP.libro, FP(o)).total;
+    expect([v({ piscina: '556' }), v({ piscina: '557' }), v({ piscina: ['556', '557'] }), v({ piscina: '558' })]).toEqual([60, 80, 80, 10]);
+  });
+
+  it('🔴 📈 Piscinas de origen: la pareja se enlaza con la 556 y con la 557, y deja de salir «sin Broodstock»', () => {
+    expect(tablaDePiscinas(MP, SIN).sinBroodstock).toEqual(['558']);
+    expect(tablaDePiscinas(MP, FP({ lote: 'QP' })).piscinas.map((x) => x.piscina)).toEqual(['556', '557']);
+    expect(tablaDePiscinas(MP, FP({ piscina: '556/557' })).piscinas.map((x) => x.piscina)).toEqual(['556', '557']);
+    const de = (pis) => fichaDePiscina(MP, pis, p).lotes.map((l) => [l.lote, l.otrasPiscinas]);
+    expect(de('556')).toEqual([['QP', ['557']]]);
+    expect(de('557').sort()).toEqual([['QP', ['556']], ['QS', []]]);
+  });
+
+  it('🔴 la comparativa por piscina, separada, con la pareja en el filtro: las dos piscinas, no vacía', () => {
+    expect(comparativa(MP, FP({ piscina: '556/557' }), p, 'piscina', 'separadas').filas.map((f) => f.origen)).toEqual(['556', '557']);
+    expect(comparativa(MP, FP({ piscina: '557' }), p, 'piscina', 'separadas').filas.map((f) => f.origen)).toEqual(['557']);
+  });
+
+  it('🔴 la ventana del laboratorio: el lote de la pareja cuenta en las dos piscinas', () => {
+    expect([...piscinasDeLotes([{ Lote: 'qp', 'Piscina Broodstock': '556/557' }]).get('QP')]).toEqual(['Piscina 556', 'Piscina 557']);
   });
 });
 
