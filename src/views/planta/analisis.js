@@ -564,10 +564,16 @@ export function montarAnalisis(host) {
       g.tanks.forEach((t) => { t.st = g.st && g.st.tanques ? g.st.tanques[t.num] || null : null; });
     });
     const reemplazo = E && E.mad ? E.mad.reemplazo : null;
-    pintarProduccion(E && E.cifras); pintarCifras(E); pintarReproductores(reemplazo); pintarAtender(reemplazo); pintarFilas();
-    pintarPlano();
-    ultimoCrono = (E && E.crono) || null; pintarCrono(ultimoCrono);
-    pintarTabla();
+    // 2026-10-18 (usuario; como el C5 de la Maqueta) · cada paso por separado: uno que falle (un dato con forma inesperada)
+    // ya no deja sin pintar a los que siguen; se anota en la consola y se devuelve su nombre (index.js lo avisa).
+    const fallidos = [];
+    const paso = (nombre, fn) => { try { fn(); } catch (e) { console.error('[planta] análisis · ' + nombre, e); fallidos.push(nombre); } };
+    paso('producción del mes', () => pintarProduccion(E && E.cifras)); paso('cifras', () => pintarCifras(E));
+    paso('reproductores', () => pintarReproductores(reemplazo)); paso('qué atender', () => pintarAtender(reemplazo)); paso('módulos y salas', pintarFilas);
+    paso('plano', pintarPlano);
+    ultimoCrono = (E && E.crono) || null; paso('cronograma', () => pintarCrono(ultimoCrono));
+    paso('detalle por tanque', pintarTabla);
+    return fallidos;
   }
   pintarEstado(null);
   return {

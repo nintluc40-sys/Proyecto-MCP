@@ -6,7 +6,7 @@
    una fila abre ese tanque en su módulo o sala; y un refresco conserva área, filtro y orden. Los textos se escriben como
    texto (un lote con marcas no crea elementos). Fixtures con la forma de estado.js; los números de tanque, del plano.
    ============================================================ */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { montarAnalisis } from './analisis.js';
 import { LARV, MAT, OTHERS } from './plano.js';
 import { MAD_HEX } from './textos.js';
@@ -343,5 +343,18 @@ describe('📊 Análisis · la meta compartida con la maqueta', () => {
     v.pintarEstado(estado());
     expect($('[data-k="prod-meta"]').textContent).toBe('de 500 M');
     guardarMeta(400e6);
+  });
+});
+
+describe('📊 Análisis · un paso que falla no deja sin pintar a los demás (2026-10-18, usuario; como el C5)', () => {
+  it('con el cronograma mal formado: los otros pasos se pintan, el error se anota y se devuelve ese paso', () => {
+    const consola = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(v.pintarEstado({ ...estado(), crono: { hasta: '2026-10-06', modulos: null } })).toEqual(['cronograma']);
+      expect(consola.mock.calls.some((c) => String(c[0]).startsWith('[planta] análisis · cronograma'))).toBe(true);
+      expect($('[data-k="tabla-caja"]').hidden).toBe(false);   // el paso de DETRÁS (detalle por tanque) se pintó
+      expect($('[data-k="tabla-res"]').textContent).toBe('2 tanques en cultivo · 1 en alerta');
+    } finally { consola.mockRestore(); }
+    expect(v.pintarEstado(estado())).toEqual([]);   // con datos sanos, ninguno
   });
 });
