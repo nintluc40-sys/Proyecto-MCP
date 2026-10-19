@@ -43,22 +43,25 @@ export function tanquesDeSala(m) {
   return m.rows.flatMap((z, r) => m.cols.map((x, c) => ({ x, z, num: m.num(r, c) })));
 }
 // otras áreas: [x0, z0, x1, z1, altura, tipo]  (bld = edificio, res = reservorio, alg = piletas de algas)
-/* Otras áreas: [x0, z0, x1, z1, alto, tipo, nombre, forma]. El NOMBRE sale de los rótulos del plano ARQ-A3 V4, ubicados
+/* Otras áreas: [x0, z0, x1, z1, alto, tipo, nombre, forma, color]. El NOMBRE sale de los rótulos del plano ARQ-A3 V4, ubicados
    sobre cada área con un ajuste lineal entre la posición de los rótulos «MODULO # n» y el centro de cada módulo (error
    medio 0,5 m; 2026-10-04, opción F): «título · detalle». Un área sin rótulo en el plano queda con un nombre genérico.
-   La FORMA (opcional) elige sus detalles en la maqueta: maquinas, diesel, filtros, lab, admin, comedor. El canal
-   sedimentador era una caja de 2,8 m: es tipo 'canal' (abierto, con agua). */
+   La FORMA (opcional, `null` si no hay) elige sus detalles en la maqueta: maquinas, diesel, filtros, lab, admin, comedor.
+   El canal sedimentador era una caja de 2,8 m: es tipo 'canal' (abierto, con agua).
+   COLOR (sólo los edificios, 2026-10-19, tarea 7 · B0, usuario): el de su fachada. Antes salía de su POSICIÓN en esta lista
+   (`WALLS[k % 4]` en escena.js) y añadir o partir un área recoloreaba todos los edificios de después; éstos son los de
+   entonces, uno por uno. Un edificio nuevo trae el suyo. */
 export const OTHERS = [
-  [79.3, 38.2, 84.2, 66.4, 2.2, 'res', 'Algas premasivos'], [85.6, 38.2, 94.1, 66.4, 3.4, 'bld', 'Filtros y tratamiento de agua · Turbidex, tanques elevados, dosificación', 'filtros'],
-  [98.6, 38.2, 110.2, 66.4, 1.2, 'alg', 'Algas masivos'], [112, 38.2, 117, 66.4, 2.2, 'res', 'Reservorio'], [118.3, 38.2, 126.4, 66.4, 3.4, 'bld', 'Generador diésel · y reservorio de agua salada', 'diesel'],
-  [130.8, 38.2, 142.5, 66.4, 1.2, 'alg', 'Algas masivos'], [144.3, 38.2, 149.2, 66.4, 2.2, 'res', 'Reservorio'], [150.5, 38.2, 158.6, 66.4, 3.4, 'bld', 'Reservorio de agua salada'],
+  [79.3, 38.2, 84.2, 66.4, 2.2, 'res', 'Algas premasivos'], [85.6, 38.2, 94.1, 66.4, 3.4, 'bld', 'Filtros y tratamiento de agua · Turbidex, tanques elevados, dosificación', 'filtros', '#e7eef0'],
+  [98.6, 38.2, 110.2, 66.4, 1.2, 'alg', 'Algas masivos'], [112, 38.2, 117, 66.4, 2.2, 'res', 'Reservorio'], [118.3, 38.2, 126.4, 66.4, 3.4, 'bld', 'Generador diésel · y reservorio de agua salada', 'diesel', '#f1ece2'],
+  [130.8, 38.2, 142.5, 66.4, 1.2, 'alg', 'Algas masivos'], [144.3, 38.2, 149.2, 66.4, 2.2, 'res', 'Reservorio'], [150.5, 38.2, 158.6, 66.4, 3.4, 'bld', 'Reservorio de agua salada', null, '#e8e2f0'],
   [164, 38.2, 175.6, 66.4, 1.2, 'alg', 'Algas masivos'],
-  [78, 68.6, 95.4, 74.8, 3.4, 'bld', 'Administración · dirección, asistencia, espera', 'admin'], [99, 68.6, 128.6, 74.8, 3.4, 'bld', 'Fotobiorreactor y CIO · cisterna de agua salada'],
-  [131.7, 68.6, 160.4, 74.8, 3.4, 'bld', 'Edificio de servicio'], [164.4, 68.6, 173, 74.8, 2.2, 'res', 'Reservorio'],
-  [78, 79, 170, 88.6, 3.6, 'bld', 'Comedor, cocina y bodegas · insumos, carboys', 'comedor'], [56.2, 49.4, 71.7, 88.6, 3.4, 'bld', 'Cuarto de máquinas · bombas, calderos, blowers', 'maquinas'],
+  [78, 68.6, 95.4, 74.8, 3.4, 'bld', 'Administración · dirección, asistencia, espera', 'admin', '#e7eef0'], [99, 68.6, 128.6, 74.8, 3.4, 'bld', 'Fotobiorreactor y CIO · cisterna de agua salada', null, '#efe6d6'],
+  [131.7, 68.6, 160.4, 74.8, 3.4, 'bld', 'Edificio de servicio', null, '#e8e2f0'], [164.4, 68.6, 173, 74.8, 2.2, 'res', 'Reservorio'],
+  [78, 79, 170, 88.6, 3.6, 'bld', 'Comedor, cocina y bodegas · insumos, carboys', 'comedor', '#e7eef0'], [56.2, 49.4, 71.7, 88.6, 3.4, 'bld', 'Cuarto de máquinas · bombas, calderos, blowers', 'maquinas', '#efe6d6'],
   [64.4, 19.3, 70.8, 48.4, 2.2, 'res', 'Reservorio'], [36.3, 13.4, 63.6, 17.2, 2.2, 'res', 'Reservorio de agua dulce'],
-  [46.9, 2.2, 66.8, 11.6, 3.6, 'bld', 'Laboratorio · microbiología, PCR, fisicoquímico, artemia', 'lab'],
-  [67.4, 1.6, 83.2, 18, 3.4, 'bld', 'Oficina de maduración · alimentos, paneles eléctricos'], [111.4, 1.6, 116.4, 17.4, 3.4, 'bld', 'Edificio de servicio'],
+  [46.9, 2.2, 66.8, 11.6, 3.6, 'bld', 'Laboratorio · microbiología, PCR, fisicoquímico, artemia', 'lab', '#e7eef0'],
+  [67.4, 1.6, 83.2, 18, 3.4, 'bld', 'Oficina de maduración · alimentos, paneles eléctricos', null, '#efe6d6'], [111.4, 1.6, 116.4, 17.4, 3.4, 'bld', 'Edificio de servicio', null, '#e8e2f0'],
   [79.2, 18.4, 176.5, 20.1, .6, 'canal', 'Canal sedimentador y recolector'],
 ];
 export const SITE = [0.9, 0.9, 176.6, 89.2], C0 = [88.7, 45], STREET = [97, 107];

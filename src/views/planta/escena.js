@@ -406,7 +406,12 @@ function animateCoast(t) {
 /* ---------- Otras áreas del laboratorio ---------- */
 const others = new THREE.Group(); scene.add(others);
 const nightMats = [];
-const WALLS = ['#f1ece2', '#e7eef0', '#efe6d6', '#e8e2f0'];
+/* Tarea 7 · B0 (2026-10-19, usuario) · añadir o partir áreas (Plan B) no mueve NADA más. El color de cada edificio va con
+   él (`OTHERS`, plano.js; antes salía de su posición en la lista) y la fachada de cada uno gasta 10 004 números de la
+   semilla común (`grain` 2 500 × 4 y sus 4 ventanas): con un edificio más se corría todo lo aleatorio de después
+   —personas, autos, aves, tintes de los tanques—. Al terminar las áreas la semilla vuelve al estado de las 11 fachadas
+   de entonces: hoy la maqueta sale IDÉNTICA y, con más o menos edificios, lo de después ya no cambia. */
+const semillaAntesDeAreas = seed, RND_FACHADAS_DE_REFERENCIA = 11 * 10004;
 const cil = (x, z, r, h, y0, mat, tumbado) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 16), mat); const [px, pz] = P(x, z); m.position.set(px, y0 + (tumbado ? r : h / 2), pz); if (tumbado) m.rotation.x = Math.PI / 2; m.castShadow = m.receiveShadow = true; others.add(m); return m; };
 const M_SOPLADOR = std({ color: col('#3d6fa0'), roughness: .5, metalness: .3 }), M_ACERO = std({ color: col('#9aa3a8'), roughness: .35, metalness: .7 });
 const M_VIDRIO = std({ color: col('#2c3e48'), roughness: .15, metalness: .4 }), M_PORTON = std({ map: rep(TX.zinc, 1, 1), color: col('#b8c0c4'), roughness: .5, metalness: .4 });
@@ -415,7 +420,7 @@ const M_DIESEL = std({ color: col('#c9a23a'), roughness: .5, metalness: .3 });
 function ingreso(xm, z, sale) { box(xm - 1.7, Math.min(z, z + sale * 1.5), xm + 1.7, Math.max(z, z + sale * 1.5), 2.6, .12, M.paint, true, others); [-1.55, 1.55].forEach((dx) => box(xm + dx - .06, z + sale * 1.38, xm + dx + .06, z + sale * 1.5, 0, 2.6, M.steel, true, others)); box(xm - .7, Math.min(z, z + sale * .05), xm + .7, Math.max(z, z + sale * .05), 0, 2.2, M_VIDRIO, false, others); }
 /** Equipos de aire acondicionado sobre el techo. */
 function aires(a, b, c, d, h, n) { for (let i = 0; i < n; i++) { const x = a + (c - a) * (i + 1) / (n + 1), z = b + (d - b) * .3; box(x - .5, z - .35, x + .5, z + .35, h, .6, M_ACERO, true, others); } }
-OTHERS.forEach(([a, b, c, d, h, type, , forma], k) => {
+OTHERS.forEach(([a, b, c, d, h, type, , forma, color]) => {
   const w = c - a, dd = d - b;
   if (type === 'canal') {
     // canal sedimentador abierto: dos bordes bajos y el agua adentro
@@ -441,7 +446,7 @@ OTHERS.forEach(([a, b, c, d, h, type, , forma], k) => {
     cil(105, b + 3, .32, 2.2, h, M_ACERO);
   }
   if (type === 'bld') {
-    const hex = WALLS[k % WALLS.length], side = windowsTex(hex, false), lit = windowsTex(hex, true);
+    const hex = color, side = windowsTex(hex, false), lit = windowsTex(hex, true);
     const mk = (len) => { const m = std({ map: rep(side, Math.max(1, Math.round(len / 4)), 1), emissiveMap: lit, emissive: col('#ffffff'), emissiveIntensity: 0 }); nightMats.push(m); return m; };
     const roof = std({ map: rep(TX.zinc, Math.max(1, w / 3), 1), roughness: .5, metalness: .35, normalMap: TXN.zinc, normalScale: new THREE.Vector2(.7, .7) });
     const md = mk(dd), mw = mk(w), mats = [md, md, roof, roof, mw, mw];   // C3a · las caras del mismo largo, el mismo material
@@ -464,6 +469,7 @@ OTHERS.forEach(([a, b, c, d, h, type, , forma], k) => {
     }
   }
 });
+seed = semillaAntesDeAreas; for (let i = 0; i < RND_FACHADAS_DE_REFERENCIA; i++) rnd();   // B0 · ver arriba
 // tuberías principales (ambientación de forma)
 [[2, 14.2, 64, 14.5], [79, 19.9, 176, 20.2], [7.5, 86.2, 55.6, 86.5]].forEach(([a, b, c, d]) => box(a, b, c, d, .9, .3, M.pipe, true, others));
 

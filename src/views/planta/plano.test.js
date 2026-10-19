@@ -38,6 +38,15 @@ describe('plano · otras áreas (opción F)', () => {
     expect(OTHERS.find((o) => /Canal sedimentador/.test(o[6]))[5]).toBe('canal');
     expect(OTHERS.filter((o) => o[7]).map((o) => o[7]).sort()).toEqual(['admin', 'comedor', 'diesel', 'filtros', 'lab', 'maquinas']);
   });
+
+  /* Tarea 7 · B0 (2026-10-19, usuario) · el color de un edificio va CON él: antes salía de su posición en la lista y añadir un
+     área recoloreaba los de después. Todo edificio trae el suyo (y sólo los edificios: lo demás no tiene fachada). */
+  it('🔴 cada edificio trae el color de su fachada; las demás áreas, ninguno', () => {
+    const color = /^#[0-9a-f]{6}$/;
+    expect(OTHERS.filter((o) => o[5] === 'bld').every((o) => color.test(o[8])), 'un edificio sin color').toBe(true);
+    expect(OTHERS.filter((o) => o[5] !== 'bld').every((o) => o[8] === undefined)).toBe(true);
+    expect(OTHERS.every((o) => o[7] === undefined || o[7] === null || typeof o[7] === 'string'), 'la forma va antes del color').toBe(true);
+  });
 });
 
 describe('plano · maduración', () => {
