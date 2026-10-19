@@ -21,6 +21,11 @@
 
    🔑 Sólo cuenta la lectura del GAS. El store del dashboard trae la hoja ENTERA y, cuando la
    tiene, es la que se usa (`_reproReadRows`): con él no hay nada que avisar ni que detener.
+
+   🔑 2026-10-19 (pauta 2.15, usuario): al recortar, el GAS se queda con las filas MÁS RECIENTES
+   (lee desde abajo y las devuelve en el orden de la hoja), así que lo que falta es lo MÁS
+   ANTIGUO. Los avisos siguen igual —una hoja recortada no es una hoja leída— y la transferencia
+   se sigue deteniendo: con la hoja reordenada a mano, el máximo tampoco sería seguro.
    ============================================================ */
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -36,6 +41,9 @@ const GAS = readFileSync(join(RAIZ, 'GAS/Code.gs'), 'utf8');
 function leerFilas(nDatos) {
   const vals = [['Trovan ID', 'Fecha', 'Tipo']];
   for (let i = 0; i < nDatos; i++) vals.push(['T' + i, '2026-09-13', 'Desove']);
+  return leerValores(vals);
+}
+function leerValores(vals) {
   const ctx = {
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (s) => ({ texto: s, setMimeType() { return this; } }) },
     SpreadsheetApp: { openById: () => ({ getSheetByName: () => ({ getDataRange: () => ({ getValues: () => vals }) }) }) },
@@ -69,6 +77,26 @@ describe('D11 · GAS · el tope de ?p=rows es 20000', () => {
     expect(r.rows).toHaveLength(20000);
     expect(r.truncated).toBe(true);
     expect(r.limit).toBe(20000);
+  });
+
+  it('🔴 recortada, se queda con las MÁS RECIENTES, en el orden de la hoja (pauta 2.15, 2026-10-19)', () => {
+    const r = leerFilas(20001);
+    expect(r.rows[0]['Trovan ID']).toBe('T1');           // falta sólo la más antigua, T0
+    expect(r.rows[19999]['Trovan ID']).toBe('T20000');   // y llega la última que se escribió
+  });
+
+  it('filas vacías no cuentan: ni ocupan sitio en el tope ni marcan un recorte que no hay', () => {
+    /* Con «cols», una fila con datos sólo en columnas NO pedidas llega vacía: ésa es la del final. Antes, una fila de
+       más tras la 20000 —aunque fuera vacía— marcaba «truncated». */
+    const vals = [['Trovan ID', 'Fecha', 'Tipo'], ['', '', '']];   // una vacía ARRIBA: lo que queda tras llenar el tope
+    for (let i = 0; i < 20000; i++) vals.push(['T' + i, '2026-09-13', 'Desove']);
+    vals.splice(10002, 0, ['', '', '']);   // otra en medio
+    vals.push(['', '', '']);               // y otra al final
+    const r = leerValores(vals);
+    expect(r.rows).toHaveLength(20000);
+    expect(r.truncated).toBeUndefined();
+    expect(r.rows[0]['Trovan ID']).toBe('T0');
+    expect(r.rows[19999]['Trovan ID']).toBe('T19999');
   });
 });
 

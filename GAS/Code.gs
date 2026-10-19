@@ -22,7 +22,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "5296659a1c07";
+const GAS_VERSION = "9d0ff67cafab";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -1703,7 +1703,7 @@ function verifyReq(reqId, t) {
 // el monolito standalone). GET ?p=rows&sheet=<nombre>&t=<token>. Devuelve JSON
 // {ok, sheet, headers, rows} con cada fila como objeto {cabecera: valor}. Sólo
 // hojas de ALLOWED; respeta SHARED_TOKEN si está configurado (mismo gate que
-// doPost). Fechas → yyyy-MM-dd. Tope 20000 filas (ver TOPE_FILAS).
+// doPost). Fechas → yyyy-MM-dd. Tope 20000 filas, las MÁS RECIENTES (ver TOPE_FILAS).
 //
 // El parámetro "cols" (opcional, ?cols=A,B,C) PROYECTA: devuelve sólo esas columnas.
 // Medido el 2026-08-12 contra el despliegue real: "Maduración MATRIZ" son 1508 filas
@@ -1741,16 +1741,21 @@ function sheetRows(name, t, cols) {
     // ⚠⚠ EL TOPE RECORTA, y hasta el 2026-09-09 lo hacía EN SILENCIO. Quien suma
     // sobre lo devuelto —el libro mayor de Maduración lo hace— obtendría un saldo
     // incompleto sin un solo síntoma, que es el peor resultado posible aquí.
-    // «Maduración Tanques» crece hasta 38 filas al día (los tanques de las 5 salas),
-    // así que el tope no es teórico: con uso diario, se acaba alcanzando.
-    // 🔑 D11 (2026-09-13): el tope pasa de 5000 a 20000. Se lee desde ARRIBA, así que lo
-    // que se pierde al recortar son las filas MÁS RECIENTES; con 5000, la Bitácora del
-    // reproductivo (2227 filas y unas 30 nuevas al día) lo alcanzaba entre diciembre de
-    // 2026 y enero de 2027. El precio es el tamaño: 20000 filas de Bitácora rondan 2,4 MB.
+    // El tope no es teórico: medido el 2026-10-19 (ritmo de los últimos 30 días), la Bitácora
+    // del reproductivo (6990 filas, unas 130 nuevas al día) lo alcanza hacia finales de enero
+    // de 2027 y «Maduración Tanques» (2184, unas 57 al día) hacia agosto de 2027. La app sólo
+    // lee por aquí cuando falla la exportación de Google, pero entonces lee esto.
+    // 🔑 D11 (2026-09-13): el tope pasa de 5000 a 20000. El precio es el tamaño: 20000 filas
+    // de Bitácora rondan 2,4 MB.
+    // 🔑 2026-10-19 (pauta 2.15, usuario): al recortar se queda con las MÁS RECIENTES. Se lee
+    // desde ABAJO —las filas nuevas se añaden al final de la hoja— y se devuelven en el orden
+    // de la hoja, así que lo que falta de una hoja recortada son sus filas MÁS ANTIGUAS. Hasta
+    // hoy se leía desde arriba y se perdían las más recientes: las altas, desoves y partes del
+    // día, justo los que miran los avisos de ronda y desove repetidos. «truncated» se marca
+    // sólo si queda ARRIBA alguna fila con datos (antes, con cualquier fila de más).
     var TOPE_FILAS = 20000;
     var rows = [], cortada = false;
-    for (var i = 1; i < vals.length; i++) {
-      if (rows.length >= TOPE_FILAS) { cortada = true; break; }
+    for (var i = vals.length - 1; i >= 1; i--) {
       var r = vals[i], obj = {}, any = false;
       for (var k = 0; k < keep.length; k++) {
         var key = outHeaders[k];
@@ -1760,8 +1765,11 @@ function sheetRows(name, t, cols) {
       }
       // "Fila vacía" se juzga sobre las columnas DEVUELTAS: con proyección, una fila
       // sin ninguno de esos campos no aporta nada al cliente que los pidió.
-      if (any) rows.push(obj);
+      if (!any) continue;
+      if (rows.length >= TOPE_FILAS) { cortada = true; break; }
+      rows.push(obj);
     }
+    rows.reverse();
     out.ok = true; out.headers = outHeaders; out.rows = rows;
     // Retrocompatible a propósito: un cliente que no mire «truncated» ve exactamente
     // lo mismo que antes. El que lo mire puede decir «esto está incompleto» en vez

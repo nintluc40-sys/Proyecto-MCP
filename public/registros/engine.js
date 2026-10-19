@@ -7355,8 +7355,8 @@ async function madSaldoCargar(force){
   /* ⚠⚠ UNA HOJA RECORTADA NO ES UNA HOJA LEÍDA, y va aparte de los fallos porque no es lo
      mismo: aquélla no se pudo leer, ésta se leyó A MEDIAS. Las dos hacen lo mismo con el
      saldo —lo dejan incompleto sin un solo síntoma—, así que las dos tienen que callar el
-     ✅. «Maduración Tanques» crece hasta 38 filas al día, de modo que el tope del servidor
-     (20000 desde el 2026-09-13; antes 5000) no es teórico: se alcanza en año y medio de uso. */
+     ✅. El tope del servidor (20000 desde el 2026-09-13; antes 5000) no es teórico: medido el
+     2026-10-19, «Maduración Tanques» crece unas 57 filas al día y lo alcanza hacia agosto de 2027. */
   const recortadas = [];
   [MAD_LIBRO_SHEETS.ingreso, MAD_LIBRO_SHEETS.movimientos, MAD_LIBRO_SHEETS.tanques, MAD_LIBRO_SHEETS.cierres, MAD_LIBRO_SHEETS.mortDesove]
     .forEach(function(h){ if(_reproTrunc && _reproTrunc[h]) recortadas.push(h); });
@@ -11534,7 +11534,7 @@ async function madDesPendVer(){
     const _oc=madDesOcultosLeer(), _ocPodados=_oc.filter(function(k){ return !_completos[k]; });
     if(_ocPodados.length!==_oc.length) madDesOcultosGuardar(_ocPodados);
     msg = _reproTrunc[MAD_DESOVE_SHEET]
-      ? '<span style="color:#991b1b">⚠ La hoja llegó RECORTADA: pueden faltar los desoves más recientes.</span>'
+      ? '<span style="color:#991b1b">⚠ La hoja llegó RECORTADA: pueden faltar los desoves más antiguos.</span>'
       : '<span style="color:#166534">Hoja leída. Se relee al pulsar de nuevo.</span>';
   }catch(x){
     // ⚠ Una lectura fallida NO deja la anterior como si fuera actual (el defecto A1): sólo queda lo de este dispositivo.
@@ -14407,11 +14407,12 @@ function _reproMatrixOrigen(){
   return _reproUsaStore(_REPRO_SHEETS.matriz) ? "store" : _reproMatrixSrc;
 }
 function _reproPutRows(name, rows){ if(!_reproSheets) _reproSheets={}; _reproSheets[name]=rows||[]; }
-/* ⚠⚠ D11 (2026-09-13) · ¿LA HOJA EN USO ESTÁ A MEDIAS? `?p=rows` devuelve las PRIMERAS filas
-   hasta el tope del servidor, así que lo que falta de una hoja recortada es lo MÁS RECIENTE:
-   las últimas altas, los últimos desoves, las últimas transferencias. Sólo cuenta si lo que
-   se usa es la lectura del GAS: el store del dashboard trae la hoja entera y, si la tiene,
-   es la que gana en _reproReadRows. */
+/* ⚠⚠ D11 (2026-09-13) · ¿LA HOJA EN USO ESTÁ A MEDIAS? `?p=rows` corta en el tope del servidor.
+   🔑 2026-10-19 (pauta 2.15): el GAS se queda con las ÚLTIMAS filas, así que lo que falta de una
+   hoja recortada es lo MÁS ANTIGUO —las primeras altas, desoves y transferencias—; hasta ese
+   día devolvía las primeras y faltaba lo más reciente. Sólo cuenta si lo que se usa es la
+   lectura del GAS: el store del dashboard trae la hoja entera y, si la tiene, es la que gana en
+   _reproReadRows. */
 function _reproRecortada(sheet){
   return !!(_reproTrunc && _reproTrunc[sheet]) && !_reproUsaStore(sheet);
 }
@@ -14829,7 +14830,7 @@ function _reproMatrixBannerHTML(){
   // Un GAS anterior al 2026-09-14 lo sobrescribe (su llave es sólo el Trovan: hasta revivir a una
   // muerta); el actual la rechaza al escribir (llaveMatriz_).
   if(n && _reproRecortada(_REPRO_SHEETS.matriz)){
-    return box("#fffbeb","#fde68a","#854d0e","⚠ «Maduración MATRIZ» llegó <b>RECORTADA</b> por el tope del servidor: sólo se leyeron sus primeros "+n+" individuo(s).<br>Los registrados después saldrán «no encontrado», y un alta de uno de ellos no se detectaría aquí como repetida: el GAS actualizado la rechaza, pero uno anterior lo sobrescribiría."+btn);
+    return box("#fffbeb","#fde68a","#854d0e","⚠ «Maduración MATRIZ» llegó <b>RECORTADA</b> por el tope del servidor: sólo se leyeron sus últimos "+n+" individuo(s).<br>Los registrados antes saldrán «no encontrado», y un alta de uno de ellos no se detectaría aquí como repetida: el GAS actualizado la rechaza, pero uno anterior lo sobrescribiría."+btn);
   }
   if(n) return box("#f0fdf4","#bbf7d0","#166534","✅ MATRIZ al día · "+n+" individuo(s)."+btn);
   return "";
@@ -14875,7 +14876,7 @@ function _reproConsultaHTML(){
   // D11 · y un recorte no es un fallo: la hoja SÍ se leyó, pero sin sus filas más recientes.
   const cortadas=[_REPRO_SHEETS.matriz, _REPRO_SHEETS.bitacora, _REPRO_SHEETS.transfer].filter(_reproRecortada);
   const recorte = cortadas.length
-    ? '<div style="padding:8px 10px;margin-bottom:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:11px;color:#854d0e">⚠ Datos incompletos — '+cortadas.length+' hoja(s) llegaron RECORTADAS por el tope del servidor ('+escapeHtml(cortadas.join(", "))+'): faltan sus filas más recientes, así que los totales, la matriz de desoves y la trazabilidad se quedan cortos.</div>'
+    ? '<div style="padding:8px 10px;margin-bottom:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:11px;color:#854d0e">⚠ Datos incompletos — '+cortadas.length+' hoja(s) llegaron RECORTADAS por el tope del servidor ('+escapeHtml(cortadas.join(", "))+'): faltan sus filas más antiguas, así que los totales, la matriz de desoves y la trazabilidad se quedan cortos.</div>'
     : '';
   const sum=window.__rgLib.matrixSummary(mrows);
   // ♻ Con la MATRIZ, un microchip reciclado da una fila por hembra (la anterior, «chip·fecha de ingreso»).
@@ -15196,11 +15197,14 @@ async function madReproTransfer(){
   _reproPaso("repro-t-paso", "Leyendo los traslados…");
   await _reproEnsureSheet(_REPRO_SHEETS.transfer);
   _reproPaintMatrixBanner();
-  /* ⚠⚠ D11 · CON EL LEDGER RECORTADO NO HAY TR-ID SEGURO, y aquí no basta con avisar. El máximo
-     sale de las filas más ANTIGUAS, así que el TR-ID «siguiente» ya existe en la hoja: mezclaría
-     dos transferencias bajo el mismo código y, con la llave TR-ID+Trovan, pisaría la fila del
-     historial de quien repitiera. No es el caso del ledger ilegible (ahí se sigue con la
-     secuencia local, como siempre): esto se sabe EQUIVOCADO. No se envía nada y lo pegado queda. */
+  /* ⚠⚠ D11 · CON EL LEDGER RECORTADO NO HAY TR-ID SEGURO, y aquí no basta con avisar. Hasta el
+     2026-10-19 el máximo salía de las filas más ANTIGUAS, así que el TR-ID «siguiente» ya existía
+     en la hoja: mezclaría dos transferencias bajo el mismo código y, con la llave TR-ID+Trovan,
+     pisaría la fila del historial de quien repitiera. Desde ese día el GAS devuelve las ÚLTIMAS
+     filas y el máximo sale bien mientras la hoja siga en el orden en que se escribe; con la hoja
+     reordenada a mano no hay forma de saberlo, así que se sigue deteniendo (usuario, 2026-10-19).
+     No es el caso del ledger ilegible (ahí se sigue con la secuencia local, como siempre). No se
+     envía nada y lo pegado queda. */
   if(_reproRecortada(_REPRO_SHEETS.transfer)){
     _reproNada("repro-t-paso", "No se envió: Google devolvió incompleta la lista de traslados, y el número del próximo traslado podría repetir uno que ya existe. Hay que ampliar el límite de lectura del GAS; lo pegado sigue aquí.", 9000);
     return;
@@ -16836,7 +16840,9 @@ function _madTqRondasRepetidas(pendientes, hoja){
 }
 /** Una hoja FRESCA para una de estas preguntas: su exportación (D) si se puede y, si no, el GAS en UN intento con tope —la
  *  lectura del libro reintenta hasta cuatro veces, y aquí esperaría minutos quien sólo quiere enviar—. null si no llega.
- *  H1 (2026-10-13) · era sólo la de Tanques; Desoves la usa igual (_madDesConfirmarRepetidos). */
+ *  H1 (2026-10-13) · era sólo la de Tanques; Desoves la usa igual (_madDesConfirmarRepetidos).
+ *  2026-10-19 (pauta 2.15) · no mira «truncated» a propósito: el GAS recortado se queda con las filas MÁS RECIENTES, que
+ *  son las que comparan estos avisos (el mismo día o ±1); lo que falta, lo más antiguo, no cambia su respuesta. */
 async function _madTqHojaFresca(){ return _madHojaFresca(MAD_SHEET.tanques); }
 async function _madHojaFresca(nombre){
   if(_exportPuede()){
@@ -26953,7 +26959,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "5296659a1c07";
+const GAS_VERSION = "9d0ff67cafab";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -28634,7 +28640,7 @@ function verifyReq(reqId, t) {
 // el monolito standalone). GET ?p=rows&sheet=<nombre>&t=<token>. Devuelve JSON
 // {ok, sheet, headers, rows} con cada fila como objeto {cabecera: valor}. Sólo
 // hojas de ALLOWED; respeta SHARED_TOKEN si está configurado (mismo gate que
-// doPost). Fechas → yyyy-MM-dd. Tope 20000 filas (ver TOPE_FILAS).
+// doPost). Fechas → yyyy-MM-dd. Tope 20000 filas, las MÁS RECIENTES (ver TOPE_FILAS).
 //
 // El parámetro "cols" (opcional, ?cols=A,B,C) PROYECTA: devuelve sólo esas columnas.
 // Medido el 2026-08-12 contra el despliegue real: "Maduración MATRIZ" son 1508 filas
@@ -28672,16 +28678,21 @@ function sheetRows(name, t, cols) {
     // ⚠⚠ EL TOPE RECORTA, y hasta el 2026-09-09 lo hacía EN SILENCIO. Quien suma
     // sobre lo devuelto —el libro mayor de Maduración lo hace— obtendría un saldo
     // incompleto sin un solo síntoma, que es el peor resultado posible aquí.
-    // «Maduración Tanques» crece hasta 38 filas al día (los tanques de las 5 salas),
-    // así que el tope no es teórico: con uso diario, se acaba alcanzando.
-    // 🔑 D11 (2026-09-13): el tope pasa de 5000 a 20000. Se lee desde ARRIBA, así que lo
-    // que se pierde al recortar son las filas MÁS RECIENTES; con 5000, la Bitácora del
-    // reproductivo (2227 filas y unas 30 nuevas al día) lo alcanzaba entre diciembre de
-    // 2026 y enero de 2027. El precio es el tamaño: 20000 filas de Bitácora rondan 2,4 MB.
+    // El tope no es teórico: medido el 2026-10-19 (ritmo de los últimos 30 días), la Bitácora
+    // del reproductivo (6990 filas, unas 130 nuevas al día) lo alcanza hacia finales de enero
+    // de 2027 y «Maduración Tanques» (2184, unas 57 al día) hacia agosto de 2027. La app sólo
+    // lee por aquí cuando falla la exportación de Google, pero entonces lee esto.
+    // 🔑 D11 (2026-09-13): el tope pasa de 5000 a 20000. El precio es el tamaño: 20000 filas
+    // de Bitácora rondan 2,4 MB.
+    // 🔑 2026-10-19 (pauta 2.15, usuario): al recortar se queda con las MÁS RECIENTES. Se lee
+    // desde ABAJO —las filas nuevas se añaden al final de la hoja— y se devuelven en el orden
+    // de la hoja, así que lo que falta de una hoja recortada son sus filas MÁS ANTIGUAS. Hasta
+    // hoy se leía desde arriba y se perdían las más recientes: las altas, desoves y partes del
+    // día, justo los que miran los avisos de ronda y desove repetidos. «truncated» se marca
+    // sólo si queda ARRIBA alguna fila con datos (antes, con cualquier fila de más).
     var TOPE_FILAS = 20000;
     var rows = [], cortada = false;
-    for (var i = 1; i < vals.length; i++) {
-      if (rows.length >= TOPE_FILAS) { cortada = true; break; }
+    for (var i = vals.length - 1; i >= 1; i--) {
       var r = vals[i], obj = {}, any = false;
       for (var k = 0; k < keep.length; k++) {
         var key = outHeaders[k];
@@ -28691,8 +28702,11 @@ function sheetRows(name, t, cols) {
       }
       // "Fila vacía" se juzga sobre las columnas DEVUELTAS: con proyección, una fila
       // sin ninguno de esos campos no aporta nada al cliente que los pidió.
-      if (any) rows.push(obj);
+      if (!any) continue;
+      if (rows.length >= TOPE_FILAS) { cortada = true; break; }
+      rows.push(obj);
     }
+    rows.reverse();
     out.ok = true; out.headers = outHeaders; out.rows = rows;
     // Retrocompatible a propósito: un cliente que no mire «truncated» ve exactamente
     // lo mismo que antes. El que lo mire puede decir «esto está incompleto» en vez
