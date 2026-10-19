@@ -42,7 +42,7 @@ export function tanquesDeSala(m) {
   if (m.pos) return m.pos.map(([x, z, num]) => ({ x, z, num }));
   return m.rows.flatMap((z, r) => m.cols.map((x, c) => ({ x, z, num: m.num(r, c) })));
 }
-// otras áreas: [x0, z0, x1, z1, altura, tipo]  (bld = edificio, res = reservorio, alg = piletas de algas)
+// otras áreas: [x0, z0, x1, z1, altura, tipo]  (bld = edificio, res = reservorio, alg = piletas de algas, ecl = sala abierta con tanques)
 /* Otras áreas: [x0, z0, x1, z1, alto, tipo, nombre, forma, color]. El NOMBRE sale de los rótulos del plano ARQ-A3 V4, ubicados
    sobre cada área con un ajuste lineal entre la posición de los rótulos «MODULO # n» y el centro de cada módulo (error
    medio 0,5 m; 2026-10-04, opción F): «título · detalle». Un área sin rótulo en el plano queda con un nombre genérico.
@@ -65,7 +65,11 @@ export function tanquesDeSala(m) {
    comedor y cocina, bodega y dormitorio, y el taller de mantenimiento, que llega a x 176 (la franja estaba vacía). Los
    detalles van con su edificio: escapes en los generadores, portones en la bodega de insumos, chimenea sobre la cocina.
    Plan B · B2 (2026-10-19, usuario) · el R.A.S. de Maduración (x 73,2–79,2 · z 20,4–28) y su cuarto de control (x 77,3–79,2
-   · z 28–32,4), pegados al Módulo 3, en el arranque de la calle interior: la calle (escena.js) empieza ahora en z 28,4. */
+   · z 28–32,4), pegados al Módulo 3, en el arranque de la calle interior: la calle (escena.js) empieza ahora en z 28,4.
+   Plan B · B1 (2026-10-19, usuario) · la franja de maduración: entre las salas 3 y 2, «Eclosión 1» (era «Edificio de
+   servicio»), y al oeste de la Sala 3 la «Oficina de maduración», que ocupaba todo, partida en oficina, salas de eclosión
+   2 y 3, y Embalaje (nave cerrada). Las salas de eclosión son de tipo 'ecl': SALAS ABIERTAS con sus tanques
+   (`TANQUES_DE_AREA`, abajo), sin registro en el MCP. El Desove ya está dentro de la Sala 1 (MAT · S1 · `desove`). */
 export const OTHERS = [
   [79.3, 38.2, 84.2, 45.25, 2.2, 'res', 'Reservorio 3D · agua salada'], [79.3, 45.25, 84.2, 52.3, 2.2, 'res', 'Reservorio 3C · agua salada'],
   [79.3, 52.3, 84.2, 59.35, 2.2, 'res', 'Reservorio 3B · agua salada'], [79.3, 59.35, 84.2, 66.4, 2.2, 'res', 'Reservorio 3A · agua salada'], [85.6, 38.2, 94.1, 66.4, 3.4, 'bld', 'Filtros y tratamiento de agua · Turbidex, tanques elevados, dosificación', 'filtros', '#e7eef0'],
@@ -90,12 +94,31 @@ export const OTHERS = [
   [36.3, 13.4, 45.4, 17.2, 2.2, 'res', 'Reservorio 5C · agua dulce'], [45.4, 13.4, 54.5, 17.2, 2.2, 'res', 'Reservorio 5B · agua dulce'],
   [54.5, 13.4, 63.6, 17.2, 2.2, 'res', 'Reservorio 5A · agua dulce'],
   [46.9, 2.2, 66.8, 11.6, 3.6, 'bld', 'Laboratorio · microbiología, PCR, fisicoquímico, artemia', 'lab', '#e7eef0'],
-  [67.4, 1.6, 83.2, 18, 3.4, 'bld', 'Oficina de maduración · alimentos, paneles eléctricos', null, '#efe6d6'],
+  [67.4, 1.6, 71.3, 18, 3.4, 'bld', 'Oficina de maduración · área orgánica, preparación de alimentos, recolector de afluentes', null, '#efe6d6'],
+  [71.3, 1.6, 78.6, 18, 1, 'ecl', 'Salas de eclosión 2 y 3 · 32 tanques'],
+  [78.6, 1.6, 83.2, 18, 3.4, 'bld', 'Embalaje · cisternas 1 y 2, tanques de enjuague', null, '#e8e2f0'],
   [73.2, 20.4, 79.2, 28, 3, 'bld', 'R.A.S. de Maduración · tanques, filtros y bombas', null, '#e7eef0'],
-  [77.3, 28, 79.2, 32.4, 2.6, 'bld', 'Cuarto de control del RAS', null, '#f1ece2'], [111.4, 1.6, 116.4, 17.4, 3.4, 'bld', 'Edificio de servicio', null, '#e8e2f0'],
+  [77.3, 28, 79.2, 32.4, 2.6, 'bld', 'Cuarto de control del RAS', null, '#f1ece2'], [111.2, 1.4, 116.6, 17.6, 1, 'ecl', 'Eclosión 1 · 14 tanques de Ø 1,90 m'],
   [79.2, 18.4, 176.5, 20.1, .6, 'canal', 'Canal sedimentador y recolector'],
 ];
 export const SITE = [0.9, 0.9, 176.6, 89.2], C0 = [88.7, 45], STREET = [97, 107];
+
+/* ---------- Plan B · B1 (2026-10-19, usuario) · los tanques de las SALAS ABIERTAS (áreas de tipo 'ecl') ----------
+   Leídos del plano ARQ-A3 V4 recortado a 6× y llevados a estas coordenadas con los tanques de las salas 2 y 3 de MAT, que
+   están en los dos (en esta franja la escala de los rótulos de los módulos se corre ~1,5 m en z: aquí, z = 2,85 + 1,043 ·
+   (z medida − 4,66); en x casa con el borde de la Sala 3). Sin registro por tanque en el MCP: sólo se dibujan.
+   · Eclosión 1: 14 de Ø 1,90 m en dos columnas, como los numera el plano: 1 a 7 la del este y 8 a 14 la del oeste, del
+     sur (calle) al norte. Las columnas, ajustadas al hueco entre las salas 3 y 2 (el plano las pone casi contra la Sala 2).
+   · Salas de eclosión 2 y 3: 4 × 4 cada una (32; el plan del 16-10 decía 2 × 12: recontados a 6×), Ø 1,20 m y filas a paso
+     parejo de 1,29 m (el dibujo las trae casi tocándose); la 3 al norte y la 2 al sur. */
+const filaEclosion1 = (cx, n0) => [0, 1, 2, 3, 4, 5, 6].map((k) => ({ num: n0 + k, cx, cz: Math.round((14.9 - 1.98 * k) * 100) / 100, d: 1.9 }));
+const salaEclosion = (sala, z0) => [0, 1, 2, 3].flatMap((r) => [72.02, 74.25, 75.65, 77.76].map((cx, c) => ({ sala, num: r * 4 + c + 1, cx, cz: Math.round((z0 + 1.29 * r) * 100) / 100, d: 1.2 })));
+export const TANQUES_DE_AREA = {
+  'Eclosión 1': [...filaEclosion1(115.25, 1), ...filaEclosion1(112.55, 8)],
+  'Salas de eclosión 2 y 3': [...salaEclosion(3, 4.54), ...salaEclosion(2, 13.24)],
+};
+/** Los tanques de un área de `OTHERS` por su nombre («título · detalle»): [] si no los tiene. */
+export const tanquesDeArea = (nombre) => TANQUES_DE_AREA[String(nombre).split(' · ')[0]] || [];
 
 /* ---------- 📊 Plano 2D (T4 de Análisis, 2026-10-06, usuario) ----------
    Las formas del plano esquemático visto desde arriba, en METROS del dibujo (el SVG usa x, z tal cual: x al este, z hacia
@@ -125,7 +148,9 @@ export function formasDelPlano() {
       { tipo: 'playa', x: 0, z: STREET[1], w: ancho, h: r2(playa - STREET[1]) },
       { tipo: 'mar', x: 0, z: playa, w: ancho, h: r2(fin - playa) },
     ],
-    otras: OTHERS.map((o) => ({ ...caja([o[0], o[1], o[2], o[3]]), tipo: o[5], nombre: o[6] })),
+    // B1 · las salas abiertas llevan sus tanques (círculos por su centro, como los de las salas de maduración)
+    otras: OTHERS.map((o) => ({ ...caja([o[0], o[1], o[2], o[3]]), tipo: o[5], nombre: o[6],
+      ...(o[5] === 'ecl' ? { tanques: tanquesDeArea(o[6]).map((t) => ({ num: t.num, forma: 'circ', cx: t.cx, cz: t.cz, r: t.d / 2 })) } : {}) })),
     grupos,
   };
 }

@@ -298,6 +298,9 @@ describe('📊 Análisis · plano del laboratorio', () => {
     expect(host.querySelectorAll('.an-pl-tq').length).toBe(156);
     expect(host.querySelectorAll('.an-pl-grupo').length).toBe(15);
     expect(host.querySelectorAll('.an-pl-otra').length).toBe(OTHERS.length);
+    // Plan B · B1 (2026-10-19) · las salas abiertas, con sus tanques (14 de Eclosión 1 y 32 de las salas 2 y 3), aparte de
+    // los de módulos y salas: sin datos, no cuentan en las 156 de arriba
+    expect(host.querySelectorAll('.an-pl-otra-tq').length).toBe(46);
     expect($('[data-k="plano-nota"]').textContent).toBe('Cargando datos de producción…');
     const E = estado(); E.mad.salas.S1.alerta = true;
     v.pintarEstado(E);

@@ -4,7 +4,7 @@
    la maqueta pintaría un tanque con el número de otro: aquí se nota.
    ============================================================ */
 import { describe, it, expect } from 'vitest';
-import { LARV, MAT, NUM_A, NUM_B, OTHERS, STREET, tanquesDeSala, formasDelPlano } from './plano.js';
+import { LARV, MAT, NUM_A, NUM_B, OTHERS, STREET, tanquesDeSala, formasDelPlano, tanquesDeArea } from './plano.js';
 import { MAD_SALA_OPTS, MAD_TANQUES_POR_SALA } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
 
 const numeros = (m) => m.rows.flatMap((_, r) => m.cols.map((_c, c) => m.num(r, c)));
@@ -105,6 +105,48 @@ describe('plano · otras áreas (opción F)', () => {
     expect(ras.slice(0, 4)).toEqual([73.2, 20.4, 79.2, 28]);
     expect(control.slice(0, 4)).toEqual([77.3, 28, 79.2, 32.4]);
     expect([ras[2], control[2]], 'pegados al Módulo 3').toEqual([LARV.find((m) => m.id === 'M3').box[0], LARV.find((m) => m.id === 'M3').box[0]]);
+  });
+
+  /* Plan B · B1 (2026-10-19, usuario) · la franja de maduración: Eclosión 1 entre las salas 3 y 2 (era «Edificio de
+     servicio») y, al oeste de la Sala 3, la oficina, las salas de eclosión 2 y 3 y Embalaje (era toda «Oficina de
+     maduración»). Las salas de eclosión, ABIERTAS con sus tanques (sin registro en el MCP). */
+  it('🔴 Eclosión 1: entre las salas 3 y 2, con sus 14 tanques de Ø 1,90 numerados como en el plano', () => {
+    const area = OTHERS.find((o) => /^Eclosión 1 · /.test(o[6]));
+    expect(area.slice(0, 6)).toEqual([MAT.find((m) => m.id === 'S3').box[2], 1.4, MAT.find((m) => m.id === 'S2').box[0], 17.6, 1, 'ecl']);
+    const t = tanquesDeArea(area[6]);
+    expect(t.map((x) => x.num)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+    expect(t.every((x) => x.d === 1.9)).toBe(true);
+    const este = t.filter((x) => x.num <= 7), oeste = t.filter((x) => x.num > 7);
+    expect(este.every((x) => x.cx > oeste[0].cx), '1–7 al este').toBe(true);
+    expect([este[0].cz > este[6].cz, oeste[0].cz > oeste[6].cz], 'del sur (calle) al norte').toEqual([true, true]);
+  });
+
+  it('🔴 al oeste de la Sala 3: oficina, salas de eclosión 2 y 3 (32 tanques) y Embalaje, contiguas', () => {
+    const tira = OTHERS.filter((o) => o[1] === 1.6 && o[3] === 18).sort((p, q) => p[0] - q[0]);
+    expect(tira.map((o) => [o[6].split(' · ')[0], o[5]])).toEqual([['Oficina de maduración', 'bld'], ['Salas de eclosión 2 y 3', 'ecl'], ['Embalaje', 'bld']]);
+    expect([tira[0][0], tira[2][2]], 'la caja de la «Oficina de maduración» de antes').toEqual([67.4, 83.2]);
+    tira.forEach((o, k) => { if (k) expect(o[0]).toBe(tira[k - 1][2]); });
+    const t = tanquesDeArea(tira[1][6]);
+    expect([t.filter((x) => x.sala === 3).length, t.filter((x) => x.sala === 2).length]).toEqual([16, 16]);
+    expect(t.filter((x) => x.sala === 3).every((x) => x.cz < t.filter((y) => y.sala === 2)[0].cz), 'la 3 al norte').toBe(true);
+    expect(OTHERS.some((o) => o[0] === 111.4 && o[6] === 'Edificio de servicio'), 'era Eclosión 1').toBe(false);
+  });
+
+  it('🔑 los tanques de cada sala abierta, dentro de ella y sin pisarse; las demás áreas, sin tanques', () => {
+    for (const o of OTHERS) {
+      const t = tanquesDeArea(o[6]);
+      if (o[5] !== 'ecl') { expect(t, o[6]).toEqual([]); continue; }
+      expect(t.length, o[6]).toBeGreaterThan(0);
+      t.forEach((x, i) => {
+        const r = x.d / 2;
+        expect(x.cx - r > o[0] && x.cx + r < o[2] && x.cz - r > o[1] && x.cz + r < o[3], o[6] + ' · ' + x.num + ' dentro').toBe(true);
+        t.slice(i + 1).forEach((y) => expect(Math.hypot(x.cx - y.cx, x.cz - y.cz) >= (x.d + y.d) / 2, o[6] + ' · ' + x.num + ' pisa').toBe(true));
+      });
+    }
+    expect(tanquesDeArea('Bodega de cloro')).toEqual([]);
+    const P = formasDelPlano();
+    expect(P.otras.filter((o) => o.tipo === 'ecl').map((o) => o.tanques.length)).toEqual([32, 14]);
+    expect(P.otras.filter((o) => o.tipo !== 'ecl').some((o) => o.tanques)).toBe(false);
   });
 
   /* Plan B (2026-10-19) · con áreas que se parten y se añaden, una red general: ninguna área pisa a otra, ni a un módulo de

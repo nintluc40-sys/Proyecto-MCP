@@ -72,7 +72,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { BufferGeometryUtils } from 'three/examples/jsm/utils/BufferGeometryUtils.js';   // C4 · unir geometría
-import { LARV, LARV_H, MAT, OTHERS, SITE, C0, STREET, tanquesDeSala } from './plano.js';
+import { LARV, LARV_H, MAT, OTHERS, SITE, C0, STREET, tanquesDeSala, tanquesDeArea } from './plano.js';
 import { STAGE_CATS } from '../supervisor/etapas.js';
 import { fmtPop } from '../../core/format.js';
 import { META_POR_DEFECTO, normalizarMeta } from './cifras.js';
@@ -419,11 +419,13 @@ const cil = (x, z, r, h, y0, mat, tumbado) => { const m = new THREE.Mesh(new THR
 const M_SOPLADOR = std({ color: col('#3d6fa0'), roughness: .5, metalness: .3 }), M_ACERO = std({ color: col('#9aa3a8'), roughness: .35, metalness: .7 });
 const M_VIDRIO = std({ color: col('#2c3e48'), roughness: .15, metalness: .4 }), M_PORTON = std({ map: rep(TX.zinc, 1, 1), color: col('#b8c0c4'), roughness: .5, metalness: .4 });
 const M_DIESEL = std({ color: col('#c9a23a'), roughness: .5, metalness: .3 });
+// B1 · los tanques de las salas abiertas (eclosión): pared clara vista por dentro y por fuera, y el agua de los de desove
+const M_TANQUE_ECL = std({ color: col('#e9e6df'), roughness: .7, side: THREE.DoubleSide }), M_AGUA_ECL = std({ color: col('#3a6fa8'), roughness: .15, metalness: .1 });
 /** Alero de ingreso con su puerta de vidrio, en el lado de `z` del edificio (centro `xm`). */
 function ingreso(xm, z, sale) { box(xm - 1.7, Math.min(z, z + sale * 1.5), xm + 1.7, Math.max(z, z + sale * 1.5), 2.6, .12, M.paint, true, others); [-1.55, 1.55].forEach((dx) => box(xm + dx - .06, z + sale * 1.38, xm + dx + .06, z + sale * 1.5, 0, 2.6, M.steel, true, others)); box(xm - .7, Math.min(z, z + sale * .05), xm + .7, Math.max(z, z + sale * .05), 0, 2.2, M_VIDRIO, false, others); }
 /** Equipos de aire acondicionado sobre el techo. */
 function aires(a, b, c, d, h, n) { for (let i = 0; i < n; i++) { const x = a + (c - a) * (i + 1) / (n + 1), z = b + (d - b) * .3; box(x - .5, z - .35, x + .5, z + .35, h, .6, M_ACERO, true, others); } }
-OTHERS.forEach(([a, b, c, d, h, type, , forma, color]) => {
+OTHERS.forEach(([a, b, c, d, h, type, nombre, forma, color]) => {
   const w = c - a, dd = d - b;
   if (type === 'canal') {
     // canal sedimentador abierto: dos bordes bajos y el agua adentro
@@ -460,6 +462,18 @@ OTHERS.forEach(([a, b, c, d, h, type, , forma, color]) => {
   } else if (type === 'res') {
     box(a, b, c, d, 0, h, M.tankWall, true, others); box(a + .3, b + .3, c - .3, d - .3, h, .12, M.lid, true, others);
     for (let zz = b + 2; zz < d - 1; zz += 4) box(a + w / 2 - .4, zz, a + w / 2 + .4, zz + .8, h + .12, .25, M.steel, true, others); // escotillas
+  } else if (type === 'ecl') {
+    // Plan B · B1 (2026-10-19, usuario) · SALA ABIERTA con sus tanques (plano.js · TANQUES_DE_AREA; sin registro en el MCP):
+    // muros bajos de 25 cm, como las piletas de algas, y cada tanque un cilindro abierto con su agua 10 cm bajo el borde
+    box(a, b, c, b + .25, 0, h, M.tankWall, true, others); box(a, d - .25, c, d, 0, h, M.tankWall, true, others);
+    box(a, b + .25, a + .25, d - .25, 0, h, M.tankWall, true, others); box(c - .25, b + .25, c, d - .25, 0, h, M.tankWall, true, others);
+    tanquesDeArea(nombre).forEach((t) => {
+      const [px, pz] = P(t.cx, t.cz), r = t.d / 2, alto = .9;
+      const pared = new THREE.Mesh(new THREE.CylinderGeometry(r, r, alto, 20, 1, true), M_TANQUE_ECL); pared.position.set(px, alto / 2, pz);
+      pared.castShadow = pared.receiveShadow = true; others.add(pared);
+      const agua = new THREE.Mesh(new THREE.CircleGeometry(r - .05, 20), M_AGUA_ECL); agua.rotation.x = -Math.PI / 2; agua.position.set(px, alto - .1, pz);
+      others.add(agua);
+    });
   } else {
     // piletas de algas: cada una con agua verde de microalgas. 2026-10-18 (usuario) · HUECAS, como el canal sedimentador:
     // cuatro muros de 25 cm y el agua 15 cm bajo el borde. Antes el muro era un bloque macizo y el agua quedaba DENTRO de él:
@@ -1013,7 +1027,8 @@ groups.forEach(g => {
   labelsEl.append(el); g.label = el; g.labelText = tx; g.labelDot = i;
   const [ax, az] = P(g.cx, g.cz); g.anchor = new THREE.Vector3(ax, g.kind === 'larv' ? 6.6 : 5, az);
 });
-const GEO = [['Mar', 90, 165, 1], ['Playa', 90, 117, 1], ['Canal de salida', 90, -18, 1.5], ['Piscina de sal', 90, -115, 2]].map(([txt, x, z, y]) => { const el = document.createElement('span'); el.className = 'geo'; el.textContent = txt; labelsEl.append(el); const [px, pz] = P(x, z); return { el, p: new THREE.Vector3(px, y, pz) }; });
+// B1 (2026-10-19, usuario) · «Desove»: su parte de la Sala 1 (tabique en x 154,3) lleva su propio rótulo
+const GEO = [['Mar', 90, 165, 1], ['Playa', 90, 117, 1], ['Canal de salida', 90, -18, 1.5], ['Piscina de sal', 90, -115, 2], ['Desove', 149.1, 9.65, 3.8]].map(([txt, x, z, y]) => { const el = document.createElement('span'); el.className = 'geo'; el.textContent = txt; labelsEl.append(el); const [px, pz] = P(x, z); return { el, p: new THREE.Vector3(px, y, pz) }; });
 const NORTH = new THREE.Vector2(-1, -1).normalize(), needle = $('#needle');
 /** Texto del rótulo de un módulo: su nombre (corto si la cámara está lejos) y su estado de producción. */
 const compacto = () => W < 600;   // pantalla angosta (celular): de lejos, el rótulo corto
@@ -1100,7 +1115,8 @@ canvas.addEventListener('pointermove', e => {
   if (p && p.area) { canvas.style.cursor = 'help'; tipArea(p.area, e); return; }
   if (!t) { tip.hidden = true; canvas.style.cursor = p && p.group ? 'pointer' : 'grab'; return; }
   canvas.style.cursor = 'pointer'; tip.textContent = '';
-  const b = document.createElement('b'); b.textContent = t.g.name + ' · ' + (t.desove ? 'desove ' : 'tanque ') + t.num;
+  // B1 · un tanque de desove se nombra por su área: «Desove (Sala 1) · tanque D3» (antes «Maduración 1 · desove 3»)
+  const b = document.createElement('b'); b.textContent = t.desove ? 'Desove (' + t.g.sala + ') · tanque D' + t.num : t.g.name + ' · tanque ' + t.num;
   tip.append(b);
   lineasTip(t).forEach((txt) => { const sp = document.createElement('span'); sp.textContent = txt; sp.style.display = 'block'; tip.append(sp); });
   const r = vp.getBoundingClientRect(); tip.hidden = false;

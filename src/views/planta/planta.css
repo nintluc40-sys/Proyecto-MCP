@@ -265,6 +265,9 @@
 .planta-an .an-pl-otra.res { fill: #cddfe9; }
 .planta-an .an-pl-otra.alg { fill: #d3e5cd; }
 .planta-an .an-pl-otra.canal { fill: #a9cbdc; }
+/* Plan B · B1 (2026-10-19): las salas abiertas (eclosión) y sus tanques, en gris: no tienen registro; el toque es del área */
+.planta-an .an-pl-otra.ecl { fill: #e2e8ec; }
+.planta-an .an-pl-otra-tq { fill: #c4ced5; stroke: #8e9aa3; stroke-width: .1; pointer-events: none; }
 .planta-an .an-pl-grupo { fill: #ffffff; stroke: #9aa7b0; stroke-width: .25; cursor: pointer; }
 .planta-an .an-pl-grupo:focus-visible { outline: none; stroke: var(--sel); stroke-width: .8; }
 .planta-an .an-pl-tq { stroke: rgba(0, 0, 0, .3); stroke-width: .15; cursor: pointer; }
@@ -285,6 +288,8 @@
 [data-theme="dark"] .planta-an .an-pl-otra.res { fill: #2c4350; }
 [data-theme="dark"] .planta-an .an-pl-otra.alg { fill: #314536; }
 [data-theme="dark"] .planta-an .an-pl-otra.canal { fill: #2e5b6e; }
+[data-theme="dark"] .planta-an .an-pl-otra.ecl { fill: #2b3439; }
+[data-theme="dark"] .planta-an .an-pl-otra-tq { fill: #46525a; stroke: #66737b; }
 [data-theme="dark"] .planta-an .an-pl-grupo { fill: #1c2328; stroke: #5b6870; }
 [data-theme="dark"] .planta-an .an-pl-aviso { fill: #ff8a80; }
 /* Cronograma del ciclo (T3): una fila por módulo con su pista; los tramos, el rayado del despacho, 🚚, la desinfección y la

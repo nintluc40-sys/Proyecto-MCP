@@ -304,7 +304,11 @@ export function montarAnalisis(host) {
     const ca = PL.bandas.find((b) => b.tipo === 'calle');
     svg.append(sv('line', { x1: ca.x, x2: ca.x + ca.w, y1: ca.z + ca.h / 2, y2: ca.z + ca.h / 2 }, 'an-pl-raya'));
     svg.append(sv('rect', { x: PL.terreno.x, y: PL.terreno.z, width: PL.terreno.w, height: PL.terreno.h, rx: 0.6 }, 'an-pl-terreno'));
-    PL.otras.forEach((o, i) => { const r = sv('rect', { x: o.x, y: o.z, width: o.w, height: o.h, rx: 0.4 }, 'an-pl-otra ' + o.tipo); r.dataset.area = String(i); svg.append(r); });
+    PL.otras.forEach((o, i) => {
+      const r = sv('rect', { x: o.x, y: o.z, width: o.w, height: o.h, rx: 0.4 }, 'an-pl-otra ' + o.tipo); r.dataset.area = String(i); svg.append(r);
+      // Plan B · B1 (2026-10-19) · las salas abiertas, con sus tanques: en gris (sin registro) y sin robar el toque al área
+      (o.tanques || []).forEach((t) => svg.append(sv('circle', { cx: t.cx, cy: t.cz, r: t.r }, 'an-pl-otra-tq')));
+    });
     PL.grupos.forEach((G) => {
       const g = grupos.find((x) => x.id === G.id); if (!g) return;
       const caja = sv('rect', { x: G.x, y: G.z, width: G.w, height: G.h, rx: 0.5, tabindex: 0, role: 'button', 'aria-label': 'Ficha de ' + g.name }, 'an-pl-grupo');
