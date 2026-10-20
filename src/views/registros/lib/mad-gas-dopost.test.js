@@ -149,7 +149,8 @@ function hojaFalsa(filasIniciales, opts = {}) {
 /* ── El GAS real, entero, en una caja con los servicios de Apps Script simulados ── */
 function gas(hojas) {
   const cache = new Map();
-  const candado = { tomado: 0, soltado: 0 };
+  // B5 (2026-10-19) · `orden` apunta tomar / flush / soltar, y `alTomar` deja simular lo que pasó MIENTRAS se esperaba el lock.
+  const candado = { tomado: 0, soltado: 0, orden: [], alTomar: null };
   let fechas = 0;                                     // llamadas a Utilities.formatDate (♻ MATRIZ)
   let zonas = 0;                                      // llamadas a Session.getScriptTimeZone (P15)
   const ctx = {
@@ -158,9 +159,12 @@ function gas(hojas) {
         getSheetByName: (n) => hojas[n] || null,
         insertSheet: (n) => (hojas[n] = hojaFalsa([])),
       }),
-      flush() {},
+      flush() { candado.orden.push('flush'); },
     },
-    LockService: { getScriptLock: () => ({ waitLock() { candado.tomado++; }, releaseLock() { candado.soltado++; } }) },
+    LockService: { getScriptLock: () => ({
+      waitLock() { candado.tomado++; candado.orden.push('tomar'); if (candado.alTomar) candado.alTomar(); },
+      releaseLock() { candado.soltado++; candado.orden.push('soltar'); },
+    }) },
     CacheService: { getScriptCache: () => ({ get: (k) => cache.get(k) || null, put: (k, v) => cache.set(k, v) }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (s) => ({ setMimeType: () => JSON.parse(s) }) },
@@ -1971,5 +1975,50 @@ describe('GAS · Registro_Auditoria (🧾 Auditoría del AsT, 2026-10-03)', () =
     const r = g.leer({ p: 'rows', sheet: 'Registro_Auditoria' });
     expect(r.rows).toHaveLength(1);
     expect(r.rows[0].Tipo).toBe('Cosecha');
+  });
+});
+
+describe('GAS · B5 · la carrera de doPost: un envío no puede escribir dos veces lo mismo (2026-10-19)', () => {
+  /* 🔴 B5 (2026-10-19, usuario). Medido en Control_Tanque: 945 parejas de filas repetidas, 926 a menos de 200 filas de su
+     gemela y TODAS con una llave que casa —el upsert las habría fusionado si hubiera visto la de arriba—. Dos huecos:
+     la marca del reqId se miraba ANTES de esperar el lock (un reintento del mismo envío, con el primero aún escribiendo,
+     la pasaba) y el lock se soltaba sin SpreadsheetApp.flush() (el siguiente podía leer la hoja sin lo recién escrito).
+     El arnés no puede intercalar dos ejecuciones: `alTomar` simula lo que pasó MIENTRAS se esperaba el lock. */
+  const TQ = 'Maduración Tanques';
+  const parte = () => conValores(TANQUES, { Fecha: '2026-10-19', Sala: 'Sala 5', Tanque: 7, 'Machos muertos': 3, Hora: '08:30', Parte: 1 });
+
+  it('el fixture ejerce algo: sin marca, el mismo envío SÍ escribe su fila', () => {
+    const hoja = hojaFalsa([TANQUES]);
+    const g = gas({ [TQ]: hoja });
+    expect(g.post({ sheetName: TQ, headers: TANQUES, rows: [parte()], reqId: 'R-B5' }).status).toBe('ok');
+    expect(hoja.filas).toHaveLength(2);
+  });
+
+  it('🔴 el reintento que llega mientras el primero escribe: con el lock tomado ve su marca y NO escribe', () => {
+    const hoja = hojaFalsa([TANQUES]);
+    const g = gas({ [TQ]: hoja });
+    g.candado.alTomar = () => { g.cache.set('idem_R-B5', '1'); };   // el primero terminó mientras éste esperaba
+    const r = g.post({ sheetName: TQ, headers: TANQUES, rows: [parte()], reqId: 'R-B5' });
+    expect(r).toMatchObject({ status: 'ok', dedup: true, appended: 0 });
+    expect(hoja.filas, 'el reintento escribió otra vez').toHaveLength(1);
+    expect(hoja.escrituras.filter((e) => e.startsWith('setValues'))).toEqual([]);
+    expect(g.candado.soltado, 'y suelta el lock').toBe(g.candado.tomado);
+  });
+
+  it('🔴 lo escrito se compromete (flush) ANTES de soltar el lock; también al salir por la marca', () => {
+    const g = gas({ [TQ]: hojaFalsa([TANQUES]) });
+    g.post({ sheetName: TQ, headers: TANQUES, rows: [parte()], reqId: 'R-B5a' });
+    expect(g.candado.orden.slice(-2)).toEqual(['flush', 'soltar']);
+    g.candado.alTomar = () => { g.cache.set('idem_R-B5b', '1'); };
+    g.post({ sheetName: TQ, headers: TANQUES, rows: [parte()], reqId: 'R-B5b' });
+    expect(g.candado.orden.slice(-2)).toEqual(['flush', 'soltar']);
+  });
+
+  it('otro reqId (otro equipo) con el lock tomado SÍ escribe: la marca no tapa envíos distintos', () => {
+    const hoja = hojaFalsa([TANQUES]);
+    const g = gas({ [TQ]: hoja });
+    g.candado.alTomar = () => { g.cache.set('idem_OTRO', '1'); };
+    expect(g.post({ sheetName: TQ, headers: TANQUES, rows: [parte()], reqId: 'R-B5c' }).dedup).toBeUndefined();
+    expect(hoja.filas).toHaveLength(2);
   });
 });

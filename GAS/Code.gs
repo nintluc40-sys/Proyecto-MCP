@@ -22,7 +22,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "9d0ff67cafab";
+const GAS_VERSION = "36b6d3c4bf9e";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -388,6 +388,21 @@ function doPost(e) {
     catch (eLock) { return respond({ status: "error", message: "Servidor ocupado, reintenta" }); }
     try {
 
+    // B5 (2026-10-19, usuario) · LA MARCA DEL reqId SE VUELVE A MIRAR CON EL LOCK TOMADO. La de arriba se mira
+    // ANTES de esperarlo, y un reintento del MISMO envío (el cliente corta a los 40 s y reintenta con el mismo
+    // reqId) llegaba mientras el primero seguía escribiendo: pasaba esa comprobación, esperaba aquí, y al entrar
+    // escribía otra vez. Medido el 19-10 en Control_Tanque: 945 parejas de filas repetidas, 926 a menos de 200
+    // filas de su gemela (el mismo bloque añadido otra vez) y todas con una llave que casa. Con el lock tomado, la
+    // marca del primero ya está (se pone antes de soltarlo) y el reintento responde «ok» sin escribir.
+    if (reqId) {
+      try {
+        if (CacheService.getScriptCache().get("idem_" + reqId)) {
+          return respond({ status: "ok", sheet: payload.sheetName,
+            rows: 0, upserted: 0, appended: 0, dedup: true });
+        }
+      } catch (_e) {}
+    }
+
     // Sanitizar cada celda
     var rows;
     try {
@@ -653,6 +668,11 @@ function doPost(e) {
     });
 
     } finally {
+      // B5 (2026-10-19) · lo escrito se COMPROMETE antes de soltar el lock. Apps Script aplica los cambios
+      // pendientes al terminar la ejecución, que es DESPUÉS de este finally: sin el flush, el siguiente envío
+      // de la misma hoja (otro equipo, u otro envío del mismo) podía tomar el lock y leer la hoja todavía sin
+      // estas filas, no casarlas y añadirlas otra vez. Es la regla de Apps Script con LockService.
+      try { SpreadsheetApp.flush(); } catch (_e) {}
       try { _lock.releaseLock(); } catch (_e) {}
     }
 
