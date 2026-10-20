@@ -1064,7 +1064,7 @@ function calExportCols(samples) {
 function calStamp() { const d = new Date(); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`; }
 function calExportXlsx() {
   const XLSX = window.XLSX;
-  if (!XLSX) { toast('Exportación no disponible: SheetJS (XLSX) no se cargó.', 'err'); return; }
+  if (!XLSX) { toast('Exportación no disponible: SheetJS (XLSX) no se cargó. Revisa tu conexión y recarga la página.', 'err'); return; }
   const samples = _calScope.samples || [];
   if (!samples.length) { toast('Sin muestras para exportar.', 'warn'); return; }
   const cols = calExportCols(samples);
@@ -2725,7 +2725,7 @@ function closeXlsxModal(root) {
 }
 function runXlsxExport(root) {
   const XLSX = window.XLSX;
-  if (!XLSX) { toast('Exportación no disponible: SheetJS (XLSX) no se cargó.', 'err'); return; }
+  if (!XLSX) { toast('Exportación no disponible: SheetJS (XLSX) no se cargó. Revisa tu conexión y recarga la página.', 'err'); return; }
   const rows = micExportRows(root);
   if (!rows.length) { toast('Sin registros en el rango de fechas elegido.', 'warn'); return; }
   // Columnas en orden del Sheet (orden de claves) que tengan datos en el rango.
