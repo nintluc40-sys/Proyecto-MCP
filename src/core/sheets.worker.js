@@ -120,6 +120,8 @@ export async function atender(m, entorno, post, cada = LATIDO_MS) {
 if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope) {
   const almacen = almacenIDB();
   const entorno = {
+    // Sin `integrity`: importScripts no lo admite, y es el archivo de /vendor del MISMO origen que la página, cuyo <script>
+    // sí lo lleva. Comprobarlo a mano (SHA-384 y blob:) no protegería de nada: quien lo cambie en Pages cambia también éste.
     cargarXLSX: (url) => importScripts(url),
     obtenerXLSX: () => self.XLSX,
     guardar: (libro) => guardarLibro(libro, almacen),
