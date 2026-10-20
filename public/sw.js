@@ -32,17 +32,31 @@
    ⚠ NO se llama a `skipWaiting()`. Un service worker nuevo que se activa a mitad de
    sesión dejaría la pestaña mezclando piezas de dos versiones. El nuevo espera a que
    la app se cierre del todo; mientras tanto, «network-first» ya garantiza que el
-   contenido esté fresco.
+   contenido esté fresco al RECARGAR. Que una pestaña abierta se entere de que hay que
+   recargar lo dice la página (`src/ui/versionNueva.js`, B1 2026-10-19).
    ============================================================ */
 
 /* Nombre de la caché. Al cambiarlo, `activate` borra las anteriores.
 
-   🔑 Olvidarse de subirlo es INOFENSIVO a propósito: como el shell es network-first,
-   una caché vieja nunca sirve HTML ni `engine.js` obsoletos. Lo único que pasa es
-   que se quedan sin barrer los `assets/` con hash de despliegues anteriores, que
-   ocupan sitio y nada más. Se diseñó así para que el error más probable —no tocar
-   esta línea— no pueda romper un despliegue de urgencia. */
+   No hace falta subirlo en cada despliegue: como el shell es network-first, una caché
+   vieja nunca sirve HTML ni `engine.js` obsoletos, y lo que sí hace falta en cada uno
+   —que este service worker se REINSTALE y guarde los bloques nuevos— lo da la huella
+   de abajo. Lo único que no se hace es barrer los `assets/` con hash de despliegues
+   anteriores, que ocupan sitio y nada más.
+   ⚠ Hasta el 2026-10-19 aquí ponía que olvidarse era «INOFENSIVO»: dejó de serlo con la
+   lista del build (P3, `assetsDelBuild`), que sólo se lee al INSTALAR. Con este archivo
+   idéntico en cada despliegue el navegador no instalaba nunca uno nuevo, y los equipos
+   ya instalados no guardaban los bloques diferidos nuevos hasta abrirlos con señal. */
 const CACHE = 'mcp-v1';
+
+/* LA HUELLA DEL BUILD (B1, 2026-10-19). El navegador sólo instala un service worker nuevo
+   si este archivo cambia en algún byte. `vite.config.js` (`sellarBuild`) escribe aquí, en
+   `dist/`, la huella de cada build —la misma de `version.json` y de la `<meta name="mcp-build">`
+   de index.html—; en `public/` dice 'sin-sellar'. Sin usar a propósito: basta con que cambie.
+   Un build que no cambia nada (un commit sólo de documentación) da la misma huella y no
+   reinstala nada. */
+// eslint-disable-next-line no-unused-vars
+const BUILD = 'sin-sellar';
 
 /* Lo que se guarda al INSTALAR, para que la primera visita sin conexión ya funcione.
    Van las rutas SIN hash; las de `assets/` se guardan solas la primera vez que se
@@ -232,6 +246,10 @@ self.addEventListener('fetch', (e) => {
   let url;
   try { url = new URL(req.url); } catch (_) { return; }
   if (url.origin !== self.location.origin) return;
+
+  // `version.json` (B1): la página pregunta por él si hay versión nueva. Nunca de caché —una copia
+  // guardada diría «nueva» sin señal o callaría una de verdad—: sin red, que falle.
+  if (url.pathname.endsWith('/version.json')) return;
 
   if (req.mode === 'navigate') { e.respondWith(navegacion(req)); return; }
 

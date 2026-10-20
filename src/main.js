@@ -21,6 +21,7 @@ import { lectorWorker } from './core/sheets.lector.js';
 import { startAutoRefresh, asegurarLibro, setLibroGuardado } from './core/refresh.js';
 import { cargarLibroGuardado, almacenIDB } from './core/libroGuardado.js';
 import { esc } from './core/format.js';
+import { vigilarVersion } from './ui/versionNueva.js';
 
 import { supervisorView } from './views/supervisor/index.js';
 import { larviculturaView } from './views/larvicultura/index.js';
@@ -180,14 +181,19 @@ function boot() {
    que el usuario pueda hacer al respecto.
 
    La estrategia por tipo de archivo, y por qué NO es cache-first para todo, está
-   explicada en `public/sw.js`. */
+   explicada en `public/sw.js`.
+
+   B1 (2026-10-19) · y desde aquí se vigila si hay VERSIÓN NUEVA (`ui/versionNueva.js`): una pestaña o una PWA
+   abierta no se enteraba nunca de un despliegue. Va aunque no haya service worker: avisar de recargar no depende de él. */
 function registrarSW() {
   if (!import.meta.env.PROD) return;
-  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
   window.addEventListener('load', () => {
+    let registro = null;
+    vigilarVersion({ registro: () => registro });
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
     // Ruta RELATIVA al documento: en GitHub Pages la app vive bajo /Proyecto-MCP/, y
     // una ruta absoluta ('/sw.js') apuntaría a la raíz del dominio y daría 404.
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
+    navigator.serviceWorker.register('./sw.js').then((r) => { registro = r; }).catch(() => {});
   });
 }
 

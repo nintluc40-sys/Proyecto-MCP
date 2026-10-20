@@ -232,3 +232,22 @@
 @media (max-width: 720px) {
   .app-toasts { left: 16px; right: 16px; max-width: none; }
 }
+
+/* Versión nueva (ui/versionNueva.js, B1 2026-10-19): fija abajo hasta Recargar o ×; por encima de los toasts (300) y
+   por debajo de los modales (1000+): no tapa uno abierto, y se ve al cerrarlo. */
+.app-version-nueva {
+  position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 310;
+  margin: 0 auto; max-width: 560px;
+  display: flex; align-items: center; gap: 10px;
+  background: var(--c-surface); color: var(--c-text);
+  border: 1px solid var(--c-border); border-left: 3px solid var(--c-brand);
+  border-radius: var(--r-md); box-shadow: var(--sh-3);
+  padding: 10px 12px; font-size: 13px; font-weight: 600; line-height: 1.35;
+}
+.app-version-nueva span { flex: 1; }
+.app-version-nueva button {
+  border: 1px solid var(--c-border); border-radius: var(--r-md); background: var(--c-surface); color: var(--c-text);
+  font: inherit; padding: 6px 10px; cursor: pointer;
+}
+.app-version-nueva button[data-accion="recargar"] { background: var(--c-brand); border-color: var(--c-brand); color: #fff; }
+.app-version-nueva button[data-accion="cerrar"] { padding: 6px 9px; }

@@ -1,4 +1,7 @@
 import { defineConfig } from 'vite';
+import { createHash } from 'node:crypto';
+import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { join, relative, resolve } from 'node:path';
 
 /* Lista de TODO lo que el build emite bajo assets/ (P3 del plan de carga y refresco, 2026-10-01),
    en `precache-assets.json`, para que el service worker lo guarde al INSTALARSE. Los bloques
@@ -48,6 +51,54 @@ function listaDePrecache() {
   };
 }
 
+/* B1 (2026-10-19, usuario) · LA HUELLA DEL BUILD. Una pestaña o una PWA abierta no se enteraba nunca de un despliegue
+   nuevo, y `public/sw.js` era idéntico en cada uno, así que el navegador no instalaba nunca otro service worker (y la
+   lista de bloques diferidos de arriba sólo se lee al instalar). Al terminar de escribir `dist/`, se calcula un hash
+   del CONTENIDO de todo lo emitido —también de lo que no lleva hash en el nombre: `registros/engine.js`, `vendor/`— y
+   se escribe en tres sitios: `version.json` (lo que pregunta la página), la `<meta name="mcp-build">` de index.html
+   (la versión que corre la página) y la línea `BUILD` de sw.js (para que cambie y se reinstale). Se calcula ANTES de
+   sellar, sobre los archivos con 'sin-sellar', así que el mismo código da la misma huella: un despliegue que no cambia
+   nada (un commit sólo de documentación) no avisa a nadie. Si falta una de las marcas, el build FALLA: sellar a medias
+   sería volver a callar. Lo lee src/ui/versionNueva.js. */
+export const SIN_SELLAR = 'sin-sellar';
+const SELLOS = [
+  ['sw.js', "const BUILD = 'sin-sellar';", (h) => `const BUILD = '${h}';`],
+  ['index.html', '<meta name="mcp-build" content="sin-sellar"', (h) => `<meta name="mcp-build" content="${h}"`],
+];
+/** Huella de una lista de [ruta, contenido]: la misma con los mismos archivos, en cualquier orden. */
+export function huellaDeArchivos(archivos) {
+  const h = createHash('sha256');
+  for (const [ruta, datos] of [...archivos].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))) {
+    h.update(ruta); h.update('\0'); h.update(datos); h.update('\0');
+  }
+  return h.digest('hex').slice(0, 12);
+}
+/** Sella el build escrito en `dir` y devuelve su huella. */
+export function sellarBuild(dir) {
+  const archivos = readdirSync(dir, { recursive: true, withFileTypes: true })
+    .filter((d) => d.isFile())
+    .map((d) => join(d.parentPath || d.path, d.name))
+    .map((p) => [relative(dir, p).replace(/\\/g, '/'), readFileSync(p)])
+    .filter(([ruta]) => ruta !== 'version.json');
+  const huella = huellaDeArchivos(archivos);
+  for (const [ruta, marca, sello] of SELLOS) {
+    const p = join(dir, ruta), txt = readFileSync(p, 'utf8');
+    if (txt.split(marca).length !== 2) throw new Error(`huella del build: «${marca}» tiene que salir UNA vez en ${ruta}`);
+    writeFileSync(p, txt.replace(marca, sello(huella)));
+  }
+  writeFileSync(join(dir, 'version.json'), JSON.stringify({ build: huella }));
+  return huella;
+}
+function huellaDelBuild() {
+  let dir = null;
+  return {
+    name: 'mcp-huella-build',
+    apply: 'build',
+    configResolved(c) { dir = resolve(c.root, c.build.outDir); },
+    writeBundle: { order: 'post', sequential: true, handler() { sellarBuild(dir); } },
+  };
+}
+
 /* 2026-10-02 (usuario) · LOS NAVEGADORES PARA LOS QUE SE ESCRIBE EL CSS: los de la época de es2019. Con `target:
    'es2019'` solo, esbuild da por soportado todo el CSS y deja `inset` tal cual —y hasta junta top/right/bottom/left a 0
    en `inset:0`—, que no existe antes de Chrome 87 / Safari 14.1: ahí los modales a pantalla completa se rompían. Con
@@ -65,7 +116,7 @@ export default defineConfig(({ command }) => ({
   //     "Failed to fetch dynamically imported module" — justo las vistas de carga
   //     diferida (Registros y Biología Molecular). Es un footgun conocido de Vite.
   base: command === 'build' ? './' : '/',
-  plugins: [listaDePrecache()],
+  plugins: [listaDePrecache(), huellaDelBuild()],
   server: {
     port: 5173,
     open: true,

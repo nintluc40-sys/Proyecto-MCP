@@ -11,6 +11,9 @@
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
   <link rel="manifest" href="./manifest.webmanifest" />
   <meta name="theme-color" content="#006064" />
+  <!-- B1 (2026-10-19) · la HUELLA del build que corre esta página: `vite.config.js` (sellarBuild) la escribe en dist/,
+       la misma que en `version.json` y en `sw.js`. Si la publicada ya es otra, `src/ui/versionNueva.js` avisa. -->
+  <meta name="mcp-build" content="sin-sellar" />
 
   <!-- ⚠ SheetJS y D3 se sirven desde ESTE origen (`public/vendor/`), no desde un CDN.
        Se bajaron el 2026-08-25 para que el service worker pueda cachearlos: la

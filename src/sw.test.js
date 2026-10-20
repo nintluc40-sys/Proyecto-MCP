@@ -17,7 +17,8 @@
      · que un 404 NUNCA se guarde en caché.
    ============================================================ */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createContext, Script } from 'node:vm';
 
@@ -154,6 +155,16 @@ describe('Service worker · lo que deja pasar sin tocar', () => {
       const r = await pedir(sw, u);
       expect(r.interceptado, 'interceptó ' + u).toBe(false);
     }
+  });
+
+  it('🔴 NO intercepta `version.json` (B1): nunca de caché, ni con una copia guardada', async () => {
+    /* La página pregunta por él si hay versión nueva. Una copia guardada diría «nueva» sin señal, o callaría una de
+       verdad; sin red, que falle y la página no avise. */
+    sw = montarSW({ red: redOk() });
+    await (await sw.cachesFalso.api.open('mcp-v1')).put(BASE + 'version.json', ok('{"build":"viejo"}'));
+    const r = await pedir(sw, BASE + 'version.json');
+    expect(r.interceptado, 'el service worker se metió en version.json').toBe(false);
+    expect(sw.llamadasRed).toHaveLength(0);
   });
 });
 
@@ -555,5 +566,80 @@ describe('Build · precache-assets.json, la lista que lee el service worker', ()
       'assets/three-TTT.js': ch({ facadeModuleId: null }),
     });
     expect(JSON.parse(emitidos[0].source)).toEqual(['./assets/comun-CCC.js', './assets/index-AAA.js']);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════
+   B1 (2026-10-19) · LA HUELLA DEL BUILD
+   Sin ella `sw.js` era idéntico en cada despliegue (el navegador no instalaba nunca otro y la
+   lista de arriba no se volvía a leer) y la página no tenía con qué saber que corre un build viejo.
+   ══════════════════════════════════════════════════════════ */
+describe('Build · la huella (version.json, <meta name="mcp-build"> y sw.js)', () => {
+  /** Un dist/ de juguete en una carpeta temporal, con las dos marcas como las deja Vite. */
+  function distDeJuguete(extra = {}) {
+    const dir = mkdtempSync(join(tmpdir(), 'mcp-huella-'));
+    const archivos = {
+      'index.html': '<html><head><meta name="mcp-build" content="sin-sellar" /></head><body></body></html>',
+      'sw.js': "const CACHE = 'mcp-v1';\nconst BUILD = 'sin-sellar';\n",
+      'assets/index-AAA.js': 'console.log(1)',
+      'registros/engine.js': 'var motor = 1;',
+      'precache-assets.json': '["./assets/index-AAA.js"]',
+      ...extra,
+    };
+    for (const [ruta, txt] of Object.entries(archivos)) {
+      mkdirSync(join(dir, ruta, '..'), { recursive: true });
+      writeFileSync(join(dir, ruta), txt);
+    }
+    return dir;
+  }
+  const leer = (dir, ruta) => readFileSync(join(dir, ruta), 'utf8');
+  const dirs = [];
+  afterEach(() => { while (dirs.length) rmSync(dirs.pop(), { recursive: true, force: true }); });
+  const nuevo = (extra) => { const d = distDeJuguete(extra); dirs.push(d); return d; };
+
+  it('🔴 el plugin está registrado y sella DESPUÉS de escribir dist/', async () => {
+    const { default: config } = await import('../vite.config.js');
+    const cfg = typeof config === 'function' ? config({ command: 'build', mode: 'production' }) : config;
+    const plugin = (cfg.plugins || []).find((p) => p && p.name === 'mcp-huella-build');
+    expect(plugin, 'el plugin no está en vite.config.js · plugins').toBeTruthy();
+    expect(plugin.apply).toBe('build');
+    expect(plugin.writeBundle && plugin.writeBundle.order).toBe('post');
+  });
+
+  it('🔴 la MISMA huella en los tres sitios, y en sw.js cambia el archivo', async () => {
+    const { sellarBuild } = await import('../vite.config.js');
+    const dir = nuevo();
+    const h = sellarBuild(dir);
+    expect(h).toMatch(/^[0-9a-f]{12}$/);
+    expect(JSON.parse(leer(dir, 'version.json'))).toEqual({ build: h });
+    expect(leer(dir, 'index.html')).toContain(`<meta name="mcp-build" content="${h}" />`);
+    expect(leer(dir, 'sw.js')).toBe(`const CACHE = 'mcp-v1';\nconst BUILD = '${h}';\n`);
+  });
+
+  it('🔴 el mismo build da la misma huella (un commit sólo de documentación no avisa a nadie)', async () => {
+    const { sellarBuild } = await import('../vite.config.js');
+    expect(sellarBuild(nuevo())).toBe(sellarBuild(nuevo()));
+  });
+
+  it('🔴 cambia con CUALQUIER archivo emitido, también con los que no llevan hash en el nombre (engine.js)', async () => {
+    const { sellarBuild } = await import('../vite.config.js');
+    const base = sellarBuild(nuevo());
+    expect(sellarBuild(nuevo({ 'registros/engine.js': 'var motor = 2;' })), 'engine.js').not.toBe(base);
+    expect(sellarBuild(nuevo({ 'assets/index-AAA.js': 'console.log(2)' })), 'un asset').not.toBe(base);
+    expect(sellarBuild(nuevo({ 'vendor/xlsx.full.min.js': 'x' })), 'un archivo nuevo').not.toBe(base);
+    expect(sellarBuild(nuevo({ 'vendor/a.js': 'x' })), 'el mismo contenido en otra ruta')
+      .not.toBe(sellarBuild(nuevo({ 'vendor/b.js': 'x' })));
+    expect(sellarBuild(nuevo({ 'index.html': '<html><head><title>otra</title><meta name="mcp-build" content="sin-sellar" /></head></html>' })), 'el HTML').not.toBe(base);
+  });
+
+  it('🔴 sin una de las marcas el build FALLA (sellar a medias sería volver a callar)', async () => {
+    const { sellarBuild } = await import('../vite.config.js');
+    expect(() => sellarBuild(nuevo({ 'sw.js': "const CACHE = 'mcp-v1';\n" }))).toThrow(/sw\.js/);
+    expect(() => sellarBuild(nuevo({ 'index.html': '<html></html>' }))).toThrow(/index\.html/);
+  });
+
+  it('🔴 public/sw.js e index.html llevan su marca UNA vez, tal como la busca el sello', () => {
+    expect(readFileSync(SW, 'utf8').split("const BUILD = 'sin-sellar';")).toHaveLength(2);
+    expect(readFileSync(join(process.cwd(), 'index.html'), 'utf8').split('<meta name="mcp-build" content="sin-sellar"')).toHaveLength(2);
   });
 });
