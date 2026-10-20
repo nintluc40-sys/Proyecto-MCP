@@ -17,11 +17,11 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
 - `src/views/<vista>/` — cada vista es un módulo con su `index.js` orquestador y su `.css` propio.
   - `src/views/planta/plano.js` es la **fuente única de la geometría**: la maqueta 3D (`escena.js`) y el
     plano de 📊 Análisis salen de él (módulos, salas y las áreas `OTHERS` del plano ARQ-A3 V4). Cada
-    área lleva su color en su propia fila, y la semilla aleatoria se repone después de las áreas. Así,
-    añadir o partir un área no recolorea ni mueve nada más; `plano.test.js` lo vigila, junto con que
-    ninguna área pise a otra. En `escena.js`, todo lo que el montaje cree ANTES del `return`
-    (recursos de la tarjeta, escuchas del documento o de la ventana) se apunta en `alFallar`, para
-    liberarlo si el montaje falla.
+    edificio lleva su color en su propia fila, y la semilla aleatoria se repone después de las áreas. Así,
+    añadir o partir un área no recolorea ni mueve nada más: `plano.test.js` vigila los colores y que
+    ninguna área pise a otra, y `escena.semilla.test.js`, la semilla. En `escena.js`, todo lo que el
+    montaje cree ANTES del `return` (recursos de la tarjeta, escuchas del documento o de la ventana) se
+    apunta en `alFallar`, para liberarlo si el montaje falla.
   ⚠ **Estas tres listas se comprueban con `ls src/core src/ui src/views`, no se leen de aquí.**
   Se dice porque caducaron las tres a la vez: `core/` llegó a nombrar 7 módulos de 11, `ui/` 2
   de 5, y el `README.md` listaba 8 vistas de 9. Es la misma lección que la cifra de `engine.js`
