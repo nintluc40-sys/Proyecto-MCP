@@ -25,6 +25,7 @@ const H = {};
 const avisos = [];
 let tanques = [];            // «Maduración Tanques» tal como la devuelve ?p=rows
 let tanquesFalla = false;
+let tanquesRecortada = false;   // B2 · ?p=rows de Tanques con «truncated» (el tope de 20 000 filas)
 
 beforeAll(async () => {
   if (typeof globalThis.localStorage === 'undefined') {
@@ -65,7 +66,8 @@ beforeAll(async () => {
     if (u.indexOf('p=rows') !== -1) {
       const hoja = decodeURIComponent((/[?&]sheet=([^&]*)/.exec(u) || [])[1] || '');
       if (hoja === 'Maduración Tanques' && tanquesFalla) return { ok: true, status: 200, text: async () => JSON.stringify({ ok: false, error: 'Error al leer la hoja' }) };
-      return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, rows: hoja === 'Maduración Tanques' ? tanques : [] }) };
+      const recorte = hoja === 'Maduración Tanques' && tanquesRecortada ? { truncated: true } : {};
+      return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, rows: hoja === 'Maduración Tanques' ? tanques : [], ...recorte }) };
     }
     throw new Error('fetch inesperado: ' + u);
   };
@@ -91,7 +93,7 @@ const DIA_TIPO = () => [
 beforeEach(() => {
   localStorage.clear();
   avisos.length = 0;
-  tanques = []; tanquesFalla = false;
+  tanques = []; tanquesFalla = false; tanquesRecortada = false;
   H.olvidarLectura();   // la lectura de 🔄 Ver vivos es de la SESIÓN: cada prueba empieza sin ninguna
   H.setVista(H.MAD_MOD, 'tanques');
   const fEl = document.getElementById('mad-tanques-fecha');
@@ -178,6 +180,17 @@ describe('Tanques · 📊 Partes del día en la ficha', () => {
     await H.madTanquesVerVivos();
     expect(texto()).toContain('No se pudo leer la hoja de Tanques');
     expect(texto()).not.toContain('Total del día');
+  }, 15000);
+
+  it('🔴 recortada (B2, 2026-10-19): la tabla sale y la nota dice que faltan los partes más ANTIGUOS', async () => {
+    // Desde la pauta 2.15 el GAS recortado se queda con las filas MÁS RECIENTES: decir que faltan éstas era decir lo contrario.
+    tanques = DIA_TIPO();
+    tanquesRecortada = true;
+    irASala('Sala 5');
+    await H.madTanquesVerVivos();
+    expect(texto()).toContain('Total del día · 3 parte(s)');
+    expect(texto()).toContain('La hoja de Tanques llegó RECORTADA: pueden faltar los partes más antiguos.');
+    expect(texto()).not.toContain('más recientes');
   }, 15000);
 
   it('🖨 PDF: la misma tabla, sin el botón; sin 🔄 Ver vivos, pide leer antes', async () => {

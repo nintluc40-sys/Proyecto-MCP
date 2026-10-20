@@ -14873,7 +14873,8 @@ function _reproConsultaHTML(){
   const parcial = _reproSheetsErr
     ? '<div style="padding:8px 10px;margin-bottom:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:11px;color:#854d0e">⚠ Datos incompletos — '+escapeHtml(_reproSheetsErr)+'. Lo mostrado puede quedarse corto; pulsa «Actualizar».</div>'
     : '';
-  // D11 · y un recorte no es un fallo: la hoja SÍ se leyó, pero sin sus filas más recientes.
+  // D11 · y un recorte no es un fallo: la hoja SÍ se leyó, pero sin sus filas más ANTIGUAS (el GAS se queda con las
+  // más recientes desde el 2026-10-19, pauta 2.15; antes se perdían éstas).
   const cortadas=[_REPRO_SHEETS.matriz, _REPRO_SHEETS.bitacora, _REPRO_SHEETS.transfer].filter(_reproRecortada);
   const recorte = cortadas.length
     ? '<div style="padding:8px 10px;margin-bottom:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:11px;color:#854d0e">⚠ Datos incompletos — '+cortadas.length+' hoja(s) llegaron RECORTADAS por el tope del servidor ('+escapeHtml(cortadas.join(", "))+'): faltan sus filas más antiguas, así que los totales, la matriz de desoves y la trazabilidad se quedan cortos.</div>'
@@ -16225,7 +16226,7 @@ function _madTqDiaPintar(){
   }
   const fecha = _madTqDiaFecha(), pend = _madTqDiaPendientes(fecha);
   const notas = '<span style="color:#64748b">Leído de la hoja a las ' + escapeHtml(_reproFmtTs(_madTqDiaLeido)) + "; 🔄 Ver vivos para volver a leer.</span>"
-    + (_madTqDiaAviso === "recortada" ? '<br><span style="color:#991b1b">⚠ La hoja de Tanques llegó RECORTADA: pueden faltar los partes más recientes.</span>' : "")
+    + (_madTqDiaAviso === "recortada" ? '<br><span style="color:#991b1b">⚠ La hoja de Tanques llegó RECORTADA: pueden faltar los partes más antiguos.</span>' : "")
     + (pend.n ? '<br><span style="color:#92400e">📱 Este dispositivo tiene ' + pend.n + " parte(s) de esta fecha sin enviar (" + escapeHtml(pend.salas.join(", ")) + "): no están en la tabla.</span>" : "");
   box.innerHTML = _madTqDiaHTML(madTqPartesDelDia(madLibroFuentes().tanques, fecha), notas, true);
 }
