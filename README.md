@@ -20,7 +20,9 @@ npm run lint       # ESLint
 
 > SheetJS (XLSX) y D3 se sirven desde `public/vendor/` —el mismo origen, con su `integrity`: SheetJS en
 > su etiqueta de `index.html` y D3 en `src/main.js` (`cargarD3`, que lo carga al abrir Biología Molecular;
-> desde el 2026-10-01)—, no desde un CDN (las versiones de npm están deprecadas/desactualizadas). Chart.js sí
+> desde el 2026-10-01)—, no desde un CDN (las versiones de npm están deprecadas/desactualizadas). El Worker de
+> lectura del libro (`sheets.worker.js`) carga ese mismo archivo con `importScripts`, que no admite `integrity`: es
+> del mismo origen que la página, cuya etiqueta sí lo lleva (2026-10-19). Chart.js sí
 > es dependencia de npm. El gemelo `index (8)` no tiene servidor del que pedirlo: lleva SheetJS
 > **incrustado**, byte a byte el de `public/vendor/` (lo vigila `verificar-xlsx-index8`).
 
@@ -304,7 +306,16 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   compilar sus sombreadores; desde el 2026-10-16 (plan A1) se arma DETRÁS de una cortina con ese % al centro (también en el
   celular) y aparece entera, con sus sombras, en un fundido: ver las piezas salir se veía como parpadeo. La maqueta baja su nitidez cuando va lenta mientras se mueve, hasta la de la pantalla normal (1×);
   con la cámara quieta 5 s vuelve a la completa, y al moverla de nuevo pasa de golpe a la que aguantó el último movimiento
-  (plan A3, 2026-10-18: antes no la recuperaba nunca). Con datos a la vista, el refresco AUTOMÁTICO no la repinta sola: sale «Hay datos nuevos (hh:mm) ·
+  (plan A3, 2026-10-18: antes no la recuperaba nunca). Si el equipo le quita la memoria gráfica (contexto WebGL
+  perdido), lo dice encima de la maqueta y, cuando el navegador la devuelve, rehace los reflejos y las sombras y sigue;
+  un armado que falla libera lo que había creado, también el del QR de acceso (pauta 3.17, 2026-10-19).
+  Desde el 2026-10-19 (**Plan B**) la maqueta y el plano de 📊 Análisis llevan las áreas del plano ARQ-A3 V4 con su
+  nombre: los reservorios, cada uno en su compartimento; el frente en sus 10 recintos; el R.A.S. de Maduración con su
+  cuarto de control; las dos naves de servicio, y entre las salas, Eclosión 1 (14 tanques), las salas de eclosión 2 y 3
+  (32) y Embalaje. Los tanques de eclosión no tienen datos: en la maqueta son tanques con agua, y en el plano, círculos
+  grises que no se tocan. Todas salen de `OTHERS` (`plano.js`), cada edificio con su color en su fila, y la semilla
+  aleatoria se repone después de las áreas: añadir o partir una no recolorea ni mueve nada más (lo vigilan
+  `plano.test.js` y `escena.semilla.test.js`). Con datos a la vista, el refresco AUTOMÁTICO no la repinta sola: sale «Hay datos nuevos (hh:mm) ·
   🔄 Actualizar» y se recalcula al tocarlo (o al cambiar de mes), con el desplazamiento y lo abierto en su sitio; al
   abrir con el libro guardado del equipo, su puesta al día se aplica sola si la vista aún no se usó (2026-10-07). Lo
   pedido con ⟳ o la píldora se pinta ya, igual que «Actualizar» (A1, 2026-10-11).
@@ -662,6 +673,15 @@ Dos consecuencias que conviene tener presentes al desplegar:
   `cache: 'no-cache'`: revalida con el ETag (304) lo que la página acaba de bajar en vez de
   repetirlo (medido en local, sin compresión, a 40 KB/s: 2,9 MB en vez de 5,2), y no vuelve a
   pedir los `assets/` que ya guardó un intento anterior.
+- **Una pestaña o una PWA abierta se entera de la versión nueva** (B1, 2026-10-19). Antes seguía con el código con
+  el que se abrió hasta recargar, y una PWA en el celular casi nunca se recarga. El build sella su huella en tres sitios
+  (`vite.config.js`, plugin `mcp-huella-build`): la `<meta name="mcp-build">` de `index.html`, la línea `BUILD` de
+  `sw.js` —así `sw.js` cambia con cada build y el navegador instala el nuevo, con sus bloques— y `version.json`. La
+  página (`ui/versionNueva.js`) pregunta por `version.json` al volver a primer plano, al recuperar la red y cada 30 min;
+  si es otro build, una franja lo dice con «Recargar» y ×. **No recarga sola**: Registros puede tener algo a medio
+  escribir. ⚠ Si falta la `<meta>` o la línea `BUILD`, `vite build` falla a propósito. Dos builds del mismo código
+  salen idénticos byte a byte. `index (8)` no tiene nada de esto: una pestaña abierta no se entera de un reparto nuevo
+  (anotado, sin asignar).
 
 ## Flujo de datos (Google Sheets)
 
@@ -971,6 +991,13 @@ mortalidad, un alta, un traslado, elegir la hembra— da **un solo aviso** al te
 lo que requiere atención (naranja; rojo si no se registró nada). Lo que va pasando se lee en la línea junto a
 su botón, que se borra al terminar, y sus dos envíos (MATRIZ y Bitácora o Transferencias) no avisan por su
 cuenta (`postPayload` con `sinAvisos`): se resumen en ese aviso. El resto de fichas avisa como siempre.
+
+Y **un mismo envío no se escribe dos veces** (B5, 2026-10-19). Cada envío lleva su `reqId`, y el GAS lo marca 10 min
+después de escribirlo: un reintento con esa marca contesta «ok» sin escribir. Pero la marca se miraba ANTES de esperar
+el candado, y un reintento que llegaba mientras el primero seguía escribiendo (el cliente corta a los 40 s) entraba
+después y escribía otra vez: así salieron las 945 parejas repetidas de `Control_Tanque` medidas ese día. Ahora
+`doPost` vuelve a mirar la marca con el candado tomado y compromete lo escrito (`SpreadsheetApp.flush()`) antes de
+soltarlo. Las parejas que ya están en la hoja son datos: no las toca.
 
 ### 5 · La LECTURA de Registros: por la exportación de Google, con el GAS de respaldo
 
