@@ -685,8 +685,8 @@ Dos consecuencias que conviene tener presentes al desplegar:
   página (`ui/versionNueva.js`) pregunta por `version.json` al volver a primer plano, al recuperar la red y cada 30 min;
   si es otro build, una franja lo dice con «Recargar» y ×. **No recarga sola**: Registros puede tener algo a medio
   escribir. ⚠ Si falta la `<meta>` o la línea `BUILD`, `vite build` falla a propósito. Dos builds del mismo código
-  salen idénticos byte a byte. `index (8)` no tiene nada de esto: una pestaña abierta no se entera de un reparto nuevo
-  (anotado, sin asignar).
+  salen idénticos byte a byte. `index (8)` no tiene nada de esto: una pestaña abierta no se entera de un reparto nuevo,
+  y se queda así (decisión del usuario, 2026-10-22).
 
 ## Flujo de datos (Google Sheets)
 
@@ -999,8 +999,9 @@ lo que requiere atención (naranja; rojo si no se registró nada). Lo que va pas
 su botón, que se borra al terminar, y sus dos envíos (MATRIZ y Bitácora o Transferencias) no avisan por su
 cuenta (`postPayload` con `sinAvisos`): se resumen en ese aviso. El resto de fichas avisa como siempre.
 
-Y **un mismo envío no se escribe dos veces** (B5, 2026-10-19). Cada envío lleva su `reqId`, y el GAS lo marca 10 min
-después de escribirlo: un reintento con esa marca contesta «ok» sin escribir. Pero la marca se miraba ANTES de esperar
+Y **un mismo envío no se escribe dos veces** (B5, 2026-10-19). Cada envío lleva su `reqId`, y el GAS lo marca al
+escribirlo, y la marca dura 10 min: un reintento con esa marca contesta «ok» sin escribir.
+Pero la marca se miraba ANTES de esperar
 el candado, y un reintento que llegaba mientras el primero seguía escribiendo (el cliente corta a los 40 s) entraba
 después y escribía otra vez: así salieron las 945 parejas repetidas de `Control_Tanque` medidas ese día. Ahora
 `doPost` vuelve a mirar la marca con el candado tomado y compromete lo escrito (`SpreadsheetApp.flush()`) antes de
