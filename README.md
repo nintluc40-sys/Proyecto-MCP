@@ -212,6 +212,11 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     rayados, y dos códigos son su propia categoría (la pareja). Un dato IMPOSIBLE de los partes —más cópulas
     que hembras, o cópulas un día sin hembras en el libro— se enseña MARCADO: no se esconde ni se corrige.
     En tema claro el número de cada tanque va oscuro (≥ 4,5:1); en tema oscuro, blanco.
+    🔑 **Los umbrales** (`operativo.umbrales.js`): cada cifra con su fuente; la del laboratorio manda en cuanto
+    existe. Desde el 2026-10-22 la mortalidad del día y las dos cargas llevan la del laboratorio, el P90 de su
+    propio registro (≤ 2,6 % por día, ≤ 640 g/m² y ≤ 1,8 kg/m³), con la publicada al lado (0,27 % por día, de Ren et
+    al. 2020; 300 g/m² y 0,375 kg/m³, de AQUACOP 1979). Su semáforo va en la tarjeta de cada lote en 🏠 Salas
+    (las cargas, por su tanque MÁS cargado, no por el promedio) y en la tabla de tanques del detalle de la sala.
     📈 **Los gráficos** (0q, 2026-09-27): ejes de 12 px en el color de texto del tema, barras sólidas, líneas
     rectas; en los de días, una raya marca el día y el globo va arriba a su lado (`arribaJunto`, en
     `core/charts.js`), y con «reducir movimiento» no se animan. Todos pasan por `graficoOp` (o

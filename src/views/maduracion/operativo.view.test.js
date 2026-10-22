@@ -429,6 +429,39 @@ describe('Maduración · operativo · 0f · 6 · 🏠 Salas con lo del Saldo por
     expect(usadas.has('mop-sc-saldo') && usadas.has('mop-sc-lote'), 'control').toBe(true);
     expect([...usadas].filter((c) => !new RegExp('\\.' + c + '(?![\\w-])').test(css))).toEqual([]);
   });
+
+  /* 2026-10-22 (usuario) · los semáforos de la mortalidad del día y de las cargas, con el umbral del laboratorio en el
+     globo. QH en la Sala 1 (13,14 m² y 5,5 t por tanque), con 40 g ♂ y 50 g ♀ y 15 machos muertos el 18/09: el tanque 2
+     (150♂ 150♀) pasa de las dos cargas, y el 3 (100♂ 100♀, 685 g/m² y 1,64 kg/m³) sólo de la métrica. QB (Sala 4)
+     queda dentro de todo; QD (Sala 2) no tiene pesos. */
+  const PLANTA_U = [...PLANTA_S,
+    ING('01/08/2026', 'QH', 'Sala 1', 2, 150, 150), ING('01/08/2026', 'QH', 'Sala 1', 3, 100, 100),
+    TQ('18/09/2026', 'Sala 1', 2, { 'Peso promedio machos (g)': '40', 'Peso promedio hembras (g)': '50', 'Machos muertos': '15' }),
+  ];
+  const puntos = (el) => [...el.querySelectorAll('.mop-dot')].map((i) => [i.classList.contains('is-alto') ? 'alto' : i.classList.contains('is-ok') ? 'ok' : '?', i.title]);
+
+  it('🔴 la tarjeta: un punto junto a la mortalidad del día y a cada carga, con el umbral del laboratorio', async () => {
+    await montar(PLANTA_U);
+    abrirSalas();
+    const qh = puntos(bloque('Sala 1', 'QH'));
+    expect(qh.map((p) => p[0])).toEqual(['alto', 'alto', 'alto']);
+    expect(qh[0][1]).toContain('≤ 2,6 % por día, P90 de su registro (laboratorio)');
+    expect(qh[1][1]).toContain('≤ 1,8 kg/m³');
+    expect(qh[2][1]).toContain('≤ 640 g/m²');
+    expect(puntos(bloque('Sala 4', 'QB')).map((p) => p[0])).toEqual(['ok', 'ok', 'ok']);
+    expect(puntos(bloque('Sala 2', 'QD')).filter((p) => /m²|m³/.test(p[1])), 'sin pesos, las cargas no llevan punto').toEqual([]);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('🔴 la tabla de tanques del detalle: el punto de carga es el de CADA tanque', async () => {
+    await montar(PLANTA_U);
+    abrirSalas();
+    click(root.querySelector('[data-mop-sala="Sala 1"]'));
+    const fila = (n) => [...root.querySelectorAll('.mc-table-sm tbody tr')].find((tr) => tr.querySelector('td b')?.textContent === String(n));
+    const cargas = (n) => puntos(fila(n)).filter((p) => /m²|m³/.test(p[1]) && !/animales/.test(p[1])).map((p) => p[0]);
+    expect(cargas(2)).toEqual(['alto', 'alto']);
+    expect(cargas(3), 'cada columna con SU carga').toEqual(['alto', 'ok']);
+  });
 });
 
 describe('Maduración · operativo · 🏠 Salas', () => {

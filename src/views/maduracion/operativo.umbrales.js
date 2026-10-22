@@ -10,6 +10,12 @@
    ⚠ No son las validaciones de captura (los 40 °C de la Sala, los 60 ‰ y 40 °C de la revisión de nauplios): ésas dicen
    «esto no puede ser un dato» y bloquean o avisan al teclear; éstos dicen «esto está fuera de lo recomendable».
    Fuentes consultadas el 2026-09-19 (las cifras de Albalat et al. citan el manual de la FAO de 2003).
+
+   2026-10-22 (usuario): «deja los umbrales en correlación a nivel bibliográfico y en base al manejo del laboratorio».
+   Los tres que esperaban (la mortalidad del día y las dos cargas) llevan ya su cifra publicada y la del LABORATORIO, que
+   es el percentil 90 de su propio registro (medido ese día en la hoja: elegido por el usuario frente al P75 y a la
+   bibliografía sola). La bibliográfica queda al lado como referencia: el laboratorio trabaja unas tres veces por encima
+   de ella y, sola, pondría en rojo casi todos los días y todos los tanques.
    ============================================================ */
 import { MAD_ALIM_PCT_MIN, MAD_ALIM_PCT_MAX } from '../registros/lib/ficha-maduracion-alimentacion.schema.js';
 
@@ -18,12 +24,12 @@ export const FUENTES = {
   ALBALAT2022: 'Albalat, A., Zacarias, S., Coates, C. J., Neil, D. M. y Rey Planellas, S. (2022). Welfare in farmed decapod crustaceans, with particular reference to Penaeus vannamei. Frontiers in Marine Science 9: 886024. doi:10.3389/fmars.2022.886024 (cita a FAO, 2003).',
   FAO_FICHA: 'FAO. Cultured Aquatic Species Information Programme — Penaeus vannamei (Boone, 1931). FAO Fisheries and Aquaculture Department.',
   REN2020: 'Ren, S., Mather, P. B., Tang, B. y Hurwood, D. A. (2020). Comparison of reproductive performance of domesticated Litopenaeus vannamei females reared in recirculating tanks and earthen ponds. Frontiers in Marine Science 7: 560.',
+  AQUACOP1979: 'AQUACOP (1979). Penaeid reared brood stock: closing the cycle of P. monodon, P. stylirostris and P. vannamei. Proceedings of the World Mariculture Society 10: 445–452.',
   FICHA_ALIMENTACION: 'Laboratorio: rango de la ficha 🍤 Alimentación del registro (MAD_ALIM_PCT_MIN / MAD_ALIM_PCT_MAX).',
   LAB_ALCALINIDAD: 'Laboratorio: rango de alcalinidad indicado por el usuario el 2026-09-26 (120–150 mg/L CaCO₃), el mismo que usa 🧫 Calidad de Agua.',
   USUARIO: 'Usuario: decisión del 2026-09-25 para las alertas de 📉 Tendencias y ⏳ Permanencia del tablero (UMBRALES_DE_AVISO).',
+  LAB_MANEJO: 'Laboratorio: percentil 90 de su propio registro, medido el 2026-10-22 en la hoja (la mortalidad del día por lote y día; las cargas, en los tanques con peso). Decisión del usuario del 2026-10-22.',
 };
-
-const PENDIENTE = 'Sin fuente bibliográfica fiable: pendiente del valor del laboratorio.';
 
 /* `min`/`max` vacíos (null) = ese lado no se comprueba. `referencia` es el dato publicado tal cual, para enseñarlo. */
 export const UMBRALES = {
@@ -49,9 +55,19 @@ export const UMBRALES = {
     bibliografia: { min: 195300, max: null, referencia: '195 300–198 500 de media por desove (recuento a la eclosión; el laboratorio cuenta N5)', fuente: ['REN2020'] }, laboratorio: null },
   fertilidad: { nombre: 'Fertilidad (eclosión)', unidad: '%',
     bibliografia: { min: 83, max: null, referencia: 'tasa de eclosión por desove 0,83–0,85', fuente: ['REN2020'] }, laboratorio: null },
-  mortalidadDiaria: { nombre: 'Mortalidad del día', unidad: '%', bibliografia: null, nota: PENDIENTE, laboratorio: null },
-  cargaMetrica: { nombre: 'Carga métrica', unidad: 'g/m²', bibliografia: null, nota: PENDIENTE, laboratorio: null },
-  cargaVolumetrica: { nombre: 'Carga volumétrica', unidad: 'kg/m³', bibliografia: null, nota: PENDIENTE, laboratorio: null },
+  /* Ren et al.: 92–94 % de las hembras sobreviven 30 días (el segundo mes tras la ablación), o sea 6–8 % al mes; el 8 %
+     repartido en 30 días da 0,27 % por día. AQUACOP (1979) es más estricto: un 10 % de pérdidas en tres meses. */
+  mortalidadDiaria: { nombre: 'Mortalidad del día', unidad: '%',
+    bibliografia: { min: null, max: 0.27, referencia: '≤ 0,27 % por día (92–94 % de supervivencia de las hembras en 30 días)', fuente: ['REN2020'] },
+    laboratorio: { min: null, max: 2.6, referencia: '≤ 2,6 % por día, P90 de su registro', fuente: ['LAB_MANEJO'] } },
+  /* AQUACOP (1979): «for biomass above 300 g/m², maturations are rare and spawning does not occur», en tanques de 12 m²
+     con 80 cm de agua; la volumétrica es esa misma cifra en esa profundidad (0,3 kg ÷ 0,8 m³). */
+  cargaMetrica: { nombre: 'Carga métrica', unidad: 'g/m²',
+    bibliografia: { min: null, max: 300, referencia: '≤ 300 g/m² (por encima, las maduraciones son raras y no hay desove)', fuente: ['AQUACOP1979'] },
+    laboratorio: { min: null, max: 640, referencia: '≤ 640 g/m², P90 de su registro', fuente: ['LAB_MANEJO'] } },
+  cargaVolumetrica: { nombre: 'Carga volumétrica', unidad: 'kg/m³',
+    bibliografia: { min: null, max: 0.375, referencia: '≤ 0,375 kg/m³ (300 g/m² en tanques con 80 cm de agua)', fuente: ['AQUACOP1979'] },
+    laboratorio: { min: null, max: 1.8, referencia: '≤ 1,8 kg/m³, P90 de su registro', fuente: ['LAB_MANEJO'] } },
   alimentoPctToma: { nombre: 'Alimento por toma', unidad: '% de biomasa', bibliografia: null,
     laboratorio: { min: MAD_ALIM_PCT_MIN, max: MAD_ALIM_PCT_MAX, referencia: MAD_ALIM_PCT_MIN + '–' + MAD_ALIM_PCT_MAX + ' %', fuente: ['FICHA_ALIMENTACION'] } },
 };

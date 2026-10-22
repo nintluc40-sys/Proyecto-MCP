@@ -31,14 +31,27 @@ describe('Maduración · umbrales · de dónde sale cada cifra', () => {
     }
   });
 
-  it('sin fuente fiable no hay cifra: la mortalidad del día y las cargas esperan al laboratorio', () => {
-    for (const id of ['mortalidadDiaria', 'cargaMetrica', 'cargaVolumetrica']) {
-      expect(UMBRALES[id].bibliografia, id).toBe(null);
-      expect(UMBRALES[id].laboratorio, id).toBe(null);
-      expect(UMBRALES[id].nota, id).toMatch(/pendiente del valor del laboratorio/);
-      expect(umbralVigente(id), id).toBe(null);
-      expect(evaluar(id, 5), id).toBe('');
+  /* 2026-10-22 (usuario) · la mortalidad del día y las cargas: la cifra publicada y la del laboratorio (P90 de su
+     registro), y manda la del laboratorio. Sólo tienen tope: no hay mínimo. */
+  it('la mortalidad del día y las cargas: bibliográfica al lado, MANDA la del laboratorio', () => {
+    const esperado = {
+      mortalidadDiaria: { bib: 0.27, fuente: 'REN2020', lab: 2.6 },
+      cargaMetrica: { bib: 300, fuente: 'AQUACOP1979', lab: 640 },
+      cargaVolumetrica: { bib: 0.375, fuente: 'AQUACOP1979', lab: 1.8 },
+    };
+    for (const [id, e] of Object.entries(esperado)) {
+      expect(UMBRALES[id].bibliografia, id).toMatchObject({ min: null, max: e.bib, fuente: [e.fuente] });
+      expect(UMBRALES[id].laboratorio, id).toMatchObject({ min: null, max: e.lab, fuente: ['LAB_MANEJO'] });
+      expect(umbralVigente(id), id).toMatchObject({ min: null, max: e.lab, origen: 'laboratorio' });
+      // el laboratorio trabaja por encima de lo publicado: entre las dos cifras es «ok», no «alto»
+      expect(e.lab > e.bib, id).toBe(true);
+      expect(evaluar(id, (e.bib + e.lab) / 2), id).toBe('ok');
+      expect(evaluar(id, e.lab), id + ' el tope cuenta como dentro').toBe('ok');
+      expect(evaluar(id, e.lab * 1.01), id).toBe('alto');
+      expect(evaluar(id, 0), id + ' sin mínimo').toBe('ok');
     }
+    expect(FUENTES.LAB_MANEJO).toMatch(/percentil 90/);
+    expect(FUENTES.AQUACOP1979).toMatch(/^AQUACOP \(1979\)/);
   });
 
   it('el alimento por toma usa el rango de la ficha de Alimentación, que ya es del laboratorio', () => {

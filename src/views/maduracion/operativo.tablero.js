@@ -821,15 +821,23 @@ function saldoDeLoteEnSala(L, sala, l) {
     return v.length ? { prom: r2(v.reduce((s, x) => s + x, 0) / v.length), min: Math.min(...v), max: Math.max(...v), n: v.length }
       : { prom: '', min: '', max: '', n: 0 };
   };
-  if (!L) return { mortAcum: '', mortDia: '', fechaDia: '', variasSalas: false, cargaMetrica: resume([]), cargaVolumetrica: resume([]), biomasa: '' };
+  if (!L) {
+    return { mortAcum: '', mortDia: '', mortDiaEstado: '', fechaDia: '', variasSalas: false, cargaMetrica: resume([]), cargaMetricaEstado: '',
+      cargaVolumetrica: resume([]), cargaVolumetricaEstado: '', biomasa: '' };
+  }
   const tanques = (L.tanques || []).filter((t) => t.sala === sala);
   const pH = (L.pesoHembras || {}).valor;
   const pM = (L.pesoMachos || {}).valor;
+  const mortDia = (L.tasaMortalidadDia || {}).total;
+  /* 2026-10-22 (usuario) · los semáforos de la mortalidad del día y de las cargas. El de las cargas mira CADA tanque, no
+     el promedio: un tanque pasado de carga avisa aunque el promedio de la sala quede dentro. */
   return {
-    mortAcum: (L.tasaMortalidad || {}).total, mortDia: (L.tasaMortalidadDia || {}).total, fechaDia: L.fechaDia || '',
+    mortAcum: (L.tasaMortalidad || {}).total, mortDia, mortDiaEstado: evaluar('mortalidadDiaria', mortDia), fechaDia: L.fechaDia || '',
     variasSalas: (L.dias || []).length > 1,
     cargaMetrica: resume(tanques.map((t) => t.cargaMetrica)),
+    cargaMetricaEstado: evaluarLecturas('cargaMetrica', tanques.map((t) => t.cargaMetrica)),
     cargaVolumetrica: resume(tanques.map((t) => t.cargaVolumetrica)),
+    cargaVolumetricaEstado: evaluarLecturas('cargaVolumetrica', tanques.map((t) => t.cargaVolumetrica)),
     biomasa: (pH === '' || pH === undefined) && (pM === '' || pM === undefined) ? '' : r2((l.hembras * (pH || 0) + l.machos * (pM || 0)) / 1000),
   };
 }
@@ -952,9 +960,12 @@ export function detalleDeSala(M, sala, periodo, F, partes) {
     densidad: umbralVigente('densidad'),
     tanques: mapa.tanques.map((c) => {
       const ultimo = partesSala.filter((x) => x.tanque === c.tanque).pop() || null;
+      const cs = cargas.get(sala + '|' + c.tanque) || [];
       return {
         ...c,
-        cargas: cargas.get(sala + '|' + c.tanque) || [],
+        cargas: cs,
+        cargaMetricaEstado: evaluarLecturas('cargaMetrica', cs.map((x) => x.cargaMetrica)),
+        cargaVolumetricaEstado: evaluarLecturas('cargaVolumetrica', cs.map((x) => x.cargaVolumetrica)),
         peso: { machos: ultimoCon(c.tanque, 'pesoMachos'), hembras: ultimoCon(c.tanque, 'pesoHembras') },
         // 3 (2026-10-01, usuario) · `hora`: la del último parte de ese día ('' si ninguno la trae).
         obs: ultimo ? { fecha: ultimo.fecha, hora: txt(ultimo.ultimaHora), sanitarias: ultimo.obsSanitarias, operativas: ultimo.obsOperativas }

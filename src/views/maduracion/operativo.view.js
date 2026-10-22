@@ -212,7 +212,7 @@ const dm = (iso) => (esIso(iso) ? iso.slice(8, 10) + '/' + iso.slice(5, 7) : '�
 const dma = (iso) => (esIso(iso) ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '—');
 const porNombre = (a, b) => String(a).localeCompare(String(b), 'es', { numeric: true });
 const definicion = (id) => (INDICADORES.find((x) => x.id === id) || {}).definicion || '';
-const CITA = { FAO2003: 'FAO 2003', ALBALAT2022: 'Albalat et al. 2022', FAO_FICHA: 'ficha FAO de P. vannamei', REN2020: 'Ren et al. 2020', FICHA_ALIMENTACION: 'ficha de Alimentación' };
+const CITA = { FAO2003: 'FAO 2003', ALBALAT2022: 'Albalat et al. 2022', FAO_FICHA: 'ficha FAO de P. vannamei', REN2020: 'Ren et al. 2020', AQUACOP1979: 'AQUACOP 1979', FICHA_ALIMENTACION: 'ficha de Alimentación' };
 /** El umbral vigente en palabras: su rango y de dónde sale. */
 function refUmbral(id) {
   const u = umbralVigente(id);
@@ -1674,8 +1674,9 @@ function saldoLotesHTML(lotes) {
     const s = l.saldo;
     return `<li class="mop-sc-lote" data-mop-sc-lote="${esc(l.lote)}">
       <div class="mop-sc-lote-h"><b>${esc(l.lote)}</b> · <span data-v="vivos">${nf(l.hembras)} ♀ / ${nf(l.machos)} ♂</span> · <span data-v="dias">${(diasTxt(l).trim()) || '—'}</span></div>
-      <div title="${esc(s.fechaDia ? 'último día con parte: ' + dm(s.fechaDia) : 'sin partes')}">Mort. <span data-v="mort">${pc(s.mortAcum)} · día ${pc(s.mortDia)}${s.variasSalas ? ' *' : ''}</span></div>
-      <div>Carga <span data-v="cvol">${carga(s.cargaVolumetrica, 'kg/m³')}</span> · <span data-v="cmet">${carga(s.cargaMetrica, 'g/m²')}</span>
+      <div title="${esc(s.fechaDia ? 'último día con parte: ' + dm(s.fechaDia) : 'sin partes')}">Mort. <span data-v="mort">${pc(s.mortAcum)} · día ${pc(s.mortDia)}${s.variasSalas ? ' *' : ''}</span> ${dot(s.mortDiaEstado, refUmbral('mortalidadDiaria'))}</div>
+      <div>Carga <span data-v="cvol">${carga(s.cargaVolumetrica, 'kg/m³')}</span> ${dot(s.cargaVolumetricaEstado, refUmbral('cargaVolumetrica'))}
+        · <span data-v="cmet">${carga(s.cargaMetrica, 'g/m²')}</span> ${dot(s.cargaMetricaEstado, refUmbral('cargaMetrica'))}
         · Biomasa <span data-v="bio">${vacio(s.biomasa) ? '—' : nf(s.biomasa, 2) + ' kg'}</span></div></li>`;
   }).join('');
   const nota = lotes.some((l) => l.saldo.variasSalas) ? '<p class="mop-nota">* Mortalidad del lote entero: también está en otra sala (el libro la lleva por lote).</p>' : '';
@@ -1767,7 +1768,8 @@ function detalleHTML(d, p, F) {
       <td class="r">${nf(t.hembras)}</td><td class="r">${nf(t.machos)}</td>
       <td class="r">${nf(t.hm, 2)} ${dot(t.hmEstado, refUmbral('proporcionHM'))}</td>
       <td class="r">${t.densidad === '' ? '—' : nf(t.densidad, 2)} ${dot(t.densidadEstado, refUmbral('densidad'))}</td>
-      <td class="r">${cargaTxt(t.cargas, 'cargaMetrica')}</td><td class="r">${cargaTxt(t.cargas, 'cargaVolumetrica')}</td>
+      <td class="r">${cargaTxt(t.cargas, 'cargaMetrica')} ${dot(t.cargaMetricaEstado, refUmbral('cargaMetrica'))}</td>
+      <td class="r">${cargaTxt(t.cargas, 'cargaVolumetrica')} ${dot(t.cargaVolumetricaEstado, refUmbral('cargaVolumetrica'))}</td>
       <td>♂ ${pesoTxt(t.peso.machos)}<br>♀ ${pesoTxt(t.peso.hembras)}</td>
       <td>${obsTxt(t.obs)}</td></tr>`).join('');
   const tabla = ocupados.length

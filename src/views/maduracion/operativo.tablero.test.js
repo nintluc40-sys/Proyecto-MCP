@@ -27,6 +27,7 @@ import { MAD_OP_HOJAS, MAD_OP_ORIGEN } from './operativo.fuentes.js';
 import { sumarDias } from '../registros/lib/mad-libro.js';
 import { RESUMEN_TEMPS, RESUMEN_OXIGENOS } from '../registros/lib/mad-resumen.js';
 import { MAD_TANQUES_POR_SALA } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
+import { UMBRALES } from './operativo.umbrales.js';
 
 /* Filas como llegan al store (origen «Maduracion», con la firma de su hoja). */
 const O = MAD_OP_ORIGEN;
@@ -542,6 +543,47 @@ describe('Maduración · tablero · las salas con lo del Saldo, por lote (0f · 
     expect(s.biomasa).toBe('');
     expect(s.cargaMetrica).toEqual({ prom: '', min: '', max: '', n: 0 });
     expect(s.cargaVolumetrica).toEqual({ prom: '', min: '', max: '', n: 0 });
+    // y sin cifra no hay semáforo
+    expect([s.cargaMetricaEstado, s.cargaVolumetricaEstado]).toEqual(['', '']);
+  });
+
+  /* 2026-10-22 (usuario) · los semáforos de la mortalidad del día y de las cargas, con el umbral que MANDA (el del
+     laboratorio). QP, en la Sala 1 (13,14 m² y 5,5 t por tanque): el tanque 2 muy cargado (150♂ 150♀, 40 g y 50 g, con 10
+     machos muertos el 18/09) y el 3 casi vacío (5♂ 5♀). El PROMEDIO de los dos queda dentro; el tanque 2, no. */
+  const PQ = [...PLANTA,
+    ING('2026-08-01', 'QP', 'Sala 1', 2, 150, 150), ING('2026-08-01', 'QP', 'Sala 1', 3, 5, 5),
+    TQ('2026-09-18', 'Sala 1', 2, { 'Peso promedio machos (g)': 40, 'Peso promedio hembras (g)': 50, 'Machos muertos': 10 }),
+  ];
+  const MQ = modeloOperativo(PQ, { hoy: FOTO, fecha: FOTO });
+  const QP = tarjetasDeSalas(MQ, SIN).find((t) => t.sala === 'Sala 1').lotes.find((l) => l.lote === 'QP').saldo;
+  const tope = (id) => UMBRALES[id].laboratorio.max;
+
+  it('🔴 la mortalidad del día: manda el umbral del laboratorio, no el publicado', () => {
+    const s = loteEn('Sala 1', 'QX').saldo;
+    expect(s.mortDia > UMBRALES.mortalidadDiaria.bibliografia.max && s.mortDia <= tope('mortalidadDiaria'),
+      `control: ${s.mortDia} % pasa del publicado y no del laboratorio`).toBe(true);
+    expect(s.mortDiaEstado).toBe('ok');
+    expect(QP.mortDia > tope('mortalidadDiaria'), `control: ${QP.mortDia} %`).toBe(true);
+    expect(QP.mortDiaEstado).toBe('alto');
+  });
+
+  it('🔴 las cargas avisan por el tanque MÁS cargado, aunque el promedio quede dentro', () => {
+    expect(QP.cargaMetrica.n).toBe(2);
+    expect(QP.cargaMetrica.prom <= tope('cargaMetrica') && QP.cargaMetrica.max > tope('cargaMetrica'),
+      `control: promedio ${QP.cargaMetrica.prom}, máximo ${QP.cargaMetrica.max}`).toBe(true);
+    expect(QP.cargaVolumetrica.prom <= tope('cargaVolumetrica') && QP.cargaVolumetrica.max > tope('cargaVolumetrica'),
+      `control: promedio ${QP.cargaVolumetrica.prom}, máximo ${QP.cargaVolumetrica.max}`).toBe(true);
+    expect([QP.cargaMetricaEstado, QP.cargaVolumetricaEstado]).toEqual(['alto', 'alto']);
+    const s = loteEn('Sala 1', 'QX').saldo;
+    expect([s.cargaMetricaEstado, s.cargaVolumetricaEstado]).toEqual(['ok', 'ok']);
+  });
+
+  it('en el detalle de la sala, cada tanque lleva su semáforo de carga', () => {
+    const d = detalleDeSala(MQ, 'Sala 1', periodoDe('7d', FOTO, MQ.fuentes), SIN, diasDeTanque(MQ.fuentes.tanques));
+    const est = (n) => { const t = d.tanques.find((x) => x.tanque === n); return [t.cargaMetricaEstado, t.cargaVolumetricaEstado]; };
+    expect(est(2)).toEqual(['alto', 'alto']);
+    expect(est(3)).toEqual(['ok', 'ok']);
+    expect(est(1), 'QA y QC sin ningún peso: sin cifra no hay semáforo').toEqual(['', '']);
   });
 });
 
