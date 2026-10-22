@@ -172,6 +172,21 @@ describe('Maduración · operativo · etapa A · lo que se filtra por FILA es lo
     expect(t.find((x) => x.lote === 'QB').pendientes, 'el desove de QB espera su N5').toBe(1);
   });
 
+  /* Pauta 11 (2026-10-22, usuario) · con un código elegido, la fila de cada lote sumaba el lote ENTERO (todos sus códigos):
+     la tabla no cuadraba con la tarjeta. QA tiene CA y la pareja CA/CC; con CC sólo entra la pareja. */
+  it('🔴 con un código, cada lote suma sólo sus desoves de ese código (cuadra con la tarjeta), y sus destinos', () => {
+    const CC = F({ codigo: ['CC'] });
+    const DESP = ['Fuentes del Mar', 'Mar Bravo M01', 'Mar Bravo M02', 'Mar Bravo M03'];
+    const des = DESOVES.map((r, i) => ({ ...r, Despacho: DESP[i] }));
+    const t = tablaDeReproduccion({ fuentes: { desoves: des }, fecha: FOTO }, p, CC);
+    expect(t.map((x) => [x.lote, x.desoves, x.n5, x.destinos])).toEqual([
+      ['QA', 1, 80000, ['Mar Bravo M03']],                    // sólo la pareja CA/CC: no los 3 de CA ni su destino
+      ['QC', 5, 400000, ['Mar Bravo M02']],
+    ]);
+    expect(t.reduce((a, x) => a + x.desoves, 0)).toBe(kpiReproduccion(des, p, CC).desoves);
+    expect(tablaDeReproduccion({ fuentes: { desoves: des }, fecha: FOTO }, p, SIN).find((x) => x.lote === 'QA').desoves, 'sin filtro, el lote entero').toBe(4);
+  });
+
   it('🔴 las revisiones de nauplios: las de los dos lotes', () => {
     const REV = (lote) => ({ _SheetOrigin: O, Fecha: '2026-09-15', Lote: lote, 'Revisión': 'Nauplio' });   // una revisión no dice tipo de tanque
     const fuentes = { mortDesove: [REV('QA'), REV('QB'), REV('QC')] };

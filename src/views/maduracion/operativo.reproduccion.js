@@ -134,11 +134,15 @@ function lotesConDesove(fuentes, periodo, F) {
  * acumulador nuevo: si las dos pantallas discreparan, la culpa sería de tener dos.
  * ⚠ `naupliosPorHembra` y el `n5PorDesove` de ese módulo son EL MISMO número (N5 ÷ desoves que ya tienen N5):
  * dos nombres heredados de F1 y F2. Aquí se usa el nombre del plan; no se renombra allí para no tocar F2.
+ * Pauta 11 (2026-10-22, usuario) · las cifras y los destinos de cada lote salen de SUS desoves que pasan el filtro: con
+ * un código genético elegido, antes la fila sumaba el lote ENTERO (todos sus códigos) y no cuadraba con la tarjeta.
+ * La ficha de 🧬 Lotes sigue con su lote entero: allí no hay filtro de código.
  */
 export function tablaDeReproduccion(M, periodo, F) {
   const fuentes = (M || {}).fuentes || {};
+  const delFiltro = F ? { ...fuentes, desoves: (fuentes.desoves || []).filter((r) => enFiltro(r, F)) } : fuentes;
   return lotesConDesove(fuentes, periodo, F).map((lote) => {
-    const R = reproduccionDeLote(fuentes, lote, periodo);
+    const R = reproduccionDeLote(delFiltro, lote, periodo);
     const pend = pendientesDeN5(fuentes, periodo, { ...(F || {}), lotes: [normLote(lote)] }, (M || {}).fecha);   // etapa A · LISTAS
     return {
       lote,
@@ -147,7 +151,7 @@ export function tablaDeReproduccion(M, periodo, F) {
       fertilidad: R.fertilidad,
       naupliosPorHembra: R.n5PorDesove,
       pendientes: pend.total, desovesPendientes: pend.desoves,
-      destinos: destinosDeLote(fuentes, lote, periodo),
+      destinos: destinosDeLote(delFiltro, lote, periodo),
     };
   });
 }
