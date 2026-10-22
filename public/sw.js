@@ -187,12 +187,19 @@ self.addEventListener('activate', (e) => {
   })());
 });
 
+/* Pauta 5 (2026-10-22, usuario) · lo «red primero» PREGUNTA al servidor (`no-cache`), como la instalación. GitHub Pages
+   sirve todo con max-age=600, y sin esto, en los 10 min siguientes a un despliegue, `engine.js` podía salir de la caché
+   HTTP del navegador sin preguntar: un bundle nuevo con el motor viejo. Si no cambió, Pages contesta 304 y no se repiten
+   los bytes. Una navegación no admite que se rehaga su petición, y el navegador ya la revalida al recargar (que es lo que
+   pide la franja de versión nueva). */
+const revalidando = (request) => (request.mode === 'navigate' ? request : new Request(request, { cache: 'no-cache' }));
+
 /** Red con tope de tiempo. Si tarda más que `TIMEOUT_RED`, se rechaza y el que
  *  llama tira de caché — pero la petición sigue viva y su resultado se guarda. */
 function redConTope(request, cache) {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error('timeout')), TIMEOUT_RED);
-    fetch(request).then((res) => {
+    fetch(revalidando(request)).then((res) => {
       clearTimeout(t);
       // Sólo se guardan respuestas COMPLETAS y correctas. Un 404 o un 206 en caché
       // es peor que no tener nada: se serviría como si fuera bueno.

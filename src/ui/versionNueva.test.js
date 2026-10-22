@@ -4,7 +4,7 @@
 // la misma huella), cuándo pregunta, que no se repita la franja, que × la cierre y vuelva en la siguiente comprobación,
 // que «Recargar» recargue y que no recargue sola, y que le pida al service worker que mire si hay otro.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { huellaPropia, huellaPublicada, vigilarVersion, CADA } from './versionNueva.js';
+import { huellaPropia, huellaPublicada, vigilarVersion, hayOtroBuild, CADA } from './versionNueva.js';
 
 const PROPIA = 'aaaaaaaaaaaa';
 const OTRA = 'bbbbbbbbbbbb';
@@ -145,5 +145,33 @@ describe('versionNueva · cuándo pregunta', () => {
     await vi.advanceTimersByTimeAsync(CADA * 2);
     window.dispatchEvent(new Event('online'));
     expect(f.llamadas).toHaveLength(2);
+  });
+});
+
+/* Pauta 5 (2026-10-22, usuario) · `hayOtroBuild`: lo que pregunta Registros antes de cargar su motor. Sólo dice «otro»
+   cuando lo SABE; si no, deja pasar (sin sellar, sin red, 404 o sin respuesta a tiempo). */
+describe('versionNueva · pauta 5 · hayOtroBuild', () => {
+  it('🔴 true sólo con las dos huellas y distintas', async () => {
+    ponerMeta(PROPIA);
+    expect(await hayOtroBuild({ fetchFn: red(OTRA) })).toBe(true);
+    expect(await hayOtroBuild({ fetchFn: red(PROPIA) })).toBe(false);
+  });
+
+  it('🔴 sin sellar no pregunta; sin red o con 404, false (no se frena a ciegas)', async () => {
+    ponerMeta('sin-sellar');
+    const f = red(OTRA);
+    expect(await hayOtroBuild({ fetchFn: f })).toBe(false);
+    expect(f.llamadas, 'sin huella propia no hace falta preguntar').toHaveLength(0);
+    ponerMeta(PROPIA);
+    expect(await hayOtroBuild({ fetchFn: red(new Error('sin red')) })).toBe(false);
+    expect(await hayOtroBuild({ fetchFn: red(404) })).toBe(false);
+  });
+
+  it('🔴 sin respuesta en `espera` ms, false: Registros no se queda esperando', async () => {
+    ponerMeta(PROPIA);
+    const colgada = async () => new Promise(() => {});
+    const t0 = Date.now();
+    expect(await hayOtroBuild({ fetchFn: colgada, espera: 30 })).toBe(false);
+    expect(Date.now() - t0).toBeLessThan(1000);
   });
 });

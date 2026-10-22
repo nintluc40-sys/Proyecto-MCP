@@ -34,6 +34,19 @@ export async function huellaPublicada(fetchFn = fetch) {
   }
 }
 
+/** Pauta 5 (2026-10-22, usuario) · ¿Lo publicado es OTRO build que el que corre esta página? true sólo si se SABE: las dos
+ *  huellas y distintas. Sin sellar, sin red o sin respuesta en `espera` ms, false: no se sabe, y no se frena a nadie.
+ *  Lo pregunta Registros antes de cargar su motor (`engine.js` va aparte del bundle y se mezclaría con el de otro build). */
+export async function hayOtroBuild({ fetchFn = fetch, doc = document, espera = 3000 } = {}) {
+  const propia = huellaPropia(doc);
+  if (!propia) return false;
+  let reloj;
+  const tarde = new Promise((resolve) => { reloj = setTimeout(() => resolve(null), espera); });
+  const publicada = await Promise.race([huellaPublicada(fetchFn), tarde]);
+  clearTimeout(reloj);
+  return !!publicada && publicada !== propia;
+}
+
 function mostrarFranja(doc, win) {
   if (doc.querySelector('.app-version-nueva')) return;
   const el = doc.createElement('div');

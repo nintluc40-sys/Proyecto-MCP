@@ -207,6 +207,29 @@ describe('Service worker · qué va a la red y qué sale de caché', () => {
       expect(sw.llamadasRed, u + ' no fue a la red').toHaveLength(1);
     }
   });
+
+  it('🔴 pauta 5 (2026-10-22) · lo «red primero» PREGUNTA al servidor (no-cache): nada sale de la caché HTTP sin preguntar', async () => {
+    /* GitHub Pages lo sirve todo con max-age=600: sin esto, en los 10 min siguientes a un despliegue, el navegador daba
+       el `engine.js` que ya tenía sin preguntar, y un bundle nuevo arrancaba con el motor viejo. Con `no-cache`, Pages
+       contesta 304 si no cambió (no se repiten los bytes). */
+    sw = montarSW({ red: async () => ok('fresco') });
+    for (const u of ['registros/engine.js', 'registros/qrcode.js', 'vendor/xlsx.full.min.js', 'index.html']) {
+      sw.modosRed.length = 0;
+      await pedir(sw, BASE + u);
+      expect(sw.modosRed, u).toEqual(['no-cache']);
+    }
+    // y se guarda bajo la MISMA petición: ninguna copia nueva por despliegue
+    const guardadas = await (await sw.cachesFalso.api.open('mcp-v1')).keys();
+    expect(guardadas.filter((k) => k.includes('engine.js'))).toEqual([BASE + 'registros/engine.js']);
+  });
+
+  it('🔴 la navegación va TAL CUAL a la red (no admite que se rehaga su petición; el navegador la revalida al recargar)', async () => {
+    sw = montarSW({ red: async () => ok('<html>nuevo</html>') });
+    const r = await pedir(sw, BASE, { mode: 'navigate' });
+    expect(sw.llamadasRed).toEqual([BASE]);
+    expect(sw.modosRed, 'la petición de la navegación no se rehízo').toEqual([undefined]);
+    expect(await r.res.text()).toBe('<html>nuevo</html>');
+  });
 });
 
 /* ══════════════════════════════════════════════════════════

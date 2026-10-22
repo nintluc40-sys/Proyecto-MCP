@@ -17,6 +17,7 @@ import './registros.theme.css';
 import shellHtml from './shell.html?raw';
 import { esc } from '../../core/format.js';
 import { store } from '../../core/store.js';
+import { hayOtroBuild } from '../../ui/versionNueva.js';
 import * as regSecurity from './lib/security.js';
 import * as regModules from './lib/modules.js';
 import * as regReproductivo from './lib/reproductivo.data.js';
@@ -120,19 +121,41 @@ export function registrosView(root) {
   attachFichaEvents(host);
 
   const base = import.meta.env.BASE_URL || '/';
-  if (!scriptsLoading) {
-    scriptsLoading = (async () => {
-      await loadScript(base + 'registros/qrcode.js');
-      await loadScript(base + 'registros/engine.js'); // auto-bootea (buildGrid) contra el shell ya inyectado
-    })().catch((e) => {
-      if (host) host.innerHTML = `<div class="empty-state" style="padding:48px">No se pudo cargar Registros.<br><small class="mono">${esc(e.message)}</small><br><small class="muted" style="opacity:.7">Vuelve a entrar a la vista para reintentar.</small></div>`;
-      // Falla de carga (offline / deploy a medias): descarta el host, la promesa y los
-      // <script> que NO llegaron a cargar. Sin esto la vista quedaría rota hasta recargar
-      // la página (el guard `if (host) return` no reintenta), y un reintento ingenuo se
-      // colgaría porque loadScript reencontraría el <script> fallido (listeners que nunca
-      // disparan). Al eliminarlos, la próxima entrada reconstruye el host y recarga limpio.
-      document.querySelectorAll('script[data-rg]').forEach((s) => { if (s.dataset.loaded !== '1') s.remove(); });
-      host = null; scriptsLoading = null;
-    });
-  }
+  if (!scriptsLoading) cargarMotor(base, true);
+}
+
+/* Pauta 5 (2026-10-22, usuario) · el motor (`engine.js` y `qrcode.js`) va APARTE del bundle, que trae el shell
+   (`shell.html`) y la CSS de esta vista. Una pestaña abierta ANTES de un despliegue que entraba aquí por primera vez
+   montaba el shell viejo con el motor nuevo: la franja de versión nueva (`ui/versionNueva.js`) lo avisaba, pero no lo
+   impedía. Antes de cargarlo se pregunta qué build está publicado (`hayOtroBuild`, como mucho 3 s). Si es OTRO, el
+   motor no se carga y se pide recargar. «Abrir igualmente» lo carga tal cual: decisión del usuario, para que un equipo de
+   campo no se quede sin Registros si algo no casara. Sin red o sin respuesta, se carga como siempre. */
+function avisarOtroBuild(base) {
+  if (!host) return;
+  host.innerHTML = '<div class="empty-state" style="padding:48px">Hay una versión nueva de la app.<br>Recarga para abrir'
+    + ' Registros: así no se mezcla con la versión anterior.<br><br><button type="button" class="btn bp" data-rg-version="recargar">'
+    + 'Recargar</button> <button type="button" class="btn bs" data-rg-version="abrir">Abrir igualmente</button></div>';
+  host.querySelector('[data-rg-version="recargar"]').addEventListener('click', () => window.location.reload());
+  host.querySelector('[data-rg-version="abrir"]').addEventListener('click', () => {
+    host.innerHTML = shellHtml;
+    cargarMotor(base, false);
+  });
+}
+
+function cargarMotor(base, comprobarVersion) {
+  scriptsLoading = (async () => {
+    if (comprobarVersion && await hayOtroBuild()) return false;
+    await loadScript(base + 'registros/qrcode.js');
+    await loadScript(base + 'registros/engine.js'); // auto-bootea (buildGrid) contra el shell ya inyectado
+    return true;
+  })().then((cargado) => { if (!cargado) avisarOtroBuild(base); }).catch((e) => {
+    if (host) host.innerHTML = `<div class="empty-state" style="padding:48px">No se pudo cargar Registros.<br><small class="mono">${esc(e.message)}</small><br><small class="muted" style="opacity:.7">Vuelve a entrar a la vista para reintentar.</small></div>`;
+    // Falla de carga (offline / deploy a medias): descarta el host, la promesa y los
+    // <script> que NO llegaron a cargar. Sin esto la vista quedaría rota hasta recargar
+    // la página (el guard `if (host) return` no reintenta), y un reintento ingenuo se
+    // colgaría porque loadScript reencontraría el <script> fallido (listeners que nunca
+    // disparan). Al eliminarlos, la próxima entrada reconstruye el host y recarga limpio.
+    document.querySelectorAll('script[data-rg]').forEach((s) => { if (s.dataset.loaded !== '1') s.remove(); });
+    host = null; scriptsLoading = null;
+  });
 }

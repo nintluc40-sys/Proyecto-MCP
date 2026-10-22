@@ -687,6 +687,13 @@ Dos consecuencias que conviene tener presentes al desplegar:
   escribir. ⚠ Si falta la `<meta>` o la línea `BUILD`, `vite build` falla a propósito. Dos builds del mismo código
   salen idénticos byte a byte. `index (8)` no tiene nada de esto: una pestaña abierta no se entera de un reparto nuevo,
   y se queda así (decisión del usuario, 2026-10-22).
+  Y el motor de Registros no se mezcla con el de otro build (pauta 5, 2026-10-22). `engine.js` va aparte del bundle, que
+  trae el shell de la vista: una pestaña abierta antes de un despliegue montaba el shell viejo con el motor nuevo. Antes
+  de cargarlo por primera vez, Registros pregunta por `version.json` (como mucho 3 s). Si lo publicado es otro build, no
+  lo carga: pide recargar, y «Abrir igualmente» lo carga tal cual. Y el service worker revalida lo «red primero»
+  (`no-cache`): Pages sirve todo con `max-age=600`, y en los 10 min siguientes a un despliegue el navegador daba el
+  `engine.js` viejo sin preguntar (comprobado en Chrome con un servidor como Pages). Con `no-cache` el navegador pregunta
+  con su ETag: si no cambió, la respuesta es un 304 sin cuerpo.
 
 ## Flujo de datos (Google Sheets)
 
