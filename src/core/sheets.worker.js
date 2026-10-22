@@ -68,9 +68,11 @@ export async function atenderLectura(m, entorno) {
     /* 2026-10-01 (usuario) · si el libro entero no llega, el RESPALDO (cada hoja por su XLSX, inmune a los filtros de
        la hoja; si el de una falla, su CSV) se hace AQUÍ: en la página, cada hoja grande por XLSX la congelaba ~1,3 s en
        PC. El libro sólo se GUARDA en el equipo (P4) si llegó completo y todo por XLSX: una hoja por CSV puede venir
-       recortada por un filtro, y una que faltara se quedaría así hasta 7 días al abrir. */
+       recortada por un filtro, y una que faltara se quedaría así hasta 7 días al abrir. B4 (2026-10-22, usuario): el CSV
+       es primero el de exportación (no recorta) y luego gviz, que con `previas` no pisa una hoja con más filas; la regla
+       de guardar no cambia (tampoco se guarda con una hoja por el CSV de exportación). */
     if (!sheets) {
-      const r = await respaldoPorHojas(ids, obtenerXLSX, avisar, recordadas);
+      const r = await respaldoPorHojas(ids, obtenerXLSX, avisar, recordadas, m.previas || {});
       if (Object.keys(r.sheets).length) {
         sheets = r.sheets;
         guardable = !r.porCsv && !r.perdidas && !r.sinPestanas;

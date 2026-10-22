@@ -552,12 +552,17 @@ async function filasPorXlsxDeHoja(ids, gid, obtenerXLSX = getXLSX) {
  *  recortadas por un filtro); cuántas no llegaron por ningún camino; y si no se pudo saber qué pestañas hay (entonces
  *  sólo se intenta la primera). Lo usan la página (fetchViaCsv) y el Worker (sheets.worker.js), que así lo hace sin
  *  congelar la pantalla: leer una hoja grande por XLSX cuesta ~1,3 s en PC (Control_Tanque M08, 24 743 filas).
- *  `recordadas`: la lista de pestañas que recuerda la página (ver discoverGids). */
-export async function respaldoPorHojas(ids, obtenerXLSX = getXLSX, avisar = null, recordadas = null) {
+ *  `recordadas`: la lista de pestañas que recuerda la página (ver discoverGids). `previas`: las huellas aplicadas.
+ *  B4 (2026-10-22, usuario) · el CSV de una hoja es primero el de EXPORTACIÓN, que no recorta por filtros (el que lee
+ *  hojasPorCsv), y gviz sólo si ése tampoco llega: gviz da sólo las filas VISIBLES (M08: 3 379 de 24 743) y esa hoja
+ *  recortada entraba como buena y pisaba la aplicada sin avisar. Ahora, si gviz trae MENOS filas que lo aplicado, la
+ *  hoja cuenta como perdida: el refresco no la aplica (isDegraded) y la píldora dice que faltó. */
+export async function respaldoPorHojas(ids, obtenerXLSX = getXLSX, avisar = null, recordadas = null, previas = {}) {
   if (avisar) avisar({ fase: 'respaldo' });   // punto 9: que el aviso de carga no se quede en «reintento 3 de 3»
   const sheets = {};
   let porCsv = 0;
   let perdidas = 0;
+  const senales = { es: 0, en: 0 };   // B4: el formato regional de lo que llegue por el CSV de exportación
   const discovered = await discoverGids(ids, recordadas);
   // Con pestañas descubiertas (o cacheadas) se bajan TODAS por gid; sin ninguna, último
   // recurso: la 1ª hoja (gid 0) para no dejar el sistema completamente vacío.
@@ -570,16 +575,25 @@ export async function respaldoPorHojas(ids, obtenerXLSX = getXLSX, avisar = null
       // nombre (el Worker no tiene la caché de pestañas) toma el que trae su propio XLSX antes que adivinarlo.
       const x = await filasPorXlsxDeHoja(ids, gid, obtenerXLSX);
       if (x) return x.filas.length ? { name: title || x.nombre || detectSheetName(x.filas, gid), rows: x.filas } : null;
+      if (ids.type === 'real') {
+        let filas = null;
+        try { filas = filasDeCsv(await csvDeHoja(ids, gid), senales); } catch (_) { /* a gviz */ }
+        if (filas) return filas.length ? { name: title || detectSheetName(filas, gid), rows: filas, csv: true, exportacion: true } : null;
+      }
       const rows = parseCSV(await fetchCSV(buildCsvUrl(ids, gid), 1));
       if (!rows.length) return null;
-      return { name: title || detectSheetName(rows, gid), rows, csv: true };
+      const name = title || detectSheetName(rows, gid);
+      if (ids.type === 'real' && rows.length < filasAplicadas(previas, name)) { perdidas++; return null; }   // B4: gviz recortó
+      return { name, rows, csv: true };
     } catch (_) { perdidas++; return null; } finally {
       hechas++;
       if (avisar) avisar({ fase: 'respaldo', hechas, de: targets.length });
     }
   });
+  const otroFormato = senales.en > senales.es;   // como en hojasPorCsv: la conversión de los números no valdría
   results.forEach((res) => {
     if (!res || sheets[res.name]) return;
+    if (res.exportacion && otroFormato) { perdidas++; return; }
     sheets[res.name] = stampRows(res.rows, res.name);
     if (res.csv) porCsv++;
   });
@@ -712,9 +726,10 @@ export async function hojasPorCsv(ids, obtenerXLSX = getXLSX, avisar = null, pre
   return { sheets, completo: !perdidas, porXlsx, pestanas };
 }
 
-/** El respaldo leído aquí: { sheets, completo } (A4, 2026-10-11: `completo` = llegaron TODAS sus pestañas). */
+/** El respaldo leído aquí: { sheets, completo } (A4, 2026-10-11: `completo` = llegaron TODAS sus pestañas). B4: con las
+ *  huellas aplicadas, para que una hoja recortada por gviz no pise la buena. */
 async function fetchViaCsv(ids, avisar = null) {
-  const r = await respaldoPorHojas(ids, getXLSX, avisar);
+  const r = await respaldoPorHojas(ids, getXLSX, avisar, null, _huellasAplicadas);
   return { sheets: r.sheets, completo: !r.perdidas && !r.sinPestanas };
 }
 

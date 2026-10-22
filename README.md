@@ -771,12 +771,14 @@ Dos consecuencias que conviene tener presentes al desplegar:
    Si no, `connectSheets()` descarga el libro **completo** vía `export?format=xlsx`
    (1 petición, todas las hojas), con reintento y backoff. Si falla, el **respaldo** pide CADA hoja
    por su XLSX (`export?format=xlsx&gid=`; los `gid` salen de `/htmlview`) y sólo la que no llegue,
-   por su CSV (`respaldoPorHojas`). 🔴 **No va por gviz desde el 2026-10-01**: con un FILTRO puesto en
+   por su CSV (`respaldoPorHojas`): el de EXPORTACIÓN y, sólo si tampoco llega, gviz. 🔴 **gviz es el último recurso
+   desde el 2026-10-01**: con un FILTRO puesto en
    la hoja —el laboratorio los deja a menudo—, gviz da sólo las filas visibles (el CSV de EXPORTACIÓN no: medido el 09 y
    el 11-10; medido en gviz:
    Datos M03, 20 de 1 579), y ese recorte pisaba el libro bueno sin avisar; el XLSX de una hoja las
-   da todas, igual que el libro entero. El respaldo lo hace el Worker (en la página, cada hoja grande
-   por XLSX congelaba ~1,3 s), y el libro sólo se guarda en el equipo si ninguna hoja vino por CSV
+   da todas, igual que el libro entero. Desde el 2026-10-22 (B4), una hoja que llega por gviz con MENOS filas que la
+   aplicada cuenta como que no llegó: no la pisa, y la píldora dice que faltó. El respaldo lo hace el Worker (en la
+   página, cada hoja grande por XLSX congelaba ~1,3 s), y el libro sólo se guarda en el equipo si ninguna hoja vino por CSV
    ni faltó ninguna. Comprobado en Chrome el 2026-10-06 contra lo publicado, con el libro entero
    bloqueado en el Worker: el respaldo pide cada hoja por su XLSX y ninguna por gviz.
    Desde el 2026-10-07 (A1) el Worker no tiene un tope fijo: con la red lenta, el respaldo termina mientras avance (el

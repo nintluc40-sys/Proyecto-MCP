@@ -13,6 +13,8 @@
    · en el WORKER (donde lee el MCP): si el libro entero no llega, el Worker hace el respaldo él
      mismo —leer cada hoja grande por XLSX en la página la congelaba ~1,3 s en PC— y sólo GUARDA el
      libro en el equipo (P4) si todas las hojas llegaron por su XLSX.
+   B4 (2026-10-22, usuario) · «el CSV de siempre» es primero el de EXPORTACIÓN (no recorta por filtros) y gviz sólo si
+   ése no llega; y gviz con MENOS filas que lo aplicado no pisa la hoja: cuenta como perdida.
    Google simulado (fetch); datos ficticios. El filtro se simula con un CSV que trae menos filas.
    ============================================================ */
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
@@ -64,6 +66,7 @@ const CSV = {
 let fetchReal;
 let xlsxPorGid; // gid → bytes del XLSX | número (status de error) | 'html' (una página, no un XLSX)
 let gvizCae;    // true → gviz tampoco contesta (sin señal)
+let exportCsv;  // gid → texto del CSV de EXPORTACIÓN (B4); sin él, 404
 let htmlCae;    // true → /htmlview no contesta: no se sabe qué pestañas hay
 const pedidas = [];
 const ok = (cuerpo) => ({ ok: true, status: 200, text: async () => cuerpo, arrayBuffer: async () => cuerpo });
@@ -84,6 +87,7 @@ beforeAll(() => {
       if (r === 'html') return ok(new TextEncoder().encode('<!DOCTYPE html><html><body><table><tr><td>Iniciar sesión</td></tr><tr><td>Correo</td></tr></table></body></html>').buffer);
       return ok(r.slice(0));
     }
+    if (/export\?format=csv/.test(u)) return exportCsv[gid] ? ok(exportCsv[gid]) : error(404);
     if (/gviz/.test(u) && CSV[gid] && !gvizCae) return ok(CSV[gid]);
     return error(404);
   };
@@ -94,6 +98,7 @@ beforeEach(() => {
   try { localStorage.clear(); } catch (_) {}
   xlsxPorGid = { 1111: xlsxDe(H1, hoja1()), 2222: xlsxDe(H2, hoja2()) };
   gvizCae = false;
+  exportCsv = {};
   htmlCae = false;
 });
 const gvizDe = (gid) => pedidas.filter((u) => /gviz/.test(u) && new RegExp('[?&]gid=' + gid + '(\\D|$)').test(u));
@@ -222,5 +227,61 @@ describe('en el Worker: el respaldo se hace allí, no en la página', () => {
     ]);
     expect(textoProgreso({ fase: 'respaldo', hechas: 1, de: 2 })).toBe('El libro entero no llegó: probando hoja por hoja… 1 de 2');
     expect(textoProgreso({ fase: 'respaldo' })).toBe('El libro entero no llegó: probando hoja por hoja…');
+  });
+});
+
+describe('B4 (2026-10-22) · el CSV del respaldo es el de EXPORTACIÓN, y gviz no pisa una hoja con más filas', () => {
+  // La hoja 1 ENTERA, como la da el CSV de exportación de un libro en formato es (coma decimal, CRLF)
+  const EXPORTACION_H1 = 'Fecha,Tanque,Supervivencia,Observaciones\r\n01/09/2026,T1,"85,5","línea 1\nlínea 2"\r\n'
+    + '02/09/2026,T2,80,\r\n03/09/2026,T3,"77,25","con ""comillas"""\r\n';
+  const entorno = () => ({ cargarXLSX: vi.fn(), obtenerXLSX: () => window.XLSX, guardar: vi.fn(async () => {}) });
+  const previas = (n1, n2) => ({ [H1]: `${H1}:${n1}:1;`, [H2]: `${H2}:${n2}:2;` });
+
+  it('si el XLSX de una hoja falla, va su CSV de exportación: ENTERA, con las filas del libro y sin pedir gviz', async () => {
+    xlsxPorGid[1111] = 404;
+    exportCsv[1111] = EXPORTACION_H1;
+    const X = window.XLSX;
+    const wb = X.utils.book_new();
+    X.utils.book_append_sheet(wb, hoja1(), H1);
+    const libro = workbookToSheets(X.read(new Uint8Array(X.write(wb, { type: 'array', bookType: 'xlsx' })), XLSX_LECTURA), X);
+    const s = await fetchAllSheets();
+    expect(s[H1]).toEqual(libro[H1]);                        // 3 filas; «85,5» → '85.5', como el XLSX
+    expect(s[H1][0].Supervivencia).toBe('85.5');
+    expect(gvizDe(1111)).toEqual([]);
+  });
+
+  it('si el CSV de exportación viene en otro formato regional (en-US), no se usa: la hoja falta', async () => {
+    xlsxPorGid[1111] = 404;
+    exportCsv[1111] = 'Fecha,Tanque,Supervivencia\n01/09/2026,T1,85.55\n02/09/2026,T2,80.25\n';
+    const s = await fetchAllSheets();
+    expect(s[H1]).toBeUndefined();
+    expect(s[H2]).toHaveLength(2);
+  });
+
+  it('Worker · gviz con MENOS filas que lo aplicado: la hoja cuenta como perdida y no se manda (completo: false)', async () => {
+    xlsxPorGid[1111] = 404;                                  // ni su XLSX ni su CSV de exportación: sólo gviz (1 fila)
+    const r = await atenderLectura({ id: 9, realId: 'X', previas: previas(3, 2) }, entorno());
+    expect(r).toMatchObject({ id: 9, ok: true, completo: false });
+    expect(r.orden).toEqual([H2]);
+    expect(gvizDe(1111).length).toBeGreaterThan(0);          // se pidió, pero no pisa las 3 aplicadas
+  });
+
+  it('Worker · gviz con las MISMAS filas que lo aplicado sí vale', async () => {
+    xlsxPorGid[1111] = 404;
+    const r = await atenderLectura({ id: 10, realId: 'X', previas: previas(1, 2) }, entorno());
+    expect(r).toMatchObject({ id: 10, ok: true, completo: true });
+    expect(r.orden).toEqual([H1, H2]);
+  });
+
+  it('página sin Worker · lo mismo, con las huellas que ya aplicó (fetchViaCsv se las pasa)', async () => {
+    vi.resetModules();                                       // un sheets.js nuevo: lo aplicado no se queda para otras pruebas
+    const S = await import('./sheets.js');
+    const buenas = { [H1]: [{ a: '1' }, { a: '2' }, { a: '3' }], [H2]: [{ a: '1' }, { a: '2' }] };
+    const huellas = S.huellasPorHoja(buenas);
+    expect(S.aplicarDescarga({ sheets: buenas, huellas, fp: S.huellaDe(huellas) })).toBe(5);
+    xlsxPorGid[1111] = 404;
+    const s = await S.fetchAllSheets();
+    expect(s[H1]).toBeUndefined();                           // gviz trajo 1 de 3: no la pisa
+    expect(s[H2]).toHaveLength(2);
   });
 });
