@@ -369,6 +369,20 @@ describe('maduracion.data · utilidades de dominio', () => {
     // Lista tanques con hembras/eventos en la sala (no destinos históricos de transferencia).
     expect(tanquesOf(model, 'S1').sort()).toEqual(['T1', 'T2']);
   });
+  /* Pauta 10 (2026-10-22, usuario) · un tanque es sala + número. «Tanque 1» sin sala juntaba el de la Sala 1 y el de la
+     Sala 4: el desplegable lo daba una vez y el filtro comparaba sólo el número. */
+  it('🔴 sin sala no hay tanques que elegir, y un tanque sin sala no filtra (no junta dos tanques físicos)', () => {
+    const m = buildReproModel([
+      { 'Trovan ID': 'P1', 'Sala actual': 'Sala 1', 'Tanque actual': 'Tanque 1', Estado: 'Vivo', 'Fecha ingreso': '2026-05-01' },
+      { 'Trovan ID': 'P2', 'Sala actual': 'Sala 4', 'Tanque actual': 'Tanque 1', Estado: 'Vivo', 'Fecha ingreso': '2026-05-01' },
+      { 'Trovan ID': 'P3', 'Sala actual': 'Sala 4', 'Tanque actual': 'Tanque 2', Estado: 'Vivo', 'Fecha ingreso': '2026-05-01' },
+    ], [], []);
+    expect(tanquesOf(m, null)).toEqual([]);
+    expect(tanquesOf(m, 'Sala 4')).toEqual(['Tanque 1', 'Tanque 2']);
+    expect(makeFilter({ tanque: 'Tanque 1' }).tanque).toBeNull();
+    expect(kpis(m, makeFilter({ tanque: 'Tanque 1' })).vivas).toBe(3);                    // sin sala: todas, no 2 de 2 salas
+    expect(kpis(m, makeFilter({ sala: 'Sala 4', tanque: 'Tanque 1' })).vivas).toBe(1);   // sala + número: el suyo
+  });
   it('monthLabel y locKey formatean', () => {
     expect(monthLabel('2026-06')).toBe('junio 2026');
     expect(locKey('S1', 'T1')).toBe('S1 · T1');

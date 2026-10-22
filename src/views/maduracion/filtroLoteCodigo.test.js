@@ -292,6 +292,19 @@ describe('Maduración · filtro de Lote y Código genético · vista', () => {
 
   const opciones = (root, dim) => [...root.querySelector(`[data-mc-filter="${dim}"]`).options].map((o) => o.value);
 
+  // Pauta 10 (2026-10-22, usuario) · un tanque es sala + número: sin sala, «Tanque 1» juntaba los de dos salas.
+  it('🔴 sin sala, el Tanque sale apagado y sin números sueltos; con una sala, los suyos', () => {
+    maduracionView(root);
+    expect(root.querySelector('[data-mc-filter="tanque"]').disabled).toBe(true);
+    expect(opciones(root, 'tanque')).toEqual(['']);
+    elegir(root, 'sala', 'S1');
+    expect(root.querySelector('[data-mc-filter="tanque"]').disabled).toBe(false);
+    expect(opciones(root, 'tanque')).toEqual(['', 'T1']);
+    elegir(root, 'sala', '');
+    expect(root.querySelector('[data-mc-filter="tanque"]').disabled).toBe(true);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
   it('🔴 elegir una sala acota los tanques, los lotes y los códigos a los suyos', () => {
     maduracionView(root);
     elegir(root, 'sala', 'S2');

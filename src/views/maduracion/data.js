@@ -352,10 +352,12 @@ export function monthBounds(key) {
   const [y, m] = String(key).split('-').map(Number);
   return { from: new Date(y, m - 1, 1, 0, 0, 0), to: new Date(y, m, 0, 23, 59, 59) };
 }
-/** Normaliza un objeto de filtro de UI a {sala,tanque,lote,codigo,from,to}. */
+/** Normaliza un objeto de filtro de UI a {sala,tanque,lote,codigo,from,to}.
+ *  Pauta 10 (2026-10-22, usuario) · un tanque es sala + número: sin sala, el tanque no filtra. Antes «Tanque 1» sin sala
+ *  juntaba el de la Sala 1 y el de la Sala 4 (passLoc y passFem comparan sólo el número). */
 export function makeFilter({ sala = null, tanque = null, lote = null, codigo = null, month = null } = {}) {
   const { from, to } = monthBounds(month);
-  return { sala: sala || null, tanque: tanque || null, lote: lote || null, codigo: codigo || null, from, to, month: month || null };
+  return { sala: sala || null, tanque: (sala && tanque) || null, lote: lote || null, codigo: codigo || null, from, to, month: month || null };
 }
 
 const desovesIn = (model, f) => model.desoves.filter((e) => passLoc(e, f));
@@ -1089,7 +1091,10 @@ export function codigosOf(model, lote, sala = null, tanque = null) {
   eventosEn(model, sala, tanque).forEach((e) => { if (ok(e)) set.add(String(e.codigo)); });
   return [...set].sort(_ordenEs);
 }
+/** Los tanques de la sala `sala`. Sin sala, ninguno (pauta 10, 2026-10-22): sus números se repiten de una sala a otra y
+ *  la lista los juntaba en uno solo. */
 export function tanquesOf(model, sala) {
+  if (!sala) return [];
   const set = new Set();
   const okF = (v) => (!sala || String(v.sala) === sala);
   model.females.forEach((r) => { if (r.tanque && okF(r)) set.add(String(r.tanque)); });

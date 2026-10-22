@@ -148,7 +148,7 @@ export function maduracionView(root) {
         <button class="mc-mnav" data-mc-monthnav="1" ${periodIdx() >= _periods.length - 1 ? 'disabled' : ''} aria-label="Período siguiente">▶</button>
       </div>
       ${sel('sala', vState.sala, salas, 'Todas las salas')}
-      ${sel('tanque', vState.tanque, tanques, 'Todos los tanques')}
+      ${vState.sala ? sel('tanque', vState.tanque, tanques, 'Todos los tanques') : sel('tanque', null, [], 'Tanque: elige una sala', true)}
       ${sel('lote', vState.lote, lotes, 'Todos los lotes')}
       ${sel('codigo', vState.codigo, codigos, 'Todos los códigos genéticos')}
     </div>`;
@@ -254,8 +254,8 @@ function rankNote() {
   if (vState.codigo) partes.push('código genético');
   return partes.length ? `<span class="mc-h-note">filtrado por ${esc(partes.join(', '))}</span>` : '';
 }
-function sel(dim, value, values, ph) {
-  return `<select class="mc-select" data-mc-filter="${dim}">
+function sel(dim, value, values, ph, apagado = false) {
+  return `<select class="mc-select" data-mc-filter="${dim}"${apagado ? ' disabled title="Un tanque es sala + número: elige primero la sala"' : ''}>
     <option value="">${esc(ph)}</option>
     ${values.map((v) => `<option value="${esc(v)}" ${value === v ? 'selected' : ''}>${esc(v)}</option>`).join('')}
   </select>`;
