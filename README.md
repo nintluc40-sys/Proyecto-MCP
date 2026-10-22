@@ -781,7 +781,10 @@ Dos consecuencias que conviene tener presentes al desplegar:
    el 11-10; medido en gviz:
    Datos M03, 20 de 1 579), y ese recorte pisaba el libro bueno sin avisar; el XLSX de una hoja las
    da todas, igual que el libro entero. Desde el 2026-10-22 (B4), una hoja que llega por gviz con MENOS filas que la
-   aplicada cuenta como que no llegó: no la pisa, y la píldora dice que faltó. El respaldo lo hace el Worker (en la
+   aplicada cuenta como que no llegó: no la pisa, y la píldora dice que faltó. Y desde ese día (B3) los números llegan
+   igual por los tres caminos: el XLSX quita la coma de miles a las celdas NUMÉRICAS (SheetJS las da a la inglesa,
+   «1,061», y se leían 1,061) y gviz pasa por `valorDeCsv`, con la misma guarda de formato regional que el CSV de
+   exportación. El respaldo lo hace el Worker (en la
    página, cada hoja grande por XLSX congelaba ~1,3 s), y el libro sólo se guarda en el equipo si ninguna hoja vino por CSV
    ni faltó ninguna. Comprobado en Chrome el 2026-10-06 contra lo publicado, con el libro entero
    bloqueado en el Worker: el respaldo pide cada hoja por su XLSX y ninguna por gviz.

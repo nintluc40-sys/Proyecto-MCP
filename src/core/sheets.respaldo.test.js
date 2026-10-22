@@ -22,6 +22,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fetchAllSheets, workbookToSheets, XLSX_LECTURA, textoProgreso, setLectorLibro, descargarLibro } from './sheets.js';
 import { atenderLectura } from './sheets.worker.js';
+import { parseNum } from './fields.js';
 
 const VENDOR = join(process.cwd(), 'public/vendor/xlsx.full.min.js');
 const serie = (y, m, d) => Math.round((Date.UTC(y, m - 1, d) - Date.UTC(1899, 11, 30)) / 864e5);
@@ -57,10 +58,11 @@ function xlsxDe(nombre, ws) {
   X.utils.book_append_sheet(wb, ws, nombre);
   return X.write(wb, { type: 'array', bookType: 'xlsx' });
 }
-// El «filtro»: gviz da sólo la cabecera y UNA fila de la hoja 1; de la hoja 2, todo.
+// El «filtro»: gviz da sólo la cabecera y UNA fila de la hoja 1; de la hoja 2, todo. Con el formato regional del libro
+// (es), como el gviz real (B3, medido el 22-10); hasta ese día la hoja 2 iba en en-US («8.1»), que gviz no da.
 const CSV = {
   1111: 'Fecha,Tanque,Supervivencia,Observaciones\n01/09/2026,T1,"85,5",x\n',
-  2222: 'Fecha,Tanque,pH\n01/09/2026,A1,8.1\n02/09/2026,A2,8.2\n',
+  2222: 'Fecha,Tanque,pH\n01/09/2026,A1,"8,1"\n02/09/2026,A2,"8,2"\n',
 };
 
 let fetchReal;
@@ -289,5 +291,72 @@ describe('B4 (2026-10-22) · el CSV del respaldo es el de EXPORTACIÓN, y gviz n
     const s = await S.fetchAllSheets();
     expect(s[H1]).toBeUndefined();                           // gviz trajo 1 de 3: no la pisa
     expect(s[H2]).toHaveLength(2);
+  });
+});
+
+/* B3 (2026-10-22, usuario) · LOS MILES DE LOS CAMINOS DE RESERVA. Por el XLSX, SheetJS da cada número con el formato de su
+   celda y a la inglesa («7,400,000.0», «1,061»), y `parseNum` los leía 7,4 y 1,061; por gviz salen en el formato del libro
+   (es: «7.400.000,0», «85,5»), crudos. Ahora el XLSX quita la coma de miles en las celdas NUMÉRICAS (los textos, intactos)
+   y gviz se convierte como el CSV de exportación, con su misma guarda de formato regional. */
+describe('B3 (2026-10-22) · los miles del XLSX y de gviz llegan como los del CSV de exportación', () => {
+  /** Una hoja con números con separador de miles (formato de la celda), un decimal sin formato y textos con coma. */
+  function hojaMiles() {
+    const ws = window.XLSX.utils.aoa_to_sheet([
+      ['Tanque', 'Población', 'Plg', 'Balance', 'Supervivencia', 'Piscina', 'Nota'],
+      ['T1', 7400000, 1061, -12345.5, 85.5, '556,557', '7,5'],
+    ]);
+    ws.B2.z = '#,##0.0'; ws.C2.z = '#,##0'; ws.D2.z = '#,##0.0';
+    return ws;
+  }
+  /* El respaldo de la página tal cual (como en B4), con un sheets.js NUEVO: así lo aplicado por otras pruebas (3 filas de
+     la hoja 1) no hace saltar la guarda B4 de gviz, que no es lo que se mira aquí. */
+  const respaldoDeLaPagina = async () => {
+    vi.resetModules();
+    const S = await import('./sheets.js');
+    S.setLectorLibro({ disponible: () => true, leer: async () => ({ ok: false, motivo: 'xlsx' }) });
+    try { return (await S.descargarLibro()).sheets; } finally { S.setLectorLibro(null); }
+  };
+
+  it('el libro entero: los números con miles salen sin ellos; el decimal y los TEXTOS con coma, intactos', () => {
+    const X = window.XLSX;
+    const wb = X.utils.book_new();
+    X.utils.book_append_sheet(wb, hojaMiles(), H1);
+    const bytes = new Uint8Array(X.write(wb, { type: 'array', bookType: 'xlsx' }));
+    const sinCorregir = X.utils.sheet_to_json(X.read(bytes, XLSX_LECTURA).Sheets[H1], { defval: '', raw: false });
+    expect([sinCorregir[0]['Población'], sinCorregir[0].Plg], 'control: SheetJS sí los da con coma de miles').toEqual(['7,400,000.0', '1,061']);
+    for (const dense of [true, false]) {
+      const [f] = workbookToSheets(X.read(bytes, { ...XLSX_LECTURA, dense }), X)[H1];
+      expect([f['Población'], f.Plg, f.Balance, f.Supervivencia], 'dense ' + dense).toEqual(['7400000.0', '1061', '-12345.5', '85.5']);
+      expect([f.Piscina, f.Nota], 'los textos no se tocan').toEqual(['556,557', '7,5']);
+      expect([parseNum(f, ['Población']), parseNum(f, ['Plg'])]).toEqual([7400000, 1061]);
+    }
+  });
+
+  it('el respaldo por hojas: el XLSX de cada hoja, igual que el libro entero', async () => {
+    xlsxPorGid[1111] = xlsxDe(H1, hojaMiles());
+    const [f] = (await fetchAllSheets())[H1];
+    expect([f['Población'], f.Plg, f.Piscina]).toEqual(['7400000.0', '1061', '556,557']);
+  });
+
+  it('gviz (sin XLSX ni CSV de exportación): sus números en formato es se convierten como los del CSV de exportación', async () => {
+    xlsxPorGid[1111] = 404;
+    const antes = CSV[1111];
+    CSV[1111] = 'Fecha,Tanque,Supervivencia,Población,Piscina\n01/09/2026,T1,"85,5","7.400.000,0",556\n';
+    try {
+      const [f] = (await respaldoDeLaPagina())[H1];
+      expect([f.Supervivencia, f['Población'], f.Piscina]).toEqual(['85.5', '7400000.0', '556']);
+      expect(gvizDe(1111).length, 'control: llegó por gviz').toBeGreaterThan(0);
+    } finally { CSV[1111] = antes; }
+  });
+
+  it('gviz en otro formato regional (en-US) no se convierte a ciegas: la hoja falta, como con el CSV de exportación', async () => {
+    xlsxPorGid[1111] = 404;
+    const antes = CSV[1111];
+    CSV[1111] = 'Fecha,Tanque,Supervivencia\n01/09/2026,T1,85.55\n02/09/2026,T2,80.25\n03/09/2026,T3,77.75\n';
+    try {
+      const s = await respaldoDeLaPagina();
+      expect(s[H1]).toBeUndefined();
+      expect(s[H2]).toHaveLength(2);
+    } finally { CSV[1111] = antes; }
   });
 });

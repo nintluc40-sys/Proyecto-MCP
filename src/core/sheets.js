@@ -242,6 +242,22 @@ function getXLSX() {
 export const XLSX_LECTURA = { type: 'array', cellDates: true, dense: true };
 /** Cómo se convierte cada hoja en filas: la MISMA para el libro entero y para el respaldo por hojas. */
 const FILAS_LECTURA = { defval: '', raw: false, dateNF: 'dd/mm/yyyy' };
+/* B3 (2026-10-22, usuario) · LOS MILES DEL CAMINO DEL XLSX. Con `raw: false` cada número sale con el formato de su celda,
+   y SheetJS lo escribe SIEMPRE a la inglesa: «1,061», «7,400,000.0». `parseNum` los leía 1,061 y 7,4. Medido el 22-10 con
+   el libro real: 16 celdas, en Plg, Biomasa y Población de Larvicultura. Se quita la coma de miles en las celdas
+   NUMÉRICAS antes de sacar las filas: el texto formateado (`w`) es lo que da `sheet_to_json`, y en un número la coma sólo
+   puede ser de miles. Los textos no se tocan («556,557» sigue igual). Se corrige en la lectura y no en `parseNum`: aquí se
+   sabe qué es cada celda; allí «1,025» o «1.061» no se pueden leer sin adivinar. */
+function sinMilesEnNumeros(hoja) {
+  const quitar = (c) => { if (c && c.t === 'n' && typeof c.w === 'string' && c.w.includes(',')) c.w = c.w.replace(/,/g, ''); };
+  if (Array.isArray(hoja['!data'])) { for (const fila of hoja['!data']) if (fila) for (const c of fila) quitar(c); }   // dense
+  else for (const k in hoja) if (k[0] !== '!') quitar(hoja[k]);
+  return hoja;
+}
+/** Las filas de una hoja del XLSX (FILAS_LECTURA), con sus números sin separador de miles. */
+function filasDeXlsx(XLSX, hoja) {
+  return XLSX.utils.sheet_to_json(sinMilesEnNumeros(hoja), FILAS_LECTURA);
+}
 
 /* Punto 7 del usuario (2026-10-03) · la PRIMERA carga dice cómo va: `avisar` recibe { fase: 'descarga', bytes } cada
    AVISO_CADA bytes y { fase: 'lectura', bytes } antes de leer (medido: ~8 s de descarga de 13 MB y 16 s de lectura).
@@ -324,7 +340,7 @@ async function fetchWorkbook(ids, obtenerXLSX = getXLSX, avisar = null) {
 export function workbookToSheets(wb, XLSX = getXLSX()) {
   const sheets = {};
   wb.SheetNames.forEach((name) => {
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], FILAS_LECTURA);
+    const rows = filasDeXlsx(XLSX, wb.Sheets[name]);
     if (rows?.length) sheets[name] = stampRows(rows, name);
   });
   return sheets;
@@ -538,7 +554,7 @@ async function filasPorXlsxDeHoja(ids, gid, obtenerXLSX = getXLSX) {
       if (buf[0] !== 0x50 || buf[1] !== 0x4B) return null;   // un XLSX es un ZIP («PK»); lo demás, al CSV
       const wb = XLSX.read(buf, XLSX_LECTURA);
       const nombre = wb.SheetNames[0] || '';
-      return { nombre, filas: nombre ? XLSX.utils.sheet_to_json(wb.Sheets[nombre], FILAS_LECTURA) : [] };
+      return { nombre, filas: nombre ? filasDeXlsx(XLSX, wb.Sheets[nombre]) : [] };
     } catch (e) {
       if (/\b(401|403)\b/.test(String((e && e.message) || ''))) return null;
       if (attempt < 1) await new Promise((res) => setTimeout(res, 600));
@@ -584,6 +600,9 @@ export async function respaldoPorHojas(ids, obtenerXLSX = getXLSX, avisar = null
       if (!rows.length) return null;
       const name = title || detectSheetName(rows, gid);
       if (ids.type === 'real' && rows.length < filasAplicadas(previas, name)) { perdidas++; return null; }   // B4: gviz recortó
+      // B3 · gviz sale con el formato regional del libro, como el CSV de exportación: se convierte igual y cuenta para la
+      // misma guarda (un libro en otro formato no se convierte a ciegas: la hoja falta). El enlace publicado no se midió.
+      if (ids.type === 'real') return { name, rows: convertirNumeros(rows, valorDeCsv, senales), csv: true, gviz: true };
       return { name, rows, csv: true };
     } catch (_) { perdidas++; return null; } finally {
       hechas++;
@@ -593,7 +612,7 @@ export async function respaldoPorHojas(ids, obtenerXLSX = getXLSX, avisar = null
   const otroFormato = senales.en > senales.es;   // como en hojasPorCsv: la conversión de los números no valdría
   results.forEach((res) => {
     if (!res || sheets[res.name]) return;
-    if (res.exportacion && otroFormato) { perdidas++; return; }
+    if ((res.exportacion || res.gviz) && otroFormato) { perdidas++; return; }
     sheets[res.name] = stampRows(res.rows, res.name);
     if (res.csv) porCsv++;
   });
@@ -609,8 +628,8 @@ export async function respaldoPorHojas(ids, obtenerXLSX = getXLSX, avisar = null
    se ve en Sheets (pH 8,475 → «8,48»; SheetJS daba 8.47). Se lee sin adivinar tipos y con las MISMAS opciones de filas
    que el XLSX, así que cabeceras, columnas sin nombre y filas en blanco salen igual: hasta el 19-10 con SheetJS (`raw`);
    desde entonces con el lector propio (csvLector.js, carga lenta C), que da lo mismo en menos de la mitad del tiempo. */
-// ⚠ Estas dos expresiones y las dos SENAL_ de abajo empiezan por «-» o una cifra: filasDeCsv salta sin probarlas los
-// textos que no empiezan así. Si alguna cambia de comienzo, hay que quitar ese filtro.
+// ⚠ Estas dos expresiones y las dos SENAL_ de abajo empiezan por «-» o una cifra: convertirNumeros salta sin probarlas
+// los textos que no empiezan así. Si alguna cambia de comienzo, hay que quitar ese filtro.
 const CSV_DECIMAL = /^-?\d+,\d+(E[+-]?\d+)?%?$/;
 const CSV_MILES = /^-?\d{1,3}(\.\d{3})+(,\d+)?%?$/;
 /** Un valor del CSV, que sale con el formato regional del libro (es: coma decimal, punto de miles), en la forma en que
@@ -623,12 +642,9 @@ export function valorDeCsv(s) {
 // Señales del formato regional: «8,48» sólo puede ser es; «8.48» (1–2 decimales) sólo en-US. Las de miles no deciden.
 const SENAL_ES = /^-?\d+,\d{1,2}$/;
 const SENAL_EN = /^-?\d+\.\d{1,2}$/;
-/** Las filas de una hoja a partir del texto de su CSV, como las da sheet_to_json del XLSX (FILAS_LECTURA), con los
- *  valores ya convertidos. `senales` (opcional) cuenta cuántos valores parecen es y cuántos en-US. Carga lenta C
- *  (2026-10-19): ya no recibe SheetJS; lee el lector propio (csvLector.js). */
-export function filasDeCsv(texto, senales = null) {
-  const t = texto.charCodeAt(0) === 0xFEFF ? texto.slice(1) : texto;
-  const filas = leerCsv(t);
+/** Convierte EN SU SITIO, con `conv`, los valores de `filas` que empiezan por «-» o una cifra, y devuelve las filas.
+ *  `senales` (opcional) cuenta cuántos parecen es y cuántos en-US. */
+function convertirNumeros(filas, conv, senales = null) {
   for (const f of filas) {
     for (const k in f) {
       const v = f[k];
@@ -636,10 +652,17 @@ export function filasDeCsv(texto, senales = null) {
       const c0 = v.charCodeAt(0);
       if (c0 !== 45 && (c0 < 48 || c0 > 57)) continue;   // ni «-» ni cifra: no casa con ninguna expresión (ver arriba)
       if (senales) { if (SENAL_ES.test(v)) senales.es++; else if (SENAL_EN.test(v)) senales.en++; }
-      f[k] = valorDeCsv(v);
+      f[k] = conv(v);
     }
   }
   return filas;
+}
+/** Las filas de una hoja a partir del texto de su CSV, como las da sheet_to_json del XLSX (FILAS_LECTURA), con los
+ *  valores ya convertidos. `senales` (opcional) cuenta cuántos valores parecen es y cuántos en-US. Carga lenta C
+ *  (2026-10-19): ya no recibe SheetJS; lee el lector propio (csvLector.js). */
+export function filasDeCsv(texto, senales = null) {
+  const t = texto.charCodeAt(0) === 0xFEFF ? texto.slice(1) : texto;
+  return convertirNumeros(leerCsv(t), valorDeCsv, senales);
 }
 /** Las filas de la hoja `nombre` según su huella aplicada ('nombre:filas:hash;'), o -1 si no hay. */
 function filasAplicadas(previas, nombre) {
