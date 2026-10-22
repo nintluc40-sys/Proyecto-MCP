@@ -39,7 +39,7 @@ import { sumarDias } from '../registros/lib/mad-libro.js';
 import { tablaDeLotes, fichaDeLote } from './operativo.lotes.js';
 import { tablaDePiscinas, fichaDePiscina } from './operativo.broodstock.js';
 import { totalesDeReproduccion, tablaDeReproduccion } from './operativo.reproduccion.js';
-import { registroDeMovimientos, productosPorArea } from './operativo.manejo.js';
+import { registroDeMovimientos, productosPorArea, ignoraDeMovimientos, ignoraDeTratamientos } from './operativo.manejo.js';
 import { coberturaDePartes, avisosDelLibro } from './operativo.calidad.js';
 import { esc } from '../../core/format.js';
 import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
@@ -137,6 +137,8 @@ export function parteDiario(M, serie, partes, F, opts = {}) {
     reproduccionPorLote: porLote,
     movimientos,
     tratamientos,
+    // pauta 14 (2026-10-22): lo que esas dos hojas no pueden filtrar, para decirlo en el papel (las listas no lo llevan)
+    ignoraManejo: { movimientos: ignoraDeMovimientos(filtro), tratamientos: ignoraDeTratamientos(filtro) },
     cobertura,
     avisos,
   };
@@ -226,7 +228,9 @@ function bloqueReproduccion(parte, tope) {
     esc(r.lote), nf(r.desoves), nf(r.huevos), nf(r.n2), nf(r.n5), r.pendientes ? nf(r.pendientes) : '—',
   ])}</tr>`);
   const pie = `<div class="rp-pie-b">Fertilidad ${pc(R.fertilidad)} · nauplios/♀ ${nf(R.naupliosPorHembra)}${R.pendientes ? ` · <b>${nf(R.pendientes)} desoves pendientes de N5</b>` : ''}</div>`;
-  return tabla(['Lote', 'Desoves', 'Huevos', 'N2', 'N5', 'Pend.'], filas, tope, 'Sin desoves registrados en el día.', 'lotes') + pie;
+  // pauta 14 (2026-10-22): como las bajas, lo que un desove no puede honrar se DICE (antes se callaba en el papel)
+  const nota = (R.ignora || []).length ? `<div class="rp-vacio">Un desove no se filtra por ${esc(R.ignora.join(' ni por '))}.</div>` : '';
+  return nota + tabla(['Lote', 'Desoves', 'Huevos', 'N2', 'N5', 'Pend.'], filas, tope, 'Sin desoves registrados en el día.', 'lotes') + pie;
 }
 
 function bloqueManejo(parte, tope) {
@@ -236,7 +240,11 @@ function bloqueManejo(parte, tope) {
   ])}</tr>`);
   const tr = (parte.tratamientos || []).map((t) => `${esc(t.area)} (${nf(t.aplicaciones)})`).join(' · ');
   const pie = `<div class="rp-pie-b">Tratamientos: ${tr ? tr : 'ninguno registrado'}</div>`;
-  return tabla(['Movimiento', 'Motivo', 'Animales'], filas, tope, 'Sin movimientos registrados en el día.', 'movimientos') + pie;
+  // pauta 14 (2026-10-22): lo que cada hoja no puede filtrar, dicho como en 🔄 Manejo
+  const I = parte.ignoraManejo || {};
+  const nota = [['Los movimientos', I.movimientos], ['Los tratamientos', I.tratamientos]]
+    .filter(([, x]) => (x || []).length).map(([q, x]) => `<div class="rp-vacio">${q} no se filtran por ${esc(x.join(' ni por '))}.</div>`).join('');
+  return nota + tabla(['Movimiento', 'Motivo', 'Animales'], filas, tope, 'Sin movimientos registrados en el día.', 'movimientos') + pie;
 }
 
 function bloqueRegistro(parte, tope) {

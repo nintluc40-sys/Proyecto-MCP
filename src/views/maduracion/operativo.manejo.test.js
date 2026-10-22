@@ -273,3 +273,18 @@ describe('Maduración · operativo · 🔄 Manejo (F5.1)', () => {
     });
   });
 });
+
+/* Pauta 14 (2026-10-22, usuario) · los ignoraDe* de 🔄 Manejo callaban el estado, el sexo, la piscina y la camaronera, que
+   ninguna de sus hojas aplica. Lo de antes sigue igual y en su orden. */
+describe('Maduración · manejo · pauta 14: lo que no se aplica se dice', () => {
+  it('🔴 movimientos, alimentación y tratamientos dicen también el estado, el sexo, la piscina y la camaronera', () => {
+    const CUATRO = F({ estado: 'Producción', sexo: 'hembras', piscina: 'P1', camaronera: 'CX' });
+    for (const ignora of [ignoraDeMovimientos, ignoraDeAlimentacion, ignoraDeTratamientos]) {
+      expect(ignora(CUATRO)).toEqual(['estado', 'sexo', 'piscina', 'camaronera']);
+    }
+    expect(ignoraDeMovimientos(F({ codigo: 'CA', sexo: 'machos' }))).toEqual(['lote', 'sexo']);   // el código, como «lote»
+    expect(ignoraDeAlimentacion(F({ lote: 'LA', codigo: 'CA', estado: 'Cuarentena' }))).toEqual(['código genético', 'estado']);
+    expect(ignoraDeTratamientos(F({ sala: 'Sala 1', tanque: '1', lote: 'LA', piscina: 'P1' }))).toEqual(['tanque', 'piscina']);
+    expect([ignoraDeMovimientos(F({})), ignoraDeAlimentacion(F({})), ignoraDeTratamientos(F({}))]).toEqual([[], [], []]);
+  });
+});

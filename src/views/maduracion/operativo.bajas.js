@@ -33,7 +33,7 @@ import { MAD_FIN_MOTIVOS } from '../registros/lib/ficha-maduracion-fin-ciclo.sch
 import { sumarDias, ubicKey } from '../registros/lib/mad-libro.js';
 import { fechaDeFila } from './operativo.data.js';
 import { cociente } from './operativo.indicadores.js';
-import { loteElegido, hayLote, hayCodigo, haySala, hayTanque, salaElegida, tanqueElegido } from './operativo.tablero.js';   // punto 2 · etapas A y B · uno o varios
+import { loteElegido, hayLote, salaElegida, tanqueElegido, filtrosNoAplicados } from './operativo.tablero.js';   // punto 2 · etapas A y B · uno o varios
 
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
 const esIso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -55,18 +55,11 @@ export const DIMENSIONES_BAJAS = [
   { clave: 'lote', etiqueta: 'Lote' },
 ];
 
-/** Las dimensiones del filtro que una agrupación NO puede honrar, para decirlo en pantalla. */
+/** Las dimensiones del filtro que una agrupación NO puede honrar, para decirlo en pantalla. Por lote se aplica el lote;
+ *  por sala o tanque, la sala y el tanque. Pauta 14 (2026-10-22, usuario): también el estado, el sexo, la piscina y la
+ *  camaronera, que ninguna aplica y antes se callaban. */
 function noHonra(F, dimension) {
-  const fuera = [];
-  if (dimension === 'lote') {
-    if (haySala(F)) fuera.push('sala');
-    if (hayTanque(F)) fuera.push('tanque');
-    if (hayCodigo(F)) fuera.push('código genético');
-  } else {
-    if (hayLote(F)) fuera.push('lote');
-    if (hayCodigo(F)) fuera.push('código genético');
-  }
-  return fuera;
+  return filtrosNoAplicados(F, dimension === 'lote' ? ['lote'] : ['sala', 'tanque']);
 }
 
 /** Suma de un par de pares. */
@@ -216,7 +209,8 @@ export function motivosDeCierre(fuentes, periodo, F) {
     f.lotes = [...f.lotes].sort(porNombre);
     f.metabisulfito = Math.round(f.metabisulfito * 100) / 100;
   }
-  return { filas, total, cierres: filas.reduce((a, f) => a + f.cierres, 0), metabisulfito: Math.round(metabisulfito * 100) / 100 };
+  return { filas, total, cierres: filas.reduce((a, f) => a + f.cierres, 0), metabisulfito: Math.round(metabisulfito * 100) / 100,
+    ignora: filtrosNoAplicados(F, ['lote']) };   // pauta 14: un cierre sólo dice su lote
 }
 
 /* ── LA DISTRIBUCIÓN POR HORA ───────────────────────────────── */

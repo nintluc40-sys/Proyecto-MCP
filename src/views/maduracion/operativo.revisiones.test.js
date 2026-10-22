@@ -242,3 +242,20 @@ describe('Maduración · revisiones · punto 6 · los lotes del filtro propio', 
     expect(mortalidadEnDesove(M6.fuentes, F({ lote: 'LB' }), P).filas.find((t) => t.tipo === 'Desove')).toMatchObject({ entran: 10, muertas: 1 });
   });
 });
+
+/* Pauta 14 (2026-10-22, usuario) · en 🔍 Revisiones, la alcalinidad y la mortalidad en desove no decían nada, las
+   observaciones callaban el código genético y ninguna decía el estado, el sexo, la piscina ni la camaronera. */
+describe('Maduración · revisiones · pauta 14: lo que no se aplica se dice', () => {
+  const CUATRO = F({ estado: 'Producción', sexo: 'hembras', piscina: 'P1', camaronera: 'CX' });
+  const RESTO = ['estado', 'sexo', 'piscina', 'camaronera'];
+  it('🔴 cada pieza dice lo que no aplica, según lo que su hoja registra', () => {
+    expect(revisionesDeNauplios(M.fuentes, CUATRO, P30).ignora).toEqual(RESTO);
+    expect(alcalinidadPorArea(M.fuentes, CUATRO, P30).ignora).toEqual(RESTO);
+    expect(mortalidadEnDesove(M.fuentes, CUATRO, P30).ignora).toEqual(RESTO);
+    expect(frecuenciaDeObservaciones(PARTES, CUATRO, P30).ignora).toEqual(RESTO);
+    const lugar = F({ sala: 'Sala 1', lote: 'LA', codigo: 'CA' });
+    expect(alcalinidadPorArea(M.fuentes, lugar, P30).ignora).toEqual(['lote', 'código genético']);
+    expect(mortalidadEnDesove(M.fuentes, lugar, P30).ignora).toEqual(['sala', 'código genético']);
+    expect(frecuenciaDeObservaciones(PARTES, lugar, P30).ignora).toEqual(['lote', 'código genético']);   // antes, sólo el lote
+  });
+});

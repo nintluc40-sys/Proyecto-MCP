@@ -4229,3 +4229,44 @@ describe('Maduración · operativo · punto 5 · dividir el N5 de cada destino',
     expect(destinos().querySelectorAll('.mop-dest-parte').length).toBe(0);
   });
 });
+
+/* Pauta 14 (2026-10-22, usuario) · «filtros que se callan»: el mapa de calor, los cierres, la alcalinidad y la mortalidad
+   en desove no decían nada, y Manejo callaba el estado, el sexo, la piscina y la camaronera. El motivo de cada hoja sale
+   sólo si explica algo de lo ignorado: con sólo el sexo, «no registra el lote» no viene a cuento. */
+describe('Maduración · operativo · pauta 14 · lo que no se aplica se dice en pantalla', () => {
+  // Tres pruebas cortas en vez de una: montar el tablero y pintar tres sub-vistas seguidas rozaba el tope de tiempo.
+  const conSexo = async (sub) => { await montar(PLANTA_B); cambiar(filtro('sexo'), 'hembras'); sub(); return plano(root); };
+  it('🔴 con sólo el sexo, 💀 Bajas: el mapa de calor, los motivos y los lotes cerrados lo dicen (sin el motivo de Fin de Ciclo)', async () => {
+    const t = await conSexo(() => abrir('bajas'));
+    expect(plano(card('Bajas por sala y día'))).toContain('El mapa de bajas por sala y día no puede separarse por sexo');
+    expect(plano(card('Motivos de Fin de Ciclo'))).toContain('Un cierre de Fin de Ciclo no puede separarse por sexo');
+    expect(plano(card('Lotes cerrados'))).toContain('Un cierre de Fin de Ciclo no puede separarse por sexo');
+    expect(t, 'el motivo de Fin de Ciclo habla de la sala y el tanque, no del sexo').not.toContain('La hoja de Fin de Ciclo se registra por lote');
+  });
+  it('🔴 con sólo el sexo, 🔍 Revisiones: la alcalinidad y la mortalidad en desove lo dicen', async () => {
+    await conSexo(() => abrir('revisiones'));
+    expect(plano(card('Alcalinidad por área'))).toContain('La alcalinidad no puede separarse por sexo');
+    expect(plano(card('Mortalidad en desove y recuperación'))).toContain('La mortalidad en desove y recuperación no puede separarse por sexo');
+  });
+  it('🔴 con sólo el sexo, 🔄 Manejo lo dice, sin el motivo del lote', async () => {
+    const t = await conSexo(abrirManejo);
+    expect(t).toContain('Un movimiento no puede separarse por sexo');
+    expect(t, 'el motivo de Movimientos es el del lote').not.toContain('La hoja de Movimientos no registra el lote');
+  });
+
+  it('sin ningún cierre, las dos tarjetas vacías lo dicen igual', async () => {
+    await montar(PLANTA_F3);
+    cambiar(filtro('sexo'), 'hembras');
+    abrir('bajas');
+    expect(plano(card('Motivos de Fin de Ciclo'))).toContain('Ningún lote se cerró');
+    expect(plano(card('Motivos de Fin de Ciclo'))).toContain('Un cierre de Fin de Ciclo no puede separarse por sexo');
+    expect(plano(card('Lotes cerrados'))).toContain('Un cierre de Fin de Ciclo no puede separarse por sexo');
+  });
+
+  it('con una sala, los cierres lo dicen CON su motivo', async () => {
+    await montar(PLANTA_B);
+    marcar('sala', 'Sala 1');
+    abrir('bajas');
+    expect(plano(root)).toContain('Un cierre de Fin de Ciclo no puede separarse por sala: ese filtro no se ha aplicado aquí. La hoja de Fin de Ciclo se registra por lote');
+  });
+});

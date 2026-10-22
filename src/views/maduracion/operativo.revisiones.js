@@ -33,7 +33,7 @@ import {
   MAD_NAUP_FOTOTROPISMO, MAD_NAUP_AIREACION, MAD_NAUP_SAL_MAX, MAD_NAUP_TEMP_MAX, MAD_ALC_AREAS,
 } from '../registros/lib/ficha-maduracion-mortdesove.schema.js';
 import { fechaDeFila } from './operativo.data.js';
-import { loteElegido, hayLote, hayCodigo, haySala, hayTanque, salaElegida, tanqueElegido } from './operativo.tablero.js';   // punto 2 · etapas A y B · uno o varios
+import { loteElegido, haySala, salaElegida, tanqueElegido, filtrosNoAplicados } from './operativo.tablero.js';   // punto 2 · etapas A y B · uno o varios
 import { cociente } from './operativo.indicadores.js';
 import { umbralVigente, evaluar } from './operativo.umbrales.js';
 import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';   // punto 6 · el lote del filtro propio
@@ -102,10 +102,7 @@ function lecturaConTope(valor, tope) {
  * ubicación, y se dice en `ignora` en vez de devolver una lista vacía que parecería «no hay revisiones».
  */
 export function revisionesDeNauplios(fuentes, F, periodo) {
-  const ignora = [];
-  if (haySala(F)) ignora.push('sala');
-  if (hayTanque(F)) ignora.push('tanque');
-  if (hayCodigo(F)) ignora.push('código genético');
+  const ignora = filtrosNoAplicados(F, ['lote']);   // pauta 14 (2026-10-22): con el estado, el sexo, la piscina y la camaronera
   const filas = [];
   for (const r of ((fuentes || {}).mortDesove || [])) {
     if (!esRevision(r)) continue;
@@ -168,7 +165,7 @@ export function alcalinidadPorArea(fuentes, F, periodo) {
     });
   }
   const conDato = areas.filter((a) => a.dia.valor !== null || a.noche.valor !== null).length;
-  return { umbral, areas, conDato };
+  return { umbral, areas, conDato, ignora: filtrosNoAplicados(F, ['sala']) };   // pauta 14: una lectura es de un área
 }
 
 /* ── LA MORTALIDAD EN DESOVE Y RECUPERACIÓN ─────────────────── */
@@ -214,7 +211,7 @@ export function mortalidadEnDesove(fuentes, F, periodo) {
     avisos: temps.filter((x) => x.valor > tope.max).length,
     max: tope.max,
   } : null;
-  return { filas, entran, muertas, pct: cociente(muertas, entran, 100), tempDesove };
+  return { filas, entran, muertas, pct: cociente(muertas, entran, 100), tempDesove, ignora: filtrosNoAplicados(F, ['lote']) };   // pauta 14
 }
 
 /* ── LA FRECUENCIA DE LAS OBSERVACIONES DE TANQUE ───────────── */
@@ -247,5 +244,6 @@ export function frecuenciaDeObservaciones(partes, F, periodo) {
   const salida = (m) => [...m.values()]
     .map((f) => ({ obs: f.obs, veces: f.veces, tanques: f.tanques.size, pct: cociente(f.veces, registros, 100) }))
     .sort((a, b) => b.veces - a.veces || porNombre(a.obs, b.obs));
-  return { sanitarias: salida(san), operativas: salida(ope), registros, ignora: hayLote(F) ? ['lote'] : [] };
+  // pauta 14 (2026-10-22): antes sólo decía el lote y callaba el código genético y lo demás
+  return { sanitarias: salida(san), operativas: salida(ope), registros, ignora: filtrosNoAplicados(F, ['sala', 'tanque']) };
 }

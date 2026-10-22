@@ -170,7 +170,7 @@ describe('Maduración · bajas · los motivos de Fin de Ciclo', () => {
 
   it('sin cierres, todo vacío y sin lanzar (es lo que hay en producción hoy)', () => {
     const vacio = motivosDeCierre({ cierres: [] }, P30, SIN);
-    expect(vacio).toEqual({ filas: [], total: 0, cierres: 0, metabisulfito: 0 });
+    expect(vacio).toEqual({ filas: [], total: 0, cierres: 0, metabisulfito: 0, ignora: [] });   // pauta 14: sin filtro, nada que decir
   });
 });
 
@@ -237,5 +237,24 @@ describe('Maduración · bajas · los lotes cerrados', () => {
   it('honra el filtro de lote, y sin cierres devuelve una lista vacía', () => {
     expect(lotesCerrados(M, F({ lote: 'LB' }), P30).map((x) => x.lote)).toEqual(['LB']);
     expect(lotesCerrados({ libro: { avisos: [] }, fuentes: { cierres: [] } }, SIN, P30)).toEqual([]);
+  });
+});
+
+/* Pauta 14 (2026-10-22, usuario) · «filtros que se callan»: el estado, el sexo, la piscina y la camaronera no los aplica
+   ninguna pieza de 💀 Bajas y se callaban; los motivos de cierre, además, no decían nada. Ahora se DICE (las cifras no
+   cambian). */
+describe('Maduración · bajas · pauta 14: lo que no se aplica se dice', () => {
+  const RESTO = ['estado', 'sexo', 'piscina', 'camaronera'];
+  const CUATRO = F({ estado: 'Producción', sexo: 'hembras', piscina: 'P1', camaronera: 'CX' });
+  it('🔴 el estado, el sexo, la piscina y la camaronera, en cada pieza', () => {
+    expect(bajasPorHora({ tanques: [] }, P30, CUATRO).ignora).toEqual(RESTO);
+    expect(calorSalaDia([], CUATRO, P30).ignora).toEqual(RESTO);
+    expect(motivosDeCierre({ cierres: [] }, P30, CUATRO).ignora).toEqual(RESTO);
+    expect(desgloseDeBajas(M, [], PARTES, CUATRO, P30, 'tanque').ignora).toEqual(RESTO);
+  });
+  it('🔴 cada una dice lo suyo: por lote, la sala; los cierres, todo lo que no es el lote', () => {
+    expect(desgloseDeBajas(M, [], PARTES, F({ sala: 'Sala 1', sexo: 'machos' }), P30, 'lote').ignora).toEqual(['sala', 'sexo']);
+    expect(motivosDeCierre({ cierres: [] }, P30, F({ sala: 'Sala 1', lote: 'LA', codigo: 'CA' })).ignora).toEqual(['sala', 'código genético']);
+    expect(calorSalaDia([], F({ sala: 'Sala 1', lote: 'LA' }), P30).ignora).toEqual(['lote']);
   });
 });

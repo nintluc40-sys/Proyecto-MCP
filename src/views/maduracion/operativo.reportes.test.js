@@ -185,6 +185,17 @@ describe('Maduración · F7 · el filtro del tablero se hereda Y se dice', () =>
     expect(parteDiarioHtml(soloS2), 'la sala sí la aplican: no hay nada que decir').not.toContain('Van por tanque');
     expect(parteDiarioHtml(parte)).not.toContain('Van por tanque');
   });
+
+  // Pauta 14 (2026-10-22, usuario) · los bloques de Reproducción y Manejo callaban en el papel lo que no aplican.
+  it('🔴 la reproducción y el manejo también DICEN lo que no aplican', () => {
+    const html = parteDiarioHtml(parteDiario(M, SERIE, PARTES, F({ sexo: 'hembras' }), {}));
+    expect(html).toContain('Un desove no se filtra por sexo.');
+    expect(html).toContain('Los movimientos no se filtran por sexo.');
+    expect(html).toContain('Los tratamientos no se filtran por sexo.');
+    expect(parteDiarioHtml(soloS2)).toContain('Un desove no se filtra por sala.');
+    expect(parteDiarioHtml(soloS2), 'el manejo sí aplica la sala').not.toContain('no se filtran por sala');
+    expect(parteDiarioHtml(parte)).not.toContain('no se filtra');
+  });
 });
 
 describe('Maduración · F7 · el contrato de la serie y el día en curso', () => {

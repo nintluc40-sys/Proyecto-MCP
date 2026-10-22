@@ -189,6 +189,14 @@ export function dimensionActiva(F, d) {
   return !!F[d];
 }
 
+/** Pauta 14 (2026-10-22, usuario) · los filtros PUESTOS que una pieza no aplica (`aplica`: las dimensiones que sí), con
+ *  su rótulo y en el orden del filtro, para DECIRLO en vez de callarlo. Es la regla de `ignoraDeCalidad`. */
+const ROTULO_NO_APLICA = { sala: 'sala', tanque: 'tanque', lote: 'lote', codigo: 'código genético', estado: 'estado',
+  sexo: 'sexo', piscina: 'piscina', camaronera: 'camaronera' };
+export function filtrosNoAplicados(F, aplica) {
+  return Object.keys(ROTULO_NO_APLICA).filter((d) => dimensionActiva(F, d) && !(aplica || []).includes(d)).map((d) => ROTULO_NO_APLICA[d]);
+}
+
 /** Un tanque del filtro tal como llega —un número, con UNA sala (la forma de siempre), o un par «sala|n»— a su clave.
  *  Sin su sala entre las del filtro no identifica nada: ''. */
 function tanqueDelFiltro(t, salas) {

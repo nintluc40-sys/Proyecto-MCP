@@ -48,6 +48,7 @@ import {
   kpiMortalidad, kpiReproduccion, mapaDePlanta, MODOS_MAPA, ESTADO_VACIO, ESTADO_SIN, alertas, ultimosRegistros,
   cuarentenasDeLotes, conIngresoDelLote, curvaDeCuarentena, AVISO_CUARENTENA_DIAS, tarjetasDeSalas, detalleDeSala, ambienteDelDia,
   indiceDeFiltro, cicloDelLote, etiquetasDeFiltro, kpiBiomasa, loteUnico, salaUnica, salaElegida, textoDeTanque,
+  filtrosNoAplicados,
 } from './operativo.tablero.js';
 import { KPIS_CON_GRAFICO, graficoDeKpi } from './operativo.kpis.js';
 import { BIOMOL_PATOGENOS } from './operativo.laboratorio.js';
@@ -2308,6 +2309,11 @@ function ignoraHTML(ignora, que, porque) {
   return `<p class="mc-note">⚠ ${esc(que)} no puede separarse por ${ignora.map((x) => esc(x)).join(' ni por ')}:
     ese filtro no se ha aplicado aquí. ${esc(motivo)}</p>`;
 }
+/** Pauta 14 (2026-10-22) · el motivo de una hoja, sólo si explica algo de lo que se ignora: con sólo el estado, el sexo,
+ *  la piscina o la camaronera puestos, el de «no dice el lote» no viene a cuento. */
+const porqueSi = (ignora, dims, texto) => ((ignora || []).some((x) => dims.includes(x)) ? texto : '');
+const PORQUE_CIERRE = 'La hoja de Fin de Ciclo se registra por lote: no dice la sala, el tanque ni el código genético.';
+const PORQUE_ALC = 'La alcalinidad se mide por área (el RAS y las salas), no por tanque ni por lote.';
 
 /* ── 💀 BAJAS ───────────────────────────────────────────────── */
 
@@ -2324,7 +2330,7 @@ function bajasHTML(M, memo, p, F) {
       ${horasHTML(hor, p)}
     </div>
     ${calorHTML(cal, p)}
-    ${cerradosHTML(cer, p)}
+    ${cerradosHTML(cer, p, filtrosNoAplicados(F, ['lote']))}
   </div>`;
 }
 
@@ -2378,7 +2384,8 @@ function motivosHTML(m, p) {
   if (!m.filas.length) {
     return `<div class="mc-card"><h4 class="mc-card-h">📉 Motivos de Fin de Ciclo <span class="mc-h-note">${esc(etiquetaPeriodo(p))}</span></h4>
       <p class="muted" style="margin:4px 0">Ningún lote se cerró en el período.</p>
-      <p class="mc-note">La hoja de Fin de Ciclo nace con su primer envío: mientras no haya cierres, esto se queda vacío y es lo correcto.</p></div>`;
+      <p class="mc-note">La hoja de Fin de Ciclo nace con su primer envío: mientras no haya cierres, esto se queda vacío y es lo correcto.</p>
+      ${ignoraHTML(m.ignora, 'Un cierre de Fin de Ciclo', porqueSi(m.ignora, ['sala', 'tanque', 'código genético'], PORQUE_CIERRE))}</div>`;
   }
   const max = m.filas[0].total;
   return `<div class="mc-card">
@@ -2392,6 +2399,7 @@ function motivosHTML(m, p) {
         <td class="r">${nf(f.cierres)}${f.totales ? ` <span class="mop-nota">${nf(f.totales)} total(es)</span>` : ''}</td>
         <td class="r">${vacio(f.metabisulfito) || !f.metabisulfito ? '—' : nf(f.metabisulfito, 2) + ' kg'}</td></tr>`).join('')}</tbody></table></div>
     <p class="mc-note">Ordenados de mayor a menor con su acumulado: el primero dice cuánto del total explica UN motivo.${m.metabisulfito ? ` Metabisulfito del período: <b>${nf(m.metabisulfito, 2)} kg</b>.` : ''}</p>
+    ${ignoraHTML(m.ignora, 'Un cierre de Fin de Ciclo', porqueSi(m.ignora, ['sala', 'tanque', 'código genético'], PORQUE_CIERRE))}
   </div>`;
 }
 
@@ -2431,13 +2439,15 @@ function calorHTML(c, p) {
       <tbody>${c.salas.map((s) => `<tr><th>${esc(s.sala)}</th>${s.valores.map((v, i) => `<td class="${tono(v)}" title="${esc(s.sala + ' · ' + dma(c.dias[i]) + ' · ' + (v === null ? 'sin parte registrado' : v + ' bajas'))}">${v === null ? '' : nf(v)}</td>`).join('')}</tr>`).join('')}</tbody>
     </table></div>
     <p class="mc-note">Una celda VACÍA es «no se registró ningún parte»; un <b>0</b> es «se registró y no murió ninguno». No son lo mismo.</p>
+    ${ignoraHTML(c.ignora, 'El mapa de bajas por sala y día')}
   </div>`;
 }
 
-function cerradosHTML(c, p) {
+function cerradosHTML(c, p, ignora) {
+  const nota = ignoraHTML(ignora, 'Un cierre de Fin de Ciclo', porqueSi(ignora, ['sala', 'tanque', 'código genético'], PORQUE_CIERRE));   // pauta 14
   if (!c.length) {
     return `<div class="mc-card mc-card-wide"><h4 class="mc-card-h">🔚 Lotes cerrados <span class="mc-h-note">${esc(etiquetaPeriodo(p))}</span></h4>
-      <p class="muted" style="margin:4px 0">Ningún cierre en el período.</p></div>`;
+      <p class="muted" style="margin:4px 0">Ningún cierre en el período.</p>${nota}</div>`;
   }
   return `<div class="mc-card mc-card-wide">
     <h4 class="mc-card-h">🔚 Lotes cerrados <span class="mc-h-note">${nf(c.length)} cierre(s) · ${esc(etiquetaPeriodo(p))}</span></h4>
@@ -2452,6 +2462,7 @@ function cerradosHTML(c, p) {
         <td class="r">${f.metabisulfito === null ? '—' : nf(f.metabisulfito, 2) + ' kg'}${f.fechaMetabisulfito ? ' <span class="mop-nota">' + esc(dm(f.fechaMetabisulfito)) + '</span>' : ''}</td></tr>`).join('')}</tbody></table></div>
     <p class="mc-note">La DIFERENCIA no se recalcula aquí: es la que el libro anotó al cerrar el lote, con su fecha y su lote.
       «Salieron» es lo registrado en Fin de Ciclo: no se resta del libro (esos animales salen como muertos o descartes en los partes).</p>
+    ${nota}
   </div>`;
 }
 
@@ -2537,6 +2548,7 @@ function alcalinidadHTML(a, p) {
       </tr>`).join('')}</tbody></table></div>
     ${a.conDato ? '' : '<p class="muted" style="margin:4px 0">Ninguna lectura de alcalinidad en el período.</p>'}
     <p class="mc-note">Cada turno guarda su última lectura por separado: anotar la de noche no borra la del día.</p>
+    ${ignoraHTML(a.ignora, 'La alcalinidad', porqueSi(a.ignora, ['tanque', 'lote', 'código genético'], PORQUE_ALC))}
   </div>`;
 }
 
@@ -2553,6 +2565,7 @@ function mortDesoveHTML(m, p) {
     : '<p class="muted" style="margin:4px 0">Ninguna hembra entró a desovar ni a recuperarse en el período.</p>'}
     ${tempDesoveHTML(m.tempDesove)}
     <p class="mc-note">⚠ Estas muertes YA están dentro de las bajas del lote: aquí se abren por tipo de tanque, que es lo que el libro no dice. No se suman a 💀 Bajas.</p>
+    ${ignoraHTML(m.ignora, 'La mortalidad en desove y recuperación', '')}
   </div>`;
 }
 
@@ -2979,7 +2992,7 @@ function movimientosHTML(m, reg, p, F) {
   if (!m.total) {
     return `<div class="mc-card mc-card-wide">${cab}
       <p class="muted" style="margin:4px 0">${hayFiltro(F) ? 'Ningún movimiento del período pasa el filtro.' : 'Ningún movimiento registrado en el período.'}</p>
-      ${ignoraHTML(m.ignora, 'Un movimiento', PORQUE_MOV)}</div>`;
+      ${ignoraHTML(m.ignora, 'Un movimiento', porqueSi(m.ignora, ['lote'], PORQUE_MOV))}</div>`;
   }
   /* Cada celda, los ANIMALES y, entre paréntesis, en cuántos movimientos (decisión del usuario): las dos cifras,
      sin un conmutador más. La diagonal es un movimiento DENTRO de la sala, entre sus tanques. */
@@ -2997,7 +3010,7 @@ function movimientosHTML(m, reg, p, F) {
     <p class="mc-note">Cada celda: los <b>animales</b> movidos y, entre paréntesis, en cuántos movimientos. ⟳ = entre tanques de la MISMA sala.</p>
     <div class="mop-repartos">${repartoHTML(m.porMotivo, 'Por motivo')}${repartoHTML(m.porTipo, 'Por tipo')}${repartoHTML(m.porAgua, 'Agua de destino')}</div>
     ${m.aTanqueCompartido ? `<p class="mc-note">⚠ <b>${nf(m.aTanqueCompartido)}</b> movimiento(s) llegaron a un tanque que HOY es compartido. «Hoy»: el libro sabe cómo está la planta al cierre de la foto, no cómo estaba el día del movimiento.</p>` : ''}
-    ${ignoraHTML(m.ignora, 'Un movimiento', PORQUE_MOV)}
+    ${ignoraHTML(m.ignora, 'Un movimiento', porqueSi(m.ignora, ['lote'], PORQUE_MOV))}
     <h5 class="mop-h5">Registro <span class="mop-nota">${nf(reg.length)} · el más reciente primero</span></h5>
     ${registroHTML(reg)}
   </div>`;
@@ -3008,7 +3021,7 @@ function alimentacionHTML(a, peso, p, F) {
   if (!a.filas) {
     return `<div class="mc-card mc-card-wide">${cab}
       <p class="muted" style="margin:4px 0">${hayFiltro(F) ? 'Ninguna ración del período pasa el filtro.' : 'Ninguna ración registrada en el período.'}</p>
-      ${ignoraHTML(a.ignora, 'La alimentación', PORQUE_ALIM)}</div>`;
+      ${ignoraHTML(a.ignora, 'La alimentación', porqueSi(a.ignora, ['código genético'], PORQUE_ALIM))}</div>`;
   }
   const rango = nf(a.rango.min, 2) + '–' + nf(a.rango.max, 2) + ' %';
   const kpis = [
@@ -3042,7 +3055,7 @@ function alimentacionHTML(a, peso, p, F) {
     <p class="mc-note">La agenda estándar tiene ${nf(a.agendaTomas)} tomas${a.agendaSinProducto ? ', ' + nf(a.agendaSinProducto) + ' de ellas SIN producto (se cuenta aparte, no se descarta)' : ''}.
       El Δ INFORMA —el % del período menos el de la agenda—; lo que se JUZGA es cada toma, con el rango de la ficha de Alimentación.</p>
     ${pesoH}
-    ${ignoraHTML(a.ignora, 'La alimentación', PORQUE_ALIM)}
+    ${ignoraHTML(a.ignora, 'La alimentación', porqueSi(a.ignora, ['código genético'], PORQUE_ALIM))}
   </div>`;
 }
 
@@ -3075,7 +3088,7 @@ function tratamientosHTML(c, areas, cob, p, F) {
     <h5 class="mop-h5">Calendario sala × día</h5>${calendario}
     <h5 class="mop-h5">Productos por área</h5>${areasH}
     <h5 class="mop-h5">Cobertura preventiva por lote</h5>${cobH}
-    ${ignoraHTML(c.ignora, 'Un tratamiento', PORQUE_TRAT)}
+    ${ignoraHTML(c.ignora, 'Un tratamiento', porqueSi(c.ignora, ['tanque', 'código genético'], PORQUE_TRAT))}
   </div>`;
 }
 

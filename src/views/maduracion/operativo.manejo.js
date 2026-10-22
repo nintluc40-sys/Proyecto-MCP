@@ -46,7 +46,7 @@ import { sumarDias, ubicKey } from '../registros/lib/mad-libro.js';
 import { diasEntre } from '../registros/lib/mad-resumen.js';
 import { fechaDeFila } from './operativo.data.js';
 import { cociente } from './operativo.indicadores.js';
-import { loteElegido, hayLote, hayCodigo, haySala, hayTanque, salaElegida, tanqueElegido } from './operativo.tablero.js';   // punto 2 · etapas A y B · uno o varios
+import { loteElegido, hayLote, hayCodigo, haySala, hayTanque, salaElegida, tanqueElegido, filtrosNoAplicados } from './operativo.tablero.js';   // punto 2 · etapas A y B · uno o varios
 
 const txt = (v) => String(v == null ? '' : v).trim();
 const ent = (v) => { const n = Number(txt(v)); return Number.isFinite(n) && n > 0 ? n : 0; };
@@ -73,9 +73,10 @@ function movEnFiltro(r, F) {
   return true;
 }
 
-/** Lo que el filtro no puede aplicar a los movimientos: el lote, que esta hoja no registra. */
+/** Lo que el filtro no puede aplicar a los movimientos: el lote, que esta hoja no registra (con el código, también se
+ *  dice «lote»: el código es del lote). Pauta 14 (2026-10-22): y el estado, el sexo, la piscina y la camaronera. */
 export function ignoraDeMovimientos(F) {
-  return hayLote(F) || hayCodigo(F) ? ['lote'] : [];
+  return [...(hayLote(F) || hayCodigo(F) ? ['lote'] : []), ...filtrosNoAplicados(F, ['sala', 'tanque', 'lote', 'codigo'])];
 }
 
 /**
@@ -187,9 +188,9 @@ function alimEnFiltro(r, F) {
   return true;
 }
 
-/** Lo que el filtro no puede aplicar a la alimentación. */
+/** Lo que el filtro no puede aplicar a la alimentación (aplica sala, tanque y lote). */
 export function ignoraDeAlimentacion(F) {
-  return hayCodigo(F) ? ['código genético'] : [];
+  return filtrosNoAplicados(F, ['sala', 'tanque', 'lote']);
 }
 
 /**
@@ -279,12 +280,10 @@ export function procedenciaDelPeso(fuentes, periodo, F) {
 
 /* ── 🧪 TRATAMIENTOS ───────────────────────────────────────── */
 
-/** Lo que el filtro no puede aplicar aquí: el TANQUE, que esta hoja no registra (se aplican por sala y área). */
+/** Lo que el filtro no puede aplicar aquí: el TANQUE, que esta hoja no registra (se aplican por sala y área), y lo que
+ *  no son la sala ni el lote. */
 export function ignoraDeTratamientos(F) {
-  const x = [];
-  if (hayTanque(F)) x.push('tanque');
-  if (hayCodigo(F)) x.push('código genético');
-  return x;
+  return filtrosNoAplicados(F, ['sala', 'lote']);
 }
 
 function tratEnFiltro(r, F) {
