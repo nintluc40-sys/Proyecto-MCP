@@ -9,13 +9,14 @@
    · hojasPorCsv: todas las hojas con su origen; la que no llega por CSV —o trae menos filas que lo aplicado— por su XLSX;
      `completo`; y que se aparta (null → el libro entero, como antes) sin pestañas, con una sin nombre, si el formato
      regional no es el esperado o si nada llega (deja de insistir cuando falla la primera tanda entera, CSV_A_LA_VEZ);
-   · el Worker lo usa PRIMERO y sólo pide el libro entero si no sirve o queda incompleto.
+   · el Worker lo usa PRIMERO y sólo pide el libro entero si no sirve o queda incompleto;
+   · pauta 17 (2026-10-22): sin Worker, la página igual (antes empezaba por el libro entero y congelaba 12–16 s).
    Google simulado (fetch); datos ficticios.
    ============================================================ */
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { valorDeCsv, filasDeCsv, hojasPorCsv, workbookToSheets, XLSX_LECTURA, textoProgreso, CSV_A_LA_VEZ } from './sheets.js';
+import { valorDeCsv, filasDeCsv, hojasPorCsv, workbookToSheets, XLSX_LECTURA, textoProgreso, CSV_A_LA_VEZ, descargarLibro, fetchAllSheets, parseSheetsIds, activeUrl } from './sheets.js';
 import { atenderLectura } from './sheets.worker.js';
 
 const VENDOR = join(process.cwd(), 'public/vendor/xlsx.full.min.js');
@@ -282,5 +283,60 @@ describe('el Worker lee PRIMERO por CSV', () => {
     expect(pedidas.some((u) => /export\?format=xlsx/.test(u) && !/gid=/.test(u))).toBe(true);
     expect(r.orden).toEqual([H2]);
     expect(r.completo).toBe(true);
+  });
+});
+
+describe('pauta 17 (2026-10-22) · SIN Worker, la página también lee PRIMERO por CSV (no congela con el libro entero)', () => {
+  const libroPedido = () => pedidas.some((u) => /export\?format=xlsx/.test(u) && !/gid=/.test(u));
+
+  it('completo por CSV: no pide el libro entero; las hojas con sus valores convertidos; completo', async () => {
+    libroEntero = xlsxDe(H1, [['Fecha'], ['x']]);            // si se pidiera, daría otra cosa
+    const d = await descargarLibro();                        // sin lector registrado: se lee aquí (leerTodoAqui)
+    expect(d.completo).toBe(true);
+    expect(Object.keys(d.sheets)).toEqual([H1, H2]);
+    expect(d.sheets[H1][0].Supervivencia).toBe('85.5');
+    expect(libroPedido()).toBe(false);
+  });
+
+  it('con las pestañas que recuerda la página, la primera tanda sale antes que /htmlview', async () => {
+    const { realId } = parseSheetsIds(activeUrl());
+    localStorage.setItem('larv4_sheet_tabs', JSON.stringify({ [realId]: [{ gid: 1111, title: H1 }, { gid: 2222, title: H2 }] }));
+    await fetchAllSheets();
+    expect(pedidas.findIndex((u) => /export\?format=csv/.test(u))).toBeLessThan(pedidas.findIndex((u) => /\/htmlview/.test(u)));
+  });
+
+  it('incompleto por CSV: pide el libro entero (y usa ése)', async () => {
+    csvPorGid[2222] = 500;
+    libroEntero = xlsxDe(H2, [['Fecha', 'OD'], ['01/09/2026', 5]]);
+    const d = await descargarLibro();
+    expect(libroPedido()).toBe(true);
+    expect(Object.keys(d.sheets)).toEqual([H2]);
+    expect(d.completo).toBe(true);
+  });
+
+  it('una hoja con MENOS filas que lo aplicado va por su XLSX (la página le pasa sus huellas)', async () => {
+    vi.resetModules();                                       // un sheets.js nuevo: lo aplicado no se queda para otras pruebas
+    const S = await import('./sheets.js');
+    const buenas = { [H1]: [{ a: '1' }, { a: '2' }, { a: '3' }], [H2]: [{ a: '1' }] };
+    const huellas = S.huellasPorHoja(buenas);
+    S.aplicarDescarga({ sheets: buenas, huellas, fp: S.huellaDe(huellas) });
+    const s = await S.fetchAllSheets();                      // el CSV de la 1111 trae 2 filas; su XLSX, 3
+    expect(s[H1]).toHaveLength(3);
+    expect(pedidas.some((u) => /export\?format=xlsx/.test(u) && /gid=1111/.test(u))).toBe(true);
+  });
+
+  it('sin libro ni respaldo, lo que llegó por CSV, como último recurso (completo: false)', async () => {
+    csvPorGid[2222] = 500;
+    xlsxPorGid = {};
+    const base = globalThis.fetch;
+    let csv1111 = 0;
+    // el CSV de la 1111 llega UNA vez (la lectura por CSV) y ya no (el respaldo): ni libro ni respaldo traen nada
+    globalThis.fetch = async (url) => (/export\?format=csv/.test(String(url)) && /gid=1111/.test(String(url)) && ++csv1111 > 1 ? error(500) : base(url));
+    try {
+      const d = await descargarLibro();
+      expect(Object.keys(d.sheets)).toEqual([H1]);
+      expect(d.completo).toBe(false);
+      expect(libroPedido()).toBe(true);
+    } finally { globalThis.fetch = base; }
   });
 });

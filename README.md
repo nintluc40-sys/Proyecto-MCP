@@ -768,6 +768,10 @@ Dos consecuencias que conviene tener presentes al desplegar:
    menos filas que lo aplicado) va por su XLSX; sin pestañas, con alguna sin nombre, con el formato regional cambiado o
    si falla la primera tanda entera sin ninguna hoja, se lee el libro entero como antes; y sólo se usa si llegó
    COMPLETO (si no, el libro entero y el respaldo; como último recurso, lo parcial).
+   Sin Worker (`leerTodoAqui`: el Worker roto o caído en la primera carga) la página sigue el MISMO orden desde el
+   2026-10-22 (pauta 17). Antes empezaba por el libro entero: un bloque de 12,6 s de SheetJS con la pantalla congelada,
+   en cada refresco con cambios. Por CSV son 0,9 s, repartidos en una tarea por hoja de 0,12 s como mucho (medido ese
+   día en el PC con el libro real: 44 hojas, 225 384 filas).
    Si no, `connectSheets()` descarga el libro **completo** vía `export?format=xlsx`
    (1 petición, todas las hojas), con reintento y backoff. Si falla, el **respaldo** pide CADA hoja
    por su XLSX (`export?format=xlsx&gid=`; los `gid` salen de `/htmlview`) y sólo la que no llegue,

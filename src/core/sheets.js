@@ -991,16 +991,27 @@ export async function fetchXlsxSheets(ids, obtenerXLSX = getXLSX, avisar = null)
   return null;
 }
 
-/** Descarga las hojas (XLSX-first; si no, el respaldo hoja a hoja) y devuelve { name: rows }. */
+/** Descarga las hojas (cada una por su CSV; si no, el libro XLSX y el respaldo hoja a hoja) y devuelve { name: rows }. */
 export async function fetchAllSheets(avisar = null) {
   return (await leerTodoAqui(avisar)).sheets;
 }
-/** fetchAllSheets con `completo` (A4, 2026-10-11): el libro entero lo es; el respaldo, si llegaron todas sus pestañas. */
+/** fetchAllSheets con `completo` (A4, 2026-10-11): el libro entero lo es; el respaldo, si llegaron todas sus pestañas.
+ *  Pauta 17 (2026-10-22, usuario) · el MISMO orden que el Worker (sheets.worker.js · atenderLectura): primero cada hoja
+ *  por su CSV (hojasPorCsv: ~1,4 MB y ~1,5 s de lectura, repartidos en una tarea corta por hoja) y el libro entero sólo
+ *  si eso no llega completo. Antes empezaba por el libro: 14,5 MB y 12–16 s de SheetJS seguidos con la pantalla
+ *  congelada, en cada refresco mientras el Worker estuviera roto y en la primera carga si se caía. */
 async function leerTodoAqui(avisar = null) {
   const ids = parseSheetsIds(activeUrl());
   if (!ids) throw new Error('URL de Google Sheets inválida.');
+  const recordadas = ids.type === 'real' ? cachedTabs(ids.realId) : null;
+  const porCsv = await hojasPorCsv(ids, getXLSX, avisar, _huellasAplicadas, recordadas);
+  if (porCsv && porCsv.completo) return { sheets: porCsv.sheets, completo: true };
   const libro = await fetchXlsxSheets(ids, getXLSX, avisar);
-  return libro ? { sheets: libro, completo: true } : fetchViaCsv(ids, avisar);
+  if (libro) return { sheets: libro, completo: true };
+  const r = await fetchViaCsv(ids, avisar);
+  // como en el Worker: sin libro ni respaldo, lo que llegó por CSV (incompleto: isDegraded no lo deja pisar un set mayor)
+  if (!Object.keys(r.sheets).length && porCsv && Object.keys(porCsv.sheets).length) return { sheets: porCsv.sheets, completo: false };
+  return r;
 }
 
 /** ¿La descarga recién obtenida trae MENOS hojas que el set bueno ya cargado?

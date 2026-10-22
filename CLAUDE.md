@@ -126,7 +126,7 @@ que este repo ya vigila a mano en los tres sitios donde no le queda más remedio
   por su CSV de exportación, leído con `csvLector` y no con SheetJS (`hojasPorCsv`). Las pestañas salen
   de `/htmlview`; si no responde, de la lista que recuerda la página (`larv4_sheet_tabs`). Si no llega completo,
   el XLSX del libro entero (`fetchXlsxSheets`) y, si tampoco, el respaldo hoja a hoja
-  (`respaldoPorHojas`). Sin Worker (`leerTodoAqui`, en `sheets.js`), el XLSX primero y luego el
-  respaldo.
+  (`respaldoPorHojas`). Sin Worker (`leerTodoAqui`, en `sheets.js`), el mismo orden: el CSV primero, y
+  luego el XLSX y el respaldo.
 - La vista Registros persiste en `localStorage` con claves `larv4_` y sincroniza con un Apps
   Script (GAS) desplegado. Es un **contrato externo**: no renombrar claves ni endpoints.

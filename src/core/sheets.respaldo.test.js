@@ -20,7 +20,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fetchAllSheets, workbookToSheets, XLSX_LECTURA, textoProgreso } from './sheets.js';
+import { fetchAllSheets, workbookToSheets, XLSX_LECTURA, textoProgreso, setLectorLibro, descargarLibro } from './sheets.js';
 import { atenderLectura } from './sheets.worker.js';
 
 const VENDOR = join(process.cwd(), 'public/vendor/xlsx.full.min.js');
@@ -236,6 +236,12 @@ describe('B4 (2026-10-22) · el CSV del respaldo es el de EXPORTACIÓN, y gviz n
     + '02/09/2026,T2,80,\r\n03/09/2026,T3,"77,25","con ""comillas"""\r\n';
   const entorno = () => ({ cargarXLSX: vi.fn(), obtenerXLSX: () => window.XLSX, guardar: vi.fn(async () => {}) });
   const previas = (n1, n2) => ({ [H1]: `${H1}:${n1}:1;`, [H2]: `${H2}:${n2}:2;` });
+  // El respaldo de la página TAL CUAL: el Worker contesta «xlsx» y descargarLibro va directo a fetchViaCsv. (Con
+  // fetchAllSheets, desde la pauta 17 la lectura por CSV de hojasPorCsv va delante y la hoja llegaría por ella.)
+  const respaldoDeLaPagina = async () => {
+    setLectorLibro({ disponible: () => true, leer: async () => ({ ok: false, motivo: 'xlsx' }) });
+    try { return (await descargarLibro()).sheets; } finally { setLectorLibro(null); }
+  };
 
   it('si el XLSX de una hoja falla, va su CSV de exportación: ENTERA, con las filas del libro y sin pedir gviz', async () => {
     xlsxPorGid[1111] = 404;
@@ -244,7 +250,7 @@ describe('B4 (2026-10-22) · el CSV del respaldo es el de EXPORTACIÓN, y gviz n
     const wb = X.utils.book_new();
     X.utils.book_append_sheet(wb, hoja1(), H1);
     const libro = workbookToSheets(X.read(new Uint8Array(X.write(wb, { type: 'array', bookType: 'xlsx' })), XLSX_LECTURA), X);
-    const s = await fetchAllSheets();
+    const s = await respaldoDeLaPagina();
     expect(s[H1]).toEqual(libro[H1]);                        // 3 filas; «85,5» → '85.5', como el XLSX
     expect(s[H1][0].Supervivencia).toBe('85.5');
     expect(gvizDe(1111)).toEqual([]);
@@ -253,7 +259,7 @@ describe('B4 (2026-10-22) · el CSV del respaldo es el de EXPORTACIÓN, y gviz n
   it('si el CSV de exportación viene en otro formato regional (en-US), no se usa: la hoja falta', async () => {
     xlsxPorGid[1111] = 404;
     exportCsv[1111] = 'Fecha,Tanque,Supervivencia\n01/09/2026,T1,85.55\n02/09/2026,T2,80.25\n';
-    const s = await fetchAllSheets();
+    const s = await respaldoDeLaPagina();
     expect(s[H1]).toBeUndefined();
     expect(s[H2]).toHaveLength(2);
   });
