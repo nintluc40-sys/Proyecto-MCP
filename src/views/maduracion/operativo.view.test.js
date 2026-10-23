@@ -495,6 +495,22 @@ describe('Maduración · operativo · 🏠 Salas', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  /* 2026-10-23 (latente) · el MÁXIMO también con su decimal, como el mínimo: hoy es 15 y sale igual con o sin él, así que
+     se pone 17,5 sólo aquí (el catálogo que lee la vista, el mismo módulo tras `montar`); sin el decimal diría «18». */
+  it('la raya de la densidad máxima sale con su decimal', async () => {
+    await montar(PLANTA);
+    const { UMBRALES } = await import('./operativo.umbrales.js');
+    const antes = UMBRALES.densidad.laboratorio;
+    UMBRALES.densidad.laboratorio = { ...antes, max: 17.5 };
+    try {
+      click(root.querySelector('[data-mop-sub="salas"]'));
+      makeChart.mockClear();
+      click(root.querySelector('[data-mop-sala="Sala 1"]'));
+      const tq1 = makeChart.mock.calls.find((c) => c[0] === 'mopTq')[1];
+      expect(tq1.data.datasets.map((d) => d.label)).toEqual(expect.arrayContaining(['Densidad mínima 4,5', 'Densidad máxima 17,5']));
+    } finally { UMBRALES.densidad.laboratorio = antes; }
+  });
+
   it('con filtro de sala, sólo su tarjeta y su detalle abierto', async () => {
     await montar(PLANTA);
     marcar('sala', 'Sala 2');

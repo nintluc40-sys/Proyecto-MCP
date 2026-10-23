@@ -1945,7 +1945,7 @@ function dibujarDetalle(d) {
       yAxisID: 'y1', order: 1, pointRadius: 3, borderWidth: 2, spanGaps: false },
   ];
   if (u && u.min !== null) datasets.push({ type: 'line', label: `Densidad mínima ${nf(u.min, 1)}`, data: t.map(() => u.min), borderColor: '#2e9e5b', borderDash: [4, 4], pointRadius: 0, borderWidth: 1.5, yAxisID: 'y1', order: 0 });
-  if (u && u.max !== null) datasets.push({ type: 'line', label: `Densidad máxima ${nf(u.max)}`, data: t.map(() => u.max), borderColor: '#e0533b', borderDash: [4, 4], pointRadius: 0, borderWidth: 1.5, yAxisID: 'y1', order: 0 });
+  if (u && u.max !== null) datasets.push({ type: 'line', label: `Densidad máxima ${nf(u.max, 1)}`, data: t.map(() => u.max), borderColor: '#e0533b', borderDash: [4, 4], pointRadius: 0, borderWidth: 1.5, yAxisID: 'y1', order: 0 });
   graficoOp('mopTq', {
     data: { labels: t.map((x) => 'T' + x.tanque), datasets },
     options: {
