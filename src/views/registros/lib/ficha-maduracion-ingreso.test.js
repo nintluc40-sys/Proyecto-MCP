@@ -17,7 +17,11 @@ import {
   sumaReparto,
   repartirParejo,
   repartirRespetando,
+  MAD_DENSIDAD_MAX_M2,
+  capacidadTanque,
+  avisosDeCapacidad,
 } from './ficha-maduracion-ingreso.schema.js';
+import { umbralVigente } from '../../maduracion/operativo.umbrales.js';
 
 /* Modelo base VÁLIDO. Cada prueba parte de aquí y rompe UNA cosa, para que el rojo
    señale esa cosa y no un fixture mal montado. */
@@ -276,11 +280,30 @@ describe('Ingreso · construcción de filas', () => {
   });
 });
 
+/* Tarea 8 · ronda 5 (2026-10-23, usuario) · `base()` mete 450 animales en cada tanque de la Sala 1 (13,14 m², capacidad
+   197): pasa de la capacidad, y desde ese día lo AVISA. Para «sin ningún aviso», la misma base con 140 por tanque. */
+const baseDentro = () => {
+  const m = base();
+  const c = m.composiciones[0];
+  c.machos = 100; c.hembras = 180;
+  c.reparto.forEach((r) => { r.machos = 50; r.hembras = 90; });
+  return m;
+};
+
 describe('Ingreso · validación', () => {
-  it('el modelo base no da ni un error ni un aviso', () => {
-    const { errores, avisos } = validarIngreso(base());
+  it('el modelo base, dentro de la capacidad, no da ni un error ni un aviso', () => {
+    const { errores, avisos } = validarIngreso(baseDentro());
     expect(errores).toEqual([]);
     expect(avisos).toEqual([]);
+  });
+
+  it('🔴 tarea 8 · el modelo base tal cual: sin errores y sólo los dos avisos de capacidad, al final', () => {
+    const { errores, avisos } = validarIngreso(base());
+    expect(errores).toEqual([]);
+    expect(avisos).toEqual([
+      'El tanque 1 de Sala 1 recibe 450 animales: pasa de su capacidad, 197 (13,14 m² × 15 animales/m²).',
+      'El tanque 2 de Sala 1 recibe 450 animales: pasa de su capacidad, 197 (13,14 m² × 15 animales/m²).',
+    ]);
   });
 
   it('ERROR si la misma composición cae dos veces en el mismo tanque', () => {
@@ -512,5 +535,63 @@ describe('Ingreso · el agua es una elección entre dos', () => {
   it('🔴 el valor por defecto es «Agua de playa», y es una de las dos opciones', () => {
     expect(AGUA_DEFECTO).toBe('Agua de playa');
     expect(AGUA_OPTS).toContain(AGUA_DEFECTO);
+  });
+});
+
+/* Tarea 8 · ronda 5 (2026-10-23, usuario) · LA CAPACIDAD de un tanque es su área × 15 animales/m² —la densidad máxima del
+   semáforo del tablero, no una tabla aparte— y sólo AVISA de sobrecarga: el reparto sigue por conteo. Dos avisos: el de lo
+   que ENTRA (dentro de `validarIngreso`) y, con la ocupación del día, el de lo ya vivo de otros lotes, sólo donde ésa es
+   la suma que la pasa. Los bordes, a una unidad: con la capacidad justa no avisa. */
+describe('Ingreso · la capacidad del tanque avisa de la sobrecarga (tarea 8)', () => {
+  const uno = (sala, tanque, machos, hembras, extra = {}) => ({ fecha: '2026-09-08', lote: 'AB', composiciones: [{
+    codigoGenetico: 'CG01', piscina: 'P-1', machos, hembras, reparto: [{ sala, tanque, machos, hembras }], ...extra }] });
+
+  it('🔴 la densidad máxima es la del semáforo de densidad del tablero (una sola cifra)', () => {
+    expect(MAD_DENSIDAD_MAX_M2).toBe(15);
+    expect(MAD_DENSIDAD_MAX_M2).toBe(umbralVigente('densidad').max);
+  });
+
+  it('🔴 la capacidad de cada sala, por lo bajo; la Sala 5 por tanque; sin área, no hay', () => {
+    expect(capacidadTanque('Sala 1', 1)).toBe(197);   // 13,14 × 15 = 197,1
+    expect([capacidadTanque('Sala 2', 16), capacidadTanque('Sala 3', 22), capacidadTanque('Sala 4', 1)]).toEqual([750, 750, 600]);
+    expect([capacidadTanque('Sala 5', 7), capacidadTanque('Sala 5', 8), capacidadTanque('Sala 5', 9), capacidadTanque('Sala 5', 11)]).toEqual([600, 600, 405, 405]);
+    expect(capacidadTanque('Sala 5', 12)).toBe('');
+    expect(capacidadTanque('Sala 9', 1)).toBe('');
+  });
+
+  it('🔴 lo que entra: con la capacidad justa no avisa; con uno más, sí (machos y hembras juntos)', () => {
+    expect(avisosDeCapacidad(uno('Sala 1', 1, 97, 100))).toEqual([]);
+    expect(avisosDeCapacidad(uno('Sala 1', 1, 98, 100))).toEqual([
+      'El tanque 1 de Sala 1 recibe 198 animales: pasa de su capacidad, 197 (13,14 m² × 15 animales/m²).']);
+    expect(avisosDeCapacidad(uno('Sala 5', 9, 406, 0))).toEqual([
+      'El tanque 9 de Sala 5 recibe 406 animales: pasa de su capacidad, 405 (27 m² × 15 animales/m²).']);
+    expect(avisosDeCapacidad(uno('Sala 5', 7, 406, 0)), 'el 7 es de 40 m²').toEqual([]);
+    expect(avisosDeCapacidad(uno('Sala 9', 1, 5000, 0)), 'sin área no hay capacidad').toEqual([]);
+  });
+
+  it('🔴 un GRUPO que comparte tanque suma sus composiciones (cada una por separado no pasaría)', () => {
+    const m = uno('Sala 1', 3, 60, 40, { grupo: 'G' });
+    m.composiciones.push({ codigoGenetico: 'CG02', piscina: 'P-2', grupo: 'G', machos: 50, hembras: 50,
+      reparto: [{ sala: 'Sala 1', tanque: 3, machos: 50, hembras: 50 }] });
+    expect(avisosDeCapacidad(m)).toEqual(['El tanque 3 de Sala 1 recibe 200 animales: pasa de su capacidad, 197 (13,14 m² × 15 animales/m²).']);
+    expect(validarIngreso(m).avisos).toContain('El tanque 3 de Sala 1 recibe 200 animales: pasa de su capacidad, 197 (13,14 m² × 15 animales/m²).');
+  });
+
+  it('🔴 con lo ya vivo de otros lotes: avisa sólo si ESA suma la pasa (lo que entra solo, ya lo dijo la validación)', () => {
+    const otros = (n) => () => n;
+    expect(avisosDeCapacidad(uno('Sala 1', 1, 50, 50), otros(98))).toEqual([
+      'El tanque 1 de Sala 1 ya tiene 98 animales vivos de otros lotes: con los 100 que entran quedaría con 198, por encima de su capacidad, 197 (13,14 m² × 15 animales/m²).']);
+    expect(avisosDeCapacidad(uno('Sala 1', 1, 50, 50), otros(97)), 'justo la capacidad').toEqual([]);
+    expect(avisosDeCapacidad(uno('Sala 1', 1, 150, 150), otros(10)), 'lo que entra ya la pasaba: no se repite').toEqual([]);
+    expect(avisosDeCapacidad(uno('Sala 1', 1, 50, 50), otros(0))).toEqual([]);
+    expect(avisosDeCapacidad(uno('Sala 1', 1, 50, 50), otros('')), 'sin dato, cero').toEqual([]);
+    expect(avisosDeCapacidad(uno('Sala 1', 1, 50, 50), otros(-500)), 'nunca resta').toEqual([]);
+  });
+
+  it('modelos DEGENERADOS: sin composiciones, sin reparto, sin sala o sin tanque: no lanza ni avisa', () => {
+    for (const m of [null, {}, { composiciones: [null] }, { composiciones: [{ reparto: [null, { sala: '', tanque: 1 }, { sala: 'Sala 1', tanque: '' }] }] }]) {
+      expect(avisosDeCapacidad(m)).toEqual([]);
+      expect(avisosDeCapacidad(m, () => 1000)).toEqual([]);
+    }
   });
 });

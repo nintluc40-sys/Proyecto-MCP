@@ -564,6 +564,9 @@ aparte; 🖨 PDF con la misma tabla.
   el libro leído, Ingreso marca en ámbar los tanques con otro lote vivo y Revisar/Guardar lo avisan,
   igual que Movimientos con un tramo de tipo Transferencia hacia un tanque con otro lote (aviso, no error;
   al corregir una Transferencia ya guardada no cuenta la fila que el envío reemplaza).
+  **La capacidad de un tanque (2026-10-23, usuario):** su área × 15 animales/m², la densidad máxima del semáforo del
+  tablero, sin tabla aparte (`capacidadTanque`). Revisar/Guardar del Ingreso avisan si lo que entra la pasa y, con el libro
+  leído, si la pasa sumando lo ya vivo de OTROS lotes (`avisosDeCapacidad`; aviso, no error). ⚖️ Repartir sigue por conteo.
   **Un cierre es siempre del lote entero**, esté en una o en varias salas: la columna «Sala» que D14
   le dio al Parcial (2026-09-14) se quitó el 2026-10-09 (usuario: «un lote puede estar en distintas
   salas y al final se agrupan»), de la ficha, de la llave, del libro y de la firma del GAS, antes de

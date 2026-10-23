@@ -35,6 +35,10 @@ import {
   ingresoRowId,
   repartirParejo,
   repartirRespetando,
+  areaTanqueM2,
+  MAD_DENSIDAD_MAX_M2,
+  capacidadTanque,
+  avisosDeCapacidad,
 } from './ficha-maduracion-ingreso.schema.js';
 
 const ENGINE = new URL('../../../../public/registros/engine.js', import.meta.url);
@@ -64,17 +68,21 @@ function motorIngreso() {
   // a propósito: si el monolito y el módulo declararan tablas distintas, la validación de
   // «el tanque no es de esa sala» diría cosas distintas en cada sitio y esta prueba no lo
   // vería. Que la tabla del monolito coincide con la del módulo se comprueba aparte.
+  /* Tarea 8 · ronda 5 (2026-10-23) · la capacidad usa el ÁREA del tanque, que el monolito declara fuera de este bloque
+     (`madAreaTanqueM2`). Se inyecta la del MÓDULO por la misma razón que la tabla de tanques: que las dos tablas de
+     áreas coinciden ya lo exige la paridad del resumen (`MAD_TANQUE_AREA_M2`). */
   const ctx = {
     String, Number, Object, Array, JSON, Math, Date, parseInt, parseFloat, isFinite,
     sanitizeStr,
     MAD_TANQUES_POR_SALA,
+    madAreaTanqueM2: areaTanqueM2,
   };
   ctx.globalThis = ctx;
   createContext(ctx);
   new Script(
     code + '\n;globalThis.__api = { buildMadIngresoPayload, madIngBuildRows, madIngValidar,'
     + ' madIngRowId, madIngRepartirParejo, madIngRepartirRespetando, MAD_ING_HEADERS, MAD_ING_SHEET, MAD_ING_AGUA_OPTS, MAD_ING_AGUA_DEFECTO,'
-    + ' MAD_ING_COLUMNS };',
+    + ' MAD_ING_COLUMNS, MAD_DENSIDAD_MAX_M2, madIngCapacidadTanque, madIngAvisosCapacidad };',
   ).runInContext(ctx);
   return ctx.__api;
 }
@@ -262,6 +270,54 @@ describe('Ingreso · las mismas funciones puras', () => {
     for (const [t, n] of [[10, 3], [9, 3], [1, 3], [0, 4], [999, 13], [10, 0], [-1, 3]]) {
       expect(api.madIngRepartirParejo(t, n)).toEqual(repartirParejo(t, n));
     }
+  });
+
+  /* Tarea 8 · ronda 5 (2026-10-23, usuario) · la CAPACIDAD (área × 15 animales/m²) y sus avisos, iguales en las dos
+     copias: la misma cifra en cada tanque físico y en uno que no existe, y los dos tipos de aviso sobre TODOS los modelos
+     —el de lo que entra va dentro del veredicto de arriba; el de lo ya vivo de otros lotes, aquí, con dos libros
+     falsos—. Se exige que salgan avisos de los dos tipos: comparar dos listas vacías no probaría nada. */
+  it('la misma capacidad en cada tanque, y la misma densidad máxima', () => {
+    expect(api.MAD_DENSIDAD_MAX_M2).toBe(MAD_DENSIDAD_MAX_M2);
+    for (const [s, lista] of Object.entries(MAD_TANQUES_POR_SALA)) {
+      for (const t of lista.concat([99])) expect(api.madIngCapacidadTanque(s, t), s + '|' + t).toBe(capacidadTanque(s, t));
+    }
+    expect(api.madIngCapacidadTanque('Sala 9', 1)).toBe(capacidadTanque('Sala 9', 1));
+  });
+  it('los mismos avisos de capacidad, con lo que entra y con lo ya vivo de otros lotes', () => {
+    let nEntra = 0, nOtros = 0;
+    for (const [nombre, model] of Object.entries(MODELOS)) {
+      const entra = avisosDeCapacidad(model);
+      nEntra += entra.length;
+      expect(api.madIngAvisosCapacidad(model), nombre).toEqual(entra);
+      for (const otros of [() => 0, () => 150, (s, t) => (t % 2 ? 300 : '')]) {
+        const esp = avisosDeCapacidad(model, otros);
+        nOtros += esp.length;
+        expect(api.madIngAvisosCapacidad(model, otros), nombre).toEqual(esp);
+      }
+    }
+    expect(nEntra, 'algún modelo pasa de la capacidad con lo que entra').toBeGreaterThan(0);
+    expect(nOtros, 'algún modelo la pasa sólo con lo ya vivo').toBeGreaterThan(0);
+  });
+  /* Los BORDES, que los modelos de arriba no pisan (lo cazó el banco de un uso de la tarea 8: `>` por `>=` en el monolito
+     sobrevivía). En un tanque de cada tamaño, lo que entra justo en la capacidad y uno más; y con lo ya vivo, la suma
+     justa y una más. */
+  it('los mismos avisos de capacidad en los BORDES, en un tanque de cada tamaño', () => {
+    let n = 0;
+    for (const [s, t] of [['Sala 1', 1], ['Sala 2', 16], ['Sala 4', 2], ['Sala 5', 8], ['Sala 5', 10]]) {
+      const cap = capacidadTanque(s, t);
+      for (const entra of [cap - 1, cap, cap + 1]) {
+        const m = { fecha: '2026-09-08', lote: 'AB', composiciones: [{ codigoGenetico: 'CG', piscina: 'P', machos: entra, hembras: 0,
+          reparto: [{ sala: s, tanque: t, machos: entra - 1, hembras: 1 }] }] };
+        n += avisosDeCapacidad(m).length;
+        expect(api.madIngAvisosCapacidad(m), s + '|' + t + '|' + entra).toEqual(avisosDeCapacidad(m));
+        for (const otros of [cap - entra, cap - entra + 1]) {
+          const f = () => otros;
+          n += avisosDeCapacidad(m, f).length;
+          expect(api.madIngAvisosCapacidad(m, f), s + '|' + t + '|' + entra + '+' + otros).toEqual(avisosDeCapacidad(m, f));
+        }
+      }
+    }
+    expect(n, 'los bordes tienen que dar avisos, o no comparan nada').toBeGreaterThan(0);
   });
 });
 

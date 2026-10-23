@@ -79,6 +79,17 @@ export function areaTanqueM2(sala, tanque) {
   return typeof v === 'number' ? v : '';
 }
 
+/** Tarea 8 · ronda 5 (2026-10-23, usuario) · LA CAPACIDAD de un tanque: su área × la densidad máxima que juzga el
+ *  tablero, 15 animales/m² (el máximo de la FAO, que el laboratorio conserva: `densidad` en
+ *  maduracion/operativo.umbrales.js; una prueba ata las dos cifras). No es una tabla aparte, a propósito: es la misma
+ *  regla del semáforo de densidad. Sólo AVISA de sobrecarga (`avisosDeCapacidad`); el reparto sigue por conteo. */
+export const MAD_DENSIDAD_MAX_M2 = 15;
+/** Capacidad (animales) del tanque `tanque` de `sala`: su área × MAD_DENSIDAD_MAX_M2, por lo bajo; '' sin área conocida. */
+export function capacidadTanque(sala, tanque) {
+  const a = areaTanqueM2(sala, tanque);
+  return typeof a === 'number' && a > 0 ? Math.floor(a * MAD_DENSIDAD_MAX_M2) : '';
+}
+
 /** Origen del agua de un TANQUE en su ingreso. Es una elección entre dos y puede cambiar por día.
  *  ⚠ NO confundir con la columna `RAS` de `Maduración Sala`, que es otra cosa desde el
  *  2026-09-15: allí no se dice «sí o no», se dice EN QUÉ PORCENTAJE usa el RAS esa sala
@@ -292,6 +303,44 @@ export function buildIngresoPayload(model) {
                 de fin de ciclo, y se aplica igual aquí: avisar y dejar seguir, porque
                 bloquear impide registrar hoy un error que viene de antes. */
 
+/** Tarea 8 · ronda 5 (2026-10-23, usuario) · avisos de SOBRECARGA de un ingreso: lo que entra en cada tanque —sumando
+ *  sus composiciones: un grupo comparte tanque— frente a su capacidad (`capacidadTanque`). Es AVISO y no error, como el
+ *  descuadre: se puede guardar igual. Sin `otrosVivos` (así lo llama `validarIngreso`) avisa el tanque al que ya le pasa
+ *  de la capacidad lo que ENTRA. Con `otrosVivos(sala, tanque)` —los animales vivos de OTROS lotes ese día, del libro,
+ *  cuando la ficha leyó la ocupación— avisa SÓLO los tanques donde esa suma es la que la pasa: los otros ya los dijo
+ *  `validarIngreso`, y repetirlos sería ruido. Un tanque sin área conocida no tiene capacidad: no avisa. */
+export function avisosDeCapacidad(model, otrosVivos) {
+  const entran = [];
+  const indice = new Map();
+  for (const comp of (model && model.composiciones) || []) {
+    for (const rep of (comp && comp.reparto) || []) {
+      const r = rep || {};
+      const sala = sanitizeStr(r.sala, 30);
+      const tanque = int(r.tanque);
+      if (sala === '' || tanque === '') continue;
+      const k = salaTag(sala) + '|' + tanque;
+      if (!indice.has(k)) { indice.set(k, entran.length); entran.push({ sala, tanque, n: 0 }); }
+      entran[indice.get(k)].n += sumaReparto([r], 'machos') + sumaReparto([r], 'hembras');
+    }
+  }
+  const avisos = [];
+  for (const e of entran) {
+    const cap = capacidadTanque(e.sala, e.tanque);
+    if (cap === '') continue;
+    const regla = ' (' + String(areaTanqueM2(e.sala, e.tanque)).replace('.', ',') + ' m² × ' + MAD_DENSIDAD_MAX_M2 + ' animales/m²)';
+    if (!otrosVivos) {
+      if (e.n > cap) avisos.push('El tanque ' + e.tanque + ' de ' + e.sala + ' recibe ' + e.n + ' animales: pasa de su capacidad, ' + cap + regla + '.');
+      continue;
+    }
+    const otros = Math.max(0, parseInt(otrosVivos(e.sala, e.tanque), 10) || 0);
+    if (e.n <= cap && e.n + otros > cap) {
+      avisos.push('El tanque ' + e.tanque + ' de ' + e.sala + ' ya tiene ' + otros + ' animales vivos de otros lotes: con los ' + e.n +
+        ' que entran quedaría con ' + (e.n + otros) + ', por encima de su capacidad, ' + cap + regla + '.');
+    }
+  }
+  return avisos;
+}
+
 /** Revisa el modelo y devuelve `{ errores, avisos }`, ambos arrays de texto. */
 export function validarIngreso(model) {
   const m = model || {};
@@ -386,6 +435,8 @@ export function validarIngreso(model) {
     });
   });
 
+  // Tarea 8 · ronda 5 (2026-10-23) · la sobrecarga de lo que ENTRA (aviso): ver `avisosDeCapacidad`.
+  avisos.push(...avisosDeCapacidad(m));
   return { errores, avisos };
 }
 
@@ -394,10 +445,11 @@ export function validarIngreso(model) {
 /** Reparte `total` entre `n` tanques lo más parejo posible, dando el resto a los
  *  primeros. `repartirParejo(10, 3)` → `[4, 3, 3]`.
  *
- *  ⚠ Es un reparto por CONTEO, no por capacidad: hoy no existe una tabla de
- *  capacidades de tanque (el usuario la dará más adelante). Mientras no exista,
- *  esto NO puede avisar de sobrecarga y sólo pretende ahorrar tecleo — el operario
- *  ajusta después, que es lo que va a pasar casi siempre. */
+ *  ⚠ Es un reparto por CONTEO, no por capacidad, y sólo pretende ahorrar tecleo — el
+ *  operario ajusta después, que es lo que va a pasar casi siempre. Desde el 2026-10-23
+ *  (tarea 8 de la ronda 5, usuario) la capacidad existe —área × 15 animales/m²,
+ *  `capacidadTanque`— pero sólo AVISA de sobrecarga al revisar (`avisosDeCapacidad`): el
+ *  reparto no la usa, por decisión del usuario. */
 export function repartirParejo(total, n) {
   const t = parseInt(total, 10);
   const k = parseInt(n, 10);

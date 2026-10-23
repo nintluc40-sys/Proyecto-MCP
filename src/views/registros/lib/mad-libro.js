@@ -766,6 +766,15 @@ export function avisosIngresoCompartido(libro, lote, ubicaciones) {
   return avisos;
 }
 
+/** Tarea 8 · ronda 5 (2026-10-23, usuario) · Ingreso: los animales VIVOS de OTROS lotes en un tanque, según el libro, para
+ *  el aviso de capacidad (`avisosDeCapacidad` de la ficha). `lote` va normalizado y el suyo no cuenta, como en
+ *  `avisosIngresoCompartido`: si el ingreso ya está en el libro, sus animales no se cuentan dos veces. */
+export function vivosDeOtrosLotes(libro, sala, tanque, lote) {
+  const T = ((libro && libro.tanques) || new Map()).get(ubicKey(sala, tanque));
+  const l = txt(lote);
+  return ((T && T.composicion) || []).reduce((s, c) => (c.lote === l ? s : s + ent(c.machos) + ent(c.hembras)), 0);
+}
+
 /** Movimientos: en una TRANSFERENCIA, un aviso por tramo cuyo destino tenga vivo un lote que no está
  *  en su origen. Agrupación y Mezcla juntan lotes a propósito: no avisan. */
 export function avisosTransferenciaCompartida(libro, tipo, tramos) {

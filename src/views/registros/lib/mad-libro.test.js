@@ -22,6 +22,7 @@ import {
   lotesVivosEnTanque,
   avisosIngresoCompartido,
   avisosTransferenciaCompartida,
+  vivosDeOtrosLotes,
 } from './mad-libro.js';
 import { MAD_TANQUES_POR_SALA } from './ficha-maduracion-ingreso.schema.js';
 
@@ -1191,6 +1192,17 @@ describe('Libro · D13 · dos lotes en un tanque sólo por mezcla o agrupación:
       'El tanque 2 de Sala 1 ya tiene animales vivos del lote CD: el lote BC lo compartiría. Dos lotes sólo comparten tanque en una mezcla o una agrupación (🔄 Movimientos).',
     ]);
     expect(avisosIngresoCompartido(libro(), '', ubic)).toEqual([]);
+  });
+
+  // Tarea 8 · ronda 5 (2026-10-23, usuario) · los vivos de OTROS lotes, para el aviso de capacidad del Ingreso.
+  it('🔴 tarea 8 · los animales vivos de OTROS lotes en un tanque: el propio no cuenta; vacío o desconocido, 0', () => {
+    const l = libro();
+    expect(vivosDeOtrosLotes(l, 'Sala 1', 2, 'BC')).toBe(5);     // CD: 5 ♂
+    expect(vivosDeOtrosLotes(l, 'Sala 1', '2', 'AB')).toBe(45);  // BC 40 + CD 5
+    expect(vivosDeOtrosLotes(l, 'Sala 1', 1, 'AB')).toBe(0);     // sólo él
+    expect(vivosDeOtrosLotes(l, 'Sala 1', 3, 'AB')).toBe(0);     // el 3 quedó VACÍO
+    expect(vivosDeOtrosLotes(l, 'Sala 2', 16, 'AB')).toBe(0);
+    expect(vivosDeOtrosLotes(null, 'Sala 1', 2, 'AB')).toBe(0);
   });
 
   it('🔴 Transferencia: avisa si el destino tiene un lote que NO está en el origen; Mezcla y Agrupación no avisan', () => {

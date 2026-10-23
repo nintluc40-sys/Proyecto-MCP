@@ -6837,6 +6837,12 @@ function madAvisosIngresoCompartido(libro, lote, ubicaciones){
   });
   return avisos;
 }
+// Tarea 8 · ronda 5 (2026-10-23, usuario) · los animales VIVOS de OTROS lotes en un tanque, para el aviso de capacidad.
+// Gemela de vivosDeOtrosLotes del módulo: el lote propio no cuenta (si el ingreso ya está en el libro, no se cuenta dos veces).
+function madVivosDeOtrosLotes(libro, sala, tanque, lote){
+  const T=((libro&&libro.tanques)||{})[madUbicKey(sala,tanque)], l=madLibroTxt(lote);
+  return ((T&&T.composicion)||[]).reduce(function(s,c){ return c.lote===l ? s : s+madLibroEnt(c.machos)+madLibroEnt(c.hembras); },0);
+}
 function madAvisosTransferenciaCompartida(libro, tipo, tramos){
   const avisos=[];
   if(madLibroTxt(tipo)!=="Transferencia") return avisos;
@@ -8400,8 +8406,9 @@ function madIngInt(v){ if(v===""||v==null) return ""; const n=parseInt(v,10); re
 function madIngSumaReparto(rep, campo){
   return (rep||[]).reduce(function(a,r){ const n=parseInt(r&&r[campo],10); return a+((isFinite(n)&&n>0)?n:0); },0);
 }
-// Reparto por CONTEO, no por capacidad: todavía no existe una tabla de capacidades de
-// tanque, así que esto no puede avisar de sobrecarga; sólo ahorra tecleo.
+// Reparto por CONTEO, no por capacidad: sólo ahorra tecleo. Desde el 2026-10-23 (tarea 8 de la ronda 5, usuario) la
+// capacidad existe —área × 15 animales/m², madIngCapacidadTanque— pero sólo AVISA de sobrecarga al revisar
+// (madIngAvisosCapacidad): el reparto no la usa, por decisión del usuario.
 function madIngRepartirParejo(total, n){
   const t=parseInt(total,10), k=parseInt(n,10);
   if(!isFinite(t)||t<0||!isFinite(k)||k<=0) return [];
@@ -8460,6 +8467,42 @@ function buildMadIngresoPayload(model){
 // PÉRDIDA de datos); AVISO deja guardar. Es el criterio que eligió el usuario para el
 // descuadre del fin de ciclo, aplicado igual aquí: bloquear impediría registrar hoy un
 // error que viene de antes.
+/* Tarea 8 · ronda 5 (2026-10-23, usuario) · LA CAPACIDAD de un tanque: su área × 15 animales/m², la densidad máxima del
+   semáforo del tablero (FAO). Gemelas de MAD_DENSIDAD_MAX_M2, capacidadTanque y avisosDeCapacidad del módulo: ver allí
+   las reglas (sin otrosVivos, lo que ENTRA; con él, sólo los tanques donde lo ya vivo de otros lotes la pasa). */
+const MAD_DENSIDAD_MAX_M2 = 15;
+function madIngCapacidadTanque(sala, tanque){
+  const a=madAreaTanqueM2(sala, tanque);
+  return (typeof a==="number" && a>0) ? Math.floor(a*MAD_DENSIDAD_MAX_M2) : "";
+}
+function madIngAvisosCapacidad(model, otrosVivos){
+  const entran=[], indice={};
+  ((model&&model.composiciones)||[]).forEach(function(comp){
+    ((comp&&comp.reparto)||[]).forEach(function(rep){
+      const r=rep||{}, sala=sanitizeStr(r.sala,30), tanque=madIngInt(r.tanque);
+      if(sala===""||tanque==="") return;
+      const k=madIngSalaTag(sala)+"|"+tanque;
+      if(indice[k]===undefined){ indice[k]=entran.length; entran.push({ sala:sala, tanque:tanque, n:0 }); }
+      entran[indice[k]].n += madIngSumaReparto([r],"machos") + madIngSumaReparto([r],"hembras");
+    });
+  });
+  const avisos=[];
+  entran.forEach(function(e){
+    const cap=madIngCapacidadTanque(e.sala, e.tanque);
+    if(cap==="") return;
+    const regla=" ("+String(madAreaTanqueM2(e.sala, e.tanque)).replace(".", ",")+" m² × "+MAD_DENSIDAD_MAX_M2+" animales/m²)";
+    if(!otrosVivos){
+      if(e.n>cap) avisos.push("El tanque "+e.tanque+" de "+e.sala+" recibe "+e.n+" animales: pasa de su capacidad, "+cap+regla+".");
+      return;
+    }
+    const otros=Math.max(0, parseInt(otrosVivos(e.sala, e.tanque),10)||0);
+    if(e.n<=cap && e.n+otros>cap){
+      avisos.push("El tanque "+e.tanque+" de "+e.sala+" ya tiene "+otros+" animales vivos de otros lotes: con los "+e.n
+        +" que entran quedaría con "+(e.n+otros)+", por encima de su capacidad, "+cap+regla+".");
+    }
+  });
+  return avisos;
+}
 function madIngValidar(model){
   const m = model||{}, errores = [], avisos = [];
   if(!/^\d{4}-\d{2}-\d{2}$/.test(String(m.fecha||""))) errores.push("La fecha no es válida.");
@@ -8507,6 +8550,8 @@ function madIngValidar(model){
       if(rep!==dec) avisos.push("«"+et+"»: se declararon "+dec+" "+sexo+" y se repartieron "+rep+" (diferencia "+(dec-rep)+").");
     });
   });
+  // Tarea 8 · ronda 5 (2026-10-23) · la sobrecarga de lo que ENTRA (aviso): ver madIngAvisosCapacidad.
+  madIngAvisosCapacidad(m).forEach(function(a){ avisos.push(a); });
   return { errores: errores, avisos: avisos };
 }
 
@@ -8963,7 +9008,10 @@ function madIngAvisosOcupacion(model){
   if(!libro) return [];
   const ubic=[];
   (model.composiciones||[]).forEach(function(c){ (c.reparto||[]).forEach(function(r){ ubic.push(r); }); });
-  return madAvisosIngresoCompartido(libro, madIngNormLote(model.lote), ubic);
+  const lote=madIngNormLote(model.lote);
+  // Tarea 8 · ronda 5 (2026-10-23) · y la capacidad con lo ya vivo de OTROS lotes: sólo donde eso la pasa
+  return madAvisosIngresoCompartido(libro, lote, ubic)
+    .concat(madIngAvisosCapacidad(model, function(sala, tanque){ return madVivosDeOtrosLotes(libro, sala, tanque, lote); }));
 }
 async function madIngVerOcupacion(){
   const btn=document.getElementById("mi-ocup-btn"), nota=document.getElementById("mi-ocup-nota");

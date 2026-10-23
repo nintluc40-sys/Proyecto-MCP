@@ -314,6 +314,29 @@ describe('D13 · Ingreso y Movimientos avisan del tanque compartido con OTRO lot
     const rep = document.getElementById('mi-report').textContent;
     expect(rep).toContain('El tanque 2 de Sala 1 ya tiene animales vivos del lote BC: el lote AB lo compartiría.');
     expect(rep).toMatch(/✅ Sin errores/);
+    expect(rep, 'tarea 8 · 10 + 20 no pasan de 197').not.toContain('capacidad');
+  });
+
+  /* Tarea 8 · ronda 5 (2026-10-23, usuario) · la capacidad (13,14 m² × 15 = 197 en la Sala 1) en el motor de verdad: lo
+     que entra solo lo dice la validación; con el libro leído, también lo ya vivo de OTROS lotes (el BC del tanque 2).
+     Se puede guardar igual: son avisos. */
+  it('🔴 tarea 8 · Ingreso: Revisar avisa de la sobrecarga, por lo que entra y por lo ya vivo de otro lote', async () => {
+    pon(document.getElementById('mi-lote'), 'AB');
+    pon($('fp-ingreso', '.mi-cg'), 'CG'); pon($('fp-ingreso', '.mi-tmachos'), '380'); pon($('fp-ingreso', '.mi-thembras'), '0');
+    pon($('fp-ingreso', '.mi-sala'), 'Sala 1');
+    H.madIngRefrescar();
+    const t = document.createElement('table');
+    t.innerHTML = '<tbody>' + H._madIngRepHTML('Sala 1', 1) + H._madIngRepHTML('Sala 1', 2) + '</tbody>';
+    t.querySelectorAll('tr').forEach((tr) => $('fp-ingreso', '.mi-reps').appendChild(tr));
+    const reps = document.querySelectorAll('#fp-ingreso tr.mi-rep');
+    pon(reps[0].querySelector('.mi-machos'), '200'); pon(reps[0].querySelector('.mi-hembras'), '0');   // 200 > 197
+    pon(reps[1].querySelector('.mi-machos'), '180'); pon(reps[1].querySelector('.mi-hembras'), '0');   // 180 + 20 de BC
+    await H.madIngRevisar();
+    const rep = document.getElementById('mi-report').textContent;
+    expect(rep).toContain('El tanque 1 de Sala 1 recibe 200 animales: pasa de su capacidad, 197 (13,14 m² × 15 animales/m²).');
+    expect(rep).toContain('El tanque 2 de Sala 1 ya tiene 20 animales vivos de otros lotes: con los 180 que entran quedaría con 200, por encima de su capacidad, 197 (13,14 m² × 15 animales/m²).');
+    expect(rep, 'el lote propio (AB, 20 en el 1) no cuenta como otro').not.toContain('El tanque 1 de Sala 1 ya tiene');
+    expect(rep).toMatch(/✅ Sin errores/);
   });
 
   it('🔴 Movimientos: una Transferencia a un tanque con otro lote lo avisa; una Mezcla no', async () => {

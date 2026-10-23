@@ -37,6 +37,7 @@ import {
   avisosIngresoCompartido,
   avisosTransferenciaCompartida,
   pesosDeAlimentacion,
+  vivosDeOtrosLotes,
 } from './mad-libro.js';
 import { MAD_TANQUES_POR_SALA } from './ficha-maduracion-ingreso.schema.js';
 /* ⚠ El módulo ENTERO, además de los nombres sueltos de arriba. Los de arriba se usan en los
@@ -74,7 +75,8 @@ function motorLibro() {
     + ' madSumarDias, madRepartirProporcional, madEstadoDeLote, madEstadoDeLoteEnSala, madEstadoPorLoteTexto, madEstadoPorLoteDeSala,'
     + ' MAD_CUARENTENA_DIAS, MAD_EST_MIXTO, MAD_LIBRO_SHEETS,'
     + ' madOcupacionDeSala, MAD_EST_DESINF, MAD_EST_DESINF_AGRUP, MAD_AGRUPADA_MAX_FRACCION,'
-    + ' madLotesVivosEnTanque, madAvisosIngresoCompartido, madAvisosTransferenciaCompartida, madPesosDeAlimentacion };',
+    + ' madLotesVivosEnTanque, madAvisosIngresoCompartido, madAvisosTransferenciaCompartida, madPesosDeAlimentacion,'
+    + ' madVivosDeOtrosLotes };',
   ).runInContext(ctx);
   return ctx.__api;
 }
@@ -129,6 +131,7 @@ const GEMELO = {
   lotesVivosEnTanque: 'madLotesVivosEnTanque',
   avisosIngresoCompartido: 'madAvisosIngresoCompartido',
   avisosTransferenciaCompartida: 'madAvisosTransferenciaCompartida',
+  vivosDeOtrosLotes: 'madVivosDeOtrosLotes',   // tarea 8 · ronda 5 (2026-10-23): el aviso de capacidad del Ingreso
 };
 
 /* El monolito declara las funciones como `function X(` y las constantes como `const X =`,
@@ -646,7 +649,7 @@ describe('Libro · las mismas funciones puras', () => {
   /* D13 (2026-09-14): los lotes vivos de cada tanque y los dos avisos de tanque compartido, en TODOS
      los escenarios y todos los tanques físicos. El fixture prueba algo: se exige que salgan avisos. */
   it('D13 · los mismos lotes vivos por tanque y los mismos avisos de tanque compartido', () => {
-    let nIng = 0, nMov = 0;
+    let nIng = 0, nMov = 0, nVivos = 0;
     const cerca = [['Sala 1', 1], ['Sala 1', 2], ['Sala 1', 3], ['Sala 2', 16], ['Sala 2', 17]];
     const tramos = [];
     for (const [sO, tO] of cerca) for (const [sD, tD] of cerca) tramos.push({ salaOrigen: sO, tanqueOrigen: String(tO), salaDestino: sD, tanqueDestino: String(tD) });
@@ -657,6 +660,12 @@ describe('Libro · las mismas funciones puras', () => {
       for (const [s, lista] of Object.entries(MAD_TANQUES_POR_SALA)) {
         for (const t of lista) {
           expect([...api.madLotesVivosEnTanque(a, s, t)]).toEqual(lotesVivosEnTanque(b, s, t));
+          // tarea 8 · ronda 5 · los vivos de OTROS lotes, con cada lote de los escenarios y con uno que no está
+          for (const lote of ['AB', 'BC', 'ZZ', '']) {
+            const v = vivosDeOtrosLotes(b, s, t, lote);
+            nVivos += v;
+            expect(api.madVivosDeOtrosLotes(a, s, t, lote), s + '|' + t + '|' + lote).toBe(v);
+          }
           ubic.push({ sala: s, tanque: String(t) });
         }
       }
@@ -673,6 +682,7 @@ describe('Libro · las mismas funciones puras', () => {
     }
     expect(nIng).toBeGreaterThan(0);
     expect(nMov).toBeGreaterThan(0);
+    expect(nVivos, 'tarea 8 · el fixture tiene que traer vivos de otros lotes, o la paridad no compara nada').toBeGreaterThan(0);
   });
 
   it('el mismo estado de sala, Mixto incluido', () => {
