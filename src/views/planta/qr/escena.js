@@ -740,6 +740,19 @@ function resize() {
 const ro = new ResizeObserver(resize); ro.observe(stage); alFallar.push(() => ro.disconnect());
 resize();
 
+/* Tarea 27 (2026-10-22, usuario: como la maqueta, y sin bajar una imagen vacía) · CONTEXTO WEBGL PERDIDO. Un celular con
+   poca memoria, o al volver de otra app, puede quitarle la tarjeta gráfica a la página: three.js deja de dibujar sin decir
+   nada y el código se queda congelado o en blanco. Se DICE encima; cuando el navegador lo devuelve, three rehace solo lo
+   suyo (aquí no hay reflejos ni sombras que rehacer a mano, como en la maqueta) y el aviso se va. Mientras falte,
+   «Descargar PNG» no baja el lienzo vacío. */
+let contextoPerdido = false;
+const avisoContexto = document.createElement('p');
+avisoContexto.className = 'contexto-perdido'; avisoContexto.setAttribute('role', 'alert'); avisoContexto.hidden = true;
+avisoContexto.textContent = 'El código se detuvo: el equipo liberó la memoria gráfica. Suele volver solo en unos segundos; si no, recarga la página.';
+stage.append(avisoContexto);
+canvas.addEventListener('webglcontextlost', () => { contextoPerdido = true; avisoContexto.hidden = false; });
+canvas.addEventListener('webglcontextrestored', () => { contextoPerdido = false; avisoContexto.hidden = true; });
+
 /* ---------- Bucle de animación ---------- */
 const m4 = new THREE.Matrix4(), qG = new THREE.Quaternion(), eul = new THREE.Euler(), qa = new THREE.Quaternion(), qs = new THREE.Quaternion(), qI = new THREE.Quaternion();
 const vL = V(0, 0, 0), vP = V(0, 0, 0), sA = V(0, 0, 0), sP = V(0, 0, 0), col = new THREE.Color(), colB = new THREE.Color();
@@ -964,6 +977,7 @@ function renderImage() {
 }
 
 $('#save').addEventListener('click', async () => {
+  if (contextoPerdido) { toast('Ahora no se puede crear la imagen: espera a que vuelva el código.'); return; }   // Tarea 27
   const btn = $('#save'); btn.disabled = true;
   try {
     if (document.fonts && document.fonts.ready) await document.fonts.ready;

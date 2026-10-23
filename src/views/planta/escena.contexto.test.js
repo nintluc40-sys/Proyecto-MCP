@@ -167,3 +167,48 @@ describe('🔳 QR de Gerencia · el arranque que falla (pauta 3.17, 2026-10-19)'
     } finally { errores.mockRestore(); }
   });
 });
+
+/* Tarea 27 (2026-10-22, usuario: como la maqueta, y sin bajar una imagen vacía). Se abre con la forma «adulto» guardada para
+   que el arranque no espere la imagen de un logo. */
+describe('🔳 QR de Gerencia · el contexto WebGL perdido (Tarea 27, 2026-10-22)', { timeout: 30000 }, () => {
+  it('🔴 lo DICE encima del código; mientras falta, «Descargar PNG» no baja el lienzo vacío; al volver, el aviso se va y descarga', async () => {
+    localStorage.setItem('planta_qr', JSON.stringify({ form: 'adulto' }));
+    const crear = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:prueba');
+    const pulsar = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const toBlob = HTMLCanvasElement.prototype.toBlob;
+    HTMLCanvasElement.prototype.toBlob = function (cb) { cb(new Blob(['png'])); };
+    try {
+      const { paginaQR } = await import('./qr/index.js');
+      document.body.innerHTML = '<div id="app"></div>';
+      paginaQR(document.getElementById('app'));
+      await esperar(() => document.querySelector('#loading').hidden);
+      const canvas = document.querySelector('#scene'), aviso = () => document.querySelector('.stage .contexto-perdido');
+      const toast = () => document.querySelector('#toast').textContent;
+      expect(aviso().hidden, 'sin pérdida, no hay aviso').toBe(true);
+
+      canvas.dispatchEvent(new Event('webglcontextlost'));
+      expect(aviso().hidden).toBe(false);
+      expect(aviso().textContent).toContain('liberó la memoria gráfica');
+      expect(aviso().textContent).toContain('recarga la página');
+      document.querySelector('#save').click();
+      await esperar(() => toast());
+      expect(toast()).toContain('Ahora no se puede crear la imagen');
+      expect(crear, 'no se baja nada').not.toHaveBeenCalled();
+
+      canvas.dispatchEvent(new Event('webglcontextrestored'));
+      expect(aviso().hidden, 'al volver, el aviso se va').toBe(true);
+      document.querySelector('#save').click();
+      await esperar(() => toast().includes('Imagen descargada'));
+      expect(toast()).toContain('Imagen descargada');
+      expect(crear).toHaveBeenCalledTimes(1);
+    } finally {
+      crear.mockRestore(); pulsar.mockRestore(); HTMLCanvasElement.prototype.toBlob = toBlob; localStorage.removeItem('planta_qr');
+    }
+  });
+
+  it('🔑 su CSS: encima del lienzo y oculto de verdad con `hidden`', () => {
+    const css = readFileSync('src/views/planta/qr/qr.css', 'utf8').replace(/\s+/g, ' ');
+    expect(css).toMatch(/\.qr-acceso \.contexto-perdido \{[^}]*position: absolute;[^}]*z-index: 2;/);
+    expect(css.includes('.qr-acceso .contexto-perdido[hidden] { display: none; }')).toBe(true);
+  });
+});
