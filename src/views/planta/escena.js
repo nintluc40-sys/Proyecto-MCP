@@ -1765,6 +1765,7 @@ function frameBody(now) {
     needle.style.transform = 'rotate(' + Math.atan2(NORTH.x * r[0] + NORTH.y * r[1], NORTH.x * f[0] + NORTH.y * f[1]) + 'rad)'; }
   nums.forEach(n => place(n.el, n.p));
   const armando = porRevelar.length > 0;
+  if (armando && !previosListos(now)) return;   // los sombreadores se enlazan aparte: sin dibujar, detrás de la cortina
   if (armando) revelarPaso();
   const r0 = armando ? performance.now() : 0, p0 = armando ? renderer.info.programs.length : 0;
   renderer.render(scene, camera);
@@ -1921,6 +1922,78 @@ const totalLotes = porRevelar.length;
 const cortina = document.createElement('p'); cortina.className = 'armando';   // sin role="status": el % cambia en cada cuadro
 cortina.textContent = 'Preparando la maqueta…'; vp.append(cortina);
 if (totalLotes) vp.classList.add('is-armando');
+/* Sombreadores en segundo plano (2026-10-23, ronda 5, Sesión A · tarea 3; usuario, opción A). three r128 ESPERA cada
+   programa nuevo en el hilo principal: en la 1.ª visita sin nada guardado eran 24 programas y 8,2 s de espera repartidos
+   por la aparición progresiva (27 tareas largas, la mayor de 1 s; medido con la Intel UHD). Con la extensión
+   KHR_parallel_shader_compile el navegador los enlaza aparte y deja preguntar si ya están SIN esperar: antes de descubrir
+   nada se sacan las fuentes que three generaría para la escena (`fuentesDeLaEscena`) y se enlazan en el contexto de la
+   maqueta; mientras, no se dibuja (la cortina tapa) y el % cuenta también los listos. Al dibujar, three enlaza las MISMAS
+   fuentes y el navegador las encuentra hechas. Medido con build, perfil vacío y alternando con la de antes: la cortina,
+   de 6,6–12,8 s a 2,5–3,7 s, y sus tareas largas, de 21–34 (hasta 1,8 s) a 6–8 (hasta 0,3 s); con el celular emulado
+   (CPU ×4), de 8,3–11,2 s a 2,3–2,7 s. La imagen de la maqueta, idéntica. Sin la extensión, si algo falla, si se pierde
+   el contexto o pasados PREVIOS_MAX_MS, se sigue como antes (lo que no esté listo se espera al dibujarlo, como antes).
+   No entran el entorno del agua (PMREM, al montar: ~0,8 s, como antes) ni las sombras (~0,1 s). */
+const PREVIOS_MAX_MS = 10000;
+let previos = null, totalPrevios = 0;
+if (totalLotes) {
+  try {
+    const gl = renderer.getContext(), ext = gl && gl.getExtension('KHR_parallel_shader_compile');
+    if (ext) {
+      const pendientes = fuentesDeLaEscena().map(({ s: [vs, fs], b }) => {
+        const p = gl.createProgram();
+        const sh = [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].map(([t, src]) => { const x = gl.createShader(t); gl.shaderSource(x, src); gl.compileShader(x); gl.attachShader(p, x); return x; });
+        b.forEach(([i, n]) => gl.bindAttribLocation(p, i, n));
+        gl.linkProgram(p); sh.forEach((x) => gl.deleteShader(x));
+        return p;
+      });
+      if (pendientes.length) { previos = { gl, ext, pendientes, desde: performance.now() }; totalPrevios = pendientes.length; }
+    }
+  } catch (err) { previos = null; totalPrevios = 0; console.warn('[planta] sombreadores en segundo plano: se sigue sin ellos', err); }
+}
+// Las fuentes de los programas que three crearía para la escena, sin compilar nada: un renderizador aparte con los mismos
+// ajustes que entran en la clave del programa (codificación de salida, tono, sombras; las luces son las de la escena),
+// cuyo contexto sólo APUNTA lo que le dan a compilar y enlazar (`getProgramParameter` contesta 0: sin uniformes que leer).
+// Se suelta enseguida, y con él los oyentes de «dispose» que deja en cada material.
+function fuentesDeLaEscena() {
+  const cap = new THREE.WebGLRenderer({ canvas: document.createElement('canvas') }), oyentes = new Map();
+  scene.traverse((o) => (Array.isArray(o.material) ? o.material : o.material ? [o.material] : []).forEach((m) => {
+    if (!oyentes.has(m)) oyentes.set(m, new Set((m._listeners && m._listeners.dispose) || []));
+  }));
+  try {
+    const g = cap.getContext(), pares = [];
+    let p = { s: [], b: [] };   // el de ahora: sus dos fuentes (vértices, fragmentos) y sus atributos fijados
+    g.shaderSource = (_, src) => { p.s.push(src); };
+    g.compileShader = () => {};
+    g.bindAttribLocation = (_, i, n) => { p.b.push([i, n]); };
+    g.linkProgram = () => { if (p.s.length === 2) pares.push(p); p = { s: [], b: [] }; };
+    g.getProgramParameter = () => 0;
+    cap.debug.checkShaderErrors = false;
+    cap.outputEncoding = renderer.outputEncoding; cap.toneMapping = renderer.toneMapping; cap.physicallyCorrectLights = renderer.physicallyCorrectLights;
+    cap.shadowMap.enabled = renderer.shadowMap.enabled; cap.shadowMap.type = renderer.shadowMap.type;
+    cap.compile(scene, camera);
+    return pares;
+  } finally {
+    oyentes.forEach((antes, m) => ((m._listeners && m._listeners.dispose) || []).slice().forEach((f) => { if (!antes.has(f)) m.removeEventListener('dispose', f); }));
+    cap.dispose(); cap.forceContextLoss();
+  }
+}
+// Mientras quede alguno enlazándose: false (y no se dibuja). Los que terminan se sueltan (el navegador guarda lo enlazado
+// aparte del programa); con todos, sin contexto o pasado el tope: true, y `previos` se olvida.
+function previosListos(now) {
+  if (!previos) return true;
+  const { gl, ext } = previos;
+  if (!gl.isContextLost() && now - previos.desde < PREVIOS_MAX_MS) {
+    previos.pendientes = previos.pendientes.filter((p) => { if (!gl.getProgramParameter(p, ext.COMPLETION_STATUS_KHR)) return true; gl.deleteProgram(p); return false; });
+    if (previos.pendientes.length) { despertar(); avisarArmado(); return false; }
+  }
+  previos = null; return true;
+}
+// «Preparando la maqueta… %»: los sombreadores listos y los bloques descubiertos, sobre el total de los dos
+function avisarArmado() {
+  const hechos = totalPrevios - (previos ? previos.pendientes.length : 0) + totalLotes - porRevelar.length;
+  hint.textContent = porRevelar.length ? 'Preparando la maqueta… ' + Math.round(100 * hechos / (totalPrevios + totalLotes)) + ' %' : HINT;
+  if (porRevelar.length) cortina.textContent = hint.textContent;
+}
 // Cuántos sombreadores nuevos admite cada paso: se decide UNA vez, con el primer dibujo que crea programas (el cielo y el
 // suelo). Si costaron < 60 ms cada uno, el navegador ya los tenía guardados (2.ª visita) y salen de a 4 (medido: de a
 // uno alargaba el armado 0,6 s en escritorio y ~5 s en celular sin evitar ningún bloqueo); si no, de a uno. Se mira lo
@@ -1939,8 +2012,7 @@ function revelarPaso() {
   }
   despertar();        // a ritmo pleno mientras se arma (sin el reposo de ~15 cps)
   esperarNitidez();   // los cuadros que compilan son del procesador, no de la tarjeta gráfica: no bajan la nitidez
-  hint.textContent = porRevelar.length ? 'Preparando la maqueta… ' + Math.round(100 * (totalLotes - porRevelar.length) / totalLotes) + ' %' : HINT;
-  if (porRevelar.length) cortina.textContent = hint.textContent;
+  avisarArmado();
 }
 if (reduced) animateLife(0, 0);
 camera.position.set(-30, 150, 175); controls.target.set(0, 0, 0);

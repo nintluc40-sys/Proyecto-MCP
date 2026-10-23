@@ -312,8 +312,10 @@ volver a abrir esto, esto es lo que ya se midió:
   como estaba a su cierre. Los textos de los dos modos salen del mismo módulo puro (`planta/textos.js`), así dicen
   exactamente lo mismo, y three.js sólo se descarga en Maqueta. Cambiar de modo no rehace nada: el que se deja se
   oculta (la maqueta, en pausa) y vuelve al instante con su cámara, lo elegido y el mes. La primera vez, la maqueta se
-  arma por partes —suelo y tanques, naves, entorno, vida— con «Preparando la maqueta… %», sin congelar la pantalla al
-  compilar sus sombreadores; desde el 2026-10-16 (plan A1) se arma DETRÁS de una cortina con ese % al centro (también en el
+  arma por partes —suelo y tanques, naves, entorno, vida— con «Preparando la maqueta… %»; desde el 2026-10-23, si el
+  navegador lo permite (`KHR_parallel_shader_compile`), sus sombreadores se enlazan antes en segundo plano, sin congelar
+  la pantalla (medido en la 1.ª visita: la cortina, de ~8 s con tirones de hasta 1 s a ~3 s sin ellos), y si no, se
+  compilan de a uno por cuadro, como antes; desde el 2026-10-16 (plan A1) se arma DETRÁS de una cortina con ese % al centro (también en el
   celular) y aparece entera, con sus sombras, en un fundido: ver las piezas salir se veía como parpadeo. La maqueta baja su nitidez cuando va lenta mientras se mueve, hasta la de la pantalla normal (1×);
   con la cámara quieta 5 s vuelve a la completa, y al moverla de nuevo pasa de golpe a la que aguantó el último movimiento
   (plan A3, 2026-10-18: antes no la recuperaba nunca). Si el equipo le quita la memoria gráfica (contexto WebGL
