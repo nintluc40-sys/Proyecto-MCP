@@ -22,15 +22,9 @@ import { startAutoRefresh, asegurarLibro, setLibroGuardado } from './core/refres
 import { cargarLibroGuardado, almacenIDB } from './core/libroGuardado.js';
 import { esc } from './core/format.js';
 import { vigilarVersion } from './ui/versionNueva.js';
+// Las siete vistas de cada día se bajan AL ABRIRLAS (tarea 5, 2026-10-23): ver ui/vistaDiferida.js.
+import { diferida } from './ui/vistaDiferida.js';
 
-import { supervisorView } from './views/supervisor/index.js';
-import { larviculturaView } from './views/larvicultura/index.js';
-import { revisionesView } from './views/revisiones/index.js';
-import { visitanteView } from './views/visitante/index.js';
-import { algasView } from './views/algas/index.js';
-import { microbiologiaView } from './views/microbiologia/index.js';
-// Maduración: la entrada elige familia (📋 Operativo, diferido · 🧬 Microchips, la vista de index.js).
-import { maduracionEntrada } from './views/maduracion/entrada.js';
 // Biología Molecular: carga DIFERIDA. Es la vista más pesada (D3, ~1.5k líneas) y
 // no es de uso diario; se descarga solo al abrirla, aligerando el bundle inicial.
 
@@ -79,13 +73,15 @@ function boot() {
   // Vistas desarrolladas
   // `usaBarraFecha: true` = la vista LEE el rango de la barra de fecha global (store.dateFrom/
   // dateTo). Sólo esas la enseñan (D12, 2026-09-13); lo vigila src/ui/dateBarVisibility.test.js.
-  registerView('supervisor', { label: 'Supervisor', icon: '👁️', render: supervisorView, usaBarraFecha: true });
-  registerView('larvicultura', { label: 'Larvicultura', icon: '🦐', render: larviculturaView });
-  registerView('revisiones', { label: 'Revisiones', icon: '🔍', render: revisionesView, usaBarraFecha: true });
+  // Las siete de cada día, DIFERIDAS (tarea 5, ver `diferida` arriba).
+  registerView('supervisor', diferida({ label: 'Supervisor', icon: '👁️', usaBarraFecha: true }, () => import('./views/supervisor/index.js').then((m) => m.supervisorView)));
+  registerView('larvicultura', diferida({ label: 'Larvicultura', icon: '🦐' }, () => import('./views/larvicultura/index.js').then((m) => m.larviculturaView)));
+  registerView('revisiones', diferida({ label: 'Revisiones', icon: '🔍', usaBarraFecha: true }, () => import('./views/revisiones/index.js').then((m) => m.revisionesView)));
 
-  registerView('maduracion', { label: 'Maduración', icon: '🥚', render: maduracionEntrada });
-  registerView('microbiologia', { label: 'Microbiología', icon: '🧫', render: microbiologiaView });
-  registerView('algas', { label: 'Algas', icon: '🌿', render: algasView });
+  // Maduración: la entrada elige familia (📋 Operativo, diferido · 🧬 Microchips, la vista de index.js).
+  registerView('maduracion', diferida({ label: 'Maduración', icon: '🥚' }, () => import('./views/maduracion/entrada.js').then((m) => m.maduracionEntrada)));
+  registerView('microbiologia', diferida({ label: 'Microbiología', icon: '🧫' }, () => import('./views/microbiologia/index.js').then((m) => m.microbiologiaView)));
+  registerView('algas', diferida({ label: 'Algas', icon: '🌿' }, () => import('./views/algas/index.js').then((m) => m.algasView)));
   registerView('biomolecular', {
     label: 'Biología Molecular', icon: '🧬',
     render: (root) => {
@@ -99,7 +95,7 @@ function boot() {
         .catch((e) => { root.innerHTML = `<div class="empty-state" style="padding:48px">Error al cargar Biología Molecular.<br><small class="mono">${esc(e.message)}</small></div>`; });
     },
   });
-  registerView('visitante', { label: 'Visitante', icon: '🚪', render: visitanteView });
+  registerView('visitante', diferida({ label: 'Visitante', icon: '🚪' }, () => import('./views/visitante/index.js').then((m) => m.visitanteView)));
 
   // Registros (captura) — carga DIFERIDA: la migración de Fichas es pesada y solo
   // se descarga cuando el usuario entra a la vista. `repintaConDatos: false`: un refresco

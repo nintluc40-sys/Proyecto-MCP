@@ -669,7 +669,8 @@ Dos consecuencias que conviene tener presentes al desplegar:
   el worker los deduce leyendo el `index.html` que acaba de guardar (`assetsDelShell`).
   Gracias a eso la app arranca sin conexión **a la primera carga, no a la segunda**.
 - Los bloques **diferidos** (Registros, Biología Molecular, el tablero de Maduración, el Worker
-  de lectura del libro) no salen en `index.html`: el build escribe la lista de TODO `assets/`
+  de lectura del libro y, desde el 2026-10-23, las siete vistas de cada día —`ui/vistaDiferida.js`: la
+  pantalla de roles bajaba 1 053,7 kB de JavaScript y ahora 255,6—) no salen en `index.html`: el build escribe la lista de TODO `assets/`
   en `precache-assets.json` (`vite.config.js · listaDePrecache`) y el worker los guarda también
   al instalarse (`assetsDelBuild`, 2026-10-01). Sin eso, tras un despliegue, un equipo que no
   abriera Registros con red no podía abrirlo sin señal. La lista sale del bundle DEFINITIVO (`generateBundle` con
