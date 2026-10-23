@@ -854,7 +854,66 @@ export function visitanteView(root) {
   sumModal.querySelector('#vtSumClose').addEventListener('click', closeSumModal);
   sumModal.addEventListener('click', (e) => { if (e.target === sumModal) closeSumModal(); });
 
+  /* Pauta 16 (2026-10-22, usuario) · `paint()` corre también con ◀/▶, el deslizador y la métrica, donde nadie atrapa un
+     error (el router sólo atrapa la PRIMERA pintada). Antes, un fallo dejaba el panel a medias —sin gráfico o sin
+     cablear: los botones ya no respondían— y no se decía nada. Ahora sale una tarjeta con el error y con ◀/▶, para
+     poder irse a otro mes. Y como `paint()` reemplaza el panel entero, el control que tenía el foco desaparecía y el
+     foco caía al <body>: con el teclado, el deslizador (cada flecha es un `change`) avanzaba UN mes por vez y ◀/▶
+     respondían a un solo Enter. Se devuelve el foco al control nuevo equivalente (opción del usuario: conservar el
+     foco, sin cambiar cómo se pinta). */
   function paint() {
+    const foco = controlEnfocado();
+    try {
+      pintarMes();
+    } catch (e) {
+      console.error('[visitante] pintar', e);
+      pintarError(e);
+    }
+    reponerFoco(foco);
+  }
+
+  function pintarError(e) {
+    destroyChart('vtChart');
+    let label = '';
+    try { label = monthLabelAt(months[pos]); } catch (_) { /* sin rótulo */ }
+    wrap.innerHTML = `
+      <div class="card vt-card">
+        <div class="prod-nav">
+          <button class="prod-nav-btn" data-vtprev ${pos <= 0 ? 'disabled' : ''} aria-label="Mes anterior">◀</button>
+          <div class="prod-title">📅 <b>${esc(label)}</b></div>
+          <button class="prod-nav-btn" data-vtnext ${pos >= months.length - 1 ? 'disabled' : ''} aria-label="Mes siguiente">▶</button>
+        </div>
+        <div class="empty-state" role="alert">No se pudo pintar ${esc(label || 'este mes')}: ${esc((e && e.message) || String(e))}</div>
+      </div>`;
+    wireNav();
+  }
+
+  const CONTROLES = ['data-vtprev', 'data-vtnext', 'data-vtslider', 'data-vtmetric'];
+  function controlEnfocado() {
+    const a = document.activeElement;
+    if (!a || !wrap.contains(a)) return null;
+    const attr = CONTROLES.find((c) => a.hasAttribute(c));
+    return attr ? { attr, valor: a.getAttribute(attr) } : null;
+  }
+  function reponerFoco(f) {
+    if (!f) return;
+    let el = wrap.querySelector(f.attr === 'data-vtmetric' ? `[data-vtmetric="${f.valor}"]` : `[${f.attr}]`);
+    // ◀ en el primer mes (o ▶ en el último) queda deshabilitado: el foco pasa al otro, o al deslizador
+    if (el && el.disabled) el = wrap.querySelector(f.attr === 'data-vtprev' ? '[data-vtnext]' : '[data-vtprev]');
+    if (!el || el.disabled) el = wrap.querySelector('[data-vtslider]');
+    if (el && typeof el.focus === 'function') el.focus({ preventScroll: true });   // devolver el foco no desplaza la página
+  }
+
+  // El bloque 🥚 Maduración, aislado (pauta 16): si falla, lo dice en su hueco y el resto del panel sale igual. Antes,
+  // en la pintada diferida el error quedaba sin atrapar y el bloque no salía sin decir nada.
+  function madBlockSeguro(mIdx) {
+    try { return madBlock(mIdx); } catch (e) {
+      console.error('[visitante] maduración', e);
+      return `<div class="card vt-card"><div class="empty-state" role="alert">No se pudo pintar el bloque de 🥚 Maduración: ${esc((e && e.message) || String(e))}</div></div>`;
+    }
+  }
+
+  function pintarMes() {
     destroyChart('vtChart'); // libera la instancia previa antes de reemplazar el canvas (evita charts huérfanos)
     vtState.monthIdx = months[pos]; // recuerda el MES (no la posición) entre re-render/refrescos
     const mIdx = months[pos];
@@ -904,7 +963,7 @@ export function visitanteView(root) {
       ${summaryBlock(mIdx, d.monthSup, label)}
       ${labSummaryBlock(mIdx)}
       ${algasSummaryBlock(mIdx)}
-      <div data-vt-mad>${madBlock(mIdx)}</div>`;
+      <div data-vt-mad>${madBlockSeguro(mIdx)}</div>`;
 
     // Gráfico de barras por corrida.
     const labels = d.rows.map((r) => 'C' + r.cor);
@@ -940,15 +999,19 @@ export function visitanteView(root) {
       cargarMaduracion().then((m) => {
         const slot = m && wrap.querySelector('[data-vt-mad]');
         if (!slot || !slot.isConnected) return;
-        slot.innerHTML = madBlock(months[pos]);
+        slot.innerHTML = madBlockSeguro(months[pos]);
         wireSum(slot);
       });
     }
   }
 
-  function wire() {
+  function wireNav() {
     wrap.querySelector('[data-vtprev]')?.addEventListener('click', () => { if (pos > 0) { pos--; paint(); } });
     wrap.querySelector('[data-vtnext]')?.addEventListener('click', () => { if (pos < months.length - 1) { pos++; paint(); } });
+  }
+
+  function wire() {
+    wireNav();
     // El deslizador NO puede re-renderizar en `input`: `paint()` reemplaza wrap.innerHTML,
     // así que el propio nodo que se está arrastrando se arranca del DOM en el primer
     // movimiento y el arrastre se corta — cada agarre avanzaba un solo paso. `input` se

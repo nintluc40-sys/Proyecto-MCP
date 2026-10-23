@@ -6,7 +6,7 @@
    mientras cargaba no queda montado ni a la vista; y uno que falló se reintenta al volver a elegirlo, sin cajas
    repetidas. La escena (three.js) y Análisis se simulan: aquí sólo se prueba el orquestador (index.js).
    ============================================================ */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const vistaFalsa = (nombre) => ({ nombre, pintarEstado: vi.fn(), aviso: vi.fn(), alElegirMes: vi.fn() });
 const montarPlanta = vi.fn((host) => { host.querySelector('.viewport').dataset.escena = '1'; return vistaFalsa('maqueta'); });
@@ -291,5 +291,45 @@ describe('🏭 Planta · pintar puede fallar sin colgar el panel (C5, 2026-10-18
     await vi.waitFor(() => expect(conDatos(maqueta)).toHaveLength(2));
     expect(root.querySelector('.planta-nuevos').hidden).toBe(true);
     expect(ultimoAviso(maqueta)).toMatch(/^Datos del MCP · puestos al día/);
+  });
+});
+
+describe('🏭 Planta · si el cálculo se rechaza, lo avisa y lo suelta (pauta 16, 2026-10-22, usuario)', () => {
+  const conDatos = (v) => v.pintarEstado.mock.calls.filter((c) => c[0]);
+  let err;
+  beforeEach(() => { err = vi.spyOn(console, 'error').mockImplementation(() => {}); });
+  afterEach(() => { err.mockRestore(); });
+
+  it('🔴 un cálculo que se RECHAZA se avisa y no deja el mes bloqueado: al volver a pintar se calcula de nuevo', async () => {
+    // el canal con el que `ceder()` cede el turno falla UNA vez: la promesa del cálculo se rechaza antes de empezar
+    const real = globalThis.MessageChannel;
+    globalThis.MessageChannel = function () { globalThis.MessageChannel = real; throw new Error('sin canal'); };
+    try {
+      store.connected = true; store.globalData = [{ a: 1 }];
+      plantaView(root);
+      await vi.waitFor(() => expect(montarPlanta).toHaveBeenCalledTimes(1));
+      const maqueta = montarPlanta.mock.results[0].value;
+      await vi.waitFor(() => expect(maqueta.aviso).toHaveBeenCalledWith('No se pudieron poner al día los datos: sin canal'));
+      expect(err).toHaveBeenCalledWith('[planta] calcular', expect.any(Error));
+      expect(estadoPlantaPorPartes).not.toHaveBeenCalled();
+      // el mismo libro y el mismo mes: antes seguía «calculándose» para siempre y no se pedía nada
+      elegir('analisis');
+      await vi.waitFor(() => expect(calculos).toHaveLength(1));
+      calculos[0]({ modulos: { m: 1 }, resumen: null });
+      const analisis = montarAnalisis.mock.results[0].value;
+      await vi.waitFor(() => expect(conDatos(analisis)).toHaveLength(1));
+    } finally { globalThis.MessageChannel = real; }
+  });
+
+  it('un fallo DESPUÉS de pintar (el aviso final) se registra y se dice, en vez de quedar como un rechazo sin atrapar', async () => {
+    store.connected = true; store.globalData = [{ a: 1 }];
+    plantaView(root);
+    await vi.waitFor(() => expect(calculos).toHaveLength(1));
+    const maqueta = montarPlanta.mock.results[0].value;
+    maqueta.aviso.mockImplementation((t) => { if (/^Datos del MCP/.test(t)) throw new Error('aviso roto'); });
+    calculos[0]({ modulos: { m: 1 }, resumen: null });
+    await vi.waitFor(() => expect(err).toHaveBeenCalledWith('[planta] calcular', expect.any(Error)));
+    expect(conDatos(maqueta)).toHaveLength(1);
+    expect(maqueta.aviso.mock.calls.at(-1)[0]).toBe('No se pudieron poner al día los datos: aviso roto');
   });
 });

@@ -191,6 +191,12 @@ export function plantaView(root) {
       if (enCurso !== yo) return;
       enCurso = null;
       if (vista && marco.isConnected) pintarCalculo(c);
+    }).catch((e) => {
+      // Pauta 16 (2026-10-22, usuario) · si algo de aquí falla sin atrapar, se libera el cálculo en curso —si no, ese mes
+      // no se volvía a calcular hasta que cambiaran los datos o el día, y el panel se quedaba en «Cargando…»— y se avisa.
+      console.error('[planta] calcular', e);
+      if (enCurso === yo) enCurso = null;
+      try { if (vista && marco.isConnected) vista.aviso('No se pudieron poner al día los datos: ' + ((e && e.message) || e)); } catch (_) { /* ya se registró */ }
     });
   };
   const pintarCalculo = (calc) => {
