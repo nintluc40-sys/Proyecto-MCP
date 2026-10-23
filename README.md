@@ -1365,7 +1365,10 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
    🔑 Y desde el 2026-09-21 hace una segunda pregunta, porque este repo es PÚBLICO: `verificar-sin-reales.mjs`
    mira el rango EXACTO que se empuja —las líneas añadidas por cada commit y sus mensajes— y **para el push**
    si se va a publicar un dato real (textos del Excel de Broodstock, sus variantes o Trovan de la MATRIZ). Lo
-   que ya estaba publicado avisa sin bloquear, y nunca imprime el valor.
+   que ya estaba publicado avisa sin bloquear, y nunca imprime el valor. **No va en la CI, a propósito**
+   (2026-10-22, usuario): la CI corre DESPUÉS del push, cuando el árbol y los mensajes ya están publicados en
+   GitHub —sólo podría frenar Pages—, y necesitaría los datos reales que vigila. Su caché de Trovan se renueva
+   sola si tiene más de 7 días.
    ⚠ El hook vive en `.git/hooks/`, que **no se versiona**: es local a esta máquina, igual que
    `index (8)`. Quien clone el repo en otro sitio no lo tiene — y allí tampoco hay `index (8)` que
    comparar. La lógica sí está versionada, en el utillaje.
