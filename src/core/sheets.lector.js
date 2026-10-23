@@ -7,7 +7,8 @@
    - disponible(): hay Worker, la página cargó SheetJS (su <script> da la URL que importa el
      Worker) y el Worker no se ha dado por ROTO.
    - Roto = no llegó a arrancar (su bloque no se pudo bajar, p. ej. sin red tras publicar) o no
-     pudo cargar SheetJS: a partir de ahí se lee en el hilo principal, como antes.
+     pudo cargar SheetJS y el CSV de las hojas no le llegó completo («sin-xlsx»; pauta 18, 2026-10-22: sin SheetJS
+     lee igual por CSV): a partir de ahí se lee en el hilo principal, como antes.
    - Caído = se cayó DESPUÉS de arrancar (p. ej. sin memoria en un móvil) o no contestó a
      tiempo: se tira y se crea otro en la siguiente lectura.
    - A tiempo (A1, 2026-10-07, usuario) = sin pasar SILENCIO_MS callado. Antes era un tope FIJO de 165 s para toda la

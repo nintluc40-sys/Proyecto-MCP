@@ -802,9 +802,13 @@ Dos consecuencias que conviene tener presentes al desplegar:
    `importScripts` del SheetJS de `public/vendor`; lectura `dense`): la pantalla no se
    congela (medido el 2026-10-01 con el libro real: 21 s → 0,9 s al abrir y 12 s → 0 en cada
    refresco). El Worker calcula la huella de cada hoja y sólo devuelve las que cambiaron
-   respecto a lo aplicado (`planDelta` / `fundirDelta` en `core/sheets.js`). Si no arranca o
-   no carga SheetJS, se lee en el hilo principal como antes (`core/sheets.lector.js`); si se
-   cae con datos ya cargados, se conservan y se reintenta en el siguiente ciclo.
+   respecto a lo aplicado (`planDelta` / `fundirDelta` en `core/sheets.js`). Si no arranca, se
+   lee en el hilo principal como antes (`core/sheets.lector.js`); si se cae con datos ya
+   cargados, se conservan y se reintenta en el siguiente ciclo. Si no carga SheetJS, desde el
+   2026-10-22 (pauta 18) lee igual cada hoja por su CSV, que no lo necesita: si llega completo,
+   vale y el libro se guarda; si no, contesta `sin-xlsx` y la lectura pasa a la página (antes lo
+   contestaba sin probar el CSV). Y sin SheetJS nadie descarga el libro entero, que no podría
+   leer (eran tres descargas de 14,5 MB): se va directo al respaldo, que lee cada hoja por su CSV.
 2. Cada fila se etiqueta con `_SheetOrigin` (Larvicultura, Control_Tanque,
    Maduracion, `Lab_Algas`, `Registro_Supervision`, `Biomol`, `Microbiología`…) y
    se sella el `Módulo` desde el nombre de pestaña.

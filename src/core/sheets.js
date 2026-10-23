@@ -697,12 +697,12 @@ export const CSV_A_LA_VEZ = 16;
  *  `recordadas` (carga lenta D, 2026-10-19, usuario): la lista de pestañas de la lectura anterior (la guarda la página).
  *  Con ella, la primera tanda se pide YA, mientras llega /htmlview (0,2–4,8 s medidos el 19-10), y /htmlview sigue
  *  MANDANDO: de lo adelantado sólo se usa lo de las pestañas que él da (una borrada se tira; una nueva se pide; el nombre
- *  es el suyo); si /htmlview falla, se lee con la recordada (discoverGids). `pestanas`: la lista usada, para recordarla. */
+ *  es el suyo); si /htmlview falla, se lee con la recordada (discoverGids). `pestanas`: la lista usada, para recordarla.
+ *  Pauta 18 (2026-10-22, usuario) · NO necesita SheetJS: el CSV lo lee csvLector (carga lenta C, 2026-10-19). Sólo lo usa
+ *  el XLSX de una hoja suelta, que sin él no se pide (`filasPorXlsxDeHoja`). Antes, sin SheetJS, este camino se apartaba
+ *  entero y en el Worker no llegaba a probarse. */
 export async function hojasPorCsv(ids, obtenerXLSX = getXLSX, avisar = null, previas = {}, recordadas = null) {
   if (!ids || ids.type !== 'real') return null;
-  let XLSX;
-  try { XLSX = obtenerXLSX(); } catch (_) { return null; }
-  if (!XLSX) return null;
   const adelantadas = new Map();   // gid → la petición de su CSV, hecha antes de saber las pestañas
   for (const p of (Array.isArray(recordadas) ? recordadas : []).slice(0, CSV_A_LA_VEZ)) {
     const gid = Number(p && p.gid);
@@ -993,6 +993,9 @@ export async function fetchXlsxSheets(ids, obtenerXLSX = getXLSX, avisar = null)
   // (respaldoPorHojas; por gviz no desde el 2026-10-01: con un filtro en la hoja, recortaba).
   // Punto 9 (2026-10-07): con `avisar` (la primera carga), cada reintento lo dice —y si fue porque la red no avanzó—, y
   // los avisos de descarga del intento siguiente llevan en qué intento va.
+  // Pauta 18 (2026-10-22, usuario) · sin SheetJS el libro no se puede leer: no se descarga (eran tres descargas de 14,5 MB,
+  // con sus esperas, para fallar al leerlo cada vez) y se pasa directo al respaldo, que sin él lee cada hoja por su CSV.
+  try { if (!obtenerXLSX()) return null; } catch (_) { return null; }
   let intento = 1, bytes = 0;
   const av = avisar ? (p) => { if (p.bytes) bytes = p.bytes; avisar(intento > 1 && p.fase === 'descarga' ? { ...p, intento, de: 3 } : p); } : null;
   for (let attempt = 0; attempt < 3; attempt++) {

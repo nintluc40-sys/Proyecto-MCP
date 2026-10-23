@@ -340,3 +340,99 @@ describe('pauta 17 (2026-10-22) · SIN Worker, la página también lee PRIMERO p
     } finally { globalThis.fetch = base; }
   });
 });
+
+describe('pauta 18 (2026-10-22) · SIN SheetJS, el CSV se lee igual (lo lee csvLector)', () => {
+  const sinXlsx = () => undefined;                           // el Worker: self.XLSX sin cargar
+  const sinXlsxQueLanza = () => { throw new Error('SheetJS (XLSX) no se cargó'); };   // la página: getXLSX
+  const xlsxPedido = () => pedidas.some((u) => /export\?format=xlsx/.test(u));
+  const libroPedido = () => pedidas.some((u) => /export\?format=xlsx/.test(u) && !/gid=/.test(u));
+  const tic = () => new Promise((r) => setTimeout(r, 0));
+  // sin SheetJS en la página (window.XLSX es lo que lee getXLSX), durante `fn`
+  async function sinSheetJSEnLaPagina(fn) {
+    const X = window.XLSX;
+    delete window.XLSX;
+    try { return await fn(); } finally { window.XLSX = X; }
+  }
+
+  it('🔴 hojasPorCsv lee todas las hojas sin SheetJS: las mismas que con él, completo, y sin pedir ningún XLSX', async () => {
+    const conXlsx = await hojasPorCsv(ids, xlsx);
+    for (const obtener of [sinXlsx, sinXlsxQueLanza]) {
+      pedidas.length = 0;
+      const r = await hojasPorCsv(ids, obtener);
+      expect(r).not.toBeNull();
+      expect(r.completo).toBe(true);
+      expect(r.sheets).toEqual(conXlsx.sheets);
+      expect(xlsxPedido()).toBe(false);
+    }
+  });
+
+  it('🔴 sin SheetJS, la hoja cuyo CSV no llega no se pide por XLSX: falta y no es completo', async () => {
+    csvPorGid[2222] = 500;
+    const r = await hojasPorCsv(ids, sinXlsx);
+    expect(Object.keys(r.sheets)).toEqual([H1]);
+    expect(r.completo).toBe(false);
+    expect(r.porXlsx).toBe(0);
+    expect(xlsxPedido()).toBe(false);
+  });
+
+  it('🔴 el Worker sin SheetJS, con el CSV completo: contesta ok y completo, y guarda el libro (antes: «sin-xlsx» sin probar)', async () => {
+    libroEntero = xlsxDe(H1, [['Fecha'], ['x']]);            // si se pidiera, daría otra cosa
+    const e = { cargarXLSX: vi.fn(() => { throw new Error('404'); }), obtenerXLSX: sinXlsx, guardar: vi.fn(async () => {}) };
+    const r = await atenderLectura({ id: 11, realId: 'X', previas: {}, xlsxUrl: '/vendor/xlsx.full.min.js' }, e);
+    expect(e.cargarXLSX).toHaveBeenCalledTimes(1);
+    expect(r).toMatchObject({ id: 11, ok: true, completo: true, orden: [H1, H2] });
+    expect(r.cambiadas[H1][0].Supervivencia).toBe('85.5');
+    expect(xlsxPedido()).toBe(false);
+    await tic();
+    expect(e.guardar).toHaveBeenCalledTimes(1);
+  });
+
+  it('🔑 el Worker sin SheetJS, con el CSV incompleto: «sin-xlsx», como antes (la página lee con el suyo), sin bajar el libro', async () => {
+    csvPorGid[2222] = 500;
+    libroEntero = xlsxDe(H2, [['Fecha', 'OD'], ['01/09/2026', 5]]);
+    const e = { cargarXLSX: () => { throw new Error('404'); }, obtenerXLSX: sinXlsx, guardar: vi.fn(async () => {}) };
+    const r = await atenderLectura({ id: 12, realId: 'X', previas: {} }, e);
+    expect(r).toMatchObject({ id: 12, ok: false, motivo: 'sin-xlsx' });
+    expect(r.error).toMatch(/404/);
+    expect(xlsxPedido()).toBe(false);
+    await tic();
+    expect(e.guardar).not.toHaveBeenCalled();
+  });
+
+  it('el Worker sin SheetJS que falla por otra cosa sigue diciendo «sin-xlsx» (la página lee con el suyo); con SheetJS, «xlsx»', async () => {
+    const roto = () => { throw new Error('postMessage'); };   // el aviso de progreso revienta a media lectura
+    const m = { realId: 'X', previas: {}, conProgreso: true };
+    const sin = { cargarXLSX: () => { throw new Error('404'); }, obtenerXLSX: sinXlsx, avisar: roto };
+    expect(await atenderLectura({ id: 13, ...m }, sin)).toMatchObject({ id: 13, ok: false, motivo: 'sin-xlsx' });
+    const con = { cargarXLSX: vi.fn(), obtenerXLSX: () => window.XLSX, avisar: roto };
+    expect(await atenderLectura({ id: 14, ...m }, con)).toMatchObject({ id: 14, ok: false, motivo: 'xlsx' });
+  });
+
+  it('🔴 la página sin SheetJS, con el CSV completo: las hojas por CSV, completo (antes: el libro entero, tres veces, y el respaldo)', async () => {
+    libroEntero = xlsxDe(H1, [['Fecha'], ['x']]);
+    const d = await sinSheetJSEnLaPagina(() => descargarLibro());
+    expect(d.completo).toBe(true);
+    expect(Object.keys(d.sheets)).toEqual([H1, H2]);
+    expect(d.sheets[H1][0].Supervivencia).toBe('85.5');
+    expect(xlsxPedido()).toBe(false);
+  });
+
+  it('🔴 la página sin SheetJS, con el CSV incompleto: NO baja el libro (no podría leerlo) y va al respaldo, que lee por CSV', async () => {
+    csvPorGid[2222] = 500;
+    libroEntero = xlsxDe(H2, [['Fecha', 'OD'], ['01/09/2026', 5]]);
+    const d = await sinSheetJSEnLaPagina(() => descargarLibro());
+    expect(libroPedido()).toBe(false);
+    expect(xlsxPedido()).toBe(false);
+    expect(pedidas.filter((u) => /export\?format=csv/.test(u) && /gid=1111/.test(u)).length).toBe(2);   // el CSV y el respaldo
+    expect(Object.keys(d.sheets)).toEqual([H1]);
+    expect(d.completo).toBe(false);
+  });
+
+  it('con SheetJS, fetchAllSheets sigue pidiendo el libro entero cuando el CSV queda incompleto (sin cambio)', async () => {
+    csvPorGid[2222] = 500;
+    libroEntero = xlsxDe(H2, [['Fecha', 'OD'], ['01/09/2026', 5]]);
+    const s = await fetchAllSheets();
+    expect(libroPedido()).toBe(true);
+    expect(Object.keys(s)).toEqual([H2]);
+  });
+});

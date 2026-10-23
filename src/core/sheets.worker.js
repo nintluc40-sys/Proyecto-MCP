@@ -47,11 +47,15 @@ import { guardarLibro, almacenIDB } from './libroGuardado.js';
 export async function atenderLectura(m, entorno) {
   const { cargarXLSX, obtenerXLSX } = entorno;
   const id = m && m.id;
+  // Pauta 18 (2026-10-22, usuario) · sin SheetJS se lee IGUAL cada hoja por su CSV (csvLector, no SheetJS): si llega
+  // completo, vale —el Worker sigue sirviendo y el libro se guarda—. Si no, «sin-xlsx», como antes de probarlo: la página
+  // lee con el suyo y el lector da este Worker por roto. Antes contestaba «sin-xlsx» sin probar el CSV.
+  let sinXlsx = null;
   try {
     if (!obtenerXLSX()) cargarXLSX(m.xlsxUrl);
     if (!obtenerXLSX()) throw new Error('SheetJS no quedó disponible en el worker.');
   } catch (err) {
-    return { id, ok: false, motivo: 'sin-xlsx', error: String((err && err.message) || err) };
+    sinXlsx = { id, ok: false, motivo: 'sin-xlsx', error: String((err && err.message) || err) };
   }
   try {
     const ids = { type: 'real', realId: m.realId };
@@ -60,6 +64,7 @@ export async function atenderLectura(m, entorno) {
     // carga lenta D (2026-10-19): con la lista de pestañas que recuerda la página (aquí no hay localStorage)
     const recordadas = Array.isArray(m.pestanas) ? m.pestanas : null;
     const porCsv = await hojasPorCsv(ids, obtenerXLSX, avisar, m.previas || {}, recordadas);
+    if (sinXlsx && !(porCsv && porCsv.completo)) return sinXlsx;
     let sheets = porCsv && porCsv.completo ? porCsv.sheets : await fetchXlsxSheets(ids, obtenerXLSX, avisar);
     let guardable = !!sheets;
     // A4 (2026-10-11, usuario): ¿la lista de hojas es la de verdad? El libro entero, sí; el respaldo, si llegaron TODAS sus
@@ -91,7 +96,7 @@ export async function atenderLectura(m, entorno) {
     // la lista de pestañas que usó la lectura por CSV, para que la página la recuerde (D)
     return { id, ok: true, ...d, completo, ...(porCsv && porCsv.pestanas ? { pestanas: porCsv.pestanas } : {}) };
   } catch (err) {
-    return { id, ok: false, motivo: 'xlsx', error: String((err && err.message) || err) };
+    return sinXlsx || { id, ok: false, motivo: 'xlsx', error: String((err && err.message) || err) };
   }
 }
 
