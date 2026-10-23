@@ -36,12 +36,15 @@
    · LO FILTRADO: los lotes, con la regla de la tabla de Lotes (`loteEnFiltro`, al cierre de la foto); las salas, con
      la de las alertas de ambiente (`salasEnAlcance`). Un desove no es de un tanque: con tanque elegido, la producción
      es la de su sala. Los partes no dicen el código genético: con ese filtro, las cópulas no se comparan.
+   · LO QUE NO SE SEPARA SE DICE (tarea 6 de la ronda 5, 2026-10-23, usuario; la regla de la pauta 14): `ignora` lleva,
+     con los filtros puestos, lo que la mortalidad de una sala no separa, lo que sólo elige los lotes (sus desoves y sus
+     cópulas cuentan enteros) y si el código deja fuera las cópulas. La vista lo pinta bajo la nota de ⚠️ Alertas.
    ============================================================ */
 import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { construirLibro, sumarDias, ubicKey, ESTADO_PRODUCCION } from '../registros/lib/mad-libro.js';
 import { fechaDeFila } from './operativo.data.js';
 import { cociente, tasaEnPartesDelLote } from './operativo.indicadores.js';
-import { posicionEnFiltro, salasEnAlcance, codigoEnFiltro, hayCodigo, tanqueElegido } from './operativo.tablero.js';
+import { posicionEnFiltro, salasEnAlcance, codigoEnFiltro, hayCodigo, tanqueElegido, filtrosNoAplicados } from './operativo.tablero.js';
 import { loteEnFiltro, origenDeLote } from './operativo.lotes.js';
 import { UMBRALES_DE_AVISO } from './operativo.umbrales.js';
 
@@ -201,17 +204,30 @@ export const PARAMETROS_REPRODUCCION = [
   { id: 'fertilidad', etiqueta: 'fertilidad' },
 ];
 
+/** Tarea 6 · ronda 5 (2026-10-23, usuario; pauta 14) · lo que las líneas de Tendencias no pueden separar con los filtros
+ *  PUESTOS, para decirlo: `mortalidad`, lo que no separan los partes de Tanques (son de una sala y un tanque, y la cifra
+ *  suma ♂ y ♀); `delLote`, los filtros que sólo ELIGEN los lotes, cuyos desoves y cópulas cuentan enteros (un desove sólo
+ *  dice su lote y su código; la piscina y la camaronera son del lote, así que sí se aplican); `copulas`, si el código
+ *  genético las deja fuera. Cada lista, con los rótulos y el orden de `filtrosNoAplicados`. */
+export function ignoraDeTendencias(F) {
+  return {
+    mortalidad: filtrosNoAplicados(F, ['sala', 'tanque']),
+    delLote: filtrosNoAplicados(F, ['lote', 'codigo', 'piscina', 'camaronera']),
+    copulas: hayCodigo(F),
+  };
+}
+
 /**
  * 📉 Las tendencias del período frente al anterior. `partes`: los de `diasDeTanque`. `presencia`: la de
  * `presenciaDiaria` desde la víspera del período anterior hasta el final del elegido (si falta, se calcula aquí; la
  * vista la guarda para no recalcularla en cada pintada).
  * Devuelve lo que avisa, ya filtrado por los umbrales: `nauplios` (null si no baja nada), y las listas `produccion`
  * (salas que producen menos), `mortalidad` (salas con más) y `reproduccion` (lotes con algún parámetro que baja).
- * `total` es cuántas líneas de aviso salen.
+ * `total` es cuántas líneas de aviso salen. `ignora`: lo que no se separa con este filtro (`ignoraDeTendencias`).
  */
 export function tendencias(M, periodo, F, partes, presencia) {
   const anterior = periodoAnterior(periodo);
-  const out = { anterior, nauplios: null, produccion: [], mortalidad: [], reproduccion: [], total: 0 };
+  const out = { anterior, nauplios: null, produccion: [], mortalidad: [], reproduccion: [], total: 0, ignora: ignoraDeTendencias(F) };
   if (!anterior || !M || !M.libro) return out;
   const CAMBIO = UMBRALES_DE_AVISO.cambio.valor;
   const MINIMO = UMBRALES_DE_AVISO.registros.valor;

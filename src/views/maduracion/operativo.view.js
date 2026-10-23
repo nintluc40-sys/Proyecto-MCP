@@ -1511,6 +1511,26 @@ function tendenciasItems(t) {
   return items;
 }
 
+/* Tarea 6 · ronda 5 (2026-10-23, usuario; pauta 14) · lo que 📉 Tendencias no separa con los filtros puestos se DICE
+   bajo la nota (antes se callaba). Sólo si hay con qué comparar: sin período anterior no hay tendencia que matizar. */
+function ignoraTendenciasHTML(t) {
+  const I = (t && t.anterior && t.ignora) || {};
+  const ni = (x) => x.map((d) => esc(d)).join(' ni por ');
+  const notas = [];
+  if ((I.mortalidad || []).length) {
+    // el motivo, sólo si explica algo de lo ignorado: el sexo sí está en el parte (lo que no se hace es separarlo)
+    const porque = I.mortalidad.some((d) => d !== 'sexo') ? ' Una fila de Tanques dice su sala y su tanque, pero no de qué lote era cada animal.' : '';
+    notas.push(`En 📉 Tendencias, la mortalidad de cada sala no puede separarse por ${ni(I.mortalidad)}: son las bajas de todos
+      sus tanques (o de los elegidos).${porque}`);
+  }
+  if ((I.delLote || []).length) {
+    notas.push(`En 📉 Tendencias, los desoves y las cópulas no pueden separarse por ${ni(I.delLote)}: ese filtro sólo elige
+      los lotes, y de ellos cuentan enteros. Un desove sólo dice su lote y su código genético.`);
+  }
+  if (I.copulas) notas.push('En 📉 Tendencias, las cópulas no se comparan con el código genético: los partes de Tanques no lo dicen.');
+  return notas.map((n) => `<p class="mc-note">⚠ ${n}</p>`).join('');
+}
+
 function permanenciaItems(perm) {
   return perm.map((l) => {
     const donde = l.salas.length === 1 ? esc(l.salas[0].sala) : l.salas.map((s) => `${esc(s.sala)} (${nf(s.dias)} d)`).join(', ');
@@ -1553,6 +1573,7 @@ function alertasHTML(a, p, t, perm) {
     ${items.length || tend.length || perms.length ? '' : '<p class="mop-ok">✓ Sin alertas en el período.</p>'}
     ${recientes}
     <p class="mc-note" title="${esc(titulo)}">${notas.join(' ')}</p>
+    ${ignoraTendenciasHTML(t)}
   </div>`;
 }
 

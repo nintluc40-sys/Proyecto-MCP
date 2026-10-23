@@ -446,6 +446,37 @@ describe('Maduración · F7.2 · el semanal por lote', () => {
   });
 });
 
+/* Tarea 6 · ronda 5 (2026-10-23, usuario; pauta 14) · el semanal CON filtro: el filtro sólo elige qué lotes salen y cada
+   página es del lote ENTERO, también su mortalidad. Con la sala, la mortalidad era la de los partes de TODA la sala (de
+   todos sus lotes): QA y QZ, que comparten el T1 de la Sala 1, enseñaban la misma cifra. Y la página no decía su filtro. */
+describe('Maduración · F7.2 · el semanal con filtro: cada lote, entero, y dicho', () => {
+  const conSala = semanalPorLote(ML, SERIE7, PARTES_L, F({ sala: 'Sala 1' }), {});
+  const pagF = (lote) => conSala.paginas.find((p) => p.lote === lote);
+  it('🔴 la mortalidad de cada página es la de SU lote: la misma que sin filtro', () => {
+    expect(conSala.paginas.length).toBeGreaterThan(0);
+    for (const p of conSala.paginas) {
+      expect(p.mortalidad, p.lote).toEqual(pag(p.lote).mortalidad);
+      expect(p.mortalidad.modo, p.lote).toBe('tasa');
+    }
+    // con un código, antes «no-aplica» (un «—» sin explicar)
+    const conCodigo = semanalPorLote(ML, SERIE7, PARTES_L, F({ lote: 'QA', codigo: 'CA' }), {}).paginas;
+    expect(conCodigo.map((p) => p.lote)).toEqual(['QA']);
+    expect(conCodigo[0].mortalidad).toEqual(pag('QA').mortalidad);
+  });
+  it('🔴 con filtro, la página lo DICE; sin filtro, no', () => {
+    expect(semanalPaginaHtml(pagF('QA'))).toContain('PARTE FILTRADO — Sala 1: el filtro sólo elige qué lotes salen; cada lote va ENTERO');
+    expect(semanalPaginaHtml(pagF('QA'))).toContain('también su mortalidad');
+    expect(semanalPaginaHtml(pag('QA'))).not.toContain('el filtro sólo elige');
+  });
+  it('🔴 el Excel lo dice bajo «Alcance» sólo con filtro; sin él, sale como antes', () => {
+    const ctx = semanalHojas(conSala)[0].aoa;
+    expect(ctx[2]).toEqual(['Alcance', 'PARTE FILTRADO — Sala 1']);
+    expect(ctx[3]).toEqual(['Nota', 'El filtro sólo elige qué lotes salen; cada lote va ENTERO (todas sus salas, tanques y códigos genéticos).']);
+    expect(ctx[6][0]).toBe('Lote');
+    expect(semanalHojas(semanal)[0].aoa.some((r) => r[0] === 'Nota')).toBe(false);
+  });
+});
+
 describe('Maduración · F7.2 · el cierre de lote', () => {
   const SERIE_VIDA = serieDiaria(ML.fuentes, '2026-09-09', DIA);
   const cerrado = cierreDeLote(ML, SERIE_VIDA, 'QZ', { ahora: '20/09/2026 08:30' });

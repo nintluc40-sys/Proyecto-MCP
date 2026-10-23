@@ -465,9 +465,17 @@ function paginaSemanal(M, serie, partes, F, periodo, fila, presencia) {
     eventos: ficha.eventos || [],
     reproduccion: ficha.reproduccion || {},
     promedios: ficha.promedios || {},
-    mortalidad: kpiMortalidad(serie, periodo, Flote, partes),
+    /* Tarea 6 · ronda 5 (2026-10-23, usuario; pauta 14) · la mortalidad, del lote ENTERO, como el resto de la página: con
+       la sala de `Flote`, `kpiMortalidad` daba las bajas registradas en TODA la sala —de todos sus lotes, la misma cifra
+       en la página de cada uno— y, con un código, «—» sin decir por qué. El filtro sólo elige qué lotes salen, y la
+       página lo dice (`alcance`). */
+    mortalidad: kpiMortalidad(serie, periodo, { lotes: Flote.lotes }, partes),
+    alcance: hayFiltro(F) ? alcanceDelParte({ filtrado: true, etiquetas: etiquetasDeFiltro(F) }) : '',
   };
 }
+
+/** Lo que el filtro hace en el semanal, dicho en cada página con filtro y en su Excel (tarea 6 · ronda 5, pauta 14). */
+const SEMANAL_LOTE_ENTERO = 'el filtro sólo elige qué lotes salen; cada lote va ENTERO (todas sus salas, tanques y códigos genéticos)';
 
 /* ── F7.2 · EL CIERRE DE LOTE ───────────────────────────────
    Decisión del usuario: se ofrece para CUALQUIER lote y se rotula si sigue abierto («EN CURSO»), porque hoy no hay
@@ -588,7 +596,10 @@ export function semanalPaginaHtml(pg, opts = {}) {
     : '<div class="rp-vacio">Sin bajas del lote en la semana.</div>';
   const cerrado = esIso(p.cerrado) ? `cerrado el ${dma(p.cerrado)}` : '';
   const sub = `Lote ${p.lote} · ${txt(p.rango)} · ${p.estado || 'sin estado'}${p.salas.length ? ' · ' + p.salas.join(' · ') : ''}${p.codigos.length ? ' · ' + p.codigos.join(' · ') : ''}`;
+  // tarea 6 · ronda 5 (pauta 14): la cabecera del reporte no se imprime en cada página, así que la página dice su filtro
+  const nota = p.alcance ? `<div class="rp-vacio">${esc(p.alcance)}: ${esc(SEMANAL_LOTE_ENTERO)}, también su mortalidad.</div>` : '';
   return cabeceraHtml('Maduración · Semanal por lote', sub, cerrado ? 'Lote ' + cerrado : '')
+    + nota
     + kpisHtml(kpis)
     + `<div class="rp-cols">${bloqueCurva(p.curva, '📈 Vivos, día a día')}
       <section class="rp-b"><h3>💀 Bajas de la semana</h3>${bajasHtml}</section></div>
@@ -858,6 +869,8 @@ export function semanalHojas(rep) {
     ['Maduración · Semanal por lote'],
     ['Período', (P.desde || '') + ' a ' + (P.hasta || '')],
     ['Alcance', alcanceDelParte(r.cabecera)],
+    // tarea 6 · ronda 5 (pauta 14): con filtro, lo que el filtro hace aquí; sin él, el Excel sale como antes
+    ...((r.cabecera || {}).filtrado ? [['Nota', SEMANAL_LOTE_ENTERO.charAt(0).toUpperCase() + SEMANAL_LOTE_ENTERO.slice(1) + '.']] : []),
     ['Generado', txt((r.cabecera || {}).generado)],
     [],
   ];

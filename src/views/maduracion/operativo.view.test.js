@@ -2262,6 +2262,38 @@ describe('Maduración · operativo · 0f · 2b · 📉 Tendencias y ⏳ Permanen
     expect(t.querySelector('.mc-note').textContent).toContain('frente a los 30 días anteriores (22/07 – 20/08)');
   });
 
+  /* Tarea 6 · ronda 5 (2026-10-23, usuario; pauta 14) · lo que 📉 Tendencias no separa se DICE bajo la nota, sólo con los
+     filtros puestos (y con período anterior, como la nota «Tendencias: frente a…»: lo hay siempre que el período tiene
+     fechas). Tres pruebas cortas: montar el tablero roza el tope de tiempo. */
+  it('🔴 pauta 14 · con un lote, la tarjeta dice que la mortalidad de la sala no lo separa', async () => {
+    await montar(PLANTA_T());
+    click(root.querySelector('[data-mop-periodo="7d"]'));
+    marcar('lote', 'TA');
+    const t = plano(tarjeta());
+    expect(t).toContain('⚠ En 📉 Tendencias, la mortalidad de cada sala no puede separarse por lote: son las bajas de todos sus tanques (o de los elegidos). Una fila de Tanques dice su sala y su tanque, pero no de qué lote era cada animal.');
+    expect(t, 'los desoves sí son del lote').not.toContain('los desoves y las cópulas');
+    expect(t).not.toContain('las cópulas no se comparan');
+  });
+  it('🔴 pauta 14 · con una sala, los desoves y las cópulas; con un código, también las cópulas', async () => {
+    await montar(PLANTA_T());
+    click(root.querySelector('[data-mop-periodo="7d"]'));
+    marcar('sala', 'Sala 1');
+    expect(plano(tarjeta())).toContain('⚠ En 📉 Tendencias, los desoves y las cópulas no pueden separarse por sala: ese filtro sólo elige los lotes, y de ellos cuentan enteros.');
+    expect(plano(tarjeta()), 'la sala sí la aplica la mortalidad').not.toContain('la mortalidad de cada sala no puede');
+    marcar('sala', []);
+    marcar('codigo', 'CA');
+    expect(plano(tarjeta())).toContain('⚠ En 📉 Tendencias, las cópulas no se comparan con el código genético');
+  });
+  it('🔴 pauta 14 · sin filtro no dice nada, aunque haya tendencias; con sólo el sexo, sin el motivo del lote', async () => {
+    await montar(PLANTA_T());
+    click(root.querySelector('[data-mop-periodo="7d"]'));
+    expect(tarjeta().querySelector('.mop-tendencias')).not.toBeNull();
+    expect(plano(tarjeta())).not.toContain('En 📉 Tendencias');
+    cambiar(filtro('sexo'), 'hembras');
+    expect(plano(tarjeta())).toContain('la mortalidad de cada sala no puede separarse por sexo: son las bajas de todos sus tanques (o de los elegidos).');
+    expect(plano(tarjeta()), 'el sexo sí está en el parte').not.toContain('no de qué lote era cada animal');
+  });
+
   it('con un lote sin nada que avisar (TC, en cuarentena), «✓ Sin alertas en el período»', async () => {
     await montar(PLANTA_T());
     click(root.querySelector('[data-mop-periodo="7d"]'));

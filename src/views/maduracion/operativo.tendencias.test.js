@@ -21,7 +21,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   periodoAnterior, cambioPct, presenciaDiaria, salasDelDesove, acumularDesoves, tendencias, permanencia,
-  PARAMETROS_REPRODUCCION,
+  PARAMETROS_REPRODUCCION, ignoraDeTendencias,
 } from './operativo.tendencias.js';
 import { modeloOperativo, diasDeTanque } from './operativo.data.js';
 import { periodoDe, normalizarFiltro, kpiReproduccion } from './operativo.tablero.js';
@@ -304,6 +304,35 @@ describe('Maduración · tendencias · lo filtrado', () => {
     expect(tendencias(M, P7, normalizarFiltro({ sala: 'Sala 1', tanque: 2 }), PARTES).mortalidad).toEqual([]);
     // el 1: antes 3 partes (1 baja), ahora 2 (2 bajas): tampoco llega a 3 en los dos
     expect(tendencias(M, P7, normalizarFiltro({ sala: 'Sala 1', tanque: 1 }), PARTES).mortalidad).toEqual([]);
+  });
+});
+
+/* Tarea 6 · ronda 5 (2026-10-23, usuario; pauta 14) · lo que cada línea NO separa, para decirlo: la mortalidad de una sala
+   no sabe de lotes, códigos, estados ni orígenes (y suma ♂ y ♀); lo que sólo elige los lotes —la sala, el tanque, el
+   estado, el sexo— deja sus desoves y sus cópulas enteros; y con un código las cópulas no se comparan. La piscina y la
+   camaronera son del lote: los desoves sí las respetan. Las cifras no cambian (lo fijan las pruebas de arriba). */
+describe('Maduración · tendencias · lo que no se separa se dice (pauta 14)', () => {
+  const ig = (f) => tendencias(M, P7, normalizarFiltro(f), PARTES).ignora;
+  it('sin filtro no hay nada que decir', () => {
+    expect(ig({})).toEqual({ mortalidad: [], delLote: [], copulas: false });
+  });
+  it('🔴 con el lote: la mortalidad de la sala no lo separa; los desoves sí son del lote', () => {
+    expect(ig({ lote: 'TA' })).toEqual({ mortalidad: ['lote'], delLote: [], copulas: false });
+  });
+  it('🔴 con la sala y un tanque: la mortalidad los aplica; los desoves y las cópulas van enteros', () => {
+    expect(ig({ sala: 'Sala 1', tanque: 2 })).toEqual({ mortalidad: [], delLote: ['sala', 'tanque'], copulas: false });
+  });
+  it('🔴 con el código: la mortalidad no lo separa y las cópulas no se comparan', () => {
+    expect(ig({ codigo: 'CB' })).toEqual({ mortalidad: ['código genético'], delLote: [], copulas: true });
+  });
+  it('🔴 el estado y el sexo, en las dos; la piscina y la camaronera, sólo en la mortalidad', () => {
+    expect(ig({ estado: 'Producción', sexo: 'hembras', piscina: 'P1', camaronera: 'CX' })).toEqual({
+      mortalidad: ['estado', 'sexo', 'piscina', 'camaronera'], delLote: ['estado', 'sexo'], copulas: false });
+  });
+  it('viene también sin período anterior o con un modelo DEGENERADO (la vista decide si lo pinta)', () => {
+    expect(tendencias({}, P7, normalizarFiltro({ lote: 'TA' }), []).ignora.mortalidad).toEqual(['lote']);
+    expect(tendencias(M, {}, normalizarFiltro({ codigo: 'CB' }), PARTES).ignora.copulas).toBe(true);
+    expect(ignoraDeTendencias(undefined)).toEqual({ mortalidad: [], delLote: [], copulas: false });
   });
 });
 
