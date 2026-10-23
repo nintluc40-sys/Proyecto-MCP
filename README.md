@@ -26,31 +26,30 @@ npm run lint       # ESLint
 > es dependencia de npm. El gemelo `index (8)` no tiene servidor del que pedirlo: lleva SheetJS
 > **incrustado**, byte a byte el de `public/vendor/` (lo vigila `verificar-xlsx-index8`).
 
-### `npm audit` avisa de 11 (todos de desarrollo), y se quedan · MEDIDO el 2026-09-21, re-medido el 2026-10-15
+### `npm audit` avisa de 6 (todos de desarrollo), y se quedan · MEDIDO el 2026-09-21, re-medido el 2026-10-15 y el 2026-10-23
 
-`npm audit` da **9 avisos (3 moderate, 5 high, 1 critical)**. Los nueve son de **desarrollo**:
-`dependencies` sólo lleva `chart.js` y `leaflet`, y ninguno de los paquetes señalados
-—vitest, vite, esbuild, postcss, nanoid, js-yaml, brace-expansion— entra en el bundle. **Exposición
-en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midió:
+**Exposición en producción: cero** (`npm audit --omit=dev` da 0): ninguno de los paquetes señalados entra en el bundle;
+`dependencies` lleva `chart.js`, `leaflet`, `three` y `qrcode-generator`, y ninguno está entre los avisos. Antes de
+volver a abrir esto, esto es lo que ya se midió:
 
-- 🆕 **Re-medido el 2026-10-15: 11 avisos (3 moderate, 6 high, 2 critical)**, todos de desarrollo: a los de
-  arriba se suman `@vitest/mocker`, `vite-node`, `tinypool` y `source-map-js`, que vienen con vitest y vite.
-  `npm audit --omit=dev` da **0**. `dependencies` lleva ahora también `three` y `qrcode-generator` (🏭 Planta,
-  04/05-10), y ninguno de los dos está entre los avisos.
-
-- **`npm audit fix` (sin `--force`) NO cambia ni un paquete**: 0 añadidos, 0 quitados, 0 cambiados
-  sobre 142 auditados. ⚠ Y aun así npm imprime «fix available via `npm audit fix`» en cuatro de
-  ellos: **ese mensaje engaña**, y es lo que hace que esto se re-litigue cada pocas semanas.
-- Los **cinco** restantes sólo se cierran con saltos MAYORES —`vitest` 2.1.9 → 5.0.1 y `vite`
-  5.4.21 → 8.3.0—, que es exactamente lo que la decisión **D-6** descartó: tres versiones mayores
-  cada uno, con miles de pruebas y la puerta a producción encima, a cambio de nada en producción.
-- La única vía que movería los otros cuatro es `npm update`, y **no es quirúrgica**: arrastra
-  `happy-dom` 20.10.3 → 20.14.5 —la versión contra la que está MEDIDO el comportamiento raro del
-  `<select>` pintado con `innerHTML`, del que dependen pruebas—, `@types/node` 25 → 26 y
-  `undici-types` 7 → 8.
-- ⚠ Trampa de medición, por si alguien la repite: **`npm ls <paquete>` no dice lo que hay
-  instalado** sino lo que npm resolvería hoy (dio `js-yaml@4.3.2` cuando el fichero y el lockfile
-  dicen `4.3.0`). Lo que instala la CI es el **lockfile**, y es contra él que audita `npm audit`.
+- 🆕 **2026-10-23 · de 11 avisos a 6** con `npm audit fix` SIN `--force` (decisión del usuario): cinco subidas menores
+  del lockfile —`postcss` 8.5.15 → 8.5.31, `nanoid` 3.3.12 → 3.3.20, `source-map-js` 1.2.1 → 1.2.2, `js-yaml` 4.3.0 →
+  4.3.2 y `brace-expansion` 1.1.16 → 1.1.21—, sin tocar `happy-dom`, vite ni vitest. La build salió **idéntica byte a
+  byte** (los 56 archivos, la misma huella). El 2026-09-21 ese mismo comando no cambiaba nada (aún no había esos
+  arreglos menores).
+- Los **seis** que quedan (3 moderate, 1 high, 2 critical: `vite`, `esbuild`, `vitest`, `vite-node`, `@vitest/mocker`,
+  `tinypool`) sólo se cierran con saltos MAYORES —`vite` 5 → 8 y `vitest` 2 → 5—, que es exactamente lo que la
+  decisión **D-6** descartó: tres versiones mayores cada uno, con miles de pruebas y la puerta a producción encima, a
+  cambio de nada en producción. Afectan al servidor de desarrollo y a la interfaz de vitest, que sólo corren en local.
+- `npm update` **no es quirúrgica**: arrastraría además `happy-dom` —la versión contra la que está MEDIDO el
+  comportamiento raro del `<select>` pintado con `innerHTML`, del que dependen pruebas—, `@types/node` y `undici-types`.
+- ⚠⚠ **Trampa de medición, ya explicada** (2026-10-23): `npm audit fix --dry-run` (npm 11) **reescribe
+  `node_modules/.package-lock.json`**, el índice interno de npm, con las versiones que INSTALARÍA, sin instalarlas.
+  Desde ese momento `npm ls` dice esas versiones, el ensayo dice «up to date» y un `npm audit fix` de verdad cambia el
+  lockfile pero no instala nada. Así se vio el 2026-10-15 (`npm ls` daba `js-yaml@4.3.2` con `4.3.0` instalado) y el
+  2026-10-22. Para medir sin tocar nada: copiar `package.json` y `package-lock.json` a una carpeta aparte y correr allí
+  `npm audit fix --package-lock-only`. Si el índice ya está falseado, se borra (npm lo rehace leyendo `node_modules`).
+  Lo que instala la CI es el **lockfile** (`npm ci`), y es contra él que audita `npm audit`.
 
 ## Vistas
 
