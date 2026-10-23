@@ -309,16 +309,18 @@ describe('Auditoría · 📋 pegar desde Excel y moverse con el teclado', () => 
     anadir('cosechas');
     pegar(celda('cosechas', 0, 'fecha'), [
       ['01/10/2026', 'M03', '5', '9', '3200000', '9.5', 'PL13', '160', 'pto inca 1', '40-41', 'G1', 'D1', '', '4', 'ABC123'],
-      ['02/10/2026', 'M03', '5', '9', '1100000', '9.5', 'PL14', '170', 'Taura 1', '42', 'G2', 'D2', '', '2', 'XYZ9'],
+      ['02/10/2026', 'M03', '5', '9', '1100000', '9.5', 'PL14', '170', 'Taura 9', '42', 'G2', 'D2', '', '2', 'XYZ9'],
       ['31/02/2026', 'M03', '6', '', '900000', '', '', '', 'Taura', '', '', '', '', '', ''],
+      // «Taura 1» está en el catálogo desde el 2026-10-22 (usuario): se reconoce, y sin confundirse con «Taura»
+      ['03/10/2026', 'M03', '7', '', '800000', '', '', '', 'taura 1', '', '', '', '', '', ''],
     ]);
     const C = tabla('cosechas');
     expect(C.map((r) => [r.fecha, r.tanque, r.partida, r.camaronera])).toEqual([
-      ['2026-10-01', '5', 1, 'Pto.Inca 1'], ['2026-10-02', '5', 2, ''], ['', '6', 1, 'Taura']]);
+      ['2026-10-01', '5', 1, 'Pto.Inca 1'], ['2026-10-02', '5', 2, ''], ['', '6', 1, 'Taura'], ['2026-10-03', '7', 1, 'Taura 1']]);
     expect(C[0].placa).toBe('ABC123');
     const aviso = avisos.find((a) => a.tipo === 'warn');
     expect(aviso.m).toContain('2 celda(s) no reconocida(s)');
-    expect(aviso.m).toContain('Camaronera «Taura 1»');
+    expect(aviso.m).toContain('Camaronera «Taura 9»');
     expect(aviso.m).toContain('Fecha «31/02/2026»');
   });
 

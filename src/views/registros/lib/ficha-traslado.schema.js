@@ -132,6 +132,7 @@ export const CAMARONERA_OPTS = [
   'Pto.Inca 3',
   'Pto.Inca 4',
   'Taura',
+  'Taura 1',
   'Puná 1',
   'Puná 2',
   'Puná 3',

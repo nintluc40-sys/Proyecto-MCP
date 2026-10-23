@@ -67,7 +67,7 @@ const STD_FICHAS_ALL = [...FICHAS, "desinfeccion"];
 // Opciones del campo "Destino" en la ficha de Despacho
 const DESTINO_OPTS = [
   "Pto.Inca 1","Pto.Inca 2","Pto.Inca 3","Pto.Inca 4",
-  "Taura","Puná 1","Puná 2","Puná 3","Cachugrán","Chongón"
+  "Taura","Taura 1","Puná 1","Puná 2","Puná 3","Cachugrán","Chongón"
 ];
 
 // Module PINs

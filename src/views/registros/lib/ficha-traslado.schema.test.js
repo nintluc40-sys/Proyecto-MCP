@@ -217,7 +217,9 @@ describe('Traslado · esquema de la hoja', () => {
 
   it('la camaronera sale del catálogo de la ficha de Despacho', () => {
     expect(CAMARONERA_OPTS).toContain('Puná 1');
-    expect(CAMARONERA_OPTS).toHaveLength(10);
+    // «Taura 1» (2026-10-22, usuario) se añadió tras «Taura», que se conserva: son dos camaroneras
+    expect(CAMARONERA_OPTS.slice(4, 6)).toEqual(['Taura', 'Taura 1']);
+    expect(CAMARONERA_OPTS).toHaveLength(11);
   });
 });
 
