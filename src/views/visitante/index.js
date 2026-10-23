@@ -9,7 +9,7 @@ import { esc, fmtPop, wqiBand, wqiSpans } from '../../core/format.js';
 import { store } from '../../core/store.js';
 import { getField, parseNum, F, isLarviculturaRow, obsFindings } from '../../core/fields.js';
 import { fmtPct } from '../../core/util.js';
-import { presentMonths, corridasOfMonth, modulesOfCorrida, modCorStats, monthLabelAt, monthIndexOfCorrida, calendarRangeOfMonth } from '../../core/prodCalendar.js';
+import { presentMonths, corridasOfMonth, modulesOfCorrida, modCorStats, monthLabelAt, monthIndexOfCorrida, ventanaDeMaduracion } from '../../core/prodCalendar.js';
 import { parseAnyDate } from '../../core/dates.js';
 // Capas de datos PURAS de laboratorio (ya en el bundle base vía la vista Microbiología →
 // no inflan el bundle de Visitante; solo se reutiliza su lógica de umbrales/rangos).
@@ -283,20 +283,15 @@ function cargarMaduracion() {
   return madCarga;
 }
 const hoyIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
-/* 2026-10-18 (usuario, opción A, como Planta · cifras.js) · el mes de producción arranca ~2 semanas antes que el de calendario
-   de su nombre: mientras éste no haya empezado, los nauplios son los del mes de calendario EN CURSO, y se dice (`adelantado`).
-   Antes, esas 2 semanas de cada mes, el bloque 🥚 Maduración no salía en el mes por defecto (su ventana aún no llegaba). */
-function ventanaMad(mIdx) {
-  const r = calendarRangeOfMonth(mIdx), hoy = hoyIso();
-  if (!r || r.desde <= hoy) return { rango: r, adelantado: null };
-  const ultimo = new Date(+hoy.slice(0, 4), +hoy.slice(5, 7), 0).getDate();
-  return { rango: { desde: hoy.slice(0, 8) + '01', hasta: hoy.slice(0, 8) + String(ultimo).padStart(2, '0') }, adelantado: { mes: monthLabelAt(mIdx), empieza: r.desde } };
-}
+/* 2026-10-18 (usuario, opción A) · el mes de producción arranca ~2 semanas antes que el de calendario de su nombre: mientras
+   éste no haya empezado, los nauplios son los del mes de calendario EN CURSO, y se dice (`adelantado`). Antes, esas 2 semanas
+   de cada mes, el bloque 🥚 Maduración no salía en el mes por defecto (su ventana aún no llegaba). La regla es la de Planta y
+   vive en un solo sitio: `ventanaDeMaduracion` (core/prodCalendar.js; 2026-10-22, pauta 28). */
 // El DÍA va en la clave (2026-10-19, pauta 1.1): la ventana (`adelantado`) y el corte del N5 dependen de hoy, y la memoria
 // sólo se vacía con datos nuevos; con la página abierta de un día para otro (de noche no llegan) seguía el día anterior.
 function madSummary(mIdx) {
   return memo(JSON.stringify(['madSummary', mIdx, hoyIso()]), () => {
-    const v = ventanaMad(mIdx), s = madMod.produccionDelMes(store.globalData, v.rango, hoyIso());
+    const hoy = hoyIso(), v = ventanaDeMaduracion(mIdx, hoy), s = madMod.produccionDelMes(store.globalData, v.ventana, hoy);
     return s && { ...s, adelantado: v.adelantado };
   });
 }

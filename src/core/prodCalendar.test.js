@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { store } from './store.js';
-import { monthIndexOfCorrida, monthLabelAt, modCorStats, modCorDispatched, modulesOfCorrida, corridasOfMonth } from './prodCalendar.js';
+import { monthIndexOfCorrida, monthLabelAt, modCorStats, modCorDispatched, modulesOfCorrida, corridasOfMonth, ventanaDeMaduracion } from './prodCalendar.js';
 
 afterEach(() => { store.globalData = []; });
 
@@ -307,5 +307,34 @@ describe('prodCalendar · guardián: agregados estables e independientes del ord
     modCorStats('M02', '574');
     modCorStats('M01', '573');
     expect(huella()).toBe(antes);
+  });
+});
+
+// 2026-10-22, pauta 28 · la regla vivía dos veces (Visitante · ventanaMad y Planta · cifras.js); ahora sólo aquí. El año
+// base sale de las fechas de las corridas: Julio = 579–584, así que el mes interno 8 es septiembre de 2026.
+describe('ventanaDeMaduracion · su mes de calendario o, si aún no empieza, el EN CURSO, dicho (2026-10-18, opción A)', () => {
+  const L = (cor, fecha) => ({ _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Tanque: 'TQ1', 'Población': '1000', Corrida: cor, Fecha: fecha });
+  const conAnio = () => { store.globalData = [L('579', '05/07/2026'), L('585', '05/08/2026'), L('591', '05/09/2026')]; };
+
+  it('empezado (desde su día 1) o pasado: su mes de calendario, sin `adelantado`', () => {
+    conAnio();
+    const SEP = { desde: '2026-09-01', hasta: '2026-09-30' };
+    expect(ventanaDeMaduracion(8, '2026-09-01')).toEqual({ ventana: SEP, adelantado: null });
+    expect(ventanaDeMaduracion(8, '2026-10-22')).toEqual({ ventana: SEP, adelantado: null });
+  });
+
+  it('sin empezar: el mes de calendario de hoy, del 1 a su ÚLTIMO día, y el mes elegido con el día en que empieza', () => {
+    conAnio();
+    expect(ventanaDeMaduracion(8, '2026-08-31')).toEqual({
+      ventana: { desde: '2026-08-01', hasta: '2026-08-31' }, adelantado: { mes: 'Septiembre', empieza: '2026-09-01' } });
+    expect(ventanaDeMaduracion(9, '2026-09-14').ventana, 'septiembre tiene 30 días').toEqual({ desde: '2026-09-01', hasta: '2026-09-30' });
+    expect(ventanaDeMaduracion(14, '2027-02-10').ventana, 'febrero de 2027, 28').toEqual({ desde: '2027-02-01', hasta: '2027-02-28' });
+  });
+
+  it('sin mes de calendario (índice que no vale o sin año base): nada', () => {
+    conAnio();
+    expect(ventanaDeMaduracion(-1, '2026-09-14')).toEqual({ ventana: null, adelantado: null });
+    store.globalData = [];
+    expect(ventanaDeMaduracion(8, '2026-08-20')).toEqual({ ventana: null, adelantado: null });
   });
 });

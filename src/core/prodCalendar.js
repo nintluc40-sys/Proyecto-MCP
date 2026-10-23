@@ -247,6 +247,23 @@ export function monthLabelAt(mIdx) {
   return y === null ? `${name} (ciclo ${Math.floor(mIdx / 12) + 1})` : `${name} ${y}`;
 }
 
+/** La VENTANA de Maduración de un mes interno: las fechas de las que salen sus nauplios y desoves. Es la regla de
+ *  Visitante y de Planta, y vive sólo aquí (2026-10-22, pauta 28: estaba escrita dos veces). Es su mes de calendario
+ *  (`calendarRangeOfMonth`). Pero el mes de producción arranca ~2 semanas antes que el de calendario de su nombre: mientras
+ *  éste no haya empezado (2026-10-18, usuario, opción A), es el mes de calendario EN CURSO, el de `hoy`, del día 1 al
+ *  último, y se dice (`adelantado`: el mes elegido y el día en que empieza). Antes, esas 2 semanas de cada mes, la
+ *  Maduración del mes por defecto salía en cero o no salía. `hoy` en `aaaa-mm-dd`. Sin mes de calendario (índice que no
+ *  vale o sin año base): `{ ventana: null, adelantado: null }`. */
+export function ventanaDeMaduracion(mIdx, hoy) {
+  const rango = calendarRangeOfMonth(mIdx);
+  if (!rango || rango.desde <= hoy) return { ventana: rango, adelantado: null };
+  const ultimo = new Date(+hoy.slice(0, 4), +hoy.slice(5, 7), 0).getDate();
+  return {
+    ventana: { desde: hoy.slice(0, 8) + '01', hasta: hoy.slice(0, 8) + String(ultimo).padStart(2, '0') },
+    adelantado: { mes: monthLabelAt(mIdx), empieza: rango.desde },
+  };
+}
+
 /** Agrega por tanque la siembra/cosecha/PL-g/supervivencia de un módulo+corrida.
  *  Memoizado: la Vista Ejecutiva lo llama una vez por tarjeta y varias vistas repiten la
  *  misma consulta dentro del mismo render. El objeto devuelto se COMPARTE: no mutarlo. */

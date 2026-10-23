@@ -21,7 +21,7 @@
      defecto y su validación; guardarla es cosa de la vista.
    Nada se recalcula con otra fórmula: si la tabla del Supervisor o Visitante cambian su regla, esto la sigue.
    ============================================================ */
-import { presentMonths, corridasOfMonth, modulesOfCorrida, modCorStats, monthLabelAt, calendarRangeOfMonth } from '../../core/prodCalendar.js';
+import { presentMonths, corridasOfMonth, modulesOfCorrida, modCorStats, monthLabelAt, calendarRangeOfMonth, ventanaDeMaduracion } from '../../core/prodCalendar.js';
 import { produccionDelMes } from '../visitante/maduracion.produccion.js';
 
 /** Meta de producción por defecto: 400 millones de larvas al mes (usuario, 2026-10-04). */
@@ -66,8 +66,8 @@ export function cifrasGerencia(filas, hoy, mIdxElegido) {
   // 2026-10-18 (usuario, opción A) · el mes de producción arranca ~2 semanas antes que el de calendario de su nombre: mientras
   // éste no haya empezado, los nauplios y desoves son los del mes de calendario EN CURSO, y se dice (`adelantado`). Antes,
   // esas 2 semanas de cada mes, la tarjeta por defecto daba la maduración en cero («01/11 al 30/11»: aún no había llegado).
-  const adelantado = rango && rango.desde > hoy ? { mes: monthLabelAt(mIdx), empieza: rango.desde } : null;
-  const ventana = adelantado ? mesDeCalendario(hoy) : rango;
+  // La regla es la de Visitante y vive en un solo sitio: `ventanaDeMaduracion` (core/prodCalendar.js; 2026-10-22, pauta 28).
+  const { ventana, adelantado } = ventanaDeMaduracion(mIdx, hoy);
   const mad = ventana ? produccionDelMes(filas, ventana, hoy, { porDia: true }) : null;   // porDia: punto 10 (N5 de cada día)
   return {
     mes: monthLabelAt(mIdx), mIdx, pos, meses: meses.map((m) => ({ mIdx: m, mes: monthLabelAt(m) })), corridas,
@@ -81,10 +81,4 @@ export function cifrasGerencia(filas, hoy, mIdxElegido) {
       desde: mad ? mad.periodo.desde : ventana ? ventana.desde : '', hasta: mad ? mad.periodo.hasta : ventana ? ventana.hasta : '',
       dias: mad ? mad.dias : [], adelantado },
   };
-}
-
-/** El mes de calendario de `hoy` (`aaaa-mm-dd`), del día 1 al último. */
-function mesDeCalendario(hoy) {
-  const ultimo = new Date(+hoy.slice(0, 4), +hoy.slice(5, 7), 0).getDate();
-  return { desde: hoy.slice(0, 8) + '01', hasta: hoy.slice(0, 8) + String(ultimo).padStart(2, '0') };
 }
