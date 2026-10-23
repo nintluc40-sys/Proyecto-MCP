@@ -22,7 +22,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "36b6d3c4bf9e";
+const GAS_VERSION = "bdef63cfb76c";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -1723,7 +1723,7 @@ function verifyReq(reqId, t) {
 // el monolito standalone). GET ?p=rows&sheet=<nombre>&t=<token>. Devuelve JSON
 // {ok, sheet, headers, rows} con cada fila como objeto {cabecera: valor}. Sólo
 // hojas de ALLOWED; respeta SHARED_TOKEN si está configurado (mismo gate que
-// doPost). Fechas → yyyy-MM-dd. Tope 20000 filas, las MÁS RECIENTES (ver TOPE_FILAS).
+// doPost). Fechas → yyyy-MM-dd. Tope 40000 filas, las MÁS RECIENTES (ver TOPE_FILAS).
 //
 // El parámetro "cols" (opcional, ?cols=A,B,C) PROYECTA: devuelve sólo esas columnas.
 // Medido el 2026-08-12 contra el despliegue real: "Maduración MATRIZ" son 1508 filas
@@ -1761,19 +1761,25 @@ function sheetRows(name, t, cols) {
     // ⚠⚠ EL TOPE RECORTA, y hasta el 2026-09-09 lo hacía EN SILENCIO. Quien suma
     // sobre lo devuelto —el libro mayor de Maduración lo hace— obtendría un saldo
     // incompleto sin un solo síntoma, que es el peor resultado posible aquí.
-    // El tope no es teórico: medido el 2026-10-19 (ritmo de los últimos 30 días), la Bitácora
-    // del reproductivo (6990 filas, unas 130 nuevas al día) lo alcanza hacia finales de enero
-    // de 2027 y «Maduración Tanques» (2184, unas 57 al día) hacia agosto de 2027. La app sólo
-    // lee por aquí cuando falla la exportación de Google, pero entonces lee esto.
+    // El tope no es teórico: con 20000, la Bitácora del reproductivo (7487 filas el 2026-10-23,
+    // de 92 a 137 nuevas al día) lo alcanzaba entre enero y marzo de 2027, y «Maduración Tanques»
+    // (2357, de 38 a 60 al día) hacia agosto de 2027. La app sólo lee por aquí cuando falla la
+    // exportación de Google, pero entonces lee esto.
     // 🔑 D11 (2026-09-13): el tope pasa de 5000 a 20000. El precio es el tamaño: 20000 filas
     // de Bitácora rondan 2,4 MB.
+    // 🔑 2026-10-23 (usuario): pasa de 20000 a 40000. Lo que cuesta es el TIEMPO de este script,
+    // que crece con las celdas devueltas (medido: 20000 filas de 8 columnas, 5–6 s), no la red:
+    // la respuesta viaja comprimida (esas 20000, 105 KB de 2,6 MB). Con 40000 la Bitácora llena
+    // tardaría unos 7,5 s, lejos de los 30 s por intento del cliente, y llegaría al tope entre
+    // junio y octubre de 2027 (Tanques, hacia mediados de 2028). Sólo cambia la respuesta de una
+    // hoja de más de 20000 filas: las demás salen igual que antes.
     // 🔑 2026-10-19 (pauta 2.15, usuario): al recortar se queda con las MÁS RECIENTES. Se lee
     // desde ABAJO —las filas nuevas se añaden al final de la hoja— y se devuelven en el orden
     // de la hoja, así que lo que falta de una hoja recortada son sus filas MÁS ANTIGUAS. Hasta
     // hoy se leía desde arriba y se perdían las más recientes: las altas, desoves y partes del
     // día, justo los que miran los avisos de ronda y desove repetidos. «truncated» se marca
     // sólo si queda ARRIBA alguna fila con datos (antes, con cualquier fila de más).
-    var TOPE_FILAS = 20000;
+    var TOPE_FILAS = 40000;
     var rows = [], cortada = false;
     for (var i = vals.length - 1; i >= 1; i--) {
       var r = vals[i], obj = {}, any = false;

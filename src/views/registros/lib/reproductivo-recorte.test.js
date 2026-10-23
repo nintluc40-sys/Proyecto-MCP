@@ -26,6 +26,9 @@
    (lee desde abajo y las devuelve en el orden de la hoja), así que lo que falta es lo MÁS
    ANTIGUO. Los avisos siguen igual —una hoja recortada no es una hoja leída— y la transferencia
    se sigue deteniendo: con la hoja reordenada a mano, el máximo tampoco sería seguro.
+
+   🔑 2026-10-23 (usuario): el tope pasa de 20000 a 40000. Con 20000, la Bitácora (7487 filas, de 92 a 137 al día)
+   lo alcanzaba entre enero y marzo de 2027; el precio de subirlo es el tiempo del GAS, no la red (ver `sheetRows`).
    ============================================================ */
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -57,7 +60,7 @@ function leerValores(vals) {
   return JSON.parse(ctx.__get({ parameter: { p: 'rows', sheet: 'Maduración Bitácora' } }).texto);
 }
 
-describe('D11 · GAS · el tope de ?p=rows es 20000', () => {
+describe('D11 · GAS · el tope de ?p=rows es 40000 (20000 hasta el 2026-10-23)', () => {
   it('🔴 una hoja de 5001 filas llega ENTERA (con 5000 perdía la más reciente)', () => {
     const r = leerFilas(5001);
     expect(r.ok).toBe(true);
@@ -66,37 +69,44 @@ describe('D11 · GAS · el tope de ?p=rows es 20000', () => {
     expect(r.rows[5000]['Trovan ID']).toBe('T5000');
   });
 
-  it('20000 filas exactas llegan enteras y SIN marca de recorte', () => {
-    const r = leerFilas(20000);
-    expect(r.rows).toHaveLength(20000);
+  it('🔴 una hoja de 20001 filas llega ENTERA (con 20000 perdía la más antigua; 2026-10-23)', () => {
+    const r = leerFilas(20001);
+    expect(r.rows).toHaveLength(20001);
+    expect(r.truncated).toBeUndefined();
+    expect(r.rows[0]['Trovan ID']).toBe('T0');
+  });
+
+  it('40000 filas exactas llegan enteras y SIN marca de recorte', () => {
+    const r = leerFilas(40000);
+    expect(r.rows).toHaveLength(40000);
     expect(r.truncated).toBeUndefined();
   });
 
-  it('la 20001 ya se recorta, y la respuesta lo DICE con su límite', () => {
-    const r = leerFilas(20001);
-    expect(r.rows).toHaveLength(20000);
+  it('la 40001 ya se recorta, y la respuesta lo DICE con su límite', () => {
+    const r = leerFilas(40001);
+    expect(r.rows).toHaveLength(40000);
     expect(r.truncated).toBe(true);
-    expect(r.limit).toBe(20000);
+    expect(r.limit).toBe(40000);
   });
 
   it('🔴 recortada, se queda con las MÁS RECIENTES, en el orden de la hoja (pauta 2.15, 2026-10-19)', () => {
-    const r = leerFilas(20001);
+    const r = leerFilas(40001);
     expect(r.rows[0]['Trovan ID']).toBe('T1');           // falta sólo la más antigua, T0
-    expect(r.rows[19999]['Trovan ID']).toBe('T20000');   // y llega la última que se escribió
+    expect(r.rows[39999]['Trovan ID']).toBe('T40000');   // y llega la última que se escribió
   });
 
   it('filas vacías no cuentan: ni ocupan sitio en el tope ni marcan un recorte que no hay', () => {
     /* Con «cols», una fila con datos sólo en columnas NO pedidas llega vacía: ésa es la del final. Antes, una fila de
-       más tras la 20000 —aunque fuera vacía— marcaba «truncated». */
+       más tras llenar el tope —aunque fuera vacía— marcaba «truncated». */
     const vals = [['Trovan ID', 'Fecha', 'Tipo'], ['', '', '']];   // una vacía ARRIBA: lo que queda tras llenar el tope
-    for (let i = 0; i < 20000; i++) vals.push(['T' + i, '2026-09-13', 'Desove']);
-    vals.splice(10002, 0, ['', '', '']);   // otra en medio
+    for (let i = 0; i < 40000; i++) vals.push(['T' + i, '2026-09-13', 'Desove']);
+    vals.splice(20002, 0, ['', '', '']);   // otra en medio
     vals.push(['', '', '']);               // y otra al final
     const r = leerValores(vals);
-    expect(r.rows).toHaveLength(20000);
+    expect(r.rows).toHaveLength(40000);
     expect(r.truncated).toBeUndefined();
     expect(r.rows[0]['Trovan ID']).toBe('T0');
-    expect(r.rows[19999]['Trovan ID']).toBe('T19999');
+    expect(r.rows[39999]['Trovan ID']).toBe('T39999');
   });
 });
 
