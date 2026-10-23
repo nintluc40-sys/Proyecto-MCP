@@ -42,10 +42,10 @@ export function tanquesDeSala(m) {
   if (m.pos) return m.pos.map(([x, z, num]) => ({ x, z, num }));
   return m.rows.flatMap((z, r) => m.cols.map((x, c) => ({ x, z, num: m.num(r, c) })));
 }
-// otras áreas: [x0, z0, x1, z1, altura, tipo]  (bld = edificio, res = reservorio, alg = piletas de algas, ecl = sala abierta con tanques)
 /* Otras áreas: [x0, z0, x1, z1, alto, tipo, nombre, forma, color]. El NOMBRE sale de los rótulos del plano ARQ-A3 V4, ubicados
    sobre cada área con un ajuste lineal entre la posición de los rótulos «MODULO # n» y el centro de cada módulo (error
    medio 0,5 m; 2026-10-04, opción F): «título · detalle». Un área sin rótulo en el plano queda con un nombre genérico.
+   El TIPO: bld = edificio, res = reservorio, alg = piletas de algas, ecl = sala abierta con tanques, canal = canal abierto.
    La FORMA (opcional, `null` si no hay) elige sus detalles en la maqueta: maquinas, diesel, filtros, lab, admin, comedor.
    El canal sedimentador era una caja de 2,8 m: es tipo 'canal' (abierto, con agua).
    COLOR (sólo los edificios, 2026-10-19, tarea 7 · B0, usuario): el de su fachada. Antes salía de su POSICIÓN en esta lista
