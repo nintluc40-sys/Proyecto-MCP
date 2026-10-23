@@ -995,13 +995,15 @@ export function visitanteView(root) {
 
     // Maduración llega DIFERIDA: la primera vez se pinta sin ella y se rellena su hueco al llegar (con el mes que esté
     // a la vista entonces; si la vista ya no está montada, el hueco no está en el documento y no se toca).
+    // El `.catch` (2026-10-23, latente): la carga no falla (`cargarMaduracion` da null) y el bloque atrapa lo suyo
+    // (`madBlockSeguro`); queda por si algo de aquí dentro fallara, que no se vaya a la consola sin decir de qué vista es.
     if (!madMod && hayMaduracion()) {
       cargarMaduracion().then((m) => {
         const slot = m && wrap.querySelector('[data-vt-mad]');
         if (!slot || !slot.isConnected) return;
         slot.innerHTML = madBlockSeguro(months[pos]);
         wireSum(slot);
-      });
+      }).catch((e) => console.error('[visitante] maduración', e));
     }
   }
 
