@@ -133,6 +133,13 @@ export default defineConfig(({ command }) => ({
     },
   },
   test: {
+    /* 2026-10-22 (pauta 13, usuario) · el tope de cada prueba, 20 s en vez de los 5 s de vitest. Sólo cae por él una prueba
+       ASÍNCRONA, y con la máquina cargada (la CI, o la suite en paralelo) una de 2–3 s pasaba de 5: rojos falsos que paran
+       el despliegue (medidos el 2026-09-18, ast-payload.test.js; el 09-27, la primera de operativo.view.test.js; el 10-19,
+       tres de «lo del laboratorio»). Antes se ponía un plazo propio prueba a prueba (hay 27, de 15 a 120 s): siguen
+       valiendo, y éste cubre a las demás y a las nuevas. Los ganchos conservan sus 10 s. El RELOJ no era el problema: la
+       suite entera pasa con «ahora» desplazado a la madrugada en UTC, a un cambio de año y a un año más. */
+    testTimeout: 20000,
     poolOptions: {
       /* ⚠ `traslado-captura.test.js` arranca el monolito ENTERO sobre happy-dom y
          corre 74 pruebas que repintan la ficha completa en cada una. Desde el
