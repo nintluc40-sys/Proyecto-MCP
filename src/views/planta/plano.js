@@ -109,10 +109,11 @@ export const SITE = [0.9, 0.9, 176.6, 89.2], C0 = [88.7, 45], STREET = [97, 107]
    (z medida − 4,66); en x casa con el borde de la Sala 3). Sin registro por tanque en el MCP: sólo se dibujan.
    · Eclosión 1: 14 de Ø 1,90 m en dos columnas, como los numera el plano: 1 a 7 la del este y 8 a 14 la del oeste, del
      sur (calle) al norte. Las columnas, ajustadas al hueco entre las salas 3 y 2 (el plano las pone casi contra la Sala 2).
-   · Salas de eclosión 2 y 3: 4 × 4 cada una (32; el plan del 16-10 decía 2 × 12: recontados a 6×), Ø 1,20 m y filas a paso
-     parejo de 1,29 m (el dibujo las trae casi tocándose); la 3 al norte y la 2 al sur. */
+   · Salas de eclosión 2 y 3: 4 × 4 cada una (32; el plan del 16-10 decía 2 × 12: recontados a 6×), Ø 1,25 m (leído del
+     dibujo: el plano no lo rotula; hasta el 2026-10-22, tarea 31, 1,20) y filas a paso parejo de 1,29 m: quedan a 4 cm,
+     casi tocándose como en el dibujo; la 3 al norte y la 2 al sur. */
 const filaEclosion1 = (cx, n0) => [0, 1, 2, 3, 4, 5, 6].map((k) => ({ num: n0 + k, cx, cz: Math.round((14.9 - 1.98 * k) * 100) / 100, d: 1.9 }));
-const salaEclosion = (sala, z0) => [0, 1, 2, 3].flatMap((r) => [72.02, 74.25, 75.65, 77.76].map((cx, c) => ({ sala, num: r * 4 + c + 1, cx, cz: Math.round((z0 + 1.29 * r) * 100) / 100, d: 1.2 })));
+const salaEclosion = (sala, z0) => [0, 1, 2, 3].flatMap((r) => [72.02, 74.25, 75.65, 77.76].map((cx, c) => ({ sala, num: r * 4 + c + 1, cx, cz: Math.round((z0 + 1.29 * r) * 100) / 100, d: 1.25 })));
 export const TANQUES_DE_AREA = {
   'Eclosión 1': [...filaEclosion1(115.25, 1), ...filaEclosion1(112.55, 8)],
   'Salas de eclosión 2 y 3': [...salaEclosion(3, 4.54), ...salaEclosion(2, 13.24)],

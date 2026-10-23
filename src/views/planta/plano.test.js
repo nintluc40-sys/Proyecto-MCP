@@ -128,6 +128,7 @@ describe('plano · otras áreas (opción F)', () => {
     tira.forEach((o, k) => { if (k) expect(o[0]).toBe(tira[k - 1][2]); });
     const t = tanquesDeArea(tira[1][6]);
     expect([t.filter((x) => x.sala === 3).length, t.filter((x) => x.sala === 2).length]).toEqual([16, 16]);
+    expect(t.every((x) => x.d === 1.25), 'Ø 1,25, el del dibujo (tarea 31, 2026-10-22; antes 1,20)').toBe(true);
     expect(t.filter((x) => x.sala === 3).every((x) => x.cz < t.filter((y) => y.sala === 2)[0].cz), 'la 3 al norte').toBe(true);
     expect(OTHERS.some((o) => o[0] === 111.4 && o[6] === 'Edificio de servicio'), 'era Eclosión 1').toBe(false);
   });
