@@ -217,6 +217,12 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     propio registro (≤ 2,6 % por día, ≤ 640 g/m² y ≤ 1,8 kg/m³), con la publicada al lado (0,27 % por día, de Ren et
     al. 2020; 300 g/m² y 0,375 kg/m³, de AQUACOP 1979). Su semáforo va en la tarjeta de cada lote en 🏠 Salas
     (las cargas, por su tanque MÁS cargado, no por el promedio) y en la tabla de tanques del detalle de la sala.
+    Y desde esa noche, con la misma regla según el sentido (un tope, el P90; un mínimo, el P10; un rango, del P10 al
+    P90), la proporción H:M (0,72–1,22, por tanque) y la fertilidad (≥ 63,7 %, por lote y mes: sólo 13 lote-mes, se
+    re-mide cuando haya más) llevan también la del laboratorio, y la densidad, su mínimo con el máximo publicado (4,5–15
+    animales/m², por tanque: el P90 del laboratorio, 17,5, sólo pasa de 15 en tanques con dos lotes). La temperatura
+    y el oxígeno se quedan con la publicada a propósito (el laboratorio ya está dentro), y la salinidad, la tasa de
+    desove y los huevos y N5 por desove también, porque hoy no se juzgan en ninguna pieza.
     📈 **Los gráficos** (0q, 2026-09-27): ejes de 12 px en el color de texto del tema, barras sólidas, líneas
     rectas; en los de días, una raya marca el día y el globo va arriba a su lado (`arribaJunto`, en
     `core/charts.js`), y con «reducir movimiento» no se animan. Todos pasan por `graficoOp` (o

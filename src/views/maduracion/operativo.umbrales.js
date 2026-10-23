@@ -16,6 +16,23 @@
    es el percentil 90 de su propio registro (medido ese día en la hoja: elegido por el usuario frente al P75 y a la
    bibliografía sola). La bibliográfica queda al lado como referencia: el laboratorio trabaja unas tres veces por encima
    de ella y, sola, pondría en rojo casi todos los días y todos los tanques.
+
+   2026-10-22 noche (usuario) · los NUEVE que quedaban sólo con la cifra publicada, medidos en la hoja con la misma regla
+   según su sentido —un tope, el P90; un mínimo, el P10; un rango, del P10 al P90—, y decididos uno a uno:
+   · la PROPORCIÓN H:M lleva la del laboratorio (0,72–1,22, P10–P90 por TANQUE): la publicada (1–2) marcaba el 41 % de
+     los tanques, casi todos por DEBAJO de su mínimo;
+   · la DENSIDAD, el mínimo del laboratorio y el máximo publicado (4,5–15 animales/m²): la publicada marcaba el 52 % de
+     los tanques, casi todos por debajo de 6. Arriba manda el libro A PROPÓSITO: el P90 del laboratorio (17,5) sólo pasa
+     de 15 en los tanques con dos lotes, y 15 es un tope de bienestar. ⚠ Se miden por TANQUE (todos sus lotes juntos),
+     como los juzga el tablero: medidas por lote dentro del tanque salían 4,4–9,5 y 0,80–1,22, y con ellas todo tanque
+     con dos lotes habría salido «alto»;
+   · la FERTILIDAD también (≥ 63,7 %, el P10 por lote y mes): la publicada (83 %) es la mediana del laboratorio y
+     marcaba el 46 % de los lote-mes. ⚠ Sale de sólo 13 lote-mes (agosto–octubre): re-medirla cuando haya más;
+   · la TEMPERATURA y el OXÍGENO se quedan con la publicada A PROPÓSITO: son límites fisiológicos y el laboratorio ya
+     trabaja dentro (fuera, el 3,4 % y el 0 % de las lecturas); una banda propia sería MÁS estricta que el libro;
+   · la SALINIDAD, la TASA DE DESOVE y los HUEVOS y NAUPLIOS POR DESOVE no se juzgan hoy en NINGUNA pieza del tablero (no
+     tienen semáforo): se quedan con la publicada, sin cifra propia. ⚠ 🔬 Microchips no lee la tasa de aquí: usa su copia,
+     `TASA_DESOVE_REF` (maduracion/data.js).
    ============================================================ */
 import { MAD_ALIM_PCT_MIN, MAD_ALIM_PCT_MAX } from '../registros/lib/ficha-maduracion-alimentacion.schema.js';
 
@@ -28,7 +45,7 @@ export const FUENTES = {
   FICHA_ALIMENTACION: 'Laboratorio: rango de la ficha 🍤 Alimentación del registro (MAD_ALIM_PCT_MIN / MAD_ALIM_PCT_MAX).',
   LAB_ALCALINIDAD: 'Laboratorio: rango de alcalinidad indicado por el usuario el 2026-09-26 (120–150 mg/L CaCO₃), el mismo que usa 🧫 Calidad de Agua.',
   USUARIO: 'Usuario: decisión del 2026-09-25 para las alertas de 📉 Tendencias y ⏳ Permanencia del tablero (UMBRALES_DE_AVISO).',
-  LAB_MANEJO: 'Laboratorio: percentil 90 de su propio registro, medido el 2026-10-22 en la hoja (la mortalidad del día por lote y día; las cargas, en los tanques con peso). Decisión del usuario del 2026-10-22.',
+  LAB_MANEJO: 'Laboratorio: percentil 90 de su propio registro para un tope (el 10 para un mínimo; del 10 al 90 para un rango), medido el 2026-10-22 en la hoja (la mortalidad del día por lote y día; las cargas, en los tanques con peso; la densidad y la proporción H:M, por tanque, con todos sus lotes; la fertilidad, por lote y mes). Decisión del usuario del 2026-10-22.',
 };
 
 /* `min`/`max` vacíos (null) = ese lado no se comprueba. `referencia` es el dato publicado tal cual, para enseñarlo. */
@@ -44,9 +61,11 @@ export const UMBRALES = {
   salinidad: { nombre: 'Salinidad', unidad: '‰',
     bibliografia: { min: 30, max: 35, referencia: '30–35 ‰', fuente: ['FAO2003', 'ALBALAT2022'] }, laboratorio: null },
   densidad: { nombre: 'Densidad del tanque', unidad: 'animales/m²',
-    bibliografia: { min: 6, max: 15, referencia: '6–15 animales/m²', fuente: ['FAO2003', 'ALBALAT2022'] }, laboratorio: null },
+    bibliografia: { min: 6, max: 15, referencia: '6–15 animales/m²', fuente: ['FAO2003', 'ALBALAT2022'] },
+    laboratorio: { min: 4.5, max: 15, referencia: '4,5–15 animales/m²: P10 de su registro por tanque y el máximo de la FAO', fuente: ['LAB_MANEJO', 'FAO2003'] } },
   proporcionHM: { nombre: 'Proporción sexual', unidad: 'hembras por macho',
-    bibliografia: { min: 1, max: 2, referencia: 'macho:hembra 1:1, 1:1,5 o 1:2', fuente: ['FAO2003', 'ALBALAT2022'] }, laboratorio: null },
+    bibliografia: { min: 1, max: 2, referencia: 'macho:hembra 1:1, 1:1,5 o 1:2', fuente: ['FAO2003', 'ALBALAT2022'] },
+    laboratorio: { min: 0.72, max: 1.22, referencia: '0,72–1,22 hembras por macho, P10–P90 de su registro por tanque', fuente: ['LAB_MANEJO'] } },
   tasaDeDesove: { nombre: 'Tasa de desove', unidad: '% de hembras por noche',
     bibliografia: { min: 5, max: null, referencia: '5–15 % por noche', fuente: ['FAO_FICHA'] }, laboratorio: null },
   huevosPorDesove: { nombre: 'Huevos por desove', unidad: 'huevos',
@@ -54,7 +73,8 @@ export const UMBRALES = {
   naupliosPorDesove: { nombre: 'Nauplios por desove', unidad: 'nauplios',
     bibliografia: { min: 195300, max: null, referencia: '195 300–198 500 de media por desove (recuento a la eclosión; el laboratorio cuenta N5)', fuente: ['REN2020'] }, laboratorio: null },
   fertilidad: { nombre: 'Fertilidad (eclosión)', unidad: '%',
-    bibliografia: { min: 83, max: null, referencia: 'tasa de eclosión por desove 0,83–0,85', fuente: ['REN2020'] }, laboratorio: null },
+    bibliografia: { min: 83, max: null, referencia: 'tasa de eclosión por desove 0,83–0,85', fuente: ['REN2020'] },
+    laboratorio: { min: 63.7, max: null, referencia: '≥ 63,7 %, P10 de su registro por lote y mes', fuente: ['LAB_MANEJO'] } },
   /* Ren et al.: 92–94 % de las hembras sobreviven 30 días (el segundo mes tras la ablación), o sea 6–8 % al mes; el 8 %
      repartido en 30 días da 0,27 % por día. AQUACOP (1979) es más estricto: un 10 % de pérdidas en tres meses. */
   mortalidadDiaria: { nombre: 'Mortalidad del día', unidad: '%',

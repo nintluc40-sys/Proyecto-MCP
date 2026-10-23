@@ -17,7 +17,8 @@
      no parece más sano que el de al lado;
    · las cópulas, con la regla del Saldo para el día —cópulas ÷ hembras del tanque ese día, del libro al cierre de
      ese día (la serie diaria que el tablero ya calcula)—, sumada sobre los partes del período;
-   · el semáforo H:M, el umbral bibliográfico de siempre (`evaluar('proporcionHM')`, ya en la celda del mapa).
+   · el semáforo H:M, con el umbral vigente (`evaluar('proporcionHM')`, ya en la celda del mapa): desde el 2026-10-22
+     noche, el del laboratorio (operativo.umbrales.js).
    Los colores de Lote y de Código son una PALETA fija por orden de nombre: el mismo lote tiene el mismo color en
    todos sus tanques. Un tanque con dos LOTES no toma el color de ninguno: va RAYADO («varios»). Con dos CÓDIGOS, la
    combinación es SU PROPIA categoría («C1/C2»: la pareja, como la ofrece «📥 Cargar» de Desoves).

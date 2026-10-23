@@ -121,10 +121,11 @@ describe('Maduración · tablero · período y filtros', () => {
 
 describe('Maduración · tablero · los seis indicadores de la portada', () => {
   it('vivos por sexo y H:M, con cada filtro; el tanque 1 de la Sala 1 no es el de la Sala 4', () => {
-    expect(kpiVivos(M.libro, SIN)).toEqual({ machos: 28, hembras: 38, total: 66, hm: 1.36, hmEstado: 'ok' });
+    // H:M con el rango del LABORATORIO (0,72–1,22; 2026-10-22 noche, usuario): 1,36 —dentro del publicado, 1–2— es «alto»
+    expect(kpiVivos(M.libro, SIN)).toEqual({ machos: 28, hembras: 38, total: 66, hm: 1.36, hmEstado: 'alto' });
     expect(kpiVivos(M.libro, F({ sala: 'Sala 1', tanque: 1 }))).toMatchObject({ machos: 12, hembras: 22 });
     expect(kpiVivos(M.libro, F({ lote: 'qa' }))).toMatchObject({ machos: 15, hembras: 25 });
-    expect(kpiVivos(M.libro, F({ codigo: 'cb' }))).toMatchObject({ machos: 10, hembras: 10 });
+    expect(kpiVivos(M.libro, F({ codigo: 'cb' }))).toMatchObject({ machos: 10, hembras: 10, hm: 1, hmEstado: 'ok' });
   });
 
   it('lotes por estado: el de cada sala donde están los animales, y Mixto si sus salas no coinciden', () => {
@@ -450,7 +451,7 @@ describe('Maduración · tablero · las salas', () => {
   it('hoja y libro, ocupación, vivos y los lotes con sus días en la sala', () => {
     expect(T['Sala 1']).toMatchObject({ registrado: { estado: 'Producción', fecha: '2026-09-18' },
       propuesto: { estado: 'Desinfección - Producción agrupada' }, coinciden: false, ocupacion: { ocupados: 1, total: 15, pct: 6.67 },
-      vivos: { machos: 12, hembras: 22, hm: 1.83, hmEstado: 'ok' } });
+      vivos: { machos: 12, hembras: 22, hm: 1.83, hmEstado: 'alto' } });   // por encima de 0,72–1,22 (el del laboratorio)
     // 0f · 6 (2026-09-25) · cada lote trae además `saldo` (mortalidad, cargas y biomasa del Saldo), probado aparte abajo.
     expect(T['Sala 1'].lotes.map(({ saldo: _saldo, ...l }) => l)).toEqual([
       { lote: 'QA', estado: 'Producción', machos: 10, hembras: 20, dias: { sala: 'Sala 1', estado: 'Producción', diasCuarentena: 15, diasProduccion: 34 } },

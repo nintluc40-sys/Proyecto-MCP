@@ -483,7 +483,8 @@ describe('Maduración · operativo · 🏠 Salas', () => {
     expect(makeChart.mock.calls.map((c) => c[0])).toContain('mopOx');
     const tq1 = makeChart.mock.calls.find((c) => c[0] === 'mopTq')[1];
     expect(tq1.data.labels).toHaveLength(15);
-    expect(tq1.data.datasets.map((d) => d.label)).toContain('Densidad máxima 15');
+    // el mínimo del laboratorio y el máximo publicado (2026-10-22 noche), con su decimal: sin él, el mínimo decía «5»
+    expect(tq1.data.datasets.map((d) => d.label)).toEqual(expect.arrayContaining(['Densidad mínima 4,5', 'Densidad máxima 15']));
     const tabla = root.querySelector('.mop-detalle .mc-table tbody').textContent;
     expect(tabla).toContain('En recambio');
     expect(root.querySelector('.mop-detalle').textContent).toContain('Vacíos: 2, 3');

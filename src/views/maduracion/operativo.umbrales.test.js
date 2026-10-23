@@ -84,8 +84,37 @@ describe('Maduración · umbrales · el veredicto', () => {
     // La alcalinidad publicada sigue siendo ≥ 100; desde el 2026-09-26 MANDA la del laboratorio (120–150, prueba de abajo).
     expect(UMBRALES.alcalinidad.bibliografia).toMatchObject({ min: 100, max: null });
     expect(umbralVigente('salinidad')).toMatchObject({ min: 30, max: 35 });
-    expect(umbralVigente('densidad')).toMatchObject({ min: 6, max: 15 });
-    expect(umbralVigente('proporcionHM')).toMatchObject({ min: 1, max: 2 });
+    // La densidad y la H:M publicadas siguen ahí; desde el 2026-10-22 noche MANDA la del laboratorio (prueba de abajo).
+    expect(UMBRALES.densidad.bibliografia).toMatchObject({ min: 6, max: 15 });
+    expect(UMBRALES.proporcionHM.bibliografia).toMatchObject({ min: 1, max: 2 });
+  });
+
+  /* 2026-10-22 noche (usuario) · los nueve que sólo tenían la cifra publicada: tres llevan la del laboratorio (la regla del
+     P90 según el sentido: un rango, del P10 al P90; un mínimo, el P10; medidos POR TANQUE, como se juzgan) y seis se
+     quedan con la publicada a propósito. La densidad, con el máximo publicado: el del laboratorio (17,5) lo pasaba. */
+  it('🔴 densidad, H:M y fertilidad: MANDA la del laboratorio (P10–P90 o P10), con la publicada al lado', () => {
+    const esperado = {
+      densidad: { bib: { min: 6, max: 15 }, lab: { min: 4.5, max: 15 }, fuente: ['LAB_MANEJO', 'FAO2003'] },
+      proporcionHM: { bib: { min: 1, max: 2 }, lab: { min: 0.72, max: 1.22 }, fuente: ['LAB_MANEJO'] },
+      fertilidad: { bib: { min: 83, max: null }, lab: { min: 63.7, max: null }, fuente: ['LAB_MANEJO'] },
+    };
+    for (const [id, e] of Object.entries(esperado)) {
+      expect(UMBRALES[id].bibliografia, id).toMatchObject(e.bib);
+      expect(UMBRALES[id].laboratorio, id).toMatchObject({ ...e.lab, fuente: e.fuente });
+      expect(umbralVigente(id), id).toMatchObject({ ...e.lab, origen: 'laboratorio' });
+    }
+    // los extremos cuentan como dentro; lo que el publicado daba por malo, el laboratorio puede darlo por bueno (y al revés)
+    expect([4.4, 4.5, 5, 15, 15.1].map((v) => evaluar('densidad', v))).toEqual(['bajo', 'ok', 'ok', 'ok', 'alto']);
+    expect([0.71, 0.72, 0.9, 1.22, 1.23, 1.5].map((v) => evaluar('proporcionHM', v))).toEqual(['bajo', 'ok', 'ok', 'ok', 'alto', 'alto']);
+    expect([63.6, 63.7, 70, 150].map((v) => evaluar('fertilidad', v))).toEqual(['bajo', 'ok', 'ok', 'ok']);
+    expect(FUENTES.LAB_MANEJO).toMatch(/el 10 para un mínimo/);
+  });
+
+  it('🔑 temperatura, oxígeno, salinidad, tasa de desove, huevos y N5 por desove se quedan con la publicada (decidido)', () => {
+    for (const id of ['temperatura', 'oxigeno', 'salinidad', 'tasaDeDesove', 'huevosPorDesove', 'naupliosPorDesove']) {
+      expect(UMBRALES[id].laboratorio, id).toBeNull();
+      expect(umbralVigente(id).origen, id).toBe('bibliografía');
+    }
   });
 
   it('los extremos cuentan como dentro; un lado vacío no se comprueba', () => {

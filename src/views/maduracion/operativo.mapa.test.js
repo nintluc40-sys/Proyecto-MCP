@@ -177,11 +177,16 @@ describe('Maduración · mapa · los ocho colores nuevos', () => {
       ['Lotes en estados distintos', 1], ['Sin estado', 0], ['Vacío', 31]]);
   });
 
-  it('H:M: el semáforo bibliográfico (1–2 hembras por macho); el globo lo dice en palabras (la cifra ya la lleva)', () => {
+  /* 2026-10-22 noche (usuario) · manda el rango del LABORATORIO, 0,72–1,22 hembras por macho (P10–P90 de su registro, por tanque);
+     el publicado era 1–2. El tanque 2 de la Sala 1 (5♂ 10♀ tras sus bajas: H:M 2) estaba en el borde del publicado
+     («dentro») y ahora está por encima del laboratorio: es el que dice que manda éste. */
+  it('H:M: el semáforo del laboratorio (0,72–1,22 hembras por macho); el globo lo dice en palabras (la cifra ya la lleva)', () => {
     expect(color('Sala 1', 1, 'hm')).toMatchObject({ clase: 'is-d-alto', texto: 'H:M por encima de su rango' });
-    expect(color('Sala 1', 2, 'hm')).toMatchObject({ clase: 'is-d-ok', texto: 'H:M dentro de su rango' });
+    expect(color('Sala 1', 2, 'hm')).toMatchObject({ clase: 'is-d-alto', texto: 'H:M por encima de su rango' });
+    expect(color('Sala 5', 8, 'hm')).toMatchObject({ clase: 'is-d-ok', texto: 'H:M dentro de su rango' });
     expect(color('Sala 5', 7, 'hm')).toMatchObject({ clase: 'is-d-bajo', texto: 'H:M por debajo de su rango' });
-    expect(leyenda('hm').map(([, n]) => n)).toEqual([5, 1, 1, 0, 31]);
+    expect(leyenda('hm')[0][0]).toContain('0,72–1,22');
+    expect(leyenda('hm').map(([, n]) => n)).toEqual([4, 1, 2, 0, 31]);
   });
 
   it('MORTALIDAD: por día de parte —la más alta es MB, no MA, que suma más—; sin partes, gris', () => {
