@@ -27,7 +27,10 @@
      como los juzga el tablero: medidas por lote dentro del tanque salían 4,4–9,5 y 0,80–1,22, y con ellas todo tanque
      con dos lotes habría salido «alto»;
    · la FERTILIDAD también (≥ 63,7 %, el P10 por lote y mes): la publicada (83 %) es la mediana del laboratorio y
-     marcaba el 46 % de los lote-mes. ⚠ Sale de sólo 13 lote-mes (agosto–octubre): re-medirla cuando haya más;
+     marcaba el 46 % de los lote-mes. Sale de sólo 13 lote-mes (agosto–octubre); re-medida el 2026-10-23, igual, y
+     CERRADA así (usuario). ⚠ Con tan pocos, el P10 se mueve mucho (47–81 % al remuestrear), y una cuarta parte de los
+     desoves trae N2 > huevos (dato a corregir en la hoja), que sube la fertilidad del lote-mes; se mide como la calcula
+     la ficha del lote (`reproduccionDeLote`), así que el umbral y lo que se juzga son comparables;
    · la TEMPERATURA y el OXÍGENO se quedan con la publicada A PROPÓSITO: son límites fisiológicos y el laboratorio ya
      trabaja dentro (fuera, el 3,4 % y el 0 % de las lecturas); una banda propia sería MÁS estricta que el libro;
    · la SALINIDAD, la TASA DE DESOVE y los HUEVOS y NAUPLIOS POR DESOVE no se juzgan hoy en NINGUNA pieza del tablero (no
