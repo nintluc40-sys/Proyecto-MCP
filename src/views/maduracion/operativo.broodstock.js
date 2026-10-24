@@ -34,7 +34,7 @@
 import { fechaDeFila, partesDePiscina } from './operativo.data.js';   // pauta 3.2 · la pareja «556/557» son sus dos piscinas
 import { supervivencia } from './operativo.indicadores.js';
 import { loteDelLibro, estadoDeLoteEntero, desempenoPorPiscina } from './operativo.lotes.js';
-import { codigoEnFiltro, loteElegido, hayLote, haySala, hayTanque, hayPiscina, hayCamaronera, piscinaEnFiltro } from './operativo.tablero.js';   // 0r·4 · H2 · la pareja de códigos cuenta como sus dos
+import { codigoEnFiltro, loteElegido, hayLote, hayPiscina, hayCamaronera, piscinaEnFiltro, filtrosNoAplicados } from './operativo.tablero.js';   // 0r·4 · H2 · la pareja de códigos cuenta como sus dos
 import { normPiscina, faseCanonica } from '../registros/lib/ficha-maduracion-broodstock.schema.js';
 import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 
@@ -53,14 +53,11 @@ const ent = (v) => { const n = num(v); return n !== null && n > 0 ? n : 0; };
 const plano = (s) => txt(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 const corteDe = (r) => fechaDeFila('broodstock', r);
 
-/** Lo que el filtro no puede aplicar a una piscina de Broodstock. */
+/** Lo que el filtro no puede aplicar a una piscina de Broodstock. Aplica el lote, el código y el origen (piscina y
+ *  camaronera): lo demás puesto se DICE, con la regla común (`filtrosNoAplicados`; bloque 4, tarea 3, 2026-10-23). */
+const APLICA_BROODSTOCK = ['lote', 'codigo', 'piscina', 'camaronera'];
 export function ignoraDeBroodstock(F) {
-  const x = [];
-  if (haySala(F)) x.push('sala');
-  if (hayTanque(F)) x.push('tanque');
-  if (F && F.estado) x.push('estado');
-  if (F && F.sexo) x.push('sexo');
-  return x;
+  return filtrosNoAplicados(F, APLICA_BROODSTOCK);
 }
 
 /** La sobrevivencia se guarda en PORCENTAJE (95). Entre 0 y 1 es casi seguro una fracción que no se convirtió, y

@@ -399,7 +399,9 @@ describe('Maduración · operativo · pauta 3.1 · 🥚 Reproducción DICE que n
   const p = { desde: '2026-09-01', hasta: FOTO };
   const M = { fuentes: { desoves: DES }, fecha: FOTO };
   const casos = [[F({ estado: 'Cuarentena' }), ['estado']], [F({ sexo: 'machos' }), ['sexo']], [F({ sexo: 'hembras' }), ['sexo']],
-    [F({ sala: 'Sala 1', estado: 'Producción', sexo: 'machos' }), ['sala', 'estado', 'sexo']]];
+    [F({ sala: 'Sala 1', estado: 'Producción', sexo: 'machos' }), ['sala', 'estado', 'sexo']],
+    // Bloque 4, tarea 3 (2026-10-23, usuario) · con un TANQUE también se dice: antes la tarjeta y el gráfico sólo decían la sala.
+    [F({ sala: 'Sala 1', tanque: 1 }), ['sala', 'tanque']]];
   const sinIgnora = (o) => ({ ...o, ignora: null });
 
   it('el fixture ejerce algo: sin filtro no se ignora nada, y hay desoves que contar', () => {

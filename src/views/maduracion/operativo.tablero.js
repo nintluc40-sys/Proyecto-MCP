@@ -524,13 +524,12 @@ export function kpiReproduccion(filasDesoves, periodo, F) {
     ignora: ignoraDeDesoves(F),
   };
 }
-/** Lo que el filtro no puede aplicar a un desove (tarjeta y gráfico de 🥚 Reproducción): la sala, el estado y el sexo. */
+/** Lo que el filtro no puede aplicar a un desove (tarjeta y gráfico de 🥚 Reproducción): aplica el lote, el código y el
+ *  origen (piscina y camaronera); la sala, el TANQUE, el estado y el sexo se DICEN, con la regla común. Bloque 4, tarea 3
+ *  (2026-10-23, usuario): antes se escribía a mano y callaba el tanque. */
+const APLICA_DESOVES = ['lote', 'codigo', 'piscina', 'camaronera'];
 export function ignoraDeDesoves(F) {
-  const x = [];
-  if (haySala(F)) x.push('sala');
-  if (F && F.estado) x.push('estado');
-  if (F && F.sexo) x.push('sexo');
-  return x;
+  return filtrosNoAplicados(F, APLICA_DESOVES);
 }
 
 /* ── EL MAPA DE PLANTA ──────────────────────────────────────── */

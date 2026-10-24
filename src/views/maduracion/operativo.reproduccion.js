@@ -41,7 +41,7 @@ import { diasEntre } from '../registros/lib/mad-resumen.js';
 import { normPiscina } from '../registros/lib/ficha-maduracion-broodstock.schema.js';   // punto 5 · la piscina canónica
 import { fechaDeFila } from './operativo.data.js';
 import { cociente } from './operativo.indicadores.js';
-import { kpiReproduccion, codigoEnFiltro, loteElegido, haySala, hayTanque, hayPiscina, hayCamaronera, origenEnFiltro } from './operativo.tablero.js';
+import { kpiReproduccion, codigoEnFiltro, loteElegido, hayPiscina, hayCamaronera, origenEnFiltro, filtrosNoAplicados } from './operativo.tablero.js';
 import { reproduccionDeLote } from './operativo.lotes.js';
 
 const txt = (v) => String(v == null ? '' : v).trim();
@@ -59,14 +59,12 @@ const ordenDestino = (d) => {
 const porCatalogo = (a, b) => ordenDestino(a) - ordenDestino(b) || porNombre(a, b);
 
 /** Lo que el filtro NO puede aplicar aquí, para que la vista lo rotule. Mismo criterio que `kpiReproduccion`: tampoco el
- *  estado (de un lote en una sala, al cierre de la foto) ni el sexo (un desove es de hembras) — 2026-10-19, pauta 3.1. */
+ *  estado (de un lote en una sala, al cierre de la foto) ni el sexo (un desove es de hembras) — 2026-10-19, pauta 3.1.
+ *  Aplica el lote, el código y el origen (piscina y camaronera), y lo demás lo dice la regla común (`filtrosNoAplicados`;
+ *  bloque 4, tarea 3, 2026-10-23). */
+const APLICA_REPRODUCCION = ['lote', 'codigo', 'piscina', 'camaronera'];
 export function ignoraDeReproduccion(F) {
-  const x = [];
-  if (haySala(F)) x.push('sala');
-  if (hayTanque(F)) x.push('tanque');
-  if (F && F.estado) x.push('estado');
-  if (F && F.sexo) x.push('sexo');
-  return x;
+  return filtrosNoAplicados(F, APLICA_REPRODUCCION);
 }
 
 /** ¿Este desove de la hoja está pendiente de su N5? La regla cerrada, sin re-derivarla. */

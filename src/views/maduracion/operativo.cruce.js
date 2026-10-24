@@ -26,7 +26,7 @@
 import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { ESTADO_MUERTO, resolveEventLocation } from './data.js';
 import { fechaDeFila } from './operativo.data.js';
-import { codigoEnFiltro, loteElegido, hayTanque, salaElegida, tanqueElegido, dimensionActiva } from './operativo.tablero.js';   // 0r·4 · H2 · la pareja de códigos cuenta como sus dos
+import { codigoEnFiltro, loteElegido, hayTanque, salaElegida, tanqueElegido, filtrosNoAplicados } from './operativo.tablero.js';   // 0r·4 · H2 · la pareja de códigos cuenta como sus dos
 
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
 const esIso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -50,10 +50,11 @@ export function tanqueCanonico(v) {
 }
 const ubic = (sala, tanque) => salaCanonica(sala) + ' · ' + tanqueCanonico(tanque);
 
-const ROTULO_DIM = { estado: 'estado', sexo: 'sexo', piscina: 'piscina', camaronera: 'camaronera' };
-/** Lo que el cruce no puede aplicar: sala, tanque, lote y código sí se aplican a los dos registros. */
+/** Lo que el cruce no puede aplicar: sala, tanque, lote y código sí se aplican a los dos registros; lo demás lo dice la
+ *  regla común (`filtrosNoAplicados`; bloque 4, tarea 3, 2026-10-23). */
+const APLICA_CRUCE = ['sala', 'tanque', 'lote', 'codigo'];
 export function ignoraDeCruce(F) {
-  return Object.keys(ROTULO_DIM).filter((d) => dimensionActiva(F, d)).map((d) => ROTULO_DIM[d]);   // etapa C · piscina y camaronera son listas
+  return filtrosNoAplicados(F, APLICA_CRUCE);
 }
 const enLugar = (F, sala, tanque) => salaElegida(salaCanonica(sala), F)
   && (!hayTanque(F) || (tanqueCanonico(tanque) !== null && tanqueElegido(salaCanonica(sala), tanqueCanonico(tanque), F)));

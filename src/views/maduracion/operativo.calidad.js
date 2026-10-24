@@ -25,7 +25,7 @@
 import { MAD_OP_HOJAS } from './operativo.fuentes.js';
 import { fechaDeFila } from './operativo.data.js';
 import { cociente } from './operativo.indicadores.js';
-import { ETIQUETA_HOJA, ESPERA_DIAS, TIPOS_AVISO, avisoEnFiltro, ultimosRegistros, dimensionActiva, hayCodigo, salaElegida, tanqueElegido } from './operativo.tablero.js';
+import { ETIQUETA_HOJA, ESPERA_DIAS, TIPOS_AVISO, avisoEnFiltro, ultimosRegistros, filtrosNoAplicados, hayCodigo, salaElegida, tanqueElegido } from './operativo.tablero.js';
 import { sumarDias, ubicKey } from '../registros/lib/mad-libro.js';
 import { diasEntre } from '../registros/lib/mad-resumen.js';
 
@@ -43,11 +43,11 @@ const diasDe = (p) => {
 /** ¿Está aún «en curso» ese día para una hoja diaria? Hoy lo está: su registro puede no haber llegado. */
 const enCurso = (d, hoy, clave) => !!hoy && esIso(d) && diasEntre(d, hoy) < (ESPERA_DIAS[clave] || 0);
 
-const ROTULO_DIM = { sala: 'sala', tanque: 'tanque', lote: 'lote', codigo: 'código genético', estado: 'estado',
-  sexo: 'sexo', piscina: 'piscina', camaronera: 'camaronera' };
-/** Los filtros ACTIVOS que una pieza no puede aplicar (`aplica` son los que sí), con el rótulo de la vista. */
+/** Los filtros ACTIVOS que una pieza no puede aplicar (`aplica` son los que sí), con el rótulo de la vista. Es la regla
+ *  común, `filtrosNoAplicados`: aquí había una copia literal, con su propia tabla de rótulos (bloque 4, tarea 3,
+ *  2026-10-23). */
 export function ignoraDeCalidad(F, aplica) {
-  return Object.keys(ROTULO_DIM).filter((d) => dimensionActiva(F, d) && !(aplica || []).includes(d)).map((d) => ROTULO_DIM[d]);
+  return filtrosNoAplicados(F, aplica);
 }
 
 /* ── EL ESTADO DE CADA HOJA ─────────────────────────────────── */

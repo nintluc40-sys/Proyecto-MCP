@@ -224,6 +224,8 @@ describe('Maduración · tablero · la reproducción del período', () => {
     expect(kpiReproduccion(DESOVES, p, F({ lote: 'QA' }))).toMatchObject({ desoves: 4, fertilidad: 80, naupliosPorHembra: 150000 });
     expect(kpiReproduccion(DESOVES, p, F({ lote: 'QA', codigo: 'CA' }))).toMatchObject({ desoves: 3 });
     expect(kpiReproduccion(DESOVES, p, F({ sala: 'Sala 1' }))).toMatchObject({ desoves: 8, ignora: ['sala'] });
+    // Bloque 4, tarea 3 (2026-10-23, usuario) · con un tanque, también el tanque (antes sólo decía la sala).
+    expect(kpiReproduccion(DESOVES, p, F({ sala: 'Sala 1', tanque: 1 }))).toMatchObject({ desoves: 8, ignora: ['sala', 'tanque'] });
   });
 });
 
