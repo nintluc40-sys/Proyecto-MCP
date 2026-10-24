@@ -155,8 +155,9 @@ export function tablaDeTanques(M, periodo, F, dias) {
       parcial: dentro.length !== vivos.length,   // el filtro deja fuera parte de lo que hay dentro
       vivos: { machos, hembras, total: machos + hembras },
       /* Bloque 4, tarea 2 (2026-10-23, usuario) · cada cifra con su semáforo, con los umbrales de 🏠 Salas. La H:M y la
-         densidad, igual que allí (por tanque, con todos sus lotes). La CARGA se juzga ENTERA, como la dice la celda:
-         en un tanque compartido puede salir más alta que la de cada lote, que es la que juzga 🏠 Salas. */
+         densidad, igual que allí (por tanque, con todos sus lotes). La CARGA se juzga ENTERA, como la dice la celda: es
+         la del tanque, una sola desde la tarea 2a (`cargasPorTanque`), así que da el mismo color que en 🏠 Salas, cuyas
+         copias por lote son también la del tanque entero. */
       hm, hmEstado: evaluar('proporcionHM', hm),
       densidad, densidadEstado: evaluar('densidad', densidad),
       cargaMetrica, cargaMetricaEstado: evaluar('cargaMetrica', cargaMetrica),

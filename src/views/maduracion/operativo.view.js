@@ -2701,8 +2701,7 @@ function tablaTanquesHTML(filas, F) {
       <tbody>${filas.map(fila).join('')}</tbody></table></div>
     <p class="mc-note">Los VIVOS y la CARGA son del tanque ENTERO —el área y el volumen son suyos, no del lote—, y los
       PESOS son los del último parte, no el promedio del período. El punto de color compara con el umbral que manda (el
-      del laboratorio): la carga se juzga ENTERA, así que en un tanque compartido puede salir más alta que la de cada lote
-      en 🏠 Salas.${avisos.length ? ' ⚠ ' + esc(avisos[0]) : ''}</p>
+      del laboratorio, al pasar el ratón por encima), el mismo que en 🏠 Salas para ese tanque.${avisos.length ? ' ⚠ ' + esc(avisos[0]) : ''}</p>
   </div>`;
 }
 

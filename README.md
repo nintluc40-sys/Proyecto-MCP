@@ -187,7 +187,9 @@ volver a abrir esto, esto es lo que ya se midió:
     las revisiones del ÚLTIMO día y pliega las anteriores del período, y la sub-vista tiene un filtro PROPIO, «Lote de
     las revisiones», que sustituye al lote del tablero en la revisión de nauplios, su historial y la mortalidad en
     desove y recuperación —la alcalinidad y las observaciones siguen el tablero—), **🛢 Tanques** (tabla
-    maestra de los ocupados —con el día y la HORA de su último parte— y, al pulsar una fila, su ficha:
+    maestra de los ocupados —con el día y la HORA de su último parte, y desde el 2026-10-23 el punto de color de su
+    ♀:♂, su densidad y su carga, el mismo de 🏠 Salas; la carga es UNA por tanque, la del tanque entero— y, al pulsar
+    una fila, su ficha:
     composición, curva de vivos, partes con su hora,
     observaciones y movimientos), **🥚 Reproducción** (totales, los desoves pendientes de N5 arriba, la tabla
     por lote —al pulsar un lote, sus N2 y N5 por destino, de más a menos N5— y «A dónde fueron», plegada con
