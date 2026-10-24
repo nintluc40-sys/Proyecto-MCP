@@ -6,7 +6,8 @@
 
    · Un tanque COMPARTIDO suma sus dos lotes (t1: 30♂40♀ de RA + 10♂20♀ de RB = 40♂60♀). Quedarse con uno daría
      30/40 o 10/20, y la H:M sería 1,33 o 2,00 en vez de 1,50.
-   · Las CARGAS se suman entre los lotes del tanque: quedarse con la de un lote daría la mitad larga.
+   · La CARGA es UNA por tanque: el resumen ya da a cada lote la del tanque ENTERO, así que sumarlas daría el doble en
+     un tanque de dos lotes (fue así hasta el 2026-10-23). Con pesos distintos entre lotes, manda la MAYOR.
    · Con FILTRO DE LOTE, el tanque conserva sus cifras ENTERAS y se marca `parcial`. Filtrando RB, los vivos
      siguen siendo 100 (no 30) porque el área es del tanque; es la regla contraintuitiva de esta vista.
    · Los PESOS son el ÚLTIMO registrado, no el promedio: t1 pesa 50 el día 10 y 60 el día 12 → 60, no 55.
@@ -23,6 +24,7 @@ import {
 import { modeloOperativo, serieDiaria, diasDeTanque } from './operativo.data.js';
 import { normalizarFiltro, periodoDe } from './operativo.tablero.js';
 import { MAD_OP_ORIGEN } from './operativo.fuentes.js';
+import { areaTanqueM2 } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
 
 const O = MAD_OP_ORIGEN;
 const ING = (fecha, lote, sala, tanque, machos, hembras, cg = 'CA') => ({ _SheetOrigin: O,
@@ -149,22 +151,47 @@ describe('Maduración · operativo · 🛢 Tanques (F4.1)', () => {
     });
   });
 
+  /* Bloque 4, tarea 2a (2026-10-23, usuario) · hasta ese día esta prueba exigía la SUMA, y la suma era el defecto: el
+     resumen calcula la carga de cada lote con TODOS los animales del tanque (mad-resumen.js), así que un tanque de dos
+     lotes salía con el doble en 🛢 Tanques, su ficha, el mapa en modo carga y 🏭 Planta. */
   describe('las cargas', () => {
-    it('🔑 se SUMAN entre los lotes que comparten el tanque', () => {
-      const porLote = new Map();
-      for (const L of M.resumen.lotes || []) {
-        for (const x of L.tanques || []) {
-          if (x.sala !== 'Sala 3' || x.tanque !== 1) continue;
-          porLote.set(L.lote, Number(x.cargaMetrica) || 0);
-        }
-      }
-      const suma = [...porLote.values()].reduce((a, b) => a + b, 0);
+    const copiasDe = (m, sala, tanque) => (m.resumen.lotes || []).flatMap((L) => (L.tanques || [])
+      .filter((x) => x.sala === sala && Number(x.tanque) === tanque).map((x) => Number(x.cargaMetrica)));
+
+    it('🔑 un tanque COMPARTIDO tiene UNA carga, la del tanque entero: sus lotes la traen repetida y NO se suman', () => {
+      const copias = copiasDe(M, 'Sala 3', 1);
+      expect(copias).toHaveLength(2);                       // RA y RB
+      expect(copias[0]).toBeGreaterThan(0);
+      expect(copias[1]).toBe(copias[0]);                    // los mismos pesos: la misma carga, repetida
       const c = cargasPorTanque(M).get('Sala 3|1');
-      if (suma > 0) {
-        expect(Number(c.cargaMetrica)).toBeCloseTo(suma, 1);
-        // y es MAYOR que la de cualquier lote suelto: quedarse con uno se vería
-        expect(Number(c.cargaMetrica)).toBeGreaterThan(Math.max(...porLote.values()) - 0.001);
-      }
+      expect(c.cargaMetrica).toBe(copias[0]);
+      expect(c.cargaMetrica).not.toBeCloseTo(copias[0] + copias[1], 1);   // lo que daba la suma
+      // Y es la del tanque ENTERO, medida aparte: sus vivos × los últimos pesos (60 ♂ y 80 ♀) ÷ su área.
+      const t1 = fila(tablaDeTanques(M, P30, SIN, DIAS), 'Sala 3', 1);
+      expect(c.cargaMetrica).toBeCloseTo((t1.vivos.machos * 60 + t1.vivos.hembras * 80) / areaTanqueM2('Sala 3', 1), 1);
+    });
+
+    it('🔑 si sus lotes traen pesos DISTINTOS, manda la MAYOR (ni la menor ni la suma)', () => {
+      /* LA está en los tanques 1 y 2 de la Sala 1 y LB sólo en el 1. El 10/09 el tanque 1 pesa 60/80 y el 2, 100/120:
+         los pesos de LA son el promedio de sus dos tanques y los de LB, los del 1. Las copias del tanque 1 difieren. */
+      const MC = modeloOperativo([
+        ING('2026-09-01', 'LA', 'Sala 1', 1, 20, 20),
+        ING('2026-09-01', 'LA', 'Sala 1', 2, 20, 20),
+        ING('2026-09-01', 'LB', 'Sala 1', 1, 20, 20, 'CB'),
+        TQ('2026-09-10', 'Sala 1', 1, { 'Peso promedio machos (g)': 60, 'Peso promedio hembras (g)': 80, Hora: '08:00', Parte: 1 }),
+        TQ('2026-09-10', 'Sala 1', 2, { 'Peso promedio machos (g)': 100, 'Peso promedio hembras (g)': 120, Hora: '08:00', Parte: 1 }),
+        // Las toneladas de la sala, para que también haya carga VOLUMÉTRICA (sin ellas sale vacía y no se probaría).
+        { _SheetOrigin: O, 'Temperatura 2:00': '', Fecha: '2026-09-10', Sala: 'Sala 1', Toneladas: 5.5 },
+      ], { fecha: FOTO, hoy: FOTO });
+      const copias = copiasDe(MC, 'Sala 1', 1);
+      expect(copias).toHaveLength(2);
+      expect(new Set(copias).size, copias.join(' · ')).toBe(2);   // lo que hace distinguir el caso
+      const c = cargasPorTanque(MC).get('Sala 1|1');
+      expect(c.cargaMetrica).toBe(Math.max(...copias));
+      const vol = (MC.resumen.lotes || []).flatMap((L) => (L.tanques || [])
+        .filter((x) => x.sala === 'Sala 1' && Number(x.tanque) === 1).map((x) => Number(x.cargaVolumetrica)));
+      expect(new Set(vol).size, vol.join(' · ')).toBe(2);
+      expect(c.cargaVolumetrica).toBe(Math.max(...vol));
     });
   });
 

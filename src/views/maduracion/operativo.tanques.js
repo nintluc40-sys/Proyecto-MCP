@@ -15,8 +15,9 @@
    🔑 UN TANQUE PUEDE TENER VARIOS LOTES. El libro lo modela así (`composicion`), y el registro lo permite a
    propósito (🔗 Combinar). Por eso:
      · los «vivos» del tanque son la SUMA de sus lotes, y la composición se enseña siempre desglosada;
-     · las cargas se SUMAN entre los lotes que comparten el tanque: el área y el volumen son del tanque, no del
-       lote, así que la carga de cada lote por separado no dice cuán lleno está;
+     · la carga es la del tanque ENTERO, y ya llega así de cada lote: el resumen calcula la de cada lote con TODOS
+       los animales del tanque (mad-resumen.js), así que NO se suman —hasta el 2026-10-23 se sumaban y un tanque de
+       dos lotes salía con el DOBLE (bloque 4, tarea 2a, usuario)—; ver `cargasPorTanque`;
      · con filtro de lote, la tabla enseña los tanques DONDE ESE LOTE ESTÁ, pero sus cifras siguen siendo las del
        tanque entero —lo contrario diría «densidad 3/m²» de un tanque que está al doble—. La ficha lo rotula.
 
@@ -42,7 +43,6 @@ const numONulo = (v) => { const s = txt(v).replace(',', '.'); if (!s) return nul
 const esIso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(txt(s));
 const enPeriodo = (f, p) => esIso(f) && (!p || (f >= p.desde && f <= p.hasta));
 const porNombre = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
-const r2 = (n) => Math.round(n * 100) / 100;
 
 /** Las dos columnas de multiselección llegan como «A, B, C». Vacío o «—» no es una observación. */
 function lista(v) {
@@ -51,8 +51,11 @@ function lista(v) {
 
 /* ── LA TABLA MAESTRA ──────────────────────────────────────── */
 
-/** Las cargas del tanque, SUMADAS entre los lotes que lo comparten. Se leen del resumen —el mismo sitio del que
- *  las lee `detalleDeSala`— para que la tarjeta de la sala y esta tabla no puedan decir cosas distintas. */
+/** Las cargas del tanque. Se leen del resumen —el mismo sitio del que las lee `detalleDeSala`— para que la tarjeta de
+ *  la sala y esta tabla no puedan decir cosas distintas. El resumen da a CADA lote la carga del tanque ENTERO (con
+ *  todos sus animales), así que un tanque compartido la trae repetida: NO se suman (se sumaban hasta el 2026-10-23 y
+ *  salía el doble). Si los lotes traen pesos distintos, sus copias difieren un poco y manda la MAYOR (bloque 4, tarea
+ *  2a, decisión del usuario): la misma que ya hace saltar el punto de 🏠 Salas, que juzga todas sus copias. */
 export function cargasPorTanque(M) {
   const m = new Map();
   for (const L of ((M || {}).resumen || {}).lotes || []) {
@@ -61,8 +64,8 @@ export function cargasPorTanque(M) {
       const o = m.get(k) || { cargaMetrica: '', cargaVolumetrica: '', area: t.area, volumen: t.volumen };
       const cm = numONulo(t.cargaMetrica);
       const cv = numONulo(t.cargaVolumetrica);
-      if (cm !== null) o.cargaMetrica = r2((numONulo(o.cargaMetrica) || 0) + cm);
-      if (cv !== null) o.cargaVolumetrica = r2((numONulo(o.cargaVolumetrica) || 0) + cv);
+      if (cm !== null) o.cargaMetrica = o.cargaMetrica === '' ? cm : Math.max(o.cargaMetrica, cm);
+      if (cv !== null) o.cargaVolumetrica = o.cargaVolumetrica === '' ? cv : Math.max(o.cargaVolumetrica, cv);
       m.set(k, o);
     }
   }
