@@ -20,7 +20,7 @@ import { describe, it, expect } from 'vitest';
 import {
   CUADRE_FILAS, loteDelLibro, cuadreDeLote, estadoDeLoteEntero, tablaDeLotes, origenDeLote,
   curvaDeLote, eventosDeLote, reproduccionDeLote, promediosDeLote, fichaDeLote,
-  DIMENSIONES_COMPARATIVA, comparativa, desempenoPorPiscina,
+  DIMENSIONES_COMPARATIVA, comparativa, desempenoPorPiscina, loteEnFiltro,
 } from './operativo.lotes.js';
 import { modeloOperativo, serieDiaria } from './operativo.data.js';
 import { normalizarFiltro, periodoDe, cicloDelLote, indiceDeFiltro } from './operativo.tablero.js';
@@ -560,5 +560,26 @@ describe('Maduración · lotes · la comparativa', () => {
     // Con los nauplios por hembra: los 180 000 N5 de los 2 desoves de QE que ya los tienen.
     expect(d.get('P1')).toMatchObject({ lotes: ['QE', 'QH', 'QJ'], naupliosPorHembra: 90000 });
     expect(desempenoPorPiscina(null)).toEqual(new Map());   // sin modelo, nada
+  });
+});
+
+/* Bloque 4, tarea 4 (2026-10-23, usuario) · un lote que el libro NO tiene —desoves sin ingreso, los que le llegan a 📉
+   Tendencias— no tiene posición ni origen. Antes pasaba con cualquier filtro salvo la sala, el tanque y el código: con
+   piscina, camaronera, estado o sexo sus avisos salían igual, y la tarjeta de 🥚 ya dejaba fuera sus desoves. */
+describe('loteEnFiltro · un lote que el libro no tiene (bloque 4, tarea 4)', () => {
+  const IX = indiceDeFiltro(M);
+  const FX = (o) => normalizarFiltro(o, IX);
+  it('sin filtro pasa, y con su lote elegido también', () => {
+    expect(M.libro.lotes.has('ZZ')).toBe(false);
+    expect(loteEnFiltro(M.libro, 'ZZ', FX({}))).toBe(true);
+    expect(loteEnFiltro(M.libro, 'ZZ', FX({ lote: 'ZZ' }))).toBe(true);
+    expect(loteEnFiltro(M.libro, 'ZZ', FX({ lote: 'QE' }))).toBe(false);
+  });
+  it('🔴 con piscina, camaronera, estado o sexo NO pasa: no tiene origen ni posición que los cumpla', () => {
+    for (const o of [{ piscina: 'P1' }, { camaronera: 'CX' }, { estado: 'Producción' }, { sexo: 'hembras' }]) {
+      expect(loteEnFiltro(M.libro, 'ZZ', FX(o)), JSON.stringify(o)).toBe(false);
+      // …y no es que el filtro deje fuera a todos: QE, que sí está en el libro, pasa con el mismo.
+      expect(loteEnFiltro(M.libro, 'QE', FX(o)), 'QE · ' + JSON.stringify(o)).toBe(true);
+    }
   });
 });

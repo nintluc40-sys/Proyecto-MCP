@@ -1098,7 +1098,7 @@ export function codigosOf(model, lote, sala = null, tanque = null) {
 export function tanquesOf(model, sala) {
   if (!sala) return [];
   const set = new Set();
-  const okF = (v) => (!sala || String(v.sala) === sala);
+  const okF = (v) => String(v.sala) === sala;
   model.females.forEach((r) => { if (r.tanque && okF(r)) set.add(String(r.tanque)); });
   model.desoves.concat(model.mortalidades).forEach((e) => { if (e.tanque && okF(e)) set.add(String(e.tanque)); });
   return [...set].sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));

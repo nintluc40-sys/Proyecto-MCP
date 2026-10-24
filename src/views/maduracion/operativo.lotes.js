@@ -28,7 +28,7 @@ import { estadoDeLote, ESTADO_MIXTO, ubicKey, pesosDeAlimentacion } from '../reg
 import { diasEntre } from '../registros/lib/mad-resumen.js';
 import { fechaDeFila, diasDeTanque } from './operativo.data.js';
 import { cociente, proporcionHM, supervivencia, tasaDescarte, tasaEnPartesDelLote } from './operativo.indicadores.js';
-import { posicionEnFiltro, codigoEnFiltro, normalizarFiltro, loteElegido, hayCodigo, haySala, hayTanque, hayPiscina, cicloDelLote, piscinaEnFiltro } from './operativo.tablero.js';
+import { posicionEnFiltro, codigoEnFiltro, normalizarFiltro, loteElegido, hayCodigo, haySala, hayTanque, hayPiscina, hayCamaronera, origenEnFiltro, cicloDelLote, piscinaEnFiltro } from './operativo.tablero.js';
 import { normPiscina } from '../registros/lib/ficha-maduracion-broodstock.schema.js';   // 5 · la piscina canónica
 
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
@@ -151,8 +151,21 @@ function contextoDeLote(libro, clave) {
  *  «los lotes de lo filtrado» son los mismos que enseña la tabla de Lotes. */
 export function loteEnFiltro(libro, clave, F) {
   const suyas = ((libro && libro.posiciones) || []).filter((p) => normLote(p.lote) === clave);
-  if (!suyas.length) return !haySala(F) && !hayTanque(F) && !hayCodigo(F) && loteElegido(clave, F);
+  if (!suyas.length) return sinPosicionEnFiltro(clave, F);
   return suyas.some((p) => posicionEnFiltro(p, F));
+}
+/* Bloque 4, tarea 4 (2026-10-23, usuario) · un lote que el libro NO tiene —desoves sin ingreso: sólo le llegan a 📉
+   Tendencias; en la tabla de Lotes no puede pasar, porque un lote nace con su posición— no tiene ninguna posición que
+   cumpla la sala, el tanque, el código, el sexo ni el estado, así que con cualquiera de ellos no pasa (como en
+   `posicionEnFiltro`, que el estado lo mira con el índice). Y su origen es el del índice: sin Ingreso no tiene, y con
+   piscina o camaronera puestas no pasa (`origenEnFiltro`, la regla de la tarjeta de 🥚). Antes sólo miraba la sala, el
+   tanque y el código. */
+function sinPosicionEnFiltro(clave, F) {
+  if (haySala(F) || hayTanque(F) || hayCodigo(F) || (F && F.sexo)) return false;
+  const ix = F && F.indice;
+  if (ix && F.estado) return false;
+  if (ix && (hayPiscina(F) || hayCamaronera(F)) && !origenEnFiltro(ix.origen.get(clave), F)) return false;
+  return loteElegido(clave, F);
 }
 
 /**
