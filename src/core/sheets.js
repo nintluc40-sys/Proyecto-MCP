@@ -1024,7 +1024,10 @@ export async function fetchXlsxSheets(ids, obtenerXLSX = getXLSX, avisar = null)
   return null;
 }
 
-/** Descarga las hojas (cada una por su CSV; si no, el libro XLSX y el respaldo hoja a hoja) y devuelve { name: rows }. */
+/** Descarga las hojas (cada una por su CSV; si no, el libro XLSX y el respaldo hoja a hoja) y devuelve { name: rows }.
+ *  ⚠ La app NO la llama: la lectura sin Worker entra por `leerTodoAqui` (en `descargarLibro`). La usan SÓLO las pruebas
+ *  (sheets.csv, .huella, .respaldo y .actualizacion), y es su puerta a ese camino: no se borra por «sin uso», o la
+ *  lectura sin Worker se queda sin pruebas (bloque 4, tarea 6, 2026-10-23, usuario). */
 export async function fetchAllSheets(avisar = null) {
   return (await leerTodoAqui(avisar)).sheets;
 }
