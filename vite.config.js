@@ -122,11 +122,17 @@ export default defineConfig(({ command }) => ({
   server: {
     port: 5173,
     open: true,
-    // Pre-transforma al ARRANCAR las vistas de carga diferida (y su grafo) para que
-    // Vite optimice las dependencias UNA sola vez al inicio, en lugar de re-optimizar
-    // a mitad de sesión la primera vez que se abren — esa re-optimización aborta las
-    // peticiones de módulo en vuelo y produce el "Failed to fetch dynamically
-    // imported module". El warmup no cambia el bundle, solo el calentamiento del dev.
+    // Pre-transforma al ARRANCAR estas dos vistas de carga diferida (y su grafo). Nació el
+    // 2026-07-07 (83f4afe) para que Vite optimizara las dependencias UNA sola vez al inicio,
+    // en lugar de re-optimizar a mitad de sesión la primera vez que se abrían —esa
+    // re-optimización aborta las peticiones de módulo en vuelo y produce el "Failed to
+    // fetch dynamically imported module"—. ⚠ Medido el 2026-10-23 (Vite 5.4, bloque 4,
+    // tarea 7): el escáner de dependencias YA sigue los import() literales y optimiza al
+    // arrancar las de TODAS las vistas diferidas (chart.js, leaflet, qrcode-generator,
+    // three y sus dos extras); pedir después sus módulos no re-optimiza nada. Por eso las
+    // demás vistas diferidas no están aquí: añadirlas sólo adelantaría su primera apertura
+    // en desarrollo. Un import() CALCULADO (con una variable) sí escaparía al escáner.
+    // El warmup no cambia el bundle, sólo el calentamiento del dev.
     warmup: {
       clientFiles: [
         './src/views/biomolecular/index.js',
