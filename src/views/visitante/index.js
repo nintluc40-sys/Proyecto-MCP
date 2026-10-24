@@ -11,6 +11,7 @@ import { getField, parseNum, F, isLarviculturaRow, obsFindings } from '../../cor
 import { fmtPct } from '../../core/util.js';
 import { presentMonths, corridasOfMonth, modulesOfCorrida, modCorStats, monthLabelAt, monthIndexOfCorrida, ventanaDeMaduracion } from '../../core/prodCalendar.js';
 import { parseAnyDate } from '../../core/dates.js';
+import { SIN_RED } from '../../ui/vistaDiferida.js';
 // Capas de datos PURAS de laboratorio (ya en el bundle base vía la vista Microbiología →
 // no inflan el bundle de Visitante; solo se reutiliza su lógica de umbrales/rangos).
 // `isMicroRow` / `isCalAguaRow` son el criterio ÚNICO del sistema para reconocer esas
@@ -270,6 +271,7 @@ function algasSummaryBlock(mIdx) {
 const MAD_AC = '#7e57c2';
 let madMod = null; // el módulo, una vez cargado
 let madCarga = null; // la carga en curso
+let madFallo = null; // el error de la última carga que no llegó (se olvida cuando una llega)
 // 'Maduracion' es la salida CANÓNICA de `classifyOrigin` para el operativo (core/sheets.js:68); se compara aquí por
 // cadena para no traer `MAD_OP_ORIGEN` —y con él su módulo— al bundle base. Sin filas de Maduración no se carga nada.
 // Por el memo: sin él, cada repintado (el toggle de métrica) barría el store entero mientras el módulo no llegaba.
@@ -277,8 +279,8 @@ const hayMaduracion = () => memo('hayMaduracion', () => store.globalData.some((r
 function cargarMaduracion() {
   if (!madCarga) {
     madCarga = import('./maduracion.produccion.js')
-      .then((m) => { madMod = m; return m; })
-      .catch((e) => { madCarga = null; console.error('[visitante] maduración', e); return null; });
+      .then((m) => { madMod = m; madFallo = null; return m; })
+      .catch((e) => { madCarga = null; madFallo = e; console.error('[visitante] maduración', e); return null; });
   }
   return madCarga;
 }
@@ -301,9 +303,20 @@ const pctMad = (v) => (typeof v === 'number' && Number.isFinite(v)
   ? v.toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' %' : '—');
 const dmMad = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
-/** Bloque “🥚 Maduración” (2 tarjetas clicables). '' mientras el módulo no ha llegado o sin desoves en el mes. */
+/** El aviso del bloque que no llegó, con el texto de las vistas diferidas (ui/vistaDiferida.js): sin señal —o tras una
+ *  actualización que renombró su archivo— lo dice así; si no, el error tal cual. */
+function madFalloHTML(e) {
+  const sinRed = navigator.onLine === false || SIN_RED.test((e && e.message) || '');
+  return `<div class="card vt-card"><div class="empty-state" role="alert">${sinRed
+    ? 'El bloque de 🥚 Maduración necesita señal la primera vez que se abre (y tras cada actualización). Conéctate y cambia de mes para volver a intentarlo.'
+    : 'No se pudo cargar el bloque de 🥚 Maduración: ' + esc((e && e.message) || String(e))}</div></div>`;
+}
+
+/** Bloque “🥚 Maduración” (2 tarjetas clicables). '' mientras el módulo no ha llegado o sin desoves en el mes. Si su
+ *  carga FALLÓ, lo dice (bloque 4, tarea 5, 2026-10-23, usuario): antes el bloque no salía y nada lo explicaba. Al
+ *  repintar (◀/▶, la métrica) se vuelve a intentar, y si llega, sustituye al aviso. */
 function madBlock(mIdx) {
-  if (!madMod) return '';
+  if (!madMod) return madFallo && hayMaduracion() ? madFalloHTML(madFallo) : '';
   const s = madSummary(mIdx);
   if (!s) return '';
   const top = s.salas.reduce((a, x) => (!a || x.n5 > a.n5 ? x : a), null);
@@ -997,9 +1010,10 @@ export function visitanteView(root) {
     // a la vista entonces; si la vista ya no está montada, el hueco no está en el documento y no se toca).
     // El `.catch` (2026-10-23, latente): la carga no falla (`cargarMaduracion` da null) y el bloque atrapa lo suyo
     // (`madBlockSeguro`); queda por si algo de aquí dentro fallara, que no se vaya a la consola sin decir de qué vista es.
+    // Si la carga NO llegó (`m` null), el hueco se pinta igual: `madBlock` dice por qué (bloque 4, tarea 5, 2026-10-23).
     if (!madMod && hayMaduracion()) {
-      cargarMaduracion().then((m) => {
-        const slot = m && wrap.querySelector('[data-vt-mad]');
+      cargarMaduracion().then(() => {
+        const slot = wrap.querySelector('[data-vt-mad]');
         if (!slot || !slot.isConnected) return;
         slot.innerHTML = madBlockSeguro(months[pos]);
         wireSum(slot);
