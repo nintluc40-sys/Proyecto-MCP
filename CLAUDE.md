@@ -12,8 +12,9 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
   lector de CSV propio), `libroGuardado`, `marcaLibro`, `refresh`, `charts`, `prodCalendar`,
   `aguaColor`, `trovan`, `util`.
 - `src/ui/` — `router` (registro/cambio de vistas), `shell` (cabecera, drawer, roles, filtro de
-  fecha), `accesoRol` (la entrada directa por enlace `?rol=`) y las piezas transversales que tocan
-  el DOM: `modal`, `modalEscape`, `toast`.
+  fecha), `accesoRol` (la entrada directa por enlace `?rol=`), `vistaDiferida` (el registro de una
+  vista que se baja al abrirla), `versionNueva` (la franja «versión nueva») y las piezas
+  transversales que tocan el DOM: `modal`, `modalEscape`, `toast`.
 - `src/views/<vista>/` — cada vista es un módulo con su `index.js` orquestador y su `.css` propio.
   - `src/views/planta/plano.js` es la **fuente única de la geometría**: la maqueta 3D (`escena.js`) y el
     plano de 📊 Análisis salen de él (módulos, salas y las áreas `OTHERS` del plano ARQ-A3 V4). Cada

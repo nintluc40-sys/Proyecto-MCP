@@ -28,8 +28,8 @@
      · sala, tanque, estado y sexo no aplican —una piscina de engorde no está en ninguna sala ni tiene sexo— y se
        dice (`ignora`) en vez de callarlo.
 
-   ⏳ Sin dato real: la hoja aún no existe en producción (medido el 2026-09-21). Fixtures ficticios, y en pantalla
-   vacío hasta la primera carga; el censo de `medir-tablero-mad-real` lo dirá en crudo.
+   Cuando se escribió, la hoja aún no existía en producción (medido el 2026-09-21): por eso las pruebas usan fixtures
+   ficticios. Hoy ya existe y tiene filas (medido el 2026-10-23); el censo de `medir-tablero-mad-real` lo dice en crudo.
    ============================================================ */
 import { fechaDeFila, partesDePiscina } from './operativo.data.js';   // pauta 3.2 · la pareja «556/557» son sus dos piscinas
 import { supervivencia } from './operativo.indicadores.js';

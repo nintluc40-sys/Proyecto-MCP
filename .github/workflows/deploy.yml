@@ -52,7 +52,7 @@ jobs:
       # Van ANTES de compilar y en este mismo job para reaprovechar el `npm ci`.
       # Si cualquiera de los dos falla, el job cae y `deploy` (que declara
       # `needs: build`) no llega a ejecutarse: lo roto no sale a producción.
-      # El lint va primero por ser segundos frente al minuto y medio de la suite.
+      # El lint va primero por ser segundos frente a los minutos de la suite.
       - name: Lint
         run: npm run lint
 

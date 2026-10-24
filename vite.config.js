@@ -6,8 +6,9 @@ import { join, relative, resolve } from 'node:path';
 /* Lista de TODO lo que el build emite bajo assets/ (P3 del plan de carga y refresco, 2026-10-01),
    en `precache-assets.json`, para que el service worker lo guarde al INSTALARSE. Los bloques
    diferidos —Registros, Biología Molecular, el tablero de Maduración, el Worker de lectura del
-   libro— no salen en index.html: sin esta lista, tras un despliegue, un equipo que no los abriera
-   con red no podía abrirlos sin señal. La lee public/sw.js (assetsDelBuild).
+   libro y, desde el 2026-10-23, las siete vistas de cada día (`ui/vistaDiferida.js`)— no salen en
+   index.html: sin esta lista, tras un despliegue, un equipo que no los abriera con red no podía
+   abrirlos sin señal. La lee public/sw.js (assetsDelBuild).
    2026-10-03 · `order: 'post'`: el `generateBundle` de un plugin normal corre ANTES que el de `vite:css-post`, que
    después BORRA los trozos JS que sólo importaban CSS (el de Leaflet). La lista anunciaba así un `leaflet-*.js` que no
    existía (404 en Pages; `tras-despliegue` en 13/14). En `post`, la lista sale del bundle ya definitivo.
@@ -114,7 +115,8 @@ export default defineConfig(({ command }) => ({
   //   · dev   → '/'   (rutas absolutas). Con base relativa el dev server puede
   //     resolver mal los import() DINÁMICOS y lanzar en el navegador
   //     "Failed to fetch dynamically imported module" — justo las vistas de carga
-  //     diferida (Registros y Biología Molecular). Es un footgun conocido de Vite.
+  //     diferida (Registros, Biología Molecular, Planta y, desde el 2026-10-23, las
+  //     de `ui/vistaDiferida.js`). Es un footgun conocido de Vite.
   base: command === 'build' ? './' : '/',
   plugins: [listaDePrecache(), huellaDelBuild()],
   server: {
@@ -142,15 +144,15 @@ export default defineConfig(({ command }) => ({
     testTimeout: 20000,
     poolOptions: {
       /* ⚠ `traslado-captura.test.js` arranca el monolito ENTERO sobre happy-dom y
-         corre 74 pruebas que repintan la ficha completa en cada una. Desde el
+         corre decenas de pruebas que repintan la ficha completa en cada una. Desde el
          guardado por revisión (2026-08-25) la validación dejó de bloquear, así que
          muchas más pruebas llegan a GUARDAR —y por tanto a repintar—, y el worker se
          pasaba del heap por defecto (~2 GB): moría con «Ineffective mark-compacts»
-         llevándose sus 74 pruebas sin poner roja al resto de la suite, que es la
+         llevándose todas sus pruebas sin poner roja al resto de la suite, que es la
          forma peligrosa de fallar.
 
-         NO es una fuga del producto: en el navegador se pinta UNA ficha, no setenta
-         y cuatro. Es el coste de happy-dom acumulado en un solo archivo. Se le da
+         NO es una fuga del producto: en el navegador se pinta UNA ficha, no decenas.
+         Es el coste de happy-dom acumulado en un solo archivo. Se le da
          holgura al pool en vez de recortar la cobertura, que es justo lo que protege
          esta ficha. Si algún día se vuelve a quedar corto, lo que toca es PARTIR ese
          archivo, no seguir subiendo el número.

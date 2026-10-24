@@ -9,7 +9,8 @@ export const SHEETS_URL =
 
 // Consulta LIGERA antes de cada refresco (2026-10-07, usuario, punto 8): un Apps Script APARTE («MCP · consulta ligera»,
 // NO el GAS del Registro: no toca su sello ni index (8)) devuelve la fecha de modificación del libro en Drive
-// ({"ok":true,"mod":ms}, ~1,5 s). Si no cambió desde la última descarga, no se baja el XLSX (~14 MB). `libro` es el
+// ({"ok":true,"mod":ms}, ~1,5 s). Si no cambió desde la última descarga, no se baja el libro (entonces el XLSX, ~14 MB;
+// desde el 2026-10-11, cada hoja por su CSV, ~1,4 MB, y el XLSX sólo si eso no llega: core/sheets.js). `libro` es el
 // que vigila ESE script: con otro libro activo (override) no se pregunta. Ver core/marcaLibro.js. `ms`: 25 s porque
 // Apps Script arranca en frío a veces (medido el 07-10, 8 consultas: mediana ~2,5 s, pero 10,3 y 19,3 s): con 10 s, una
 // de cada cuatro se cortaba y se descargaba igual. Esperar no cuesta nada en pantalla (el refresco es de fondo).
@@ -21,12 +22,13 @@ export const CONSULTA_CAMBIOS = {
 
 export const FETCH_TIMEOUT_MS = 20000;
 
-// El export XLSX de Google (camino principal: trae TODAS las hojas en una sola
-// petición) se GENERA en el servidor de Google antes de transferirse: TTFB de
-// varios segundos + workbook de varios MB. Si esta descarga cae por timeout, la
-// app degrada al fallback CSV, que solo recupera la 1ª hoja si el documento no
-// está "publicado en la web" → todas las vistas quedan sin datos. Por eso el
-// camino XLSX usa su PROPIO timeout, más generoso que una petición normal.
+// El export XLSX de Google (trae TODAS las hojas en una sola petición; fue el camino
+// principal hasta el 2026-10-11, y hoy va detrás del CSV de cada hoja) se GENERA en el
+// servidor de Google antes de transferirse: TTFB de varios segundos + workbook de varios
+// MB. Cuando se escribió esto, si caía por timeout la app degradaba a un CSV que sólo
+// recuperaba la 1ª hoja (hoy el respaldo enumera todas por /htmlview). Por eso el camino
+// XLSX usa su PROPIO timeout, más generoso que una petición normal; también lo usa el CSV
+// de exportación de cada hoja, que Google genera igual (core/sheets.js · csvDeHoja).
 export const XLSX_TIMEOUT_MS = 45000;
 // Tiempo máximo SIN RECIBIR NADA mientras llega el CUERPO de una descarga (2026-10-07, usuario, punto 9). Los dos de
 // arriba cubren sólo hasta las cabeceras; con la red atascada a mitad, la descarga esperaba para siempre (medido el
@@ -34,8 +36,10 @@ export const XLSX_TIMEOUT_MS = 45000;
 export const SIN_DATOS_MS = 30000;
 
 // Intervalo de auto-refresco silencioso (segundos). 5 min (decisión del usuario, 2026-09-24):
-// cada ciclo descarga el libro entero (10–12 MB) y leerlo congela la pantalla; con 60 s eran
-// ~470 MB/h por equipo. Además comprueba al volver a la pestaña y con ⟳ (core/refresh.js).
+// entonces cada ciclo descargaba el libro entero (10–12 MB) y leerlo congelaba la pantalla; con
+// 60 s eran ~470 MB/h por equipo. Hoy pregunta antes si cambió (CONSULTA_CAMBIOS), lee en un
+// Worker y baja cada hoja por su CSV. Además comprueba al volver a la pestaña y con ⟳
+// (core/refresh.js).
 export const REFRESH_INTERVAL_S = 300;
 
 // Umbrales de semáforo (Vista Supervisor) — extraídos fielmente del original.

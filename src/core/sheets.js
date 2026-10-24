@@ -4,10 +4,14 @@
    fetchCSVRobust, parseCSV, getSheetGids, detectSheetName,
    processAndDisplaySheetsData).
 
-   Estrategia:
-     1) XLSX completo  → export?format=xlsx  (1 sola petición, todas las hojas)
-     2) Respaldo por hojas → el XLSX de cada hoja por gid (descubre gids por scraping);
-        sólo si el de una hoja falla, gviz/tq?out:csv para ESA hoja (ver fetchViaCsv)
+   Estrategia (4.2-B, 2026-10-11; la MISMA en el Worker y aquí desde la pauta 17, 2026-10-22):
+     1) Cada hoja por su CSV de exportación → hojasPorCsv (descubre las pestañas por /htmlview y
+        pide CSV_A_LA_VEZ a la vez; lo lee csvLector, sin SheetJS)
+     2) Si eso no llega completo, el libro XLSX entero → export?format=xlsx (fetchXlsxSheets)
+     3) Si tampoco, el respaldo por hojas → el XLSX de cada hoja por gid; si el de una falla, su
+        CSV de exportación, y gviz/tq?out:csv sólo si ése tampoco llega (B4, 2026-10-22)
+     4) Sin libro ni respaldo, lo que llegó por CSV, como INCOMPLETO (isDegraded no lo deja pisar
+        un set mayor)
 
    Cada fila se etiqueta con _SheetOrigin (Larvicultura, Control_Tanque,
    Maduracion, Lab_Algas, Morfologia) y se sella el Módulo desde el
@@ -154,8 +158,9 @@ export function detectSheetName(rows, gid, rawTitle) {
      fallo silencioso que se cazó el 2026-09-08 con «Maduración Lotes», y por el mismo
      motivo: un diseño nuevo la dejó sin la columna que le servía de firma.
      Medido el 2026-09-09 sobre sus cabeceras reales: por COLUMNAS daba «Hoja1» y por
-     NOMBRE «Maduracion». La hoja aún NO EXISTE en producción —nace con el re-despliegue
-     del GAS—, así que esto se corrige ANTES de que nadie pueda verlo roto.
+     NOMBRE «Maduracion». Entonces la hoja aún no existía en producción —nació con el
+     re-despliegue del GAS— y se corrigió ANTES de que nadie pudiera verlo roto; hoy existe
+     (medido el 2026-10-23) y es esta firma la que la reconoce.
      🔑 «metabisulfito» es firma PROPIA: no aparece en ninguna cabecera de las 35 pestañas
      vivas (medido sobre cabeceras-produccion.json), así que no le roba nada a nadie. */
   if (has((k) => k.includes('metabisulfito'))) return 'Maduracion';
@@ -986,11 +991,13 @@ export function aplicarLibroGuardado(g) {
  *  fetchAllSheets (aquí) y el Worker de lectura (sheets.worker.js): UNA sola implementación
  *  de la descarga, los reintentos y la lectura. `obtenerXLSX` da SheetJS. */
 export async function fetchXlsxSheets(ids, obtenerXLSX = getXLSX, avisar = null) {
-  // XLSX-first CON REINTENTOS. El XLSX trae TODAS las hojas en una sola petición; una caída
+  // El libro XLSX CON REINTENTOS: desde el 2026-10-11 (4.2-B) es el SEGUNDO camino, después de cada hoja por su CSV
+  // (hojasPorCsv). Trae TODAS las hojas en una sola petición; una caída
   // TRANSITORIA (timeout/red/5xx) NO debe degradar a la primera, así que reintentamos con
   // backoff. El respaldo es ROBUSTO: enumera TODAS las hojas por /htmlview (no requiere
   // publicar el documento) y las baja hoja a hoja por su XLSX, y por CSV sólo la que falle
-  // (respaldoPorHojas; por gviz no desde el 2026-10-01: con un filtro en la hoja, recortaba).
+  // (respaldoPorHojas: primero su CSV de exportación, y gviz sólo si tampoco llega —con un filtro en la hoja, gviz
+  // recorta—, sin pisar una hoja con más filas; B4, 2026-10-22).
   // Punto 9 (2026-10-07): con `avisar` (la primera carga), cada reintento lo dice —y si fue porque la red no avanzó—, y
   // los avisos de descarga del intento siguiente llevan en qué intento va.
   // Pauta 18 (2026-10-22, usuario) · sin SheetJS el libro no se puede leer: no se descarga (eran tres descargas de 14,5 MB,

@@ -4,7 +4,7 @@
    Las SIETE vistas de cada día (Supervisor, Larvicultura, Revisiones, Visitante, Algas, Microbiología y la entrada de
    Maduración, que elige familia) iban en el bloque principal —850 kB, el 92 % de él— y TODOS los roles las bajaban antes
    de ver siquiera la pantalla de roles, también Visitante, Chequeador o Gerencia, que usan una sola. Medido con la build:
-   lo que baja la pantalla de roles (con Chart.js) pasó de 1 053,7 a 254,7 kB. main.js las registra con `diferida`.
+   lo que baja la pantalla de roles (con Chart.js) pasó de 1 053,7 a 255,6 kB. main.js las registra con `diferida`.
    La precarga del service worker (vite.config.js · listaDePrecache) ya lleva sus bloques: sin señal abren como antes.
 
    `diferida(def, carga)` devuelve la definición de `registerView` (con sus opciones: `usaBarraFecha`…) y un `render` que:

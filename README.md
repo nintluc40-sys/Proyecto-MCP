@@ -320,7 +320,9 @@ volver a abrir esto, esto es lo que ya se midió:
   con la cámara quieta 5 s vuelve a la completa, y al moverla de nuevo pasa de golpe a la que aguantó el último movimiento
   (plan A3, 2026-10-18: antes no la recuperaba nunca). Si el equipo le quita la memoria gráfica (contexto WebGL
   perdido), lo dice encima de la maqueta y, cuando el navegador la devuelve, rehace los reflejos y las sombras y sigue;
-  un armado que falla libera lo que había creado, también el del QR de acceso (pauta 3.17, 2026-10-19).
+  un armado que falla libera lo que había creado, también el del QR de acceso (pauta 3.17, 2026-10-19). La página del QR
+  también dice que perdió la memoria gráfica, encima del código, y mientras falte, «Descargar PNG» no baja el lienzo
+  vacío y lo avisa (Tarea 27, 2026-10-22).
   Desde el 2026-10-19 (**Plan B**) la maqueta y el plano de 📊 Análisis llevan las áreas del plano ARQ-A3 V4 con su
   nombre: los reservorios, cada uno en su compartimento; el frente en sus 10 recintos; el R.A.S. de Maduración con su
   cuarto de control; las dos naves de servicio, y entre las salas, Eclosión 1 (14 tanques), las salas de eclosión 2 y 3
@@ -618,8 +620,13 @@ src/
     dates.js               parseAnyDate (serial Excel, dd/mm/yyyy, ISO) + formato es-EC
     fields.js              Acceso tolerante a cabeceras, estadio, mortalidad derivada
     format.js              Formato numérico + semáforos
-    sheets.js              Motor Google Sheets: XLSX-first + respaldo hoja a hoja + clasificación
+    sheets.js              Motor Google Sheets: cada hoja por su CSV primero; el libro XLSX y el
+                           respaldo hoja a hoja, si no llega completo; clasificación de pestañas
     sheets.worker.js       La descarga y la lectura del libro (y su respaldo) en un Web Worker
+    sheets.lector.js       El cliente de ese Worker (lo registra main.js); sin él, se lee en la página
+    csvLector.js           Lector propio del CSV de exportación (el algoritmo de SheetJS, sin el libro)
+    libroGuardado.js       El último libro leído, en IndexedDB: abre al instante y caduca a los 7 días
+    marcaLibro.js          ¿Cambió el libro desde la última descarga? (la consulta ligera, otro GAS)
     refresh.js             Auto-refresco silencioso con fingerprint e inactividad
     charts.js              Registro central de Chart.js + destrucción gestionada
     prodCalendar.js        Calendario de producción: el «mes interno» como rango de corridas
@@ -633,6 +640,8 @@ src/
     modalEscape.js         Cierre con Escape, uniforme para todas las vistas
     toast.js               Aviso efímero no bloqueante (sustituye a window.alert)
     accesoRol.js           Rol por enlace (`?rol=gerencia`) y el rol RECORDADO en el equipo
+    versionNueva.js        La franja «versión nueva» cuando lo publicado es otro build (`version.json`)
+    vistaDiferida.js       El registro de una vista que se baja AL ABRIRLA (`diferida`)
   views/
     supervisor/            Ejecutiva · módulo · tanque · larvia · despacho · traslado · omtex · compareTanks
     larvicultura/          Radar, evolución, heatmap, registros, ICL, ranking, modales

@@ -16,9 +16,10 @@
    La ficha calcula la ración del día a partir de la biomasa y unos porcentajes; nadie registra lo que el animal
    comió. Llamarla «consumo» —o compararla con un crecimiento— sería inventar una medición que no existe.
 
-   🔑 EL % DE LA BIOMASA ES EL ÚNICO UMBRAL DE ESTE TABLERO CON FUENTE PROPIA: 0,25 a 2 % por toma, de la
-   propia ficha de Alimentación (`MAD_ALIM_PCT_MIN`/`MAX`). Los demás esperan al laboratorio. Por eso aquí sí se
-   juzga, y con esa fuente dicha.
+   🔑 EL % DE LA BIOMASA TIENE FUENTE PROPIA: 0,25 a 2 % por toma, de la propia ficha de Alimentación
+   (`MAD_ALIM_PCT_MIN`/`MAX`; el catálogo `operativo.umbrales.js` lo da como `alimentoPctToma`, con esas mismas
+   constantes). Cuando se escribió esto era el ÚNICO umbral del tablero con cifra propia —los demás esperaban al
+   laboratorio, que los tiene desde el 2026-10-22 (ver `operativo.umbrales.js`)—. Aquí se juzga con esa fuente dicha.
    🔑🔑 Y SE JUZGA POR TOMA, como en la ficha: cada toma que de verdad se planificó —la columna «Tomas» de la fila,
    leída con el MISMO intérprete que la ficha—, una vez por sala y día. La primera versión (2026-09-21) lo aplicaba
    al % DIARIO de cada producto, y con la agenda estándar Calamar (cuatro tomas de 1,5–2 %, 7 % al día) y Krill

@@ -1,7 +1,8 @@
 /* ============================================================
    WORKER de lectura del libro (P1 del plan de carga y refresco, 2026-10-01)
 
-   Descarga el export XLSX y lo lee FUERA del hilo principal: la lectura de ~200 000 filas
+   Descarga el libro y lo lee FUERA del hilo principal —desde el 2026-10-11 (4.2-B, abajo), primero cada hoja por su
+   CSV y, si eso no llega completo, el export XLSX—: la lectura de ~200 000 filas
    congelaba la pantalla 12–21 s en cada carga y cada refresco (medido el 01-10). Devuelve la
    huella de cada hoja y SÓLO las filas de las que cambiaron respecto a lo aplicado
    (`previas`), así que un refresco sin cambios no le cuesta nada a la pantalla.
@@ -9,7 +10,7 @@
    Es un worker CLÁSICO (Vite lo empaqueta como IIFE): así puede cargar SheetJS con
    `importScripts` —el mismo archivo de public/vendor que usa la página— y funciona también en
    navegadores sin workers de módulo. La descarga, los reintentos y la lectura son los de
-   sheets.js (fetchXlsxSheets): una sola implementación.
+   sheets.js (hojasPorCsv, fetchXlsxSheets, respaldoPorHojas): una sola implementación.
 
    P4 (2026-10-01): después de contestar, guarda el libro leído en IndexedDB (libroGuardado.js)
    para que la próxima vez el MCP abra al instante con él. Lo hace aquí para que ni la copia ni
@@ -17,12 +18,14 @@
    lectura).
 
    Protocolo (cliente: sheets.lector.js):
-     → { id, realId, xlsxUrl, previas, conProgreso }
+     → { id, realId, xlsxUrl, previas, pestanas, conProgreso }   `pestanas`: las que recuerda la página (carga lenta D)
      ← { vivo: true }                                   al arrancar
-     ← { id, progreso: { fase, bytes } }                con conProgreso (la primera carga, punto 7): cómo va
+     ← { id, progreso: { fase, … } }                    con conProgreso (la primera carga, punto 7): cómo va (los bytes
+                                                        de la descarga, las hojas hechas de cuántas, el reintento…)
      ← { id, latido: true }                             cada LATIDO_MS mientras atiende (A1, abajo)
      ← { id, hoja, filas }                              una por cada hoja que cambió (2026-10-06, abajo)
-     ← { id, ok: true, orden, huellas }                 al final; el lector junta las hojas en `cambiadas`
+     ← { id, ok: true, orden, huellas, completo, pestanas? }   al final; el lector junta las hojas en `cambiadas`
+                                                        (`completo`: A4; `pestanas`, si leyó por CSV: para recordarlas)
      ← { id, ok: false, motivo: 'sin-xlsx' | 'xlsx' | 'sin-datos', error }
 
    A1 (2026-10-07, usuario) · el lector ya no corta el Worker a los 165 s pase lo que pase, sino cuando lleva

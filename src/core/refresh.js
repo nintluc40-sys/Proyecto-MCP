@@ -6,14 +6,17 @@
    - Usa fingerprint para evitar re-render si no hubo cambios.
    - Con el libro leído en un Worker (P1) descarga aunque el usuario esté trabajando: no
      congela. Sin Worker (navegador sin él, o roto), no DESCARGA mientras el usuario
-     interactúa o hay un overlay abierto: leer el Excel aquí congela la pantalla.
+     interactúa o hay un overlay abierto: aunque desde la pauta 17 (2026-10-22) aquí también se lee
+     primero cada hoja por su CSV, en tareas cortas, si eso no llega completo se cae al libro XLSX,
+     y leerlo aquí congela la pantalla.
    - Los datos nuevos se APLICAN sólo en reposo (sin interacción reciente, sin overlay y sin
      un campo de texto con el foco). Hasta entonces quedan PENDIENTES —uno solo: el más
      nuevo sustituye al anterior— y se reintenta cada APPLY_RETRY_MS.
    - ⟳ y la píldora usan refrescoManual(): nunca dos descargas a la vez.
    - P4: la primera vez que hace falta el libro, si hay uno GUARDADO en el equipo (y no caducó),
      se enseña YA («datos de las hh:mm · actualizando…») y se revalida en el acto.
-   - Consulta LIGERA (2026-10-07, punto 8): antes de bajar el XLSX (~14 MB) el ciclo pregunta la
+   - Consulta LIGERA (2026-10-07, punto 8): antes de bajar el libro (entonces el XLSX, ~14 MB; desde el
+     2026-10-11, cada hoja por su CSV, ~1,4 MB, y el XLSX sólo si eso no llega) el ciclo pregunta la
      fecha de modificación del libro (marcaLibro.js, ~1,5 s); si es la misma que la de la última
      descarga procesada, no descarga («sin cambios»). La marca se lee ANTES de descargar y sólo
      crece, así que la recordada nunca es más nueva que lo que está en pantalla: un retraso de Drive

@@ -147,9 +147,10 @@ export const CAMARONERA_OPTS = [
    Retirados el 2026-08-20 por el usuario: Laboratorio (siempre Omarsa), Guía,
    Camión (lo sustituye la Placa) y Alimentos (queda sólo Insumos).
    Retirado el 2026-08-23 por el usuario: Tanque. La hoja pasa de 28 a 27 columnas.
-   ⚠ Salió GRATIS porque `Registro_Traslado` todavía NO existe en producción (el
-   GAS aún responde «Hoja no permitida»). En cuanto T3 la cree, quitar una columna
-   deja de ser una edición y pasa a ser una migración de la hoja real.
+   Salió GRATIS porque entonces `Registro_Traslado` todavía no existía en producción
+   (el GAS respondía «Hoja no permitida»). ⚠⚠ HOY EXISTE, con miles de filas (medido el
+   2026-10-23): quitar, añadir en medio o reordenar una columna ya NO es una edición,
+   es una MIGRACIÓN de la hoja real.
 
    `grain` documenta de dónde sale cada valor:
      viaje    → cabecera/pie, se repite en todas las filas

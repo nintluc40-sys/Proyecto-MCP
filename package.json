@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Dashboard modular de Larvicultura — Vistas Supervisor y Check (migración refinada de 'sistema F.html')",
+  "description": "Sistema de Monitoreo y Control Productivo (MCP) del laboratorio: Larvicultura, Maduración, Algas, Microbiología, Biología Molecular, Registros y Planta — Vite + ES modules (migración de 'sistema F.html')",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

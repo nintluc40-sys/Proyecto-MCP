@@ -4,7 +4,8 @@
    ARQ-A3 V4 (septiembre): posición de cada tanque (detectada sobre el dibujo, en metros), sus
    medidas nominales (las cotas del plano) y la numeración de cada tanque tal como figura en él.
    x crece hacia el este del dibujo y z hacia la calle. Las «otras áreas» son sólo volumen de
-   referencia. Lo consume planta/escena.js; lo fija plano.test.js.
+   referencia. Lo consumen planta/escena.js (la maqueta), analisis.js (el plano de 📊 Análisis) y estado.js;
+   lo fija plano.test.js.
    Tanda 3 (2026-10-04, decisión del usuario): las salas 4 y 5 siguen al MCP y no al plano. El plano dibuja
    4 + 4 tanques (28–35); el MCP registra 6 en la Sala 4 (1–6) y 5 en la Sala 5 (7–11), con la numeración que
    repite la 4 y la 1 (MAD_TANQUES_POR_SALA). Se redibujan en el mismo espacio; su disposición y su tamaño son
@@ -46,7 +47,8 @@ export function tanquesDeSala(m) {
    sobre cada área con un ajuste lineal entre la posición de los rótulos «MODULO # n» y el centro de cada módulo (error
    medio 0,5 m; 2026-10-04, opción F): «título · detalle». Un área sin rótulo en el plano queda con un nombre genérico.
    El TIPO: bld = edificio, res = reservorio, alg = piletas de algas, ecl = sala abierta con tanques, canal = canal abierto.
-   La FORMA (opcional, `null` si no hay) elige sus detalles en la maqueta: maquinas, diesel, filtros, lab, admin, comedor.
+   La FORMA (opcional, `null` si no hay) elige sus detalles en la maqueta: maquinas, diesel, filtros, lab, admin, comedor,
+   bodega, generadores.
    El canal sedimentador era una caja de 2,8 m: es tipo 'canal' (abierto, con agua).
    COLOR (sólo los edificios, 2026-10-19, tarea 7 · B0, usuario): el de su fachada. Antes salía de su POSICIÓN en esta lista
    (`WALLS[k % 4]` en escena.js) y añadir o partir un área recoloreaba todos los edificios de después; éstos son los de

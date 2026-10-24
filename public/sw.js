@@ -124,7 +124,8 @@ async function assetsDelShell(cache) {
 
 /* Y TODO lo demás que emitió el build: la lista la escribe vite.config.js (listaDePrecache).
    Los bloques diferidos —Registros, Biología Molecular, el tablero de Maduración, el Worker de
-   lectura del libro— no salen en index.html, así que `assetsDelShell` no los ve; sin esto, tras
+   lectura del libro y, desde el 2026-10-23, las siete vistas de cada día (src/ui/vistaDiferida.js)—
+   no salen en index.html, así que `assetsDelShell` no los ve; sin esto, tras
    un despliegue, un equipo que no los abriera con red no podía abrirlos sin señal (P3,
    2026-10-01). Sólo se devuelve lo que aún NO está guardado: lo del shell no se pide dos veces. */
 async function assetsDelBuild(cache, senal) {
