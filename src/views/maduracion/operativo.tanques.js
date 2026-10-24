@@ -34,6 +34,7 @@ import { normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.sc
 import { ubicKey, pesosDeAlimentacion } from '../registros/lib/mad-libro.js';
 import { fechaDeFila } from './operativo.data.js';
 import { proporcionHM, densidadTanque } from './operativo.indicadores.js';
+import { evaluar } from './operativo.umbrales.js';
 import { posicionEnFiltro, hayLote, hayCodigo, claveTanque } from './operativo.tablero.js';
 import { frecuenciaDeObservaciones } from './operativo.revisiones.js';
 
@@ -144,15 +145,21 @@ export function tablaDeTanques(M, periodo, F, dias) {
     const hembras = vivos.reduce((a, c) => a + ent(c.hembras), 0);
     const c = cargas.get(k) || {};
     const a = actividad.get(k) || {};
+    const hm = proporcionHM(hembras, machos);
+    const densidad = densidadTanque(T.sala, T.tanque, machos, hembras);
+    const cargaMetrica = c.cargaMetrica === undefined ? '' : c.cargaMetrica;
     filas.push({
       sala: txt(T.sala), tanque: ent(T.tanque),
       lotes: vivos.map((x) => txt(x.lote)).filter((v, i, arr) => arr.indexOf(v) === i).sort(porNombre),
       compartido: vivos.length > 1,
       parcial: dentro.length !== vivos.length,   // el filtro deja fuera parte de lo que hay dentro
       vivos: { machos, hembras, total: machos + hembras },
-      hm: proporcionHM(hembras, machos),
-      densidad: densidadTanque(T.sala, T.tanque, machos, hembras),
-      cargaMetrica: c.cargaMetrica === undefined ? '' : c.cargaMetrica,
+      /* Bloque 4, tarea 2 (2026-10-23, usuario) · cada cifra con su semáforo, con los umbrales de 🏠 Salas. La H:M y la
+         densidad, igual que allí (por tanque, con todos sus lotes). La CARGA se juzga ENTERA, como la dice la celda:
+         en un tanque compartido puede salir más alta que la de cada lote, que es la que juzga 🏠 Salas. */
+      hm, hmEstado: evaluar('proporcionHM', hm),
+      densidad, densidadEstado: evaluar('densidad', densidad),
+      cargaMetrica, cargaMetricaEstado: evaluar('cargaMetrica', cargaMetrica),
       cargaVolumetrica: c.cargaVolumetrica === undefined ? '' : c.cargaVolumetrica,
       pesoMachos: a.pesoMachos === undefined ? '' : a.pesoMachos,
       pesoHembras: a.pesoHembras === undefined ? '' : a.pesoHembras,

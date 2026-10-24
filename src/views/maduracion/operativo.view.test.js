@@ -1449,6 +1449,22 @@ describe('Maduración · operativo · 🛢 Tanques', () => {
     expect([...filaTq('Sala 1|1').cells].map((c) => c.textContent.trim()).slice(-2)).toEqual(['19/09', '14:40']);
   });
 
+  /* Bloque 4, tarea 2 (2026-10-23, usuario) · ♀:♂, Dens. y Carga llevan su punto de color, el MISMO que el detalle de
+     la sala en 🏠 Salas da a ese tanque (H:M, Densidad y Carga métrica), con el umbral en su título. */
+  it('🔴 bloque 4 · 2 · ♀:♂, densidad y carga llevan su punto, del mismo color que en 🏠 Salas', async () => {
+    const color = (td) => { const d = td.querySelector('.mop-dot'); return d ? [...d.classList].find((c) => c.startsWith('is-')) : ''; };
+    await montar(PLANTA_F4);
+    abrirTanques();
+    const th = [...root.querySelectorAll('.mop-tanques thead th')].map((x) => x.textContent.trim());
+    const enTanques = ['♀:♂', 'Dens.', 'Carga'].map((r) => color(filaTq('Sala 1|1').cells[th.indexOf(r)]));
+    expect(enTanques.every(Boolean), enTanques.join(' · ')).toBe(true);
+    expect(filaTq('Sala 1|1').querySelector('.mop-dot').getAttribute('title')).toContain('0,72–1,22');   // el umbral de la H:M
+    click(root.querySelector('[data-mop-sub="salas"]'));
+    click(root.querySelector('[data-mop-sala="Sala 1"]'));
+    const tr = [...root.querySelectorAll('.mop-detalle tbody tr')].find((x) => x.cells[0].textContent.trim() === '1');
+    expect([4, 5, 6].map((i) => color(tr.cells[i]))).toEqual(enTanques);   // H:M, Densidad /m², Carga métrica
+  });
+
   const ultimoParteEnSala1 = async (filas) => {
     await montar(filas);
     click(root.querySelector('[data-mop-sub="salas"]'));

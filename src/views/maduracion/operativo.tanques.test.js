@@ -22,7 +22,8 @@ import {
   observacionesDeTanque, movimientosDeTanque, fichaDeTanque, avisosDeTanques,
 } from './operativo.tanques.js';
 import { modeloOperativo, serieDiaria, diasDeTanque } from './operativo.data.js';
-import { normalizarFiltro, periodoDe } from './operativo.tablero.js';
+import { normalizarFiltro, periodoDe, detalleDeSala } from './operativo.tablero.js';
+import { umbralVigente } from './operativo.umbrales.js';
 import { MAD_OP_ORIGEN } from './operativo.fuentes.js';
 import { areaTanqueM2 } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
 
@@ -73,6 +74,7 @@ const SERIE = serieDiaria(M.fuentes, P30.desde, P30.hasta);
 const DIAS = diasDeTanque(M.fuentes.tanques);
 const F = (extra) => normalizarFiltro({ ...(extra || {}) }, M.indice);
 const SIN = F();
+const F2 = (m) => normalizarFiltro({}, m.indice);
 const fila = (t, sala, tanque) => t.find((x) => x.sala === sala && x.tanque === tanque);
 
 describe('Maduración · operativo · 🛢 Tanques (F4.1)', () => {
@@ -148,6 +150,58 @@ describe('Maduración · operativo · 🛢 Tanques (F4.1)', () => {
       expect(avisosDeTanques(SIN)).toEqual([]);
       expect(avisosDeTanques(F({ lote: 'RA' }))).toHaveLength(1);
       expect(avisosDeTanques(F({ codigo: 'CB' }))).toHaveLength(1);
+    });
+  });
+
+  /* Bloque 4, tarea 2 (2026-10-23, usuario) · los SEMÁFOROS de la tabla, con los umbrales de 🏠 Salas. La H:M y la
+     densidad con su MISMA regla (por tanque, con todos sus lotes): la tabla y el detalle de la sala no pueden dar colores
+     distintos. La CARGA, la del tanque entero, UNA (tarea 2a): el caso que lo distingue es un tanque COMPARTIDO por
+     debajo del tope cuya SUMA —el defecto de antes— lo pasaba. */
+  describe('los semáforos (bloque 4, tarea 2)', () => {
+    const compartido = (machos, hembras) => modeloOperativo([
+      ING('2026-09-01', 'LA', 'Sala 1', 1, machos, hembras),
+      ING('2026-09-01', 'LB', 'Sala 1', 1, machos, hembras, 'CB'),
+      TQ('2026-09-10', 'Sala 1', 1, { 'Peso promedio machos (g)': 60, 'Peso promedio hembras (g)': 80, Hora: '08:00', Parte: 1 }),
+    ], { fecha: FOTO, hoy: FOTO });
+    const tanqueYSala = (MC) => {
+      const PC = periodoDe('30d', FOTO, MC.fuentes);
+      const DC = diasDeTanque(MC.fuentes.tanques);
+      return [fila(tablaDeTanques(MC, PC, F2(MC), DC), 'Sala 1', 1),
+        detalleDeSala(MC, 'Sala 1', PC, F2(MC), DC).tanques.find((y) => String(y.tanque) === '1')];
+    };
+
+    it('🔑 H:M y densidad, con el MISMO color que 🏠 Salas en cada tanque', () => {
+      const t = tablaDeTanques(M, P30, SIN, DIAS);
+      const d = detalleDeSala(M, 'Sala 3', P30, SIN, DIAS);
+      const t1 = fila(t, 'Sala 3', 1);
+      expect([t1.hmEstado, t1.densidadEstado]).toEqual(['alto', 'bajo']);   // 1,50 ♀ por ♂ y ~2 animales/m²
+      for (const x of t) {
+        const s = d.tanques.find((y) => String(y.tanque) === String(x.tanque));
+        expect([x.hmEstado, x.densidadEstado], 'tanque ' + x.tanque).toEqual([s.hmEstado, s.densidadEstado]);
+      }
+    });
+
+    it('🔑 la CARGA de un tanque compartido por DEBAJO del tope: verde, como en 🏠 Salas, aunque la suma lo pasaba', () => {
+      const [t1, s] = tanqueYSala(compartido(20, 20));   // 40 ♂ y 40 ♀ en 13,14 m²: unos 426 g/m²
+      const tope = umbralVigente('cargaMetrica').max;
+      expect(t1.cargaMetrica).toBeGreaterThan(0);
+      expect(t1.cargaMetrica).toBeLessThanOrEqual(tope);
+      expect(t1.cargaMetrica * 2, 'lo que daba la suma de sus dos lotes').toBeGreaterThan(tope);
+      expect(t1.cargaMetricaEstado).toBe('ok');
+      expect(t1.cargaMetricaEstado).toBe(s.cargaMetricaEstado);
+    });
+
+    it('🔑 y por ENCIMA del tope, «alto», también como en 🏠 Salas', () => {
+      const [t1, s] = tanqueYSala(compartido(40, 40));   // unos 852 g/m²
+      expect(t1.cargaMetrica).toBeGreaterThan(umbralVigente('cargaMetrica').max);
+      expect(t1.cargaMetricaEstado).toBe('alto');
+      expect(t1.cargaMetricaEstado).toBe(s.cargaMetricaEstado);
+    });
+
+    it('sin carga conocida (ningún peso registrado), la celda no lleva punto', () => {
+      const [t1] = tanqueYSala(modeloOperativo([ING('2026-09-01', 'LA', 'Sala 1', 1, 20, 20)], { fecha: FOTO, hoy: FOTO }));
+      expect(t1.cargaMetrica).toBe('');
+      expect(t1.cargaMetricaEstado).toBe('');
     });
   });
 

@@ -2679,9 +2679,9 @@ function tablaTanquesHTML(filas, F) {
       <td>${f.lotes.map((l) => esc(l)).join(' · ')}${f.compartido ? ' <span class="mop-nota" title="Este tanque tiene más de un lote">compartido</span>' : ''}${f.parcial ? ' <span class="mop-dif" title="El filtro deja fuera parte de lo que hay en el tanque; las cifras son las del tanque entero">⚠</span>' : ''}</td>
       <td class="r">${nf(f.vivos.total)}</td>
       <td class="r"><span class="mop-nota">♀ ${nf(f.vivos.hembras)} · ♂ ${nf(f.vivos.machos)}</span></td>
-      <td class="r" title="${esc(definicion('proporcionHM'))}">${nf(f.hm, 2)}</td>
-      <td class="r" title="${esc(definicion('densidadTanque'))}">${nf(f.densidad, 2)}</td>
-      <td class="r">${nf(f.cargaMetrica, 2)}</td>
+      <td class="r" title="${esc(definicion('proporcionHM'))}">${nf(f.hm, 2)} ${dot(f.hmEstado, refUmbral('proporcionHM'))}</td>
+      <td class="r" title="${esc(definicion('densidadTanque'))}">${nf(f.densidad, 2)} ${dot(f.densidadEstado, refUmbral('densidad'))}</td>
+      <td class="r">${nf(f.cargaMetrica, 2)} ${dot(f.cargaMetricaEstado, refUmbral('cargaMetrica'))}</td>
       <td class="r">${nf(f.pesoHembras, 1)} / ${nf(f.pesoMachos, 1)}</td>
       <td class="r">${nf(f.rondas)}</td>
       <td class="r">${f.ultimoParte ? esc(dm(f.ultimoParte)) : '<span class="muted">—</span>'}</td>
@@ -2700,7 +2700,9 @@ function tablaTanquesHTML(filas, F) {
         <th class="r" title="La hora del último parte de ese día (3, 2026-10-01)">Hora</th></tr></thead>
       <tbody>${filas.map(fila).join('')}</tbody></table></div>
     <p class="mc-note">Los VIVOS y la CARGA son del tanque ENTERO —el área y el volumen son suyos, no del lote—, y los
-      PESOS son los del último parte, no el promedio del período.${avisos.length ? ' ⚠ ' + esc(avisos[0]) : ''}</p>
+      PESOS son los del último parte, no el promedio del período. El punto de color compara con el umbral que manda (el
+      del laboratorio): la carga se juzga ENTERA, así que en un tanque compartido puede salir más alta que la de cada lote
+      en 🏠 Salas.${avisos.length ? ' ⚠ ' + esc(avisos[0]) : ''}</p>
   </div>`;
 }
 
