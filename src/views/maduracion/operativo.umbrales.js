@@ -34,10 +34,12 @@
    · la TEMPERATURA y el OXÍGENO se quedan con la publicada A PROPÓSITO: son límites fisiológicos y el laboratorio ya
      trabaja dentro (fuera, el 3,4 % y el 0 % de las lecturas); una banda propia sería MÁS estricta que el libro;
    · la SALINIDAD, la TASA DE DESOVE y los HUEVOS y NAUPLIOS POR DESOVE no se juzgan hoy en NINGUNA pieza del tablero (no
-     tienen semáforo): se quedan con la publicada, sin cifra propia. ⚠ 🔬 Microchips no lee la tasa de aquí: usa su copia,
-     `TASA_DESOVE_REF` (maduracion/data.js).
+     tienen semáforo): se quedan con la publicada, sin cifra propia. La TASA DE DESOVE es la misma que la de 🔬 Microchips
+     (`TASA_DESOVE_REF`, maduracion/data.js): 5–15 % por noche, con su máximo, leída de `tasaDesove.js` por las dos
+     (bloque 4, tarea 1, 2026-10-23, usuario; antes aquí no tenía máximo y Microchips llevaba su propia copia).
    ============================================================ */
 import { MAD_ALIM_PCT_MIN, MAD_ALIM_PCT_MAX } from '../registros/lib/ficha-maduracion-alimentacion.schema.js';
+import { TASA_DESOVE } from './tasaDesove.js';
 
 export const FUENTES = {
   FAO2003: 'FAO (2003). Health management and biosecurity maintenance in white shrimp (Penaeus vannamei) hatcheries in Latin America. FAO Fisheries Technical Paper 450. Roma: FAO.',
@@ -70,7 +72,7 @@ export const UMBRALES = {
     bibliografia: { min: 1, max: 2, referencia: 'macho:hembra 1:1, 1:1,5 o 1:2', fuente: ['FAO2003', 'ALBALAT2022'] },
     laboratorio: { min: 0.72, max: 1.22, referencia: '0,72–1,22 hembras por macho, P10–P90 de su registro por tanque', fuente: ['LAB_MANEJO'] } },
   tasaDeDesove: { nombre: 'Tasa de desove', unidad: '% de hembras por noche',
-    bibliografia: { min: 5, max: null, referencia: '5–15 % por noche', fuente: ['FAO_FICHA'] }, laboratorio: null },
+    bibliografia: { min: TASA_DESOVE.min, max: TASA_DESOVE.max, referencia: TASA_DESOVE.referencia, fuente: ['FAO_FICHA'] }, laboratorio: null },
   huevosPorDesove: { nombre: 'Huevos por desove', unidad: 'huevos',
     bibliografia: { min: 100000, max: null, referencia: '100 000–250 000 (hembras de 30–45 g)', fuente: ['FAO_FICHA'] }, laboratorio: null },
   naupliosPorDesove: { nombre: 'Nauplios por desove', unidad: 'nauplios',

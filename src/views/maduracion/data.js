@@ -47,6 +47,7 @@
 import { parseAnyDate, yearMonthKey } from '../../core/dates.js';
 import { normTrovan, cadenaDelChip, individuoEnFecha, idsDeCadena, claveIndividuo } from '../../core/trovan.js';
 import { MAD_TANQUES_POR_SALA } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
+import { TASA_DESOVE } from './tasaDesove.js';
 
 export const MAD_MATRIZ_ORIGIN = 'Maduración MATRIZ';
 export const MAD_BITACORA_ORIGIN = 'Maduración Bitácora';
@@ -364,8 +365,9 @@ const desovesIn = (model, f) => model.desoves.filter((e) => passLoc(e, f));
 const mortsIn = (model, f) => model.mortalidades.filter((e) => passLoc(e, f));
 
 /* ── Tasa de desove (2026-09-26) ── */
-/** La referencia de la tasa de desove, en % de las hembras por noche (la del tablero: `tasaDeDesove`, FAO). */
-export const TASA_DESOVE_REF = { min: 5, max: 15, referencia: '5–15 % por noche' };
+/** La referencia de la tasa de desove, en % de las hembras por noche: la MISMA del catálogo del tablero (`tasaDeDesove`,
+ *  FAO), las dos leídas de `tasaDesove.js` (bloque 4, tarea 1, 2026-10-23, usuario). */
+export const TASA_DESOVE_REF = TASA_DESOVE;
 /** El período del filtro como [a, b] con fechas: su mes, o de la primera a la última fecha con eventos; el final nunca
  *  pasa del último dato (un mes en curso cuenta hasta hoy de los datos, no hasta su día 31). null si no hay eventos. */
 function ventana(model, f) {

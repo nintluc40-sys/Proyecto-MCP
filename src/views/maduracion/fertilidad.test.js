@@ -18,6 +18,8 @@ vi.mock('../../core/charts.js', () => ({ makeChart: vi.fn(), destroyChart: () =>
 import { store } from '../../core/store.js';
 import { buildReproModel, makeFilter, kpis, locationStats, TASA_DESOVE_REF } from './data.js';
 import { maduracionView } from './index.js';
+import { UMBRALES, umbralVigente } from './operativo.umbrales.js';
+import { TASA_DESOVE } from './tasaDesove.js';
 
 const MZ = (t, sala, tanque, estado, ingreso, muerte = '') => ({ 'Trovan ID': t, 'Sala actual': sala, 'Tanque actual': tanque, Estado: estado, 'Fecha ingreso': ingreso, 'Fecha muerte': muerte });
 const EV = (t, fecha, tipo = 'Desove') => ({ 'Trovan ID': t, Fecha: fecha, Tipo: tipo });
@@ -70,6 +72,14 @@ describe('Microchips · la TASA DE DESOVE por noche', () => {
   it('sin eventos, sin tasa (no un 0 inventado)', () => {
     expect(kpis(buildReproModel(MATRIZ, [], []), makeFilter({})).tasaDesove).toBe(null);
     expect(TASA_DESOVE_REF).toMatchObject({ min: 5, max: 15 });
+  });
+  /* Bloque 4, tarea 1 (2026-10-23, usuario) · UNA sola cifra: el catálogo del tablero decía «5–15 %» sin máximo y
+     Microchips llevaba su propia copia con 15. Las dos leen ahora `tasaDesove.js`. */
+  it('🔴 Microchips y el catálogo del tablero tienen la MISMA tasa de referencia, 5–15 % con su máximo', () => {
+    expect(TASA_DESOVE_REF).toBe(TASA_DESOVE);
+    const b = UMBRALES.tasaDeDesove.bibliografia;
+    expect([b.min, b.max, b.referencia]).toEqual([TASA_DESOVE_REF.min, TASA_DESOVE_REF.max, TASA_DESOVE_REF.referencia]);
+    expect(umbralVigente('tasaDeDesove')).toMatchObject({ min: 5, max: 15, origen: 'bibliografía' });
   });
 });
 
