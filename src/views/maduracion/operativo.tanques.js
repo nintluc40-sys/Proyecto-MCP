@@ -31,7 +31,7 @@
    correcto, y `medir-tablero-mad-real` lo dirá en su censo en vez de dar un verde sobre cero.
    ============================================================ */
 import { normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
-import { ubicKey, pesosDeAlimentacion } from '../registros/lib/mad-libro.js';
+import { ubicKey } from '../registros/lib/mad-libro.js';
 import { fechaDeFila, pesosDeReferencia } from './operativo.data.js';
 import { proporcionHM, densidadTanque } from './operativo.indicadores.js';
 import { evaluar } from './operativo.umbrales.js';
@@ -131,7 +131,10 @@ export function actividadPorTanque(dias, periodo, pesosAlim = []) {
 export function tablaDeTanques(M, periodo, F, dias) {
   const libro = (M && M.libro) || { tanques: new Map() };
   const cargas = cargasPorTanque(M);
-  const actividad = actividadPorTanque(dias, periodo, pesosDeAlimentacion(((M || {}).fuentes || {}).alimentacion, ((M || {}).fuentes || {}).tanques));
+  // Auditoría de la tarea 12 (2026-10-25): sin los pesos de 🍤 Alimentación —sólo servían para los pesos de `actividad`, y
+  // los de la tabla salen ya de pesosDeReferencia, que los lee él mismo—; de `actividad` se usan las rondas, las bajas y
+  // el último parte.
+  const actividad = actividadPorTanque(dias, periodo);
   const pesos = pesosDeReferencia(M);   // tarea 12 (ronda 6): los pesos, de aquí y no de `actividad` (ver pesosDeReferencia)
   const filas = [];
   for (const [k, T] of libro.tanques) {
