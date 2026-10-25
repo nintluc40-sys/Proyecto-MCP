@@ -7061,7 +7061,6 @@ function _madResLotes(fuentes, libro, hoy){
   const alDia={};
   const libroAl=function(fecha){ if(!alDia[fecha]) alDia[fecha]=madConstruirLibro(fuentes, { hoy:fecha, hasta:fecha }); return alDia[fecha]; };
   const filasTanque=(fuentes.tanques||[]).filter(function(r){ return madLibroTxt(r.Sala) && madLibroEnt(r.Tanque) && _madResEsFecha(_madResF10(r.Fecha)); });
-  const filasPeso=filasTanque.concat(madPesosDeAlimentacion(fuentes.alimentacion, fuentes.tanques));   // punto 2 (2026-10-04): SÓLO para el peso
   const desoves=_madResDesoves(fuentes.desoves), trat=fuentes.tratamientos||[];
   const tons=_madResUltimoPor(fuentes.sala, "Sala", "Toneladas"), nauplios=_madResNauplios(fuentes.mortDesove);
   const pesosRef=madAlimPesosDeReferencia(fuentes, libro);   // tarea 7 (ronda 6): los pesos de cada TANQUE, para su carga
@@ -7079,7 +7078,6 @@ function _madResLotes(fuentes, libro, hoy){
     tanques.sort(function(a,b){ return _madResOrden(a.sala,b.sala) || a.tanque-b.tanque; });
     // H1 (2026-09-15): una fila de Tanques es del lote si ESE DÍA el tanque lo tenía (libro al cierre del día). Ver el módulo.
     const candidatas=filasTanque.filter(function(r){ return !L.ingreso || _madResF10(r.Fecha)>=L.ingreso; });
-    const candPeso=filasPeso.filter(function(r){ return !L.ingreso || _madResF10(r.Fecha)>=L.ingreso; });
     const ultimoDia=function(filas){
       const fechas=filas.map(function(r){ return _madResF10(r.Fecha); }).filter(function(f,i,a){ return a.indexOf(f)===i; }).sort().reverse();
       for(let i=0;i<fechas.length;i++){
@@ -7093,13 +7091,29 @@ function _madResLotes(fuentes, libro, hoy){
       }
       return { fecha:"", filas:[] };
     };
-    const peso=function(col){
-      const d=ultimoDia(candPeso.filter(function(r){ return _madResNum(r[col])!==null && _madResNum(r[col])>0; }));
-      if(!d.fecha) return { valor:"", fecha:"" };
-      const del=d.filas.map(function(r){ return _madResNum(r[col]); });
-      return { valor:_madResR2(del.reduce(function(a,b){ return a+b; },0)/del.length), fecha:d.fecha };
+    // PESO PROMEDIO DEL LOTE (2026-10-25, usuario: «que cuadre con su biomasa»): el de los pesos de REFERENCIA de sus
+    // tanques (pesosRef), ponderado por los animales del LOTE en cada uno; su fecha, la más reciente. Ver el módulo.
+    const suyos={};
+    Object.keys(libro.tanques).forEach(function(k){
+      const T=libro.tanques[k];
+      T.composicion.forEach(function(c){
+        if(c.lote!==L.lote) return;
+        const u=madUbicKey(T.sala, T.tanque);
+        if(!suyos[u]) suyos[u]={ machos:0, hembras:0 };
+        suyos[u].machos+=c.machos; suyos[u].hembras+=c.hembras;
+      });
+    });
+    const peso=function(sexo){
+      let suma=0, n=0, fecha="";
+      Object.keys(suyos).forEach(function(u){
+        const p=(pesosRef[u]||{})[sexo], s=suyos[u];
+        if(!p || p.valor==="" || !(s[sexo]>0)) return;
+        suma+=s[sexo]*p.valor; n+=s[sexo];
+        if(p.fecha>fecha) fecha=p.fecha;
+      });
+      return n ? { valor:_madResR2(suma/n), fecha:fecha } : { valor:"", fecha:"" };
     };
-    const pesoM=peso("Peso promedio machos (g)"), pesoH=peso("Peso promedio hembras (g)");
+    const pesoM=peso("machos"), pesoH=peso("hembras");
     /* CARGA POR TANQUE (usuario, 2026-09-15). Las dos son ESTIMACIONES, y conviene saber de qué. Las dos parten de
        la BIOMASA viva del tanque, (♀ × peso♀ + ♂ × peso♂) en gramos, con los pesos de REFERENCIA del TANQUE, los
        mismos que usa la ración de Alimentación (madAlimPesosDeReferencia): su última biometría de un día en que tenía
@@ -13170,6 +13184,25 @@ function madAlimPesosDeReferencia(fuentes, libro){
       }
       return null;
     };
+    // 2026-10-25 (usuario: «su último peso, para todo»): sin biometría del tanque con sus lotes, la última de ESOS lotes
+    // en el tanque donde estaban ese día (un lote MOVIDO lleva consigo su peso; antes caía al de Ingreso). Ver el módulo.
+    const delLote=function(col){
+      const con=filasTq.filter(function(r){ return _madAlimF10(r.Fecha)>=desde && madUbicKey(r.Sala, r.Tanque)!==k && madAlimNum(r[col])!=="" && madAlimNum(r[col])>0; });
+      const fechas=con.map(function(r){ return _madAlimF10(r.Fecha); }).filter(function(x,i,a){ return a.indexOf(x)===i; }).sort().reverse();
+      for(let i=0;i<fechas.length;i++){
+        const d=fechas[i], lib=libroAl(d);
+        const delDia=con.filter(function(r){
+          if(_madAlimF10(r.Fecha)!==d) return false;
+          const Tf=lib.tanques[madUbicKey(r.Sala, r.Tanque)];
+          return !!Tf && Tf.composicion.some(function(c){ return lotes.indexOf(c.lote)!==-1 && (c.machos>0 || c.hembras>0); });
+        });
+        if(!delDia.length) continue;
+        const v=delDia.map(function(r){ return madAlimNum(r[col]); });
+        return { valor:_madAlimR2(v.reduce(function(a,b){ return a+b; },0)/v.length),
+          fuente:(delDia.some(function(r){ return !r._deAlimentacion; }) ? "Biometría" : "Alimentación")+" del lote", fecha:d };
+      }
+      return null;
+    };
     const ingreso=function(col, colAnimales){
       const del=ingresos.filter(function(r){ return lotes.indexOf(_madAlimTxt(r.Lote))!==-1 && madAlimNum(r[col])!=="" && madAlimNum(r[col])>0; });
       const mismos=del.filter(function(r){ return madUbicKey(r.Sala, r.Tanque)===k; }), usar=mismos.length ? mismos : del;
@@ -13181,8 +13214,8 @@ function madAlimPesosDeReferencia(fuentes, libro){
       return { valor:_madAlimR2(valor), fuente:"Ingreso", fecha:usar.map(function(r){ return _madAlimF10(r.Fecha); }).sort().reverse()[0] || "" };
     };
     out[k]={
-      hembras:biometria("Peso promedio hembras (g)") || ingreso("Peso promedio hembras (g)", "Hembras") || vacio,
-      machos:biometria("Peso promedio machos (g)") || ingreso("Peso promedio machos (g)", "Machos") || vacio
+      hembras:biometria("Peso promedio hembras (g)") || delLote("Peso promedio hembras (g)") || ingreso("Peso promedio hembras (g)", "Hembras") || vacio,
+      machos:biometria("Peso promedio machos (g)") || delLote("Peso promedio machos (g)") || ingreso("Peso promedio machos (g)", "Machos") || vacio
     };
   });
   return out;

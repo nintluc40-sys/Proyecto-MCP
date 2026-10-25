@@ -15,11 +15,12 @@
        traía «Total de huevos», y su N2 entraba arriba sin sus huevos abajo.
    Confirmadas por el usuario el 2026-09-15: Δ = promedio del último registro de la sala menos el del registro
    anterior; CV = desviación estándar MUESTRAL de las lecturas del último registro ÷ su promedio × 100;
-   el peso es el promedio de los tanques del lote en la última fecha con peso. «Último registro» es el último
+   el peso es el promedio de los tanques del lote en la última fecha con peso (🆕 2026-10-25: el de los pesos de
+   referencia de sus tanques, ponderado por sus animales en cada uno; ver `peso` en resumenLotes). «Último registro» es el último
    que TRAE esa variable (H2): un registro de sólo estado no borra la T° del día anterior.
    ============================================================ */
 
-import { construirLibro, sumarDias, ubicKey, pesosDeAlimentacion, CUARENTENA_DIAS, ESTADO_PRODUCCION, ESTADO_CUARENTENA, ESTADO_CERRADO } from './mad-libro.js';
+import { construirLibro, sumarDias, ubicKey, CUARENTENA_DIAS, ESTADO_PRODUCCION, ESTADO_CUARENTENA, ESTADO_CERRADO } from './mad-libro.js';
 import { MAD_TANQUES_POR_SALA, MAD_SALA_TONELADAS, areaTanqueM2 } from './ficha-maduracion-ingreso.schema.js';
 import { alimPesosDeReferencia } from './ficha-maduracion-alimentacion.schema.js';
 
@@ -227,7 +228,6 @@ function resumenLotes(fuentes, libro, hoy) {
     return alDia.get(fecha);
   };
   const filasTanque = (fuentes.tanques || []).filter((r) => txt(r.Sala) && ent(r.Tanque) && esFecha(fecha10(r.Fecha)));
-  const filasPeso = filasTanque.concat(pesosDeAlimentacion(fuentes.alimentacion, fuentes.tanques));   // punto 2 (2026-10-04): SÓLO para el peso
   const desoves = acumularDesoves(fuentes.desoves);
   const trat = fuentes.tratamientos || [];
   const tons = ultimoPor(fuentes.sala, 'Sala', 'Toneladas');
@@ -248,7 +248,6 @@ function resumenLotes(fuentes, libro, hoy) {
        hoy» un lote recién entrado heredaba el peso y las mudas del lote anterior de su tanque, y el que se movió perdía
        lo pesado en su tanque de antes. Se busca de la fecha más reciente hacia atrás, sin bajar de su ingreso. */
     const candidatas = filasTanque.filter((r) => !L.ingreso || fecha10(r.Fecha) >= L.ingreso);
-    const candPeso = filasPeso.filter((r) => !L.ingreso || fecha10(r.Fecha) >= L.ingreso);
     const ultimoDia = (filas) => {
       const fechas = [...new Set(filas.map((r) => fecha10(r.Fecha)))].sort().reverse();
       for (const f of fechas) {
@@ -262,14 +261,36 @@ function resumenLotes(fuentes, libro, hoy) {
       }
       return { fecha: '', filas: [] };
     };
-    const peso = (col) => {
-      const d = ultimoDia(candPeso.filter((r) => num(r[col]) !== null && num(r[col]) > 0));
-      if (!d.fecha) return { valor: '', fecha: '' };
-      const del = d.filas.map((r) => num(r[col]));
-      return { valor: r2(del.reduce((a, b) => a + b, 0) / del.length), fecha: d.fecha };
+    /* PESO PROMEDIO DEL LOTE (auditoría de las tareas 7–12, 2026-10-25, usuario: «que cuadre con su biomasa») · el de los
+       pesos de REFERENCIA de sus tanques (`pesosRef`, los de su carga y su ración), ponderado por los animales del LOTE
+       en cada uno: así su biomasa (vivos × peso, abajo) es la suma, tanque a tanque, de sus animales por el peso de ese
+       tanque, y la de la granja cuadra con la suma de carga × área. Su fecha, la más reciente de esos pesos. Un tanque
+       sin peso de un sexo no entra en el promedio de ese sexo. Hasta entonces era el promedio SIMPLE de sus tanques en su
+       último día pesado: un tanque de 5 animales pesaba lo mismo que uno de 150. */
+    const suyos = new Map();   // ubicKey → los animales DEL LOTE en ese tanque
+    for (const T of libro.tanques.values()) {
+      for (const c of T.composicion) {
+        if (c.lote !== L.lote) continue;
+        const k = ubicKey(T.sala, T.tanque);
+        const s = suyos.get(k) || { machos: 0, hembras: 0 };
+        s.machos += c.machos;
+        s.hembras += c.hembras;
+        suyos.set(k, s);
+      }
+    }
+    const peso = (sexo) => {
+      let suma = 0, n = 0, fecha = '';
+      for (const [k, s] of suyos) {
+        const p = (pesosRef[k] || {})[sexo];
+        if (!p || p.valor === '' || !(s[sexo] > 0)) continue;
+        suma += s[sexo] * p.valor;
+        n += s[sexo];
+        if (p.fecha > fecha) fecha = p.fecha;
+      }
+      return n ? { valor: r2(suma / n), fecha } : { valor: '', fecha: '' };
     };
-    const pesoM = peso('Peso promedio machos (g)');
-    const pesoH = peso('Peso promedio hembras (g)');
+    const pesoM = peso('machos');
+    const pesoH = peso('hembras');
     /* CARGA POR TANQUE (usuario, 2026-09-15). Las dos son ESTIMACIONES, y conviene saber de qué. Las dos parten de
        la BIOMASA viva del tanque, (♀ × peso♀ + ♂ × peso♂) en gramos, con los pesos de REFERENCIA del TANQUE, los
        mismos que usa la ración de Alimentación (`alimPesosDeReferencia`): su última biometría de un día en que tenía

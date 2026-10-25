@@ -20,7 +20,7 @@
    ============================================================ */
 import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { MAD_TANQUES_POR_SALA } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
-import { sumarDias, ubicKey, pesosDeAlimentacion, CUARENTENA_DIAS, ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_MIXTO } from '../registros/lib/mad-libro.js';
+import { sumarDias, ubicKey, CUARENTENA_DIAS, ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_MIXTO } from '../registros/lib/mad-libro.js';
 import { diasEntre, RESUMEN_TEMPS, RESUMEN_OXIGENOS } from '../registros/lib/mad-resumen.js';
 import { PERIODO_DIAS, SALAS_VISIBLES, fechaDeFila, partesDePiscina, pesosDeReferencia } from './operativo.data.js';
 import { cociente, proporcionHM, densidadTanque, ocupacion, fueraDeRango, diasDesdeDesinfeccion } from './operativo.indicadores.js';
@@ -362,13 +362,17 @@ export function kpiSalas(salas, F) {
 }
 
 /**
- * BIOMASA del alcance del filtro: los vivos por su peso promedio, en kg. El peso sale de la hoja de Tanques
- * —los registros del período— PESADO por los animales que el libro tiene en cada tanque, que es el mismo criterio
- * con que la ficha de un lote reparte los promedios de sus tanques.
+ * BIOMASA del alcance del filtro: los vivos por su peso promedio, en kg. El peso es el de REFERENCIA de cada tanque
+ * (`pesosDeReferencia`: el de su carga, su ración y las columnas de pesos) PESADO por los animales que el libro tiene en
+ * cada tanque, que es el mismo criterio con que el Saldo saca el peso de un lote.
+ * 🆕 2026-10-25 (auditoría de las tareas 7–12, usuario) · hasta entonces el peso salía de los registros de la hoja de
+ * Tanques DEL PERÍODO (y lo tecleado en 🍤 Alimentación), sin mirar quién había dentro: un peso del lote anterior de un
+ * tanque contaba para los animales de hoy, y la biomasa de la granja no cuadraba con la suma de carga × área. Ahora es la
+ * FOTO del día, como la carga: el período ya no la cambia (`_periodo` se queda en la firma por quien la llama).
  * ⚠ Sin ningún peso registrado se devuelve VACÍO, no un cero: una biomasa inventada es peor que ninguna.
  * `parcial` avisa de que sólo un sexo trae peso, para que la pantalla no lo presente como el total.
  */
-export function kpiBiomasa(M, F, periodo) {
+export function kpiBiomasa(M, F, _periodo) {
   const libro = (M && M.libro) || { posiciones: [] };
   const solo = (F || {}).sexo || '';
   const porTanque = new Map();
@@ -384,23 +388,13 @@ export function kpiBiomasa(M, F, periodo) {
   let pmDen = 0;
   let phNum = 0;
   let phDen = 0;
-  for (const r of ((M || {}).fuentes || {}).tanques || []) {
-    const c = porTanque.get(ubicKey(r.Sala, ent(r.Tanque)));
-    if (!c || !enPeriodo(fechaDeFila('tanques', r), periodo)) continue;
-    const pm = num(r['Peso promedio machos (g)']);
-    const ph = num(r['Peso promedio hembras (g)']);
+  // Lo tecleado en 🍤 Alimentación (punto 2, 2026-10-04) sigue contando: `alimPesosDeReferencia` lo lee.
+  const refs = pesosDeReferencia(M);
+  for (const [uk, c] of porTanque) {
+    const pm = num(((refs[uk] || {}).machos || {}).valor);
+    const ph = num(((refs[uk] || {}).hembras || {}).valor);
     if (pm !== null && c.machos > 0) { pmNum += pm * c.machos; pmDen += c.machos; }
     if (ph !== null && c.hembras > 0) { phNum += ph * c.hembras; phDen += c.hembras; }
-  }
-  /* Punto 2 (2026-10-04, usuario) · un peso tecleado a mano en 🍤 Alimentación cuenta como del tanque; el MISMO día manda
-     Tanques (`pesosDeAlimentacion` ya lo quita). SÓLO el peso: esas filas no son partes. */
-  for (const r of pesosDeAlimentacion(((M || {}).fuentes || {}).alimentacion, ((M || {}).fuentes || {}).tanques)) {
-    const c = porTanque.get(ubicKey(r.Sala, ent(r.Tanque)));
-    if (!c || !enPeriodo(fechaDeFila('tanques', r), periodo)) continue;
-    const pm = num(r['Peso promedio machos (g)']);
-    const ph = num(r['Peso promedio hembras (g)']);
-    if (pm !== null && c.machos > 0) { pmDen += c.machos; pmNum += c.machos * pm; }
-    if (ph !== null && c.hembras > 0) { phDen += c.hembras; phNum += c.hembras * ph; }
   }
   const r2 = (n) => Math.round(n * 100) / 100;
   const v = sumarVivos([...porTanque.values()]);
@@ -820,8 +814,10 @@ function variableDeSala(filasSala, sala, columnas, id, R, hasta) {
  *  mismo que el Saldo: aquí no se recalcula nada) y de sus vivos en la sala (`l`): la mortalidad acumulada y la del
  *  último día (las del LOTE entero —el libro no las lleva por sala—; `variasSalas` lo avisa), las cargas de SUS tanques
  *  en ESA sala (promedio con mínimo y máximo) y la biomasa de sus animales en la sala por sus últimos pesos (la de los
- *  tanques contaría dos veces un tanque que comparte con otro lote). Sin ningún peso, biomasa y cargas vacías. */
-function saldoDeLoteEnSala(L, sala, l) {
+ *  tanques contaría dos veces un tanque que comparte con otro lote). Sin ningún peso, biomasa y cargas vacías.
+ *  🆕 2026-10-25 (auditoría de las tareas 7–12, usuario) · esos pesos son los de REFERENCIA de cada tanque donde está
+ *  (`pesosDeReferencia`, los de su carga), ponderados por SUS animales en cada uno: antes, el peso medio del lote entero. */
+function saldoDeLoteEnSala(L, sala, l, M) {
   const r2 = (n) => Math.round(n * 100) / 100;
   const resume = (vals) => {
     const v = vals.filter((x) => x !== '' && x !== null && x !== undefined && isFinite(x));
@@ -833,8 +829,20 @@ function saldoDeLoteEnSala(L, sala, l) {
       cargaVolumetrica: resume([]), cargaVolumetricaEstado: '', biomasa: '' };
   }
   const tanques = (L.tanques || []).filter((t) => t.sala === sala);
-  const pH = (L.pesoHembras || {}).valor;
-  const pM = (L.pesoMachos || {}).valor;
+  const refs = pesosDeReferencia(M);
+  const suyas = (((M || {}).libro || {}).posiciones || []).filter((p) => p.lote === l.lote && p.sala === sala && vivo(p));
+  const pesoEnSala = (sexo) => {   // el promedio de los pesos de sus tanques en la sala, ponderado por SUS animales
+    let s = 0, n = 0;
+    for (const p of suyas) {
+      const v = ((refs[ubicKey(p.sala, p.tanque)] || {})[sexo] || {}).valor;
+      if (v === '' || v === undefined || !(ent(p[sexo]) > 0)) continue;
+      s += ent(p[sexo]) * v;
+      n += ent(p[sexo]);
+    }
+    return n ? s / n : '';
+  };
+  const pH = pesoEnSala('hembras');
+  const pM = pesoEnSala('machos');
   const mortDia = (L.tasaMortalidadDia || {}).total;
   /* 2026-10-22 (usuario) · los semáforos de la mortalidad del día y de las cargas. El de las cargas mira CADA tanque, no
      el promedio: un tanque pasado de carga avisa aunque el promedio de la sala quede dentro. */
@@ -891,7 +899,7 @@ export function tarjetasDeSalas(M, F) {
       desinfeccion: desinf[sala],
       lotes: [...porLote.values()].sort((a, b) => porNombre(a.lote, b.lote))
         .map((l) => ({ ...l, dias: (diasDeLote.get(l.lote) || []).find((d) => d.sala === sala) || null,
-          saldo: saldoDeLoteEnSala(saldoDe.get(l.lote), sala, l) })),
+          saldo: saldoDeLoteEnSala(saldoDe.get(l.lote), sala, l, M) })),
       tratamientos: R ? R.tratamientos : [],
     };
   });

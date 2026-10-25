@@ -149,6 +149,21 @@ describe('Alimentación · animales y pesos desde el libro', () => {
       hembras: { valor: 35, fuente: 'Ingreso', fecha: '2026-01-01' }, machos: { valor: 30, fuente: 'Ingreso', fecha: '2026-01-01' } });
   });
 
+  it('🔴 2026-10-25 · un lote MOVIDO lleva su peso: la última biometría de su lote donde estaba, antes que el Ingreso', () => {
+    /* Auditoría de las tareas 7–12 (usuario: «su último peso, para todo»). Como arriba, pero Y se pesa el 01-07 en el
+       tanque 3 (33 g ♂, 38 g ♀), antes de pasar al 4: el tanque 4 no tiene biometría con Y, así que lleva la de Y donde
+       estaba —«Biometría del lote»—, no su Ingreso del 01-01 (30/35). Y en cuanto el 4 se pesa con Y, manda la suya. */
+    const g = MOVIDO();
+    g.tanques.push(tq('2026-01-07', 'Sala 1', 3, 33, 38));
+    expect(alimPesosDeReferencia(g, construirLibro(g, { hoy: '2026-01-10' }))['Sala 1|4']).toEqual({
+      hembras: { valor: 38, fuente: 'Biometría del lote', fecha: '2026-01-07' }, machos: { valor: 33, fuente: 'Biometría del lote', fecha: '2026-01-07' } });
+    g.tanques.push(tq('2026-01-09', 'Sala 1', 4, 36, ''));
+    const P2 = alimPesosDeReferencia(g, construirLibro(g, { hoy: '2026-01-10' }))['Sala 1|4'];
+    expect([P2.machos, P2.hembras]).toEqual([{ valor: 36, fuente: 'Biometría', fecha: '2026-01-09' },
+      { valor: 38, fuente: 'Biometría del lote', fecha: '2026-01-07' }]);   // la ♀ del 4 aún no se pesó: sigue la del lote
+    // la biometría de X en el 4 (01-05, 80/90) sigue sin contar: ese día el 4 no tenía a Y
+  });
+
   it('el Ingreso se pondera por animales cuando hay varias filas del lote', () => {
     const g = FUENTES();
     g.ingresos.push(ing('2026-01-21', 'B', 'Sala 2', 17, 10, 30, 40, 50));
@@ -267,7 +282,9 @@ describe('Alimentación · el monolito y el módulo dan lo mismo', () => {
   });
 
   it('🔴 los mismos animales, pesos, población y agendas desde el libro', () => {
-    for (const f of [FUENTES(), Object.assign(FUENTES(), { tanques: [] }), { ingresos: [], tanques: [] }, MOVIDO(), CON_ALIM()]) {
+    // 2026-10-25 · y el lote movido con biometría donde estaba (la regla «del lote»), para que la rama nueva también se compare
+    const movidoPesado = () => Object.assign(MOVIDO(), { tanques: MOVIDO().tanques.concat([tq('2026-01-07', 'Sala 1', 3, 33, 38)]) });
+    for (const f of [FUENTES(), Object.assign(FUENTES(), { tanques: [] }), { ingresos: [], tanques: [] }, MOVIDO(), CON_ALIM(), movidoPesado()]) {
       const libroMod = construirLibro(f, { hoy: '2026-01-25' });
       const libroEng = api.madConstruirLibro(f, { hoy: '2026-01-25' });
       expect(jj(api.madAlimTanquesDelLibro(libroEng))).toEqual(jj(alimTanquesDelLibro(libroMod)));

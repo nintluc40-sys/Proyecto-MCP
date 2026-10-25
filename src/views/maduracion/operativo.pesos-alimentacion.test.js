@@ -92,14 +92,17 @@ describe('Punto 2 · el MCP lee el peso de las dos fichas', () => {
     expect(t(2)).toEqual({ machos: { valor: 22, fuente: 'Alimentación', fecha: '2026-09-14' }, hembras: { valor: 33.5, fuente: 'Alimentación', fecha: '2026-09-14' } });
   });
 
-  it('🔴 KPI de biomasa: los pesos del período ponderados, con las muestras de Alimentación', () => {
-    // ♀: t1 70 y 75 (×40 cada uno) y t2 33,5 (×20) → (2800 + 3000 + 670) ÷ 100 = 64,7
-    // ♂: t1 50, 58 y 60 (×30) y t2 22 (×10) → (1500 + 1740 + 1800 + 220) ÷ 100 = 52,6 · sin Alimentación: 70 y 55
-    // (el ♀44 del 25/09 queda fuera del período)
+  it('🔴 KPI de biomasa: los pesos de REFERENCIA de cada tanque, ponderados, con las muestras de Alimentación', () => {
+    /* 2026-10-25 (auditoría de las tareas 7–12, usuario) · el peso de cada tanque es el de referencia (el de su carga),
+       ponderado por sus animales; antes, todas las muestras del período (64,7 y 52,6, y sin Alimentación 70 y 55).
+       ♀: t1 75 (Alimentación del 12/09, la más reciente) ×40 y t2 33,5 ×20 → (3000 + 670) ÷ 60 = 61,17
+       ♂: t1 60 (Tanques del 12/09; el 99 tecleado ese día no cuenta) ×30 y t2 22 ×10 → (1800 + 220) ÷ 40 = 50,5
+       Sin Alimentación: el t2 no tiene peso, y el t1 da 70 (10/09) y 60. El ♀44 del 25/09 sigue fuera: es posterior a
+       la foto. */
     const k = kpiBiomasa(M, SIN, P);
-    expect([k.pesoHembras, k.pesoMachos]).toEqual([64.7, 52.6]);
+    expect([k.pesoHembras, k.pesoMachos]).toEqual([61.17, 50.5]);
     const k0 = kpiBiomasa(M0, SIN, P);
-    expect([k0.pesoHembras, k0.pesoMachos]).toEqual([70, 55]);
+    expect([k0.pesoHembras, k0.pesoMachos]).toEqual([70, 60]);
   });
 
   it('🔴 promedios del LOTE en el período, con las muestras de Alimentación', () => {

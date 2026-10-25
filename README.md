@@ -498,8 +498,10 @@ En **🏠 Salas**, la columna `RAS` dice **en qué porcentaje** usa el RAS esa s
 **🍤 Alimentación** es la única ficha que no registra lo ocurrido sino lo que hay que dar: por
 sala se define una agenda de tomas (hora · alimento · % de biomasa) y la ración sale de
 `biomasa (♀+♂) × % ÷ 100`, con los animales del libro mayor y el peso de la biometría de
-Tanques del lote en ese tanque (si no hay, del Ingreso ponderado; y siempre se puede teclear
-a mano). La agenda se comparte por la columna `Tomas` de la última fila de la sala, así que
+Tanques del lote en ese tanque (si no hay, la última de esos lotes en el tanque donde estaban —desde el
+2026-10-25: un lote movido lleva su peso—; si tampoco, del Ingreso ponderado; y siempre se puede teclear
+a mano). Esos mismos pesos de referencia son los de la carga de cada tanque, las columnas de pesos de 🛢 Tanques
+y 🏠 Salas, el peso del lote en el Saldo (ponderado por sus animales en cada tanque) y las biomasas del tablero. La agenda se comparte por la columna `Tomas` de la última fila de la sala, así que
 un dispositivo que lee la hoja adopta la del resto salvo que tenga cambios sin guardar.
 Como las demás, sólo envía al **GAS de esta app** (compara el sello): sin él calcula pero no envía.
 
@@ -522,8 +524,8 @@ suben**. Decisiones del usuario del 2026-09-18:
 - Una última columna de pesos distinta del corte **se avisa**, no bloquea.
 - Sube el Excel **cualquiera que entre al módulo de Maduración**.
 
-**El Saldo estima la carga de cada tanque:** la **métrica en g/m²** —la biomasa (♀ + ♂ con sus últimos
-pesos) entre el ÁREA del tanque (`MAD_TANQUE_AREA_M2`: una por sala, y la Sala 5 tanque a tanque)— y la
+**El Saldo estima la carga de cada tanque:** la **métrica en g/m²** —la biomasa (♀ + ♂ con los pesos de
+referencia del tanque, los de la ración) entre el ÁREA del tanque (`MAD_TANQUE_AREA_M2`: una por sala, y la Sala 5 tanque a tanque)— y la
 **volumétrica en kg/m³**, entre las toneladas de un tanque de su sala. Sin área o sin pesos, vacía.
 (La Sala 5 lleva 13 t en todos sus tanques, también en los de 27 m²: confirmado por el usuario el 2026-09-18.)
 

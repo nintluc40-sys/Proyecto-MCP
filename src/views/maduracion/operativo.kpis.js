@@ -238,12 +238,13 @@ export function graficoReproduccion(filasDesoves, periodo, F) {
   };
 }
 
-/** BIOMASA · ♀ y ♂ de cada sala, con la regla de la tarjeta (`kpiBiomasa`) aplicada sala por sala. Sin ningún peso en el
- *  período, no hay nada que enseñar (una biomasa inventada es peor que ninguna). */
+/** BIOMASA · ♀ y ♂ de cada sala, con la regla de la tarjeta (`kpiBiomasa`) aplicada sala por sala. Sin ningún peso, no
+ *  hay nada que enseñar (una biomasa inventada es peor que ninguna). 2026-10-25: los pesos son los de referencia de cada
+ *  tanque (la foto del día), no los del período. */
 export function graficoBiomasa(M, F, periodo) {
   const salas = SALAS_VISIBLES.filter((s) => salaElegida(s, F));
   const filas = salas.map((sala) => ({ sala, ...kpiBiomasa(M, { ...F, salas: [sala] }, periodo) }));
-  if (filas.every((f) => vacio(f.totalKg))) return noAplica('Sin pesos registrados en el período: no hay biomasa que enseñar.');
+  if (filas.every((f) => vacio(f.totalKg))) return noAplica('Sin pesos registrados: no hay biomasa que enseñar.');
   const kg = (v) => (vacio(v) ? null : v);
   return {
     aplica: true, tipo: 'barrasApiladas', unidad: 'kg', etiquetas: salas,

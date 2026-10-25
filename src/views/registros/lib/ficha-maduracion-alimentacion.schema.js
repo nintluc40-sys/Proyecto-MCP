@@ -217,8 +217,10 @@ export function alimTanquesDelLibro(libro) {
 }
 
 /** Peso de referencia por tanque y sexo: última biometría de Tanques de un día en que el tanque tenía alguno de sus
-    lotes de hoy; si no la hay, el de Ingreso de esos lotes (el del mismo tanque si existe; si no, de todo el lote),
-    ponderado por animales. → { [ubicKey]: { hembras: {valor, fuente, fecha}, machos: {…} } } */
+    lotes de hoy; si no la hay, 🆕 la última de ESOS lotes en el tanque donde estaban ese día («… del lote», 2026-10-25);
+    y si tampoco, el de Ingreso de esos lotes (el del mismo tanque si existe; si no, de todo el lote), ponderado por
+    animales. → { [ubicKey]: { hembras: {valor, fuente, fecha}, machos: {…} } }
+    Es también el peso de su carga, de las columnas de pesos de 🛢 Tanques y 🏠 Salas y de las biomasas del tablero. */
 export function alimPesosDeReferencia(fuentes, libro) {
   const f = fuentes || {};
   const alDia = new Map();
@@ -250,6 +252,28 @@ export function alimPesosDeReferencia(fuentes, libro) {
       }
       return null;
     };
+    /* 🆕 2026-10-25 (auditoría de las tareas 7–12, usuario: «su último peso, para todo») · sin biometría del tanque con
+       sus lotes, la última de ESOS lotes en el tanque donde estaban ese día: un lote MOVIDO lleva consigo su peso. Antes
+       caía al de Ingreso, a veces de un mes atrás (medido el 2026-10-24: dos tanques reales, con el Ingreso del 13/09
+       cuando sus animales se habían pesado el 13/10 en otro tanque). Es la regla H1 del Saldo, aplicada a los lotes del
+       tanque; el propio tanque ya lo mira `biometria`. */
+    const delLote = (col) => {
+      const con = filasTq.filter((r) => fecha10(r.Fecha) >= desde && ubicKey(r.Sala, r.Tanque) !== k && alimNum(r[col]) !== '' && alimNum(r[col]) > 0);
+      const fechas = [...new Set(con.map((r) => fecha10(r.Fecha)))].sort().reverse();
+      for (const d of fechas) {
+        const lib = libroAl(d);
+        const delDia = con.filter((r) => {
+          if (fecha10(r.Fecha) !== d) return false;
+          const Tf = lib.tanques.get(ubicKey(r.Sala, r.Tanque));
+          return !!Tf && Tf.composicion.some((c) => lotes.indexOf(c.lote) !== -1 && (c.machos > 0 || c.hembras > 0));
+        });
+        if (!delDia.length) continue;
+        const v = delDia.map((r) => alimNum(r[col]));
+        return { valor: r2(v.reduce((a, b) => a + b, 0) / v.length),
+          fuente: (delDia.some((r) => !r._deAlimentacion) ? 'Biometría' : 'Alimentación') + ' del lote', fecha: d };
+      }
+      return null;
+    };
     const ingreso = (col, colAnimales) => {
       const del = ingresos.filter((r) => lotes.indexOf(txt(r.Lote)) !== -1 && alimNum(r[col]) !== '' && alimNum(r[col]) > 0);
       const mismos = del.filter((r) => ubicKey(r.Sala, r.Tanque) === k);
@@ -262,8 +286,8 @@ export function alimPesosDeReferencia(fuentes, libro) {
       return { valor: r2(valor), fuente: 'Ingreso', fecha: usar.map((r) => fecha10(r.Fecha)).sort().reverse()[0] || '' };
     };
     out[k] = {
-      hembras: biometria('Peso promedio hembras (g)') || ingreso('Peso promedio hembras (g)', 'Hembras') || vacio,
-      machos: biometria('Peso promedio machos (g)') || ingreso('Peso promedio machos (g)', 'Machos') || vacio,
+      hembras: biometria('Peso promedio hembras (g)') || delLote('Peso promedio hembras (g)') || ingreso('Peso promedio hembras (g)', 'Hembras') || vacio,
+      machos: biometria('Peso promedio machos (g)') || delLote('Peso promedio machos (g)') || ingreso('Peso promedio machos (g)', 'Machos') || vacio,
     };
   }
   return out;

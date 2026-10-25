@@ -197,24 +197,28 @@ describe('Resumen · lotes', () => {
     ]);
     expect(lote('CD').dias).toEqual([{ sala: 'Sala 1', estado: 'Cuarentena', diasCuarentena: 12, diasProduccion: 0 }]);
   });
-  it('🔴 relación H:M de cada tanque y peso del último registro (promedio de sus tanques ese día)', () => {
+  it('🔴 relación H:M de cada tanque, su carga y el peso del lote (el de sus tanques, ponderado por sus animales)', () => {
     /* Las cargas van con la relación porque salen de las mismas dos cifras. A mano, con los pesos de CADA TANQUE
        (tarea 7 de la ronda 6, 2026-10-24: los de la ración, `alimPesosDeReferencia`), el ÁREA del tanque (D16) y las
        toneladas de CADA tanque de su sala:
          · Sala 1 t1, su biometría del 01-30 (♂ 42 g · ♀ 58 g) → 67×58 + 28×42 = 5062 g ÷ 13,14 m² = 385,24 g/m²
            · 5,06 kg ÷ 5,5 m³ = 0,92 kg/m³
-         · Sala 2 t3, su biometría del 01-30 (sólo ♀ 60 g; sin peso de ♂ propio ni de Ingreso, sus ♂ cuentan 0, como en
-           la ración) → 39×60 + 9×0 = 2340 g ÷ 50 m² = 46,8 g/m² · 2,34 kg ÷ 21 m³ = 0,11 kg/m³
-       🔑 El peso del LOTE es otro (♂ 42 · ♀ 59, el promedio de sus dos tanques, abajo): con él salían 390,33 y 53,58,
-       distintos de los de arriba, así que esta prueba distingue la regla de ahora de la de antes.
+         · Sala 2 t3, su biometría del 01-30 (sólo ♀ 60 g); sus ♂ no tienen peso propio, y desde el 2026-10-25 llevan la
+           última biometría de su lote donde estaba (AB en la Sala 1 t1 el 01-30: ♂ 42 g, «Biometría del lote»)
+           → 39×60 + 9×42 = 2718 g ÷ 50 m² = 54,36 g/m² · 2,72 kg ÷ 21 m³ = 0,13 kg/m³
        Las dos salas llevan áreas y volúmenes MUY distintos a propósito: con los mismos, tomar los de
        la sala equivocada daría lo mismo y esta prueba no probaría nada. Y 385,24 —no 385,08— fija que
-       se divide la biomasa EXACTA, no los 5,06 kg ya redondeados. */
+       se divide la biomasa EXACTA, no los 5,06 kg ya redondeados.
+       🔑 El PESO DEL LOTE (2026-10-25, usuario: «que cuadre con su biomasa») es el de sus tanques ponderado por SUS
+       animales: ♂ 42 (sólo la Sala 1 t1 trae peso de ♂ propio; la Sala 2 t3, el del lote, también 42) y
+       ♀ (49 × 58 + 39 × 60) ÷ 88 = 58,89. Antes era el promedio SIMPLE de sus tanques en su último día pesado: ♀ 59. */
     expect(lote('AB').tanques).toEqual([
       { sala: 'Sala 1', tanque: 1, machos: 28, hembras: 67, relacion: 2.39, cargaMetrica: 385.24, area: 13.14, volumen: 5.5, cargaVolumetrica: 0.92 },
-      { sala: 'Sala 2', tanque: 3, machos: 9, hembras: 39, relacion: 4.33, cargaMetrica: 46.8, area: 50, volumen: 21, cargaVolumetrica: 0.11 },
+      { sala: 'Sala 2', tanque: 3, machos: 9, hembras: 39, relacion: 4.33, cargaMetrica: 54.36, area: 50, volumen: 21, cargaVolumetrica: 0.13 },
     ]);
-    expect([lote('AB').pesoMachos, lote('AB').pesoHembras]).toEqual([{ valor: 42, fecha: '2026-01-30' }, { valor: 59, fecha: '2026-01-30' }]);
+    expect([lote('AB').pesoMachos, lote('AB').pesoHembras]).toEqual([{ valor: 42, fecha: '2026-01-30' }, { valor: 58.89, fecha: '2026-01-30' }]);
+    // y su biomasa = vivos × ese peso: 27 × 42 = 1,13 kg y 88 × 58,89 = 5,18 kg
+    expect(lote('AB').biomasa).toEqual({ machos: 1.13, hembras: 5.18, total: 6.31 });
   });
 
   it('🔴 tarea 7 (ronda 6) · un tanque COMPARTIDO tiene UNA carga: la misma en sus dos lotes', () => {
@@ -225,7 +229,7 @@ describe('Resumen · lotes', () => {
     const cd = lote('CD').tanques.find((t) => t.sala === 'Sala 1' && t.tanque === 1);
     expect([cd.cargaMetrica, cd.cargaVolumetrica]).toEqual([385.24, 0.92]);
     expect([cd.cargaMetrica, cd.cargaVolumetrica]).toEqual([ab.cargaMetrica, ab.cargaVolumetrica]);
-    expect(lote('AB').pesoHembras.valor, 'el peso del LOTE no cambia: es otro dato').toBe(59);
+    expect(lote('AB').pesoHembras.valor, 'el peso del LOTE: el de sus tanques ponderado por sus animales (arriba)').toBe(58.89);
   });
 
   it('🔑 sin ningún peso registrado, la carga queda VACÍA y no en cero', () => {
@@ -246,7 +250,7 @@ describe('Resumen · lotes', () => {
     const R = resumenMaduracion(f, { hoy: '2026-02-01' });
     const t = R.lotes.find((x) => x.lote === 'AB').tanques.find((x) => x.sala === 'Sala 2');
     expect(t.volumen).toBe(10.5);
-    expect(t.cargaVolumetrica).toBe(0.22);                       // 2,34 ÷ 10,5 (los pesos del t3: arriba)
+    expect(t.cargaVolumetrica).toBe(0.26);                       // 2,72 ÷ 10,5 (los pesos del t3: arriba)
     const s2 = R.salas.find((x) => x.sala === 'Sala 2');
     expect([s2.toneladas, s2.fechaToneladas, s2.volumenTanque, s2.tanquesSala]).toEqual([10.5, '2026-01-31', 10.5, 6]);
   });

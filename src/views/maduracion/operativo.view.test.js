@@ -380,6 +380,9 @@ describe('Maduración · operativo · 0f · 4 · ⏳ la cuarentena por lote y sa
    PLANTA, QB (Sala 4, 8♂ 8♀) pesa aquí 30 g ♂ y 40 g ♀; QA está en las Salas 1 y 2 y no tiene pesos. */
 describe('Maduración · operativo · 0f · 6 · 🏠 Salas con lo del Saldo por lote', () => {
   const PLANTA_S = [...PLANTA, TQ('18/09/2026', 'Sala 4', 1, { 'Peso promedio machos (g)': 30, 'Peso promedio hembras (g)': 40 })];
+  /* 2026-10-25 (auditoría de las tareas 7–12) · QW, en la Sala 5, no tiene ningún peso en NINGÚN sitio: es el caso «sin
+     pesos». QD ya no lo es: comparte el t16 con QA, cuyos animales se pesaron en la Sala 1, y su tanque lleva ese peso. */
+  const QW = ING('01/08/2026', 'QW', 'Sala 5', 9, 4, 4, 'CW');
   const abrirSalas = () => click(root.querySelector('[data-mop-sub="salas"]'));
   /* Cada lote es un bloque (no una tabla: con las cinco tarjetas en fila, la tabla escondía columnas); `data-v` nombra
      cada cifra. */
@@ -397,7 +400,7 @@ describe('Maduración · operativo · 0f · 6 · 🏠 Salas con lo del Saldo por
   });
 
   it('🔴 con pesos: biomasa y cargas con su unidad; sin pesos, «—» (no un cero)', async () => {
-    await montar(PLANTA_S);
+    await montar([...PLANTA_S, QW]);
     abrirSalas();
     expect(v('Sala 4', 'QB', 'vivos')).toBe('8 ♀ / 8 ♂');
     expect(v('Sala 4', 'QB', 'bio')).toBe('0,56 kg');                          // (8 × 40 + 8 × 30) g
@@ -406,8 +409,11 @@ describe('Maduración · operativo · 0f · 6 · 🏠 Salas con lo del Saldo por
     // Cada carga en SU sitio: la métrica va en g/m² y la volumétrica en kg/m³, así que la primera sale muy por encima.
     const n = (t) => Number(t.split(' ')[0].replace(/\./g, '').replace(',', '.'));
     expect(n(v('Sala 4', 'QB', 'cmet')) > 10 * n(v('Sala 4', 'QB', 'cvol')), `${v('Sala 4', 'QB', 'cmet')} frente a ${v('Sala 4', 'QB', 'cvol')}`).toBe(true);
-    // QD (Sala 2) no tiene ningún peso registrado. (QA sí: los machos de su tanque de la Sala 1 pesan 32 g.)
-    expect([v('Sala 2', 'QD', 'cvol'), v('Sala 2', 'QD', 'cmet'), v('Sala 2', 'QD', 'bio')]).toEqual(['—', '—', '—']);
+    // QD (Sala 2) no tiene ningún peso propio, pero comparte el t16 con QA, cuyos machos se pesaron en la Sala 1 (32 g):
+    // desde el 2026-10-25 su tanque lleva el último peso de sus lotes («Biometría del lote»), y QD sale con cifras.
+    expect(v('Sala 2', 'QD', 'bio')).toBe('0,1 kg');                           // 3 ♂ × 32 g (sus ♀, sin peso)
+    // QW (Sala 5) no tiene ningún peso en ningún sitio: «—», no un cero.
+    expect([v('Sala 5', 'QW', 'cvol'), v('Sala 5', 'QW', 'cmet'), v('Sala 5', 'QW', 'bio')]).toEqual(['—', '—', '—']);
   });
 
   it('🔴 un lote en dos salas lleva su asterisco y la nota dice que la mortalidad es del lote entero', async () => {
@@ -433,7 +439,7 @@ describe('Maduración · operativo · 0f · 6 · 🏠 Salas con lo del Saldo por
   /* 2026-10-22 (usuario) · los semáforos de la mortalidad del día y de las cargas, con el umbral del laboratorio en el
      globo. QH en la Sala 1 (13,14 m² y 5,5 t por tanque), con 40 g ♂ y 50 g ♀ y 15 machos muertos el 18/09: el tanque 2
      (150♂ 150♀) pasa de las dos cargas, y el 3 (100♂ 100♀, 685 g/m² y 1,64 kg/m³) sólo de la métrica. QB (Sala 4)
-     queda dentro de todo; QD (Sala 2) no tiene pesos.
+     queda dentro de todo; QW (Sala 5) no tiene pesos (2026-10-25: antes era QD, que ahora lleva el peso de QA).
      Tarea 7 (ronda 6, 2026-10-24) · cada tanque con SUS pesos (los de la ración): el 3 lleva los suyos, los mismos. */
   const PLANTA_U = [...PLANTA_S,
     ING('01/08/2026', 'QH', 'Sala 1', 2, 150, 150), ING('01/08/2026', 'QH', 'Sala 1', 3, 100, 100),
@@ -443,7 +449,7 @@ describe('Maduración · operativo · 0f · 6 · 🏠 Salas con lo del Saldo por
   const puntos = (el) => [...el.querySelectorAll('.mop-dot')].map((i) => [i.classList.contains('is-alto') ? 'alto' : i.classList.contains('is-ok') ? 'ok' : '?', i.title]);
 
   it('🔴 la tarjeta: un punto junto a la mortalidad del día y a cada carga, con el umbral del laboratorio', async () => {
-    await montar(PLANTA_U);
+    await montar([...PLANTA_U, QW]);
     abrirSalas();
     const qh = puntos(bloque('Sala 1', 'QH'));
     expect(qh.map((p) => p[0])).toEqual(['alto', 'alto', 'alto']);
@@ -451,7 +457,7 @@ describe('Maduración · operativo · 0f · 6 · 🏠 Salas con lo del Saldo por
     expect(qh[1][1]).toContain('≤ 1,8 kg/m³');
     expect(qh[2][1]).toContain('≤ 640 g/m²');
     expect(puntos(bloque('Sala 4', 'QB')).map((p) => p[0])).toEqual(['ok', 'ok', 'ok']);
-    expect(puntos(bloque('Sala 2', 'QD')).filter((p) => /m²|m³/.test(p[1])), 'sin pesos, las cargas no llevan punto').toEqual([]);
+    expect(puntos(bloque('Sala 5', 'QW')).filter((p) => /m²|m³/.test(p[1])), 'sin pesos, las cargas no llevan punto').toEqual([]);
     expect(errSpy).not.toHaveBeenCalled();
   });
 

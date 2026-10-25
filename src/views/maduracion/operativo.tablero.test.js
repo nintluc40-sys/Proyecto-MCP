@@ -26,7 +26,7 @@ import { modeloOperativo, serieDiaria, diasDeTanque, SALAS_VISIBLES } from './op
 import { MAD_OP_HOJAS, MAD_OP_ORIGEN } from './operativo.fuentes.js';
 import { sumarDias } from '../registros/lib/mad-libro.js';
 import { RESUMEN_TEMPS, RESUMEN_OXIGENOS } from '../registros/lib/mad-resumen.js';
-import { MAD_TANQUES_POR_SALA } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
+import { MAD_TANQUES_POR_SALA, areaTanqueM2 } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
 import { UMBRALES } from './operativo.umbrales.js';
 
 /* Filas como llegan al store (origen «Maduracion», con la firma de su hoja). */
@@ -522,6 +522,38 @@ describe('Maduración · tablero · las salas con lo del Saldo, por lote (0f · 
     expect(loteEn('Sala 4', 'QB').saldo.biomasa).toBe(0.56);                   // (8 × 40 + 8 × 30) g
     expect(loteEn('Sala 1', 'QX').saldo.biomasa, 'sólo los de la Sala 1, con la muerta descontada').toBe(1.47);   // (29 × 30 + 30 × 20) g
     expect(loteEn('Sala 5', 'QX').saldo.biomasa).toBe(0.21);                   // (5 × 30 + 3 × 20) g: dos machos murieron
+  });
+
+  /* 2026-10-25 (auditoría de las tareas 7–12, usuario: alinear las biomasas con los pesos de cada tanque) · QV está en tres
+     tanques con pesos DISTINTOS: en la Sala 1, el t4 (10♂ 10♀; 20 g ♂ y 30 g ♀ el 18/09, y antes 10/15 el 15/09) y el t5
+     (20♂ 20♀; 40 y 60); en la Sala 4, el t2 (10♂ 10♀; 100 y 120). Cada biomasa es la suma, tanque a tanque, de sus
+     animales por el peso de referencia de ESE tanque (el último):
+       Sala 1 · ♀ 10 × 30 + 20 × 60 = 1500 g · ♂ 10 × 20 + 20 × 40 = 1000 g → 2,5 kg
+       el lote · y la Sala 4: ♀ + 1200 = 2700 g · ♂ + 1000 = 2000 g → 4,7 kg
+     Cada regla VIEJA daba otra cifra, así que la prueba las distingue: la Sala 1 con el peso del lote entero (♀ 67,5,
+     ♂ 50) saldría 3,53 kg; el Saldo, con el promedio simple de sus tanques (♀ 70, ♂ 53,33), 4,93; y el KPI, con
+     todas las pesadas del período (también la del 15/09), ♀ 57 en vez de 67,5. */
+  it('🔴 2026-10-25 · las tres biomasas, con los pesos de CADA tanque, cuadran entre sí y con las cargas', () => {
+    const MV = modeloOperativo([...PLANTA,
+      ING('2026-08-01', 'QV', 'Sala 1', 4, 10, 10), ING('2026-08-01', 'QV', 'Sala 1', 5, 20, 20), ING('2026-08-01', 'QV', 'Sala 4', 2, 10, 10),
+      TQ('2026-09-15', 'Sala 1', 4, { 'Peso promedio machos (g)': 10, 'Peso promedio hembras (g)': 15 }),
+      TQ('2026-09-18', 'Sala 1', 4, { 'Peso promedio machos (g)': 20, 'Peso promedio hembras (g)': 30 }),
+      TQ('2026-09-18', 'Sala 1', 5, { 'Peso promedio machos (g)': 40, 'Peso promedio hembras (g)': 60 }),
+      TQ('2026-09-18', 'Sala 4', 2, { 'Peso promedio machos (g)': 100, 'Peso promedio hembras (g)': 120 }),
+    ], { hoy: FOTO, fecha: FOTO });
+    const L = MV.resumen.lotes.find((x) => x.lote === 'QV');
+    // el Saldo: su peso, ponderado por sus animales (♀ 2700 ÷ 40 = 67,5; ♂ 2000 ÷ 40 = 50), y su biomasa = vivos × peso
+    expect([L.pesoHembras.valor, L.pesoMachos.valor]).toEqual([67.5, 50]);
+    expect(L.biomasa.total).toBe(4.7);
+    // 🏠 Salas: la de sus animales en ESA sala, con los pesos de SUS tanques de la sala
+    const enSala = (s) => tarjetasDeSalas(MV, SIN).find((t) => t.sala === s).lotes.find((l) => l.lote === 'QV').saldo.biomasa;
+    expect([enSala('Sala 1'), enSala('Sala 4')]).toEqual([2.5, 2.2]);
+    // el KPI, filtrado a QV: la del lote, y cuadra con la suma de las salas
+    const k = kpiBiomasa(MV, normalizarFiltro({ lote: 'QV' }), periodoDe('7d', FOTO, MV.fuentes));
+    expect([k.totalKg, k.pesoHembras, k.pesoMachos]).toEqual([4.7, 67.5, 50]);
+    // y las cargas de sus tres tanques (sólo suyos) × su área dan esa misma biomasa
+    const deCargas = L.tanques.reduce((s, t) => s + t.cargaMetrica * areaTanqueM2(t.sala, t.tanque), 0) / 1000;
+    expect(deCargas).toBeCloseTo(4.7, 1);
   });
 
   it('🔴 las cargas: el PROMEDIO de sus tanques en ESA sala, con el mínimo y el máximo (las del Saldo por tanque)', () => {

@@ -560,9 +560,9 @@ function estadoHTML(M, memo, p, F) {
       definicion('ocupacion'), 'ocupacion'),
     mort, repro,
     tile('Biomasa', b.totalKg === '' ? '—' : nf(b.totalKg, 2) + ' kg',
-      b.totalKg === '' ? 'sin pesos registrados en el período'
+      b.totalKg === '' ? 'sin pesos registrados'
         : `♀ ${nf(b.hembrasKg, 2)} · ♂ ${nf(b.machosKg, 2)} kg${b.parcial ? ' · <span class="mop-nota">sólo un sexo trae peso</span>' : ''}`, '',
-      'Vivos × su peso promedio, PESADO por los animales que el libro tiene en cada tanque. El peso sale de la hoja de Tanques, de los registros del período. Sin ningún peso se deja vacío: una biomasa inventada es peor que ninguna.', 'biomasa'),
+      'Vivos × su peso promedio, PESADO por los animales que el libro tiene en cada tanque. El peso de cada tanque es el de referencia —el de su carga y su ración: su última biometría con sus lotes de hoy, o la de esos lotes donde estaban, o su Ingreso—, así que es la foto del día y cuadra con las cargas. Sin ningún peso se deja vacío: una biomasa inventada es peor que ninguna.', 'biomasa'),
   ].join('');
 
   return `<div class="mc-body">
@@ -1257,7 +1257,7 @@ function kpiPanelHTML(M, memo, p, F) {
   if (!k) { vOp.kpiSel = ''; return ''; }
   const g = graficoDeKpi(k.clave, { M, serie: serieDe(memo, p), partes: memo.partes, periodo: p, F });
   const cuando = k.clave === 'salas' || k.clave === 'ocupacion' ? 'al cierre de la foto ' + dma(M.fecha)
-    : k.clave === 'biomasa' ? 'vivos de la foto · pesos de ' + etiquetaPeriodo(p) : etiquetaPeriodo(p);
+    : k.clave === 'biomasa' ? 'vivos y pesos de referencia de la foto ' + dma(M.fecha) : etiquetaPeriodo(p);
   let cuerpo;
   if (!g.aplica) cuerpo = `<p class="muted" style="margin:4px 0">${esc(g.nota)}</p>`;
   else if (g.tipo === 'tabla') cuerpo = salasKpiHTML(g.filas);
@@ -1798,7 +1798,7 @@ function detalleHTML(d, p, F) {
   const tabla = ocupados.length
     ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm">
         <thead><tr><th>Tanque</th><th>Lotes</th><th class="r">♀</th><th class="r">♂</th><th class="r">H:M</th><th class="r">Densidad /m²</th>
-          <th class="r" title="Carga métrica del ⚖️ Saldo: biomasa ÷ área (pesos del lote)">g/m²</th><th class="r" title="Carga volumétrica del ⚖️ Saldo: biomasa ÷ volumen de un tanque de la sala">kg/m³</th>
+          <th class="r" title="Carga métrica del ⚖️ Saldo: biomasa ÷ área (pesos de referencia del tanque)">g/m²</th><th class="r" title="Carga volumétrica del ⚖️ Saldo: biomasa ÷ volumen de un tanque de la sala">kg/m³</th>
           <th>Último peso (g)</th><th>Último parte</th></tr></thead>
         <tbody>${filas}</tbody></table></div>`
     : '<div class="empty-state" style="padding:16px">La sala no tiene animales al cierre de la foto.</div>';
