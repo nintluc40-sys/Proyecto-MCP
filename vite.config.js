@@ -52,6 +52,60 @@ function listaDePrecache() {
   };
 }
 
+/* 2026-10-24 (usuario, «guardián en la build») · LAS VISTAS DIFERIDAS, EN LA PRECARGA DE LA BUILD REAL. La regla de arriba
+   se prueba con builds inventadas (sw.test.js) y main.js con su texto (ui/vistasDiferidas.test.js), pero nada ataba la
+   build DE VERDAD: si Rollup fusionara una vista con lo que comparte con Planta —ya fusionó la entrada de Planta el
+   2026-10-05— o una exclusión quedara mal escrita, el bloque de esa vista saldría de la lista sin ningún rojo, y tras un
+   despliegue un equipo sin señal no podría abrirla. Por eso, con la lista ya hecha, cada `import('./views/…')` de
+   src/main.js que no sea de ENTRADAS_FUERA_DE_PRECACHE (Planta y el QR) tiene que estar en un bloque de la lista: si no
+   está en ninguno, o el suyo no entra, la build FALLA. Hoy son nueve: las siete de cada día, Biología Molecular y
+   Registros. */
+/** Las rutas de los `import('./views/…')` de un main.js (sin contar los comentarios), en su orden. */
+export function importsDeVistas(src) {
+  const codigo = String(src).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  return [...codigo.matchAll(/import\(\s*'(\.\/views\/[^']+)'\s*\)/g)].map((m) => m[1]);
+}
+/** Las vistas diferidas (rutas absolutas de sus módulos) que NO están en la precarga `lista` (los archivos tal como los
+    nombra el bundle, sin «./»): un texto por cada una. Las de ENTRADAS_FUERA_DE_PRECACHE no se exigen. */
+export function vistasFueraDeLaPrecarga(bundle, lista, rutas) {
+  const norma = (p) => String(p).replace(/\\/g, '/').toLowerCase();
+  const enLista = new Set(lista);
+  const faltan = [];
+  for (const ruta of rutas) {
+    const n = norma(ruta);
+    if (ENTRADAS_FUERA_DE_PRECACHE.some((re) => re.test(n))) continue;
+    const nombre = n.includes('/src/') ? n.slice(n.lastIndexOf('/src/') + 1) : n;
+    const bloque = Object.values(bundle).find((c) => c && c.type === 'chunk' &&
+      (c.moduleIds || Object.keys(c.modules || {})).some((id) => norma(id) === n));
+    if (!bloque) faltan.push(`${nombre}: no está en ningún bloque de la build`);
+    else if (!enLista.has(bloque.fileName)) faltan.push(`${nombre}: su bloque (${bloque.fileName}) no está en precache-assets.json`);
+  }
+  return faltan;
+}
+function vistasEnLaPrecarga() {
+  let root = null;
+  return {
+    name: 'mcp-precache-vistas',
+    apply: 'build',
+    configResolved(c) { root = c.root; },
+    // después de `mcp-precache-assets` (va detrás en `plugins` y los dos en `post`): la lista ya está en el bundle
+    generateBundle: {
+      order: 'post',
+      handler(_, bundle) {
+        const rutas = importsDeVistas(readFileSync(join(root, 'src/main.js'), 'utf8')).map((r) => resolve(root, 'src', r));
+        if (!rutas.length) throw new Error("precarga: src/main.js no tiene ningún import('./views/…'): el guardián no vigilaría nada");
+        const json = bundle['precache-assets.json'];
+        if (!json) throw new Error('precarga: no se emitió precache-assets.json');
+        const texto = typeof json.source === 'string' ? json.source : Buffer.from(json.source).toString('utf8');
+        const faltan = vistasFueraDeLaPrecarga(bundle, JSON.parse(texto).map((f) => f.replace(/^\.\//, '')), rutas);
+        if (faltan.length) {
+          throw new Error(`precarga: ${faltan.length} vista(s) diferida(s) FUERA de la lista (sin señal no abrirían tras un despliegue): ${faltan.join(' · ')}`);
+        }
+      },
+    },
+  };
+}
+
 /* B1 (2026-10-19, usuario) · LA HUELLA DEL BUILD. Una pestaña o una PWA abierta no se enteraba nunca de un despliegue
    nuevo, y `public/sw.js` era idéntico en cada uno, así que el navegador no instalaba nunca otro service worker (y la
    lista de bloques diferidos de arriba sólo se lee al instalar). Al terminar de escribir `dist/`, se calcula un hash
@@ -118,7 +172,7 @@ export default defineConfig(({ command }) => ({
   //     diferida (Registros, Biología Molecular, Planta y, desde el 2026-10-23, las
   //     de `ui/vistaDiferida.js`). Es un footgun conocido de Vite.
   base: command === 'build' ? './' : '/',
-  plugins: [listaDePrecache(), huellaDelBuild()],
+  plugins: [listaDePrecache(), vistasEnLaPrecarga(), huellaDelBuild()],
   server: {
     port: 5173,
     open: true,

@@ -690,7 +690,9 @@ Dos consecuencias que conviene tener presentes al desplegar:
   al instalarse (`assetsDelBuild`, 2026-10-01). Sin eso, tras un despliegue, un equipo que no
   abriera Registros con red no podía abrirlo sin señal. La lista sale del bundle DEFINITIVO (`generateBundle` con
   `order: 'post'`, 2026-10-03): antes se escribía antes de que `vite:css-post` borrara los trozos de sólo-CSS, y
-  anunciaba un `leaflet-*.js` que no existía (404 en Pages).
+  anunciaba un `leaflet-*.js` que no existía (404 en Pages). Y la build FALLA si el bloque de un `import('./views/…')`
+  de `main.js` (salvo Planta y el QR) no está en esa lista (`vite.config.js · vistasEnLaPrecarga`, 2026-10-24): una
+  fusión de Rollup o una exclusión mal escrita ya no la deja fuera en silencio.
 - **La instalación tiene tope: 3 min** (`TOPE_INSTALACION`, 2026-10-01). El navegador da por
   fallida una instalación que pasa de 5 min y BORRA el registro: con señal pésima el equipo se
   quedaba sin modo sin conexión (medido en la app publicada; reproducido en local con una descarga

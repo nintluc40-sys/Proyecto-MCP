@@ -590,6 +590,77 @@ describe('Build · precache-assets.json, la lista que lee el service worker', ()
     });
     expect(JSON.parse(emitidos[0].source)).toEqual(['./assets/comun-CCC.js', './assets/index-AAA.js']);
   });
+
+  /* 2026-10-24 (usuario, «guardián en la build») · las vistas que main.js baja con import() tienen que estar en la lista DE
+     LA BUILD REAL: el guardián (`mcp-precache-vistas`) hace fallar la build si el bloque de una no entra. Se le da un bundle
+     de juguete armado con los import() del main.js de verdad, como el que le da Rollup. */
+  // el guardián lee el main.js del repo, así que la raíz de la «build» es la del repo (como en Windows, con «/»)
+  const RAIZ = process.cwd().replace(/\\/g, '/');
+  const PLANTA = ['./views/planta/index.js', './views/planta/qr/index.js'];
+  const RUTAS = () => [...readFileSync(join(process.cwd(), 'src/main.js'), 'utf8').matchAll(/import\('(\.\/views\/[^']+)'\)/g)].map((m) => m[1]);
+  /** Un bundle con un bloque por cada import('./views/…') de main.js. `fuera`: las vistas cuyo bloque no va en la lista;
+      `sinBloque`: las que no están en ningún bloque. */
+  function bundleDeLasVistas(rutas, { fuera = [], sinBloque = [] } = {}) {
+    const bundle = { 'assets/index-AAA.js': { type: 'chunk', fileName: 'assets/index-AAA.js', moduleIds: [RAIZ + '/src/main.js'] } };
+    rutas.forEach((r, i) => {
+      if (sinBloque.includes(r)) return;
+      const fileName = `assets/vista${i}-XXX.js`;
+      bundle[fileName] = { type: 'chunk', fileName, moduleIds: [RAIZ + '/src/views/comun.js', RAIZ + '/src/' + r.slice(2)] };
+    });
+    const lista = Object.keys(bundle).filter((f) => !fuera.some((r) => bundle[f].moduleIds.includes(RAIZ + '/src/' + r.slice(2))));
+    bundle['precache-assets.json'] = { type: 'asset', fileName: 'precache-assets.json', source: JSON.stringify(lista.map((f) => './' + f)) };
+    return bundle;
+  }
+  async function elGuardian() {
+    const vc = await import('../vite.config.js');
+    const cfg = typeof vc.default === 'function' ? vc.default({ command: 'build', mode: 'production' }) : vc.default;
+    const guardian = (cfg.plugins || []).find((p) => p && p.name === 'mcp-precache-vistas');
+    if (guardian) guardian.configResolved({ root: process.cwd() });
+    return { vc, cfg, guardian };
+  }
+
+  it('🔴 el guardián está registrado DESPUÉS de la lista, en `post`, y saca de main.js sus vistas diferidas', async () => {
+    const { vc, cfg, guardian } = await elGuardian();
+    expect(guardian, 'el guardián no está en vite.config.js · plugins').toBeTruthy();
+    const nombres = cfg.plugins.map((p) => p && p.name);
+    expect(nombres.indexOf('mcp-precache-vistas'), 'tiene que correr con la lista ya hecha').toBeGreaterThan(nombres.indexOf('mcp-precache-assets'));
+    expect(guardian.generateBundle.order).toBe('post');
+    const rutas = vc.importsDeVistas(readFileSync(join(process.cwd(), 'src/main.js'), 'utf8'));
+    for (const v of ['supervisor/index.js', 'larvicultura/index.js', 'revisiones/index.js', 'visitante/index.js', 'algas/index.js',
+      'microbiologia/index.js', 'maduracion/entrada.js', 'biomolecular/index.js', 'registros/index.js']) expect(rutas).toContain('./views/' + v);
+    // un import() comentado no cuenta
+    expect(vc.importsDeVistas("// import('./views/a.js')\n/* import('./views/b.js') */\nimport('./views/c.js')")).toEqual(['./views/c.js']);
+  });
+
+  it('🔴 con todas las vistas en la lista, la build sigue; Planta y el QR NO se exigen', async () => {
+    const { guardian } = await elGuardian();
+    const rutas = RUTAS();
+    expect(rutas).toEqual(expect.arrayContaining(PLANTA));
+    // Planta y el QR, fuera de la lista como manda ENTRADAS_FUERA_DE_PRECACHE: no se le exigen
+    expect(() => guardian.generateBundle.handler({}, bundleDeLasVistas(rutas, { fuera: PLANTA }))).not.toThrow();
+  });
+
+  it('🔴 la build FALLA si el bloque de una vista diferida no está en la lista, o no está en ningún bloque', async () => {
+    const { guardian } = await elGuardian();
+    const rutas = RUTAS();
+    // Rollup la fusionó con lo de Planta y la regla de alcance la dejó fuera: el caso que esto vigila
+    const sinVisitante = bundleDeLasVistas(rutas, { fuera: [...PLANTA, './views/visitante/index.js'] });
+    expect(() => guardian.generateBundle.handler({}, sinVisitante)).toThrow(/src\/views\/visitante\/index\.js: su bloque \(assets\/vista\d+-XXX\.js\) no está en precache-assets\.json/);
+    const sinBloque = bundleDeLasVistas(rutas, { fuera: PLANTA, sinBloque: ['./views/registros/index.js'] });
+    expect(() => guardian.generateBundle.handler({}, sinBloque)).toThrow(/src\/views\/registros\/index\.js: no está en ningún bloque/);
+    // sin la lista, tampoco sigue: el guardián no puede dar por buena una precarga que no ve
+    const sinLista = bundleDeLasVistas(rutas, { fuera: PLANTA });
+    delete sinLista['precache-assets.json'];
+    expect(() => guardian.generateBundle.handler({}, sinLista)).toThrow(/no se emitió precache-assets\.json/);
+    // y un main.js sin ningún import('./views/…') no es un verde: el guardián no vigilaría nada
+    const raiz = mkdtempSync(join(tmpdir(), 'guardian-'));
+    try {
+      mkdirSync(join(raiz, 'src'));
+      writeFileSync(join(raiz, 'src/main.js'), "import { a } from './views/estatica.js';\n");
+      guardian.configResolved({ root: raiz });
+      expect(() => guardian.generateBundle.handler({}, bundleDeLasVistas(rutas))).toThrow(/no tiene ningún import/);
+    } finally { rmSync(raiz, { recursive: true, force: true }); }
+  });
 });
 
 /* ══════════════════════════════════════════════════════════
