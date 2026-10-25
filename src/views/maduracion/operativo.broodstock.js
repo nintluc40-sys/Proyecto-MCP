@@ -77,8 +77,10 @@ function hastaLaFoto(M) {
   return H;
 }
 
-/** La piscina del Ingreso y de los Desoves en su forma canónica, que es la de Broodstock. */
-const canonica = (filas) => (filas || []).map((r) => ({ ...r, 'Piscina Broodstock': normPiscina(r['Piscina Broodstock']) }));
+/* Tarea 8 de la ronda 6 (2026-10-24, usuario) · aquí vivía `canonica`, que pasaba la «Piscina Broodstock» del Ingreso a su
+   forma canónica antes de usarla. Sobraba desde que todo lo que la lee la normaliza solo —`partesDePiscina` en
+   `piscinasPorLote`, `sinBroodstock` y la ficha; `piscinaEnFiltro` en el filtro (30b86b7)—, así que se retiró. Lo delató
+   el banco: su mutación (E03 de mutar-mad-tablero-broodstock) sobrevivía porque no cambiaba nada. */
 
 /** Las piscinas de las que entró cada lote, según su Ingreso (una pareja «556/557», las dos: pauta 3.2). */
 function piscinasPorLote(ingresos) {
@@ -147,7 +149,7 @@ function piscinaDeFila(r) {
  */
 export function tablaDePiscinas(M, F) {
   const H = hastaLaFoto(M);
-  const ingresos = canonica(H.ingresos);
+  const ingresos = H.ingresos || [];
   const deLote = piscinasPorLote(ingresos);
   const todas = (H.broodstock || []).filter((r) => esIso(corteDe(r)) && normPiscina(r.Piscina));
   const cortes = [...new Set(todas.map(corteDe))].sort();
@@ -196,7 +198,7 @@ export function fichaDePiscina(M, piscina, periodo) {
   const hasta = txt((periodo || {}).hasta);
   const delPeriodo = suyas.filter((r) => (!desde || corteDe(r) >= desde) && (!hasta || corteDe(r) <= hasta)).map(piscinaDeFila);
 
-  const ingresos = canonica(H.ingresos);
+  const ingresos = H.ingresos || [];
   const deLote = piscinasPorLote(ingresos);
   const entraron = new Map();
   for (const r of ingresos) {
