@@ -14,6 +14,7 @@
 import { fuentesDesdeFilas, MAD_OP_HOJAS } from './operativo.fuentes.js';
 import { construirLibro, estadoDeSala, estadoPorLoteDeSala, ocupacionDeSala, sumarDias, ubicKey, estadoDeLote, ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_CERRADO } from '../registros/lib/mad-libro.js';
 import { resumenMaduracion, diasEntre } from '../registros/lib/mad-resumen.js';
+import { alimPesosDeReferencia } from '../registros/lib/ficha-maduracion-alimentacion.schema.js';
 import { MAD_SALA_OPTS, MAD_TANQUES_POR_SALA } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
 import { normPiscina } from '../registros/lib/ficha-maduracion-broodstock.schema.js';
 
@@ -51,6 +52,21 @@ export function fuentesAlDia(fuentes, hasta) {
   const out = {};
   for (const [clave, filas] of Object.entries(fuentes || {})) out[clave] = (filas || []).filter((r) => !(fechaDeFila(clave, r) > hasta));
   return out;
+}
+
+/** Los pesos de REFERENCIA de cada tanque (`alimPesosDeReferencia`: su última biometría de un día en que tenía alguno de
+ *  sus lotes de hoy y, si no la hay, el peso de Ingreso), con el corte del resumen (`fuentesAlDia` hasta la foto): los
+ *  mismos de los que sale su carga y su ración. → { [ubicKey]: { hembras: {valor, fuente, fecha}, machos: {…} } }
+ *  Tarea 12 de la ronda 6 (2026-10-24, usuario): la columna de pesos de 🛢 Tanques enseñaba el último peso del período SIN
+ *  mirar quién había dentro, y en un tanque que cambió de ocupantes era el del lote ANTERIOR (y no cuadraba con su carga).
+ *  En la auditoría de esa tarea (2026-10-25) se vio lo mismo en el detalle de 🏠 Salas, y la función pasó aquí para que
+ *  las dos pantallas la compartan (operativo.tablero.js no puede importar de operativo.tanques.js, que importa de él).
+ *  Se calcula UNA vez por modelo (cuesta ~0,1 s con el libro real). */
+const _pesosRef = new WeakMap();
+export function pesosDeReferencia(M) {
+  if (!M || !M.libro) return {};
+  if (!_pesosRef.has(M)) _pesosRef.set(M, alimPesosDeReferencia(fuentesAlDia(M.fuentes || {}, txt(M.fecha) || '9999-12-31'), M.libro));
+  return _pesosRef.get(M);
 }
 
 /** Fuera las filas de «Maduración Sala» de salas que ya no se muestran. Sólo de ESA hoja: en las que alimentan

@@ -22,7 +22,7 @@ import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-
 import { MAD_TANQUES_POR_SALA } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
 import { sumarDias, ubicKey, pesosDeAlimentacion, CUARENTENA_DIAS, ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_MIXTO } from '../registros/lib/mad-libro.js';
 import { diasEntre, RESUMEN_TEMPS, RESUMEN_OXIGENOS } from '../registros/lib/mad-resumen.js';
-import { PERIODO_DIAS, SALAS_VISIBLES, fechaDeFila, partesDePiscina } from './operativo.data.js';
+import { PERIODO_DIAS, SALAS_VISIBLES, fechaDeFila, partesDePiscina, pesosDeReferencia } from './operativo.data.js';
 import { cociente, proporcionHM, densidadTanque, ocupacion, fueraDeRango, diasDesdeDesinfeccion } from './operativo.indicadores.js';
 import { umbralVigente, evaluar } from './operativo.umbrales.js';
 
@@ -902,7 +902,7 @@ const horaDe = (columna) => columna.split(' ').pop();
 /**
  * El detalle de una sala en el período: el mapa de calor de la temperatura (día × hora, el día más reciente arriba),
  * las cuatro lecturas diarias de oxígeno, y sus tanques con la composición, H:M, densidad, las cargas del Saldo, los
- * últimos pesos y las observaciones del último parte. Si una sala tiene dos registros el mismo día, cada lectura es
+ * pesos de referencia (los de su carga; desde el 2026-10-25) y las observaciones del último parte. Si una sala tiene dos registros el mismo día, cada lectura es
  * la última que la trae. El ambiente es de la SALA: el filtro de lote o de tanque no lo cambia, sólo marca tanques.
  * `partes`: los de `diasDeTanque`.
  */
@@ -940,19 +940,13 @@ export function detalleDeSala(M, sala, periodo, F, partes) {
   }
   const partesSala = (partes || []).filter((d) => d.sala === sala && esIso(d.fecha) && d.fecha <= M.fecha)
     .sort((a, b) => cmp(a.fecha, b.fecha));
-  /* Punto 2 (2026-10-04, usuario) · un peso tecleado a mano en 🍤 Alimentación cuenta como del tanque; el MISMO día manda
-     Tanques (`pesosDeAlimentacion` ya lo quita). SÓLO el peso: esas filas no son partes. */
-  const pesosAlim = pesosDeAlimentacion((M.fuentes || {}).alimentacion, (M.fuentes || {}).tanques)
-    .filter((r) => r.Sala === sala && esIso(r.Fecha) && r.Fecha <= M.fecha);
-  const COL_PESO = { pesoMachos: 'Peso promedio machos (g)', pesoHembras: 'Peso promedio hembras (g)' };
-  const ultimoCon = (tanque, campo) => {
-    const d = partesSala.filter((x) => x.tanque === tanque && x[campo] !== '').pop();
-    let u = d ? { valor: d[campo], fecha: d.fecha } : { valor: '', fecha: '' };
-    for (const r of pesosAlim) {
-      if (r.Tanque === tanque && COL_PESO[campo] && r[COL_PESO[campo]] !== undefined && r.Fecha > u.fecha) u = { valor: r[COL_PESO[campo]], fecha: r.Fecha };
-    }
-    return u;
-  };
+  /* Los pesos de cada tanque: los de REFERENCIA (`pesosDeReferencia`, los de su carga, su ración y 🛢 Tanques). Auditoría
+     de la tarea 12 de la ronda 6 (2026-10-25, usuario): aquí se tomaba el último peso del tanque —sus partes y lo
+     tecleado en 🍤 Alimentación (punto 2, 2026-10-04)— SIN mirar quién había dentro; en un tanque que cambió de ocupantes
+     era el del lote ANTERIOR, y con el libro real 2 tanques salían con otro peso que en 🛢 Tanques. Lo de Alimentación
+     sigue contando: `alimPesosDeReferencia` lo lee con `pesosDeAlimentacion`. */
+  const pesosRef = pesosDeReferencia(M);
+  const vacioPeso = { valor: '', fuente: '', fecha: '' };
   const mapa = mapaDePlanta(M.libro, F).salas.find((s) => s.sala === sala) || { tanques: [] };
   const R = (M.resumen.salas || []).find((x) => x.sala === sala) || null;
   /* 3 · los días de TODO el registro con alguna lectura de cada variable, en orden: `ambienteDelDia` dice el último cuando
@@ -973,7 +967,8 @@ export function detalleDeSala(M, sala, periodo, F, partes) {
         cargas: cs,
         cargaMetricaEstado: evaluarLecturas('cargaMetrica', cs.map((x) => x.cargaMetrica)),
         cargaVolumetricaEstado: evaluarLecturas('cargaVolumetrica', cs.map((x) => x.cargaVolumetrica)),
-        peso: { machos: ultimoCon(c.tanque, 'pesoMachos'), hembras: ultimoCon(c.tanque, 'pesoHembras') },
+        peso: { machos: ((pesosRef[ubicKey(sala, c.tanque)] || {}).machos) || vacioPeso,
+          hembras: ((pesosRef[ubicKey(sala, c.tanque)] || {}).hembras) || vacioPeso },
         // 3 (2026-10-01, usuario) · `hora`: la del último parte de ese día ('' si ninguno la trae).
         obs: ultimo ? { fecha: ultimo.fecha, hora: txt(ultimo.ultimaHora), sanitarias: ultimo.obsSanitarias, operativas: ultimo.obsOperativas }
           : { fecha: '', hora: '', sanitarias: [], operativas: [] },

@@ -633,11 +633,29 @@ describe('Maduración · tablero · el detalle de una sala', () => {
       .map((t) => ({ lote: L.lote, cargaMetrica: t.cargaMetrica, cargaVolumetrica: t.cargaVolumetrica })));
     expect(t1.cargas).toEqual(saldo);
     expect(t1.cargas.map((c) => [c.lote, c.cargaMetrica])).toEqual([['QA', 96.19], ['QC', 96.19]]);
-    expect(t1.peso).toEqual({ machos: { valor: 32, fecha: '2026-09-18' }, hembras: { valor: 40, fecha: '2026-09-17' } });
+    // 2026-10-25 · los pesos de referencia (los de 🛢 Tanques y la carga), con su fuente; el del 20/09 queda fuera de la foto
+    expect(t1.peso).toEqual({ machos: { valor: 32, fuente: 'Biometría', fecha: '2026-09-18' }, hembras: { valor: 40, fuente: 'Biometría', fecha: '2026-09-17' } });
     // 3 (2026-10-01, usuario) · con la hora de ese último parte.
     expect(t1.obs).toEqual({ fecha: '2026-09-18', hora: '10:15', sanitarias: [], operativas: ['En recambio'] });
     expect(d.tanques[1]).toMatchObject({ estado: 'Vacío', cargas: [], obs: { fecha: '' } });
     expect(d.tratamientos.map((x) => x.tipo)).toEqual(['Preventivo', 'Desinfección']);
+  });
+
+  it('🔴 auditoría de la tarea 12 (2026-10-25) · un tanque que cambió de ocupantes no enseña el peso del lote ANTERIOR', () => {
+    /* El t24 de la Sala 3: RD entra el 01/09, se pesa el 05/09 (100 g ♂, 120 g ♀) y CIERRA el 08/09; RE entra el 12/09 con
+       su peso de Ingreso (30 g ♂, 40 g ♀) y nadie lo pesa después. El detalle tomaba el último peso del tanque (los de
+       RD); ahora, el de referencia, el mismo de 🛢 Tanques y de su carga: los de RE, de Ingreso. */
+    const MD = modeloOperativo([
+      ING('2026-09-01', 'RD', 'Sala 3', 24, 10, 10, 'CD'),
+      TQ('2026-09-05', 'Sala 3', 24, { 'Peso promedio machos (g)': 100, 'Peso promedio hembras (g)': 120, Hora: '08:00', Parte: 1 }),
+      FIN('2026-09-08', { Lote: 'RD', Tipo: 'Total', Machos: 10, Hembras: 10 }),
+      { ...ING('2026-09-12', 'RE', 'Sala 3', 24, 8, 8, 'CE'), 'Peso promedio machos (g)': 30, 'Peso promedio hembras (g)': 40 },
+    ], { hoy: FOTO, fecha: FOTO });
+    const dd = detalleDeSala(MD, 'Sala 3', periodoDe('30d', FOTO, MD.fuentes), SIN, diasDeTanque(MD.fuentes.tanques));
+    const t24 = dd.tanques.find((x) => x.tanque === 24);
+    expect([t24.peso.hembras.valor, t24.peso.machos.valor]).toEqual([40, 30]);
+    expect(t24.peso.hembras).toMatchObject({ fuente: 'Ingreso', fecha: '2026-09-12' });
+    expect(dd.tanques.find((x) => x.tanque === 25).peso.hembras.valor, 'un tanque vacío, sin peso').toBe('');
   });
 
   /* 3 (2026-09-29, usuario) · «que siempre muestren la información del día»: un día, sus 12 tomas de temperatura y sus 4 de

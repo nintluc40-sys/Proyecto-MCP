@@ -86,8 +86,10 @@ describe('Punto 2 · el MCP lee el peso de las dos fichas', () => {
   it('🔴 detalle de la SALA: el último peso con su fecha', () => {
     const d = detalleDeSala(M, 'Sala 3', P, SIN, diasDeTanque(M.fuentes.tanques));
     const t = (n) => d.tanques.find((x) => x.tanque === n).peso;
-    expect(t(1)).toEqual({ machos: { valor: 60, fecha: '2026-09-12' }, hembras: { valor: 75, fecha: '2026-09-12' } });
-    expect(t(2)).toEqual({ machos: { valor: 22, fecha: '2026-09-14' }, hembras: { valor: 33.5, fecha: '2026-09-14' } });
+    // 2026-10-25 (auditoría de la tarea 12) · los pesos de referencia, los de 🛢 Tanques, con su FUENTE: lo tecleado en
+    // 🍤 Alimentación sigue contando, y ahora se dice
+    expect(t(1)).toEqual({ machos: { valor: 60, fuente: 'Biometría', fecha: '2026-09-12' }, hembras: { valor: 75, fuente: 'Alimentación', fecha: '2026-09-12' } });
+    expect(t(2)).toEqual({ machos: { valor: 22, fuente: 'Alimentación', fecha: '2026-09-14' }, hembras: { valor: 33.5, fuente: 'Alimentación', fecha: '2026-09-14' } });
   });
 
   it('🔴 KPI de biomasa: los pesos del período ponderados, con las muestras de Alimentación', () => {

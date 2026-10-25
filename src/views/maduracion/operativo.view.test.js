@@ -1453,17 +1453,24 @@ describe('Maduración · operativo · 🛢 Tanques', () => {
 
   /* Tarea 12 (ronda 6, 2026-10-24, usuario) · la columna de pesos enseña los de REFERENCIA del tanque (los de su carga y su
      ración); si son de Ingreso —el tanque no tiene biometría con sus lotes de hoy—, la celda lo marca y el globo dice de
-     dónde sale cada sexo. QZ entra el 10/09 en el t2 de la Sala 3 con 30 g ♂ y 40 g ♀ y nadie lo pesa después. */
-  it('🔴 tarea 12 · el peso de Ingreso va marcado y el globo dice de dónde sale', async () => {
-    await montar([...PLANTA_F4, { ...ING('10/09/2026', 'QZ', 'Sala 3', 2, 6, 6, 'CZ'), 'Peso promedio machos (g)': '30', 'Peso promedio hembras (g)': '40' }]);
+     dónde sale cada sexo. QZ entra el 10/09 en el t22 de la Sala 3 con 30 g ♂ y 40 g ♀ y nadie lo pesa después.
+     Auditoría (2026-10-25): el detalle de la sala en 🏠 Salas enseña el MISMO peso, también marcado. */
+  it('🔴 tarea 12 · el peso de Ingreso va marcado y el globo dice de dónde sale (y 🏠 Salas da el mismo)', async () => {
+    await montar([...PLANTA_F4, { ...ING('10/09/2026', 'QZ', 'Sala 3', 22, 6, 6, 'CZ'), 'Peso promedio machos (g)': '30', 'Peso promedio hembras (g)': '40' }]);
     abrirTanques();
     const th = [...root.querySelectorAll('.mop-tanques thead th')].map((x) => x.textContent.trim());
     const celda = (k) => filaTq(k).cells[th.indexOf('Peso ♀/♂ (g)')];
-    expect(celda('Sala 3|2').textContent).toContain('ingreso');
-    expect(celda('Sala 3|2').getAttribute('title')).toBe('♀: Ingreso del 10/09 · ♂: Ingreso del 10/09');
+    expect(celda('Sala 3|22').textContent).toContain('ingreso');
+    expect(celda('Sala 3|22').getAttribute('title')).toBe('♀: Ingreso del 10/09 · ♂: Ingreso del 10/09');
     // el contraste: el t1 de la Sala 1 tiene biometría de ♂ (16/09) y ninguna de ♀; sin Ingreso, sin marca
     expect(celda('Sala 1|1').textContent).not.toContain('ingreso');
     expect(celda('Sala 1|1').getAttribute('title')).toBe('♀: sin peso · ♂: Biometría del 16/09');
+    // 🏠 Salas, el detalle de la Sala 3: el t22 con los mismos pesos, de Ingreso
+    click(root.querySelector('[data-mop-sub="salas"]'));
+    click(root.querySelector('[data-mop-sala="Sala 3"]'));
+    const tr = [...root.querySelectorAll('.mop-detalle tbody tr')].find((x) => x.cells[0].textContent.trim() === '22');
+    expect(tr.textContent).toMatch(/♂ 30.*ingreso 10\/09/s);
+    expect(tr.textContent).toMatch(/♀ 40.*ingreso 10\/09/s);
   });
 
   /* Bloque 4, tarea 2 (2026-10-23, usuario) · ♀:♂, Dens. y Carga llevan su punto de color, el MISMO que el detalle de

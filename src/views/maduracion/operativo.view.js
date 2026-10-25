@@ -1720,7 +1720,8 @@ function cargaTxt(cargas, campo) {
   if (new Set(conValor.map((c) => c[campo])).size === 1) return nf(conValor[0][campo], 2);
   return conValor.map((c) => `${esc(c.lote)} ${nf(c[campo], 2)}`).join(' · ');
 }
-const pesoTxt = (x) => (vacio(x.valor) ? '—' : `${nf(x.valor, 1)} <span class="mop-nota">${esc(dm(x.fecha))}</span>`);
+// el peso de un tanque en el detalle de 🏠 Salas (el de referencia, como en 🛢 Tanques): si es de Ingreso, lo dice (2026-10-25)
+const pesoTxt = (x) => (vacio(x.valor) ? '—' : `${nf(x.valor, 1)} <span class="mop-nota">${x.fuente === 'Ingreso' ? 'ingreso ' : ''}${esc(dm(x.fecha))}</span>`);
 function obsTxt(o) {
   if (!o.fecha) return '<span class="muted">—</span>';
   const todas = [...o.sanitarias.map((s) => `<span class="mop-obs-s">${esc(s)}</span>`), ...o.operativas.map((s) => esc(s))];
