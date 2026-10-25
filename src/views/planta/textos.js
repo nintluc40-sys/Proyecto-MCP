@@ -320,6 +320,15 @@ export function alertasParaAtender(grupos, reemplazo, ctx) {
   return { titulo, total, items, vacio: total ? '' : (ctx.mesPasado ? 'Sin alertas al cierre de ' + ctx.mesPasado.mes : 'Sin alertas hoy') };
 }
 
+/** El trozo del resumen de PANTALLA COMPLETA con el total de `alertasParaAtender`. Tarea 9 de la ronda 6 (2026-10-24,
+ *  usuario): decía «⚠ N alertas», y ese total suma también el 🚚 de un módulo trasladado sin despacho (punto 4.1) y los
+ *  lotes ⏳ de más de 60 días, que no son valores fuera de rango: ahora dice «para atender», como «Qué atender hoy».
+ *  Un mes pasado sigue «al cierre». `total` null (cargando) no lleva trozo. */
+export function textoAlertasFS(total, mesPasado) {
+  if (total === null || total === undefined) return '';
+  return total ? '⚠ ' + total + (mesPasado ? ' al cierre' : ' para atender') : 'sin alertas';
+}
+
 /* ---------- Reproductores: días en producción frente al límite (60, el del tablero de Maduración) ---------- */
 /** { titulo, vacio, lotes: [{ pasa, nombre, salas, dias, ancho, title }], nota } */
 export function reproductoresPorDias(R, ctx) {

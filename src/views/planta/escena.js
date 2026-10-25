@@ -79,7 +79,7 @@ import { META_POR_DEFECTO, normalizarMeta } from './cifras.js';
 import { leerMeta, guardarMeta } from './meta.js';
 import { montarNauplios } from './nauplios.js';
 import { fmt, pct, num, ent, dec, dm, millones, ESTADO_TXT, MAD_HEX, colorGrupo, fichaGrupo, fichaTanque as textoFichaTanque, textoFila, cifrasDelPanel,
-  textosProduccion, textoMes, alertasParaAtender, reproductoresPorDias } from './textos.js';
+  textosProduccion, textoMes, alertasParaAtender, textoAlertasFS, reproductoresPorDias } from './textos.js';
 
 /** Monta la maqueta en `root` (que ya trae el marcado de planta/index.js).
  *  Devuelve { dispose, pintarEstado(estado|null), aviso(texto), alElegirMes(fn(mIdx, esUltimo)) }.
@@ -1521,7 +1521,7 @@ function pintarResumenFS() {
   const C = ultimasCifras, partes = [];
   if (C) partes.push(C.mes, millones(C.total) + ' de ' + millones(meta, meta % 1e6 ? 1 : 0), fmt(C.total / meta * 100, 0) + ' % de la meta');
   else partes.push(estadoCargado ? 'Sin producción del mes' : 'Cargando datos…');
-  if (alertasTotal !== null && estadoCargado) partes.push(alertasTotal ? '⚠ ' + alertasTotal + (mesPasado ? ' al cierre' : ' alertas') : 'sin alertas');
+  if (alertasTotal !== null && estadoCargado) partes.push(textoAlertasFS(alertasTotal, mesPasado));   // tarea 9 (ronda 6): «para atender»
   resumenFS.textContent = partes.join(' · ');
 }
 function alCambiarPantallaCompleta() {

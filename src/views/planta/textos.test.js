@@ -1,7 +1,7 @@
 /* PLANTA · textos.js: lo que dicen fichas, filas, cifras, producción, «Qué atender hoy» y reproductores (compartido por
    la maqueta y 📊 Análisis). Fixtures mínimos con la forma de estado.js y cifras.js. */
 import { describe, it, expect } from 'vitest';
-import { fichaGrupo, fichaTanque, textoFila, cifrasDelPanel, textosProduccion, textoMes, alertasParaAtender, reproductoresPorDias, colorGrupo, tablaDeTanques, cronogramaParaPintar, evolucionParaPintar, trazoSerie, textosNauplios } from './textos.js';
+import { fichaGrupo, fichaTanque, textoFila, cifrasDelPanel, textosProduccion, textoMes, alertasParaAtender, textoAlertasFS, reproductoresPorDias, colorGrupo, tablaDeTanques, cronogramaParaPintar, evolucionParaPintar, trazoSerie, textosNauplios } from './textos.js';
 
 const HOY = { cargado: true, mesPasado: null };
 const PASADO = { cargado: true, mesPasado: { mes: 'Septiembre', cierre: '2026-09-30' } };
@@ -137,6 +137,18 @@ describe('Qué atender hoy y reproductores', () => {
     expect(A.items[2]).toMatchObject({ tipo: 'lote', g: s, nombre: 'Lote BQ', detalle: '72 d en producción · Salas 1 y 2' });
     expect(alertasParaAtender([], null, PASADO)).toEqual({ titulo: 'Alertas al cierre de Septiembre', total: 0, items: [], vacio: 'Sin alertas al cierre de Septiembre' });
     expect(alertasParaAtender([m], null, { cargado: false, mesPasado: null }).total).toBe(null);
+  });
+  it('🔴 tarea 9 (ronda 6) · el resumen de pantalla completa dice «para atender», no «alertas»: el total lleva el 🚚 y los ⏳', () => {
+    /* Un módulo trasladado sin despacho (punto 4.1: suma uno en «Qué atender hoy», decisión del usuario) y un lote de más
+       de 60 días: ninguno es un valor fuera de rango, así que el resumen no puede llamarlos «alertas». */
+    const m = modulo(cultivo({ traslado: { desde: '2026-09-28', hasta: '2026-09-29', sinDespacho: 2 } }));
+    const A = alertasParaAtender([m], { vencidos: [{ lote: 'BQ', dias: 72, salas: [{ id: 'S1', sala: 'Sala 1' }] }] }, HOY);
+    expect(A.items[0].detalle, 'control: el 🚚 está en el total').toContain('🚚 trasladada');
+    expect(textoAlertasFS(A.total, null)).toBe('⚠ ' + A.total + ' para atender');
+    expect(textoAlertasFS(A.total, null)).not.toContain('alertas');
+    expect(textoAlertasFS(3, { mes: 'Septiembre' })).toBe('⚠ 3 al cierre');
+    expect(textoAlertasFS(0, null)).toBe('sin alertas');
+    expect(textoAlertasFS(null, null), 'cargando: sin trozo').toBe('');
   });
   it('los días en producción frente al límite', () => {
     const P = reproductoresPorDias({ limite: 60, lotes: [{ lote: 'BN', dias: 30, salas: [{ sala: 'Sala 1' }] }, { lote: 'BQ', dias: 75, salas: [{ sala: 'Sala 2' }, { sala: 'Sala 3' }] }] }, PASADO);
