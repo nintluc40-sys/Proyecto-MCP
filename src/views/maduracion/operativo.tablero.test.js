@@ -501,12 +501,15 @@ describe('Maduración · tablero · las salas', () => {
    pesos). Todo sale de `M.resumen` (el mismo resumen que el Saldo): la tarjeta no recalcula nada. */
 describe('Maduración · tablero · las salas con lo del Saldo, por lote (0f · 6)', () => {
   /* QB (Sala 4, t1, 8♂ 8♀) pesa 30 g ♂ y 40 g ♀ · QX: dos tanques en la Sala 1 (10+10 y 20+20; una hembra muerta en el
-     t2 el 18/09) y uno en la Sala 5 (5+5), pesos 20 g ♂ y 30 g ♀. QA sigue sin pesos. */
+     t2 el 18/09) y uno en la Sala 5 (5+5), pesos 20 g ♂ y 30 g ♀. QA sigue sin pesos.
+     Tarea 7 (ronda 6, 2026-10-24) · la carga de un tanque sale de SUS pesos (los de la ración), no de los del lote: el t7
+     de la Sala 5 lleva los suyos (los mismos 20 y 30 g, el 10/09) para tener carga; el peso del LOTE sigue siendo el del
+     18/09, el último día pesado, así que la biomasa no cambia. */
   const PS = [...PLANTA,
     TQ('2026-09-18', 'Sala 4', 1, { 'Peso promedio machos (g)': 30, 'Peso promedio hembras (g)': 40 }),
     ING('2026-08-01', 'QX', 'Sala 1', 2, 10, 10), ING('2026-08-01', 'QX', 'Sala 1', 3, 20, 20), ING('2026-08-01', 'QX', 'Sala 5', 7, 5, 5),
     // Dos machos muertos ANTES (10/09, Sala 5): así la mortalidad acumulada y la del último día no coinciden.
-    TQ('2026-09-10', 'Sala 5', 7, { 'Machos muertos': 2 }),
+    TQ('2026-09-10', 'Sala 5', 7, { 'Machos muertos': 2, 'Peso promedio machos (g)': 20, 'Peso promedio hembras (g)': 30 }),
     TQ('2026-09-18', 'Sala 1', 2, { 'Peso promedio machos (g)': 20, 'Peso promedio hembras (g)': 30, 'Hembras muertas': 1 }),
     TQ('2026-09-18', 'Sala 1', 3, { 'Peso promedio machos (g)': 20, 'Peso promedio hembras (g)': 30 }),
   ];
@@ -552,10 +555,12 @@ describe('Maduración · tablero · las salas con lo del Saldo, por lote (0f · 
 
   /* 2026-10-22 (usuario) · los semáforos de la mortalidad del día y de las cargas, con el umbral que MANDA (el del
      laboratorio). QP, en la Sala 1 (13,14 m² y 5,5 t por tanque): el tanque 2 muy cargado (150♂ 150♀, 40 g y 50 g, con 10
-     machos muertos el 18/09) y el 3 casi vacío (5♂ 5♀). El PROMEDIO de los dos queda dentro; el tanque 2, no. */
+     machos muertos el 18/09) y el 3 casi vacío (5♂ 5♀). El PROMEDIO de los dos queda dentro; el tanque 2, no.
+     Tarea 7 (ronda 6) · cada tanque con SUS pesos: el 3 lleva los suyos (los mismos 40 y 50 g) para tener carga. */
   const PQ = [...PLANTA,
     ING('2026-08-01', 'QP', 'Sala 1', 2, 150, 150), ING('2026-08-01', 'QP', 'Sala 1', 3, 5, 5),
     TQ('2026-09-18', 'Sala 1', 2, { 'Peso promedio machos (g)': 40, 'Peso promedio hembras (g)': 50, 'Machos muertos': 10 }),
+    TQ('2026-09-18', 'Sala 1', 3, { 'Peso promedio machos (g)': 40, 'Peso promedio hembras (g)': 50 }),
   ];
   const MQ = modeloOperativo(PQ, { hoy: FOTO, fecha: FOTO });
   const QP = tarjetasDeSalas(MQ, SIN).find((t) => t.sala === 'Sala 1').lotes.find((l) => l.lote === 'QP').saldo;

@@ -55,8 +55,10 @@ function lista(v) {
 /** Las cargas del tanque. Se leen del resumen —el mismo sitio del que las lee `detalleDeSala`— para que la tarjeta de
  *  la sala y esta tabla no puedan decir cosas distintas. El resumen da a CADA lote la carga del tanque ENTERO (con
  *  todos sus animales), así que un tanque compartido la trae repetida: NO se suman (se sumaban hasta el 2026-10-23 y
- *  salía el doble). Si los lotes traen pesos distintos, sus copias difieren un poco y manda la MAYOR (bloque 4, tarea
- *  2a, decisión del usuario): la misma que ya hace saltar el punto de 🏠 Salas, que juzga todas sus copias. */
+ *  salía el doble). Si sus copias difieren, manda la MAYOR (bloque 4, tarea 2a, decisión del usuario): la misma que ya
+ *  hace saltar el punto de 🏠 Salas, que juzga todas sus copias. Desde la tarea 7 de la ronda 6 (2026-10-24) el resumen
+ *  calcula la carga con los pesos del TANQUE, no con los de cada lote, así que las copias de un tanque son iguales y la
+ *  mayor es esa misma; la regla queda para un resumen que no venga de `resumenMaduracion` (como el de las pruebas). */
 export function cargasPorTanque(M) {
   const m = new Map();
   for (const L of ((M || {}).resumen || {}).lotes || []) {

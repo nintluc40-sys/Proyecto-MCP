@@ -21,6 +21,7 @@
 
 import { construirLibro, sumarDias, ubicKey, pesosDeAlimentacion, CUARENTENA_DIAS, ESTADO_PRODUCCION, ESTADO_CUARENTENA, ESTADO_CERRADO } from './mad-libro.js';
 import { MAD_TANQUES_POR_SALA, MAD_SALA_TONELADAS, areaTanqueM2 } from './ficha-maduracion-ingreso.schema.js';
+import { alimPesosDeReferencia } from './ficha-maduracion-alimentacion.schema.js';
 
 export const RESUMEN_TEMPS = ['Temperatura 2:00', 'Temperatura 4:00', 'Temperatura 6:00', 'Temperatura 8:00', 'Temperatura 10:00', 'Temperatura 12:00',
   'Temperatura 14:00', 'Temperatura 16:00', 'Temperatura 18:00', 'Temperatura 20:00', 'Temperatura 22:00', 'Temperatura 0:00'];
@@ -231,6 +232,7 @@ function resumenLotes(fuentes, libro, hoy) {
   const trat = fuentes.tratamientos || [];
   const tons = ultimoPor(fuentes.sala, 'Sala', 'Toneladas');
   const nauplios = naupliosPorLote(fuentes.mortDesove);
+  const pesosRef = alimPesosDeReferencia(fuentes, libro);   // tarea 7 (ronda 6): los pesos de cada TANQUE, para su carga
   const tasa = (m, i) => (i > 0 ? r2((m / i) * 100) : '');
   const out = [];
   for (const L of libro.lotes.values()) {
@@ -269,9 +271,14 @@ function resumenLotes(fuentes, libro, hoy) {
     const pesoM = peso('Peso promedio machos (g)');
     const pesoH = peso('Peso promedio hembras (g)');
     /* CARGA POR TANQUE (usuario, 2026-09-15). Las dos son ESTIMACIONES, y conviene saber de qué. Las dos parten de
-       la BIOMASA viva del tanque, (♀ × peso♀ + ♂ × peso♂) en gramos, con los ÚLTIMOS pesos registrados del lote —los
-       mismos que usa la ración de Alimentación—. Sin ningún peso registrado quedan VACÍAS: un cero diría «el tanque
-       no pesa nada», que es falso.
+       la BIOMASA viva del tanque, (♀ × peso♀ + ♂ × peso♂) en gramos, con los pesos de REFERENCIA del TANQUE, los
+       mismos que usa la ración de Alimentación (`alimPesosDeReferencia`): su última biometría de un día en que tenía
+       alguno de sus lotes y, si no la hay, el peso de Ingreso. Sin ningún peso quedan VACÍAS: un cero diría «el
+       tanque no pesa nada», que es falso.
+       ⚠ Tarea 7 de la ronda 6 (2026-10-24, usuario): hasta entonces eran los pesos del LOTE (el promedio de todos sus
+       tanques en su último día pesado). Un tanque compartido salía con una carga distinta en cada lote, y la de
+       cualquier tanque no cuadraba con su propio peso (en 🛢 Tanques, con la columna de al lado). Ahora la carga es del
+       tanque y es la MISMA en todos sus lotes; el peso del LOTE (`pesoMachos`, `pesoHembras`) no cambia.
          · CARGA MÉTRICA (D16, 2026-09-18) = esa biomasa ÷ el ÁREA del tanque, en g/m² (MAD_TANQUE_AREA_M2). Hasta
            entonces era la biomasa en kg a secas. Se divide la biomasa EXACTA, no los kg ya redondeados: con 5129 g
            en 13,14 m² son 390,33 g/m², y desde 5,13 kg saldrían 390,41. Sin área conocida, vacía.
@@ -279,8 +286,10 @@ function resumenLotes(fuentes, libro, hoy) {
            porque las toneladas se registran POR SALA, no por tanque.
        Se calculan aquí, y no en la tarjeta, para que el PDF y la pantalla no puedan divergir. */
     tanques.forEach((t) => {
-      const g = (pesoH.valor === '' && pesoM.valor === '') ? ''
-        : t.hembras * (pesoH.valor || 0) + t.machos * (pesoM.valor || 0);
+      const ref = pesosRef[ubicKey(t.sala, t.tanque)] || {};
+      const ph = (ref.hembras || {}).valor, pm = (ref.machos || {}).valor;
+      const g = ((ph === '' || ph === undefined) && (pm === '' || pm === undefined)) ? ''
+        : t.hembras * (ph || 0) + t.machos * (pm || 0);
       const kg = g === '' ? '' : r2(g / 1000);
       const vol = volumenTanque(t.sala, toneladasDe(tons, t.sala).valor);
       const area = areaTanqueM2(t.sala, t.tanque);

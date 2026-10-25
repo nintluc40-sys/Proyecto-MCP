@@ -433,10 +433,12 @@ describe('Maduración · operativo · 0f · 6 · 🏠 Salas con lo del Saldo por
   /* 2026-10-22 (usuario) · los semáforos de la mortalidad del día y de las cargas, con el umbral del laboratorio en el
      globo. QH en la Sala 1 (13,14 m² y 5,5 t por tanque), con 40 g ♂ y 50 g ♀ y 15 machos muertos el 18/09: el tanque 2
      (150♂ 150♀) pasa de las dos cargas, y el 3 (100♂ 100♀, 685 g/m² y 1,64 kg/m³) sólo de la métrica. QB (Sala 4)
-     queda dentro de todo; QD (Sala 2) no tiene pesos. */
+     queda dentro de todo; QD (Sala 2) no tiene pesos.
+     Tarea 7 (ronda 6, 2026-10-24) · cada tanque con SUS pesos (los de la ración): el 3 lleva los suyos, los mismos. */
   const PLANTA_U = [...PLANTA_S,
     ING('01/08/2026', 'QH', 'Sala 1', 2, 150, 150), ING('01/08/2026', 'QH', 'Sala 1', 3, 100, 100),
     TQ('18/09/2026', 'Sala 1', 2, { 'Peso promedio machos (g)': '40', 'Peso promedio hembras (g)': '50', 'Machos muertos': '15' }),
+    TQ('18/09/2026', 'Sala 1', 3, { 'Peso promedio machos (g)': '40', 'Peso promedio hembras (g)': '50' }),
   ];
   const puntos = (el) => [...el.querySelectorAll('.mop-dot')].map((i) => [i.classList.contains('is-alto') ? 'alto' : i.classList.contains('is-ok') ? 'ok' : '?', i.title]);
 

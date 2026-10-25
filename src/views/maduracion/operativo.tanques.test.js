@@ -225,9 +225,12 @@ describe('Maduración · operativo · 🛢 Tanques (F4.1)', () => {
       expect(c.cargaMetrica).toBeCloseTo((t1.vivos.machos * 60 + t1.vivos.hembras * 80) / areaTanqueM2('Sala 3', 1), 1);
     });
 
-    it('🔑 si sus lotes traen pesos DISTINTOS, manda la MAYOR (ni la menor ni la suma)', () => {
+    it('🔴 tarea 7 (ronda 6) · si sus lotes traen pesos DISTINTOS, la carga sale de los pesos del TANQUE y es UNA', () => {
       /* LA está en los tanques 1 y 2 de la Sala 1 y LB sólo en el 1. El 10/09 el tanque 1 pesa 60/80 y el 2, 100/120:
-         los pesos de LA son el promedio de sus dos tanques y los de LB, los del 1. Las copias del tanque 1 difieren. */
+         los pesos del LOTE LA son el promedio de sus dos tanques (80/100) y los de LB, los del 1. Hasta el 2026-10-24 la
+         carga salía de esos pesos de lote, las dos copias del tanque 1 diferían y aquí mandaba la mayor (la de LA). Ahora
+         sale de los pesos del TANQUE (los de la ración, `alimPesosDeReferencia`): las dos copias son la misma, la de
+         sus vivos con 60 y 80 g, y el tanque 2 lleva los suyos, 100 y 120 g. */
       const MC = modeloOperativo([
         ING('2026-09-01', 'LA', 'Sala 1', 1, 20, 20),
         ING('2026-09-01', 'LA', 'Sala 1', 2, 20, 20),
@@ -239,13 +242,26 @@ describe('Maduración · operativo · 🛢 Tanques (F4.1)', () => {
       ], { fecha: FOTO, hoy: FOTO });
       const copias = copiasDe(MC, 'Sala 1', 1);
       expect(copias).toHaveLength(2);
-      expect(new Set(copias).size, copias.join(' · ')).toBe(2);   // lo que hace distinguir el caso
+      expect(copias[1], copias.join(' · ')).toBe(copias[0]);
+      const r2 = (n) => Math.round(n * 100) / 100;
       const c = cargasPorTanque(MC).get('Sala 1|1');
-      expect(c.cargaMetrica).toBe(Math.max(...copias));
+      expect(c.cargaMetrica).toBe(r2((40 * 60 + 40 * 80) / areaTanqueM2('Sala 1', 1)));   // 426,18 (con los de LA, 547,95)
       const vol = (MC.resumen.lotes || []).flatMap((L) => (L.tanques || [])
         .filter((x) => x.sala === 'Sala 1' && Number(x.tanque) === 1).map((x) => Number(x.cargaVolumetrica)));
-      expect(new Set(vol).size, vol.join(' · ')).toBe(2);
-      expect(c.cargaVolumetrica).toBe(Math.max(...vol));
+      expect(vol[1], vol.join(' · ')).toBe(vol[0]);
+      expect(c.cargaVolumetrica).toBe(vol[0]);
+      expect(cargasPorTanque(MC).get('Sala 1|2').cargaMetrica).toBe(r2((20 * 100 + 20 * 120) / areaTanqueM2('Sala 1', 2)));
+    });
+
+    it('🔑 y si un resumen trae copias DISTINTAS, manda la MAYOR (ni la menor ni la suma)', () => {
+      /* El resumen de verdad ya no las da distintas (arriba), pero `cargasPorTanque` no lo supone: con un resumen que las
+         trajera (bloque 4, tarea 2a, decisión del usuario), la mayor, la que hace saltar el punto de 🏠 Salas. */
+      const MD = { resumen: { lotes: [
+        { lote: 'LA', tanques: [{ sala: 'Sala 1', tanque: 1, cargaMetrica: 450, cargaVolumetrica: 1.1 }] },
+        { lote: 'LB', tanques: [{ sala: 'Sala 1', tanque: 1, cargaMetrica: 400, cargaVolumetrica: 1.3 }] },
+      ] } };
+      const c = cargasPorTanque(MD).get('Sala 1|1');
+      expect([c.cargaMetrica, c.cargaVolumetrica]).toEqual([450, 1.3]);
     });
   });
 
