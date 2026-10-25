@@ -32,7 +32,8 @@
    ============================================================ */
 import { normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { ubicKey, pesosDeAlimentacion } from '../registros/lib/mad-libro.js';
-import { fechaDeFila } from './operativo.data.js';
+import { alimPesosDeReferencia } from '../registros/lib/ficha-maduracion-alimentacion.schema.js';
+import { fechaDeFila, fuentesAlDia } from './operativo.data.js';
 import { proporcionHM, densidadTanque } from './operativo.indicadores.js';
 import { evaluar } from './operativo.umbrales.js';
 import { posicionEnFiltro, hayLote, hayCodigo, claveTanque } from './operativo.tablero.js';
@@ -73,6 +74,18 @@ export function cargasPorTanque(M) {
     }
   }
   return m;
+}
+
+/** Los pesos de REFERENCIA de cada tanque (`alimPesosDeReferencia`: su última biometría de un día en que tenía alguno de
+ *  sus lotes de hoy y, si no la hay, el peso de Ingreso), con el corte del resumen (`fuentesAlDia` hasta la foto): los
+ *  mismos de los que sale su carga y su ración. Tarea 12 de la ronda 6 (2026-10-24, usuario): la columna de pesos de la
+ *  tabla enseñaba el último peso del período SIN mirar quién había dentro, y en un tanque que cambió de ocupantes era el
+ *  del lote ANTERIOR (y no cuadraba con su carga). Se calcula UNA vez por modelo (cuesta ~0,1 s con el libro real). */
+const _pesosRef = new WeakMap();
+export function pesosDeReferencia(M) {
+  if (!M || !M.libro) return {};
+  if (!_pesosRef.has(M)) _pesosRef.set(M, alimPesosDeReferencia(fuentesAlDia(M.fuentes || {}, txt(M.fecha) || '9999-12-31'), M.libro));
+  return _pesosRef.get(M);
 }
 
 /** Lo que los PARTES dicen de cada tanque en el período: rondas, bajas, cópulas, muda y los últimos pesos. */
@@ -132,6 +145,7 @@ export function tablaDeTanques(M, periodo, F, dias) {
   const libro = (M && M.libro) || { tanques: new Map() };
   const cargas = cargasPorTanque(M);
   const actividad = actividadPorTanque(dias, periodo, pesosDeAlimentacion(((M || {}).fuentes || {}).alimentacion, ((M || {}).fuentes || {}).tanques));
+  const pesos = pesosDeReferencia(M);   // tarea 12 (ronda 6): los pesos, de aquí y no de `actividad` (ver pesosDeReferencia)
   const filas = [];
   for (const [k, T] of libro.tanques) {
     // Sólo las posiciones VIVAS: un tanque que cerró sigue en el libro con su composición a cero, y eso no es
@@ -164,8 +178,10 @@ export function tablaDeTanques(M, periodo, F, dias) {
       densidad, densidadEstado: evaluar('densidad', densidad),
       cargaMetrica, cargaMetricaEstado: evaluar('cargaMetrica', cargaMetrica),
       cargaVolumetrica: c.cargaVolumetrica === undefined ? '' : c.cargaVolumetrica,
-      pesoMachos: a.pesoMachos === undefined ? '' : a.pesoMachos,
-      pesoHembras: a.pesoHembras === undefined ? '' : a.pesoHembras,
+      pesoMachos: ((pesos[k] || {}).machos || {}).valor === undefined ? '' : pesos[k].machos.valor,
+      pesoHembras: ((pesos[k] || {}).hembras || {}).valor === undefined ? '' : pesos[k].hembras.valor,
+      // de dónde sale cada peso —«Biometría», «Alimentación» o «Ingreso»— y de qué día: la celda lo dice
+      pesoFuente: { machos: ((pesos[k] || {}).machos) || null, hembras: ((pesos[k] || {}).hembras) || null },
       rondas: ent(a.rondas), diasConParte: ent(a.dias),
       muertes: ent(a.muertes), descartes: ent(a.descartes),
       ultimoParte: txt(a.ultimoParte),

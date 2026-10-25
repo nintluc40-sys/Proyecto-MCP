@@ -188,7 +188,9 @@ volver a abrir esto, esto es lo que ya se midió:
     las revisiones», que sustituye al lote del tablero en la revisión de nauplios, su historial y la mortalidad en
     desove y recuperación —la alcalinidad y las observaciones siguen el tablero—), **🛢 Tanques** (tabla
     maestra de los ocupados —con el día y la HORA de su último parte, y desde el 2026-10-23 el punto de color de su
-    ♀:♂, su densidad y su carga, el mismo de 🏠 Salas; la carga es UNA por tanque, la del tanque entero— y, al pulsar
+    ♀:♂, su densidad y su carga, el mismo de 🏠 Salas; la carga es UNA por tanque, la del tanque entero; desde el
+    2026-10-24, la carga y su columna de pesos salen de los pesos de REFERENCIA del tanque, los de la ración: su última
+    biometría con sus lotes de hoy o, si no la hay, la de Ingreso, marcada— y, al pulsar
     una fila, su ficha:
     composición, curva de vivos, partes con su hora,
     observaciones y movimientos), **🥚 Reproducción** (totales, los desoves pendientes de N5 arriba, la tabla

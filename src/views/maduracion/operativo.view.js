@@ -2664,6 +2664,12 @@ function tanquesHTML(M, memo, p, F) {
   return tablaTanquesHTML(filas, F) + (_fichaTanque ? fichaTanqueHTML(_fichaTanque) : '');
 }
 
+/* Tarea 12 (ronda 6, 2026-10-24) · de dónde sale cada peso de la tabla (`pesoFuente` de tablaDeTanques): el globo lo dice
+   sexo a sexo, y el de Ingreso —sin biometría con sus lotes de hoy— va marcado en la celda. */
+const fuentePesoTxt = (x) => (x && x.fuente ? x.fuente + (x.fecha ? ' del ' + dm(x.fecha) : '') : 'sin peso');
+const pesoFuenteTxt = (pf) => (pf ? '♀: ' + fuentePesoTxt(pf.hembras) + ' · ♂: ' + fuentePesoTxt(pf.machos) : '');
+const pesoDeIngreso = (pf) => !!pf && [pf.hembras, pf.machos].some((x) => x && x.fuente === 'Ingreso');
+
 function tablaTanquesHTML(filas, F) {
   if (!filas.length) {
     return `<div class="mc-card"><h4 class="mc-card-h">🛢 Tanques</h4>
@@ -2682,7 +2688,7 @@ function tablaTanquesHTML(filas, F) {
       <td class="r" title="${esc(definicion('proporcionHM'))}">${nf(f.hm, 2)} ${dot(f.hmEstado, refUmbral('proporcionHM'))}</td>
       <td class="r" title="${esc(definicion('densidadTanque'))}">${nf(f.densidad, 2)} ${dot(f.densidadEstado, refUmbral('densidad'))}</td>
       <td class="r">${nf(f.cargaMetrica, 2)} ${dot(f.cargaMetricaEstado, refUmbral('cargaMetrica'))}</td>
-      <td class="r">${nf(f.pesoHembras, 1)} / ${nf(f.pesoMachos, 1)}</td>
+      <td class="r" title="${esc(pesoFuenteTxt(f.pesoFuente))}">${nf(f.pesoHembras, 1)} / ${nf(f.pesoMachos, 1)}${pesoDeIngreso(f.pesoFuente) ? ' <span class="mop-nota">ingreso</span>' : ''}</td>
       <td class="r">${nf(f.rondas)}</td>
       <td class="r">${f.ultimoParte ? esc(dm(f.ultimoParte)) : '<span class="muted">—</span>'}</td>
       <td class="r">${!f.ultimoParte ? '<span class="muted">—</span>' : f.ultimaHora ? esc(f.ultimaHora)
@@ -2696,11 +2702,12 @@ function tablaTanquesHTML(filas, F) {
         <th class="r" title="${esc(definicion('proporcionHM'))}">♀:♂</th>
         <th class="r" title="${esc(definicion('densidadTanque'))}">Dens.</th>
         <th class="r" title="Biomasa del tanque ÷ su área, en g/m²">Carga</th>
-        <th class="r">Peso ♀/♂ (g)</th><th class="r">Rondas</th><th class="r">Últ. parte</th>
+        <th class="r" title="Los pesos de referencia del tanque: los mismos de su carga y de la ración">Peso ♀/♂ (g)</th><th class="r">Rondas</th><th class="r">Últ. parte</th>
         <th class="r" title="La hora del último parte de ese día (3, 2026-10-01)">Hora</th></tr></thead>
       <tbody>${filas.map(fila).join('')}</tbody></table></div>
     <p class="mc-note">Los VIVOS y la CARGA son del tanque ENTERO —el área y el volumen son suyos, no del lote—, y los
-      PESOS son los del último parte, no el promedio del período. El punto de color compara con el umbral que manda (el
+      PESOS son los de referencia del tanque, de los que sale su carga y su ración: su última biometría con sus lotes de
+      hoy o, si no la hay, la de Ingreso (marcada); no el promedio del período. El punto de color compara con el umbral que manda (el
       del laboratorio, al pasar el ratón por encima), el mismo que en 🏠 Salas para ese tanque.${avisos.length ? ' ⚠ ' + esc(avisos[0]) : ''}</p>
   </div>`;
 }

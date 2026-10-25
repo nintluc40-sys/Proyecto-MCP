@@ -109,6 +109,27 @@ describe('Maduración · operativo · 🛢 Tanques (F4.1)', () => {
       expect(t1.ultimaHora).toBe('14:40');
     });
 
+    it('🔴 tarea 12 (ronda 6) · un tanque que cambió de ocupantes no enseña el peso del lote ANTERIOR', () => {
+      /* El t4 de la Sala 3: RD entra el 01/09, se pesa el 05/09 (100 g ♂, 120 g ♀) y CIERRA el 08/09; RE entra el 12/09
+         con su peso de Ingreso (30 g ♂, 40 g ♀) y nadie lo pesa después. Hasta el 2026-10-24 la columna daba 120/100 —los
+         de RD, dentro del período—; ahora, los de referencia del tanque (los de su carga y su ración): los de RE, de
+         Ingreso, y lo dice. */
+      const MD = modeloOperativo([
+        ING('2026-09-01', 'RD', 'Sala 3', 4, 10, 10, 'CD'),
+        TQ('2026-09-05', 'Sala 3', 4, { 'Peso promedio machos (g)': 100, 'Peso promedio hembras (g)': 120, Hora: '08:00', Parte: 1 }),
+        FIN('2026-09-08', 'RD', 'Total', 10, 10),
+        { ...ING('2026-09-12', 'RE', 'Sala 3', 4, 8, 8, 'CE'), 'Peso promedio machos (g)': 30, 'Peso promedio hembras (g)': 40 },
+      ], { fecha: FOTO, hoy: FOTO });
+      const t4 = fila(tablaDeTanques(MD, periodoDe('30d', FOTO, MD.fuentes), SIN, diasDeTanque(MD.fuentes.tanques)), 'Sala 3', 4);
+      expect(t4.lotes).toEqual(['RE']);
+      expect([t4.pesoHembras, t4.pesoMachos]).toEqual([40, 30]);
+      expect(t4.pesoFuente.hembras).toMatchObject({ fuente: 'Ingreso', fecha: '2026-09-12' });
+      // y cuadra con su carga: (8 × 40 + 8 × 30) g ÷ el área del tanque
+      expect(t4.cargaMetrica).toBe(Math.round(((8 * 40 + 8 * 30) / areaTanqueM2('Sala 3', 4)) * 100) / 100);
+      // el control: el parte del 05/09 SÍ está en el período (si no, esta prueba no distinguiría nada)
+      expect(diasDeTanque(MD.fuentes.tanques).some((d) => d.fecha === '2026-09-05' && d.pesoHembras === 120)).toBe(true);
+    });
+
     it('cuenta las RONDAS del período, no los días', () => {
       const t = tablaDeTanques(M, P30, SIN, DIAS);
       const t1 = fila(t, 'Sala 3', 1);
