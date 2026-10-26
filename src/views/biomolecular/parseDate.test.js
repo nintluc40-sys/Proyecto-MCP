@@ -51,3 +51,41 @@ describe('parseDate · rango de mes y día', () => {
     expect(normalizeRows([{ Fecha: '30/01/0202', 'Código': 'X' }])).toEqual([]);
   });
 });
+
+// Revisión de pendientes (2026-10-25, punto 11) · la fecha con el AÑO DELANTE. La regla de dd/mm, sin ancla, leía
+// «26-10-05» del medio de «2026-10-05» y daba 2005-10-26: un año que pasa el filtro de `normalizeRows`, así que la fila
+// entraba con fecha falsa y sin aviso. Y un serial de Excel, por `new Date`, daba 1970 y se descartaba.
+describe('parseDate · el año delante y el serial de Excel', () => {
+  it('lee la fecha con el año delante, con guion, con barra y con hora', () => {
+    expect(parseDate('2026-10-05')).toBe('2026-10-05');
+    expect(parseDate('2026-10-05')).not.toBe('2005-10-26');
+    expect(parseDate('2026-10-05T00:00:00.000Z')).toBe('2026-10-05');
+    expect(parseDate('2026/10/05')).toBe('2026-10-05');
+    expect(parseDate('2026-1-5')).toBe('2026-01-05');
+  });
+
+  it('con el año delante también descarta el mes o el día imposibles', () => {
+    expect(parseDate('2026-13-05')).toBeNull();
+    expect(parseDate('2026-10-32')).toBeNull();
+  });
+
+  it('dd/mm/aaaa no cambia, tampoco con la hora detrás', () => {
+    expect(parseDate('05/10/2026')).toBe('2026-10-05');
+    expect(parseDate('05/10/2026 10:30:00')).toBe('2026-10-05');
+    expect(parseDate('5-10-26')).toBe('2026-10-05');
+  });
+
+  it('un serial de Excel da su día (antes, 1970)', () => {
+    expect(parseDate(46300)).toBe('2026-10-05');
+    expect(parseDate('46300')).toBe('2026-10-05');
+  });
+
+  it('las filas entran con su fecha verdadera', () => {
+    const rows = normalizeRows([
+      { Fecha: '2026-10-05', 'Código': 'A', IHHNV: 'Negativo' },
+      { Fecha: 46301, 'Código': 'B', IHHNV: 'Negativo' },
+      { Fecha: '07/10/2026', 'Código': 'C', IHHNV: 'Positivo' },
+    ]);
+    expect(rows.map((r) => r.f)).toEqual(['2026-10-05', '2026-10-06', '2026-10-07']);
+  });
+});

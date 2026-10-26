@@ -15,6 +15,7 @@
    ============================================================ */
 import { store } from '../../core/store.js';
 import { esc as escH } from '../../core/format.js'; // output-encoding único (antes había un escH local duplicado)
+import { parseAnyDate } from '../../core/dates.js';
 import { toast } from '../../ui/toast.js';
 import { setDateBarHidden } from '../../ui/shell.js'; // esta vista usa su PROPIA filterbar
 import { matrizTejidos, franjaTejidos } from './tejidos.js'; // 2026-09-26 · el tipo de muestra (tejido)
@@ -105,6 +106,15 @@ const $ = (id) => document.getElementById(id);
 
 export function parseDate(raw) {
   if (!raw) return null;
+  // 2026-10-25 · El AÑO DELANTE (2026-10-05, 2026/10/05, con o sin hora) va primero: la regla de dd/mm, sin ancla, leía
+  // «26-10-05» del medio y daba 2005-10-26, un año que pasa el filtro de `normalizeRows` (la fila entraba con fecha falsa
+  // y sin aviso). Hoy el libro llega en dd/mm/aaaa por las tres vías de lectura; esto cubre una celda escrita como texto.
+  const a = String(raw).match(/(?<!\d)(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?!\d)/);
+  if (a) {
+    const mm = +a[2], dd = +a[3];
+    if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+    return `${a[1]}-${a[2].padStart(2, '0')}-${a[3].padStart(2, '0')}`;
+  }
   const m = String(raw).match(/(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
   if (m) {
     const y = m[3].length === 2 ? '20' + m[3] : m[3];
@@ -119,8 +129,11 @@ export function parseDate(raw) {
     if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
     return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
   }
-  const d = new Date(raw);
-  return isNaN(d) ? null : d.toISOString().slice(0, 10);
+  // El resto (un serial de Excel, un texto con el mes en letras), por `parseAnyDate` (regla 7 de CLAUDE.md): antes un
+  // `new Date` directo, que con un serial daba 1970 y la fila se descartaba. Día LOCAL, no el de UTC.
+  const d = parseAnyDate(raw);
+  if (!d) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 export function normResult(s) {
   const l = String(s).toLowerCase();
