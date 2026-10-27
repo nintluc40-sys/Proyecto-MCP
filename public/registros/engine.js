@@ -14917,7 +14917,7 @@ function _reproMatrixBannerHTML(){
   const n=_reproReadRows(_REPRO_SHEETS.matriz).length;
   // D11 · media MATRIZ no está «al día»: el alta de un individuo que no llegó no se ve repetida.
   // Un GAS anterior al 2026-09-14 lo sobrescribe (su llave es sólo el Trovan: hasta revivir a una
-  // muerta); el actual la rechaza al escribir (llaveMatriz_).
+  // muerta); el actual la casa por la CUATERNA (Trovan, Piscina, Código genético y Lote; sin llaveMatriz_ desde el 09-16).
   if(n && _reproRecortada(_REPRO_SHEETS.matriz)){
     return box("#fffbeb","#fde68a","#854d0e","⚠ «Maduración MATRIZ» llegó <b>RECORTADA</b> por el tope del servidor: sólo se leyeron sus últimos "+n+" individuo(s).<br>Los registrados antes saldrán «no encontrado», y un alta de uno de ellos no se detectaría aquí como repetida: el GAS actualizado la rechaza, pero uno anterior lo sobrescribiría."+btn);
   }
@@ -27049,7 +27049,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "bdef63cfb76c";
+const GAS_VERSION = "69c44b355137";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -27165,7 +27165,7 @@ const LIMITS = {
   // cols; Sulfato desde el 2026-09-13 y Sulfuros desde el 2026-10-01, las dos AL FINAL: ensureHeaders
   // las añade solas) + margen.
   cal:     { maxRows: 300, maxCols: 80 },
-  // Patología en Fresco: 6 contexto + 15 columnas internas + Peso + Obs = 23 cols.
+  // Patología en Fresco: 6 contexto + 15 columnas internas + Peso + Obs + Sesión + Lote = 25 cols.
   pat:     { maxRows: 300, maxCols: 40 },
   // Marea: 16 cols (predicción INOCAR, 1 fila/día). maxRows holgado por encima del
   // tope del cliente (grilla hasta 400 filas): permite sincronizar meses de una vez.
