@@ -418,7 +418,6 @@ const semillaAntesDeAreas = seed, RND_FACHADAS_DE_REFERENCIA = 11 * 10004;
 const cil = (x, z, r, h, y0, mat, tumbado) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 16), mat); const [px, pz] = P(x, z); m.position.set(px, y0 + (tumbado ? r : h / 2), pz); if (tumbado) m.rotation.x = Math.PI / 2; m.castShadow = m.receiveShadow = true; others.add(m); return m; };
 const M_SOPLADOR = std({ color: col('#3d6fa0'), roughness: .5, metalness: .3 }), M_ACERO = std({ color: col('#9aa3a8'), roughness: .35, metalness: .7 });
 const M_VIDRIO = std({ color: col('#2c3e48'), roughness: .15, metalness: .4 }), M_PORTON = std({ map: rep(TX.zinc, 1, 1), color: col('#b8c0c4'), roughness: .5, metalness: .4 });
-const M_DIESEL = std({ color: col('#c9a23a'), roughness: .5, metalness: .3 });
 // B1 · los tanques de las salas abiertas (eclosión): pared clara vista por dentro y por fuera, y el agua de los de desove
 const M_TANQUE_ECL = std({ color: col('#e9e6df'), roughness: .7, side: THREE.DoubleSide }), M_AGUA_ECL = std({ color: col('#3a6fa8'), roughness: .15, metalness: .1 });
 /** Alero de ingreso con su puerta de vidrio, en el lado de `z` del edificio (centro `xm`). */
@@ -437,8 +436,9 @@ OTHERS.forEach(([a, b, c, d, h, type, nombre, forma, color]) => {
     for (let zz = b + 4; zz < d - 3; zz += 6) box(a + 1, zz, a + 2.4, zz + 1.6, h, 1.2, M_SOPLADOR, true, others);
     box(a + 2.7, b + 3, a + 3, d - 3, h, .3, M.pipe, true, others);
     cil(c - 3, b + 4, .35, 4.2, h, M_ACERO); cil(c - 5, b + 4, .35, 4.2, h, M_ACERO);
-  } else if (forma === 'diesel') {   // tanque de combustible tumbado sobre sus soportes y escape en el techo
-    cil(c + 2.2, d - 8, 1.1, 5, .35, M_DIESEL, true); box(c + 1.4, d - 10, c + 3, d - 9.6, 0, .4, M.steel, true, others); box(c + 1.4, d - 6.4, c + 3, d - 6, 0, .4, M.steel, true, others);
+  } else if (forma === 'diesel') {   // los soportes del tanque de combustible y el escape en el techo
+    // 2026-10-27 (usuario): fuera el tanque tumbado (el cilindro dorado junto a los masivos de algas); sus soportes se quedan.
+    box(c + 1.4, d - 10, c + 3, d - 9.6, 0, .4, M.steel, true, others); box(c + 1.4, d - 6.4, c + 3, d - 6, 0, .4, M.steel, true, others);
     cil(a + w / 2, b + 3, .25, 2.6, h, M_ACERO);
   } else if (forma === 'filtros') {   // filtros Turbidex al costado este y dos tanques elevados en el techo
     for (let i = 0; i < 4; i++) cil(c + 2.2, d - 3 - i * 2.6, .75, 2.4, 0, M_ACERO);   // al fondo del pasillo: el frente es el ingreso del M3 (opción I)
