@@ -26,7 +26,7 @@ npm run lint       # ESLint
 > es dependencia de npm. El gemelo `index (8)` no tiene servidor del que pedirlo: lleva SheetJS
 > **incrustado**, byte a byte el de `public/vendor/` (lo vigila `verificar-xlsx-index8`).
 
-### `npm audit` avisa de 6 (todos de desarrollo), y se quedan · MEDIDO el 2026-09-21, re-medido el 2026-10-15 y el 2026-10-23
+### `npm audit` avisa de 7 (todos de desarrollo), y se quedan · MEDIDO el 2026-09-21, re-medido el 2026-10-15, el 2026-10-23 y el 2026-10-26
 
 **Exposición en producción: cero** (`npm audit --omit=dev` da 0): ninguno de los paquetes señalados entra en el bundle;
 `dependencies` lleva `chart.js`, `leaflet`, `three` y `qrcode-generator`, y ninguno está entre los avisos. Antes de
@@ -37,10 +37,15 @@ volver a abrir esto, esto es lo que ya se midió:
   4.3.2 y `brace-expansion` 1.1.16 → 1.1.21—, sin tocar `happy-dom`, vite ni vitest. La build salió **idéntica byte a
   byte** (los 56 archivos, la misma huella). El 2026-09-21 ese mismo comando no cambiaba nada (aún no había esos
   arreglos menores).
-- Los **seis** que quedan (3 moderate, 1 high, 2 critical: `vite`, `esbuild`, `vitest`, `vite-node`, `@vitest/mocker`,
+- Seis de ellos (3 moderate, 1 high, 2 critical: `vite`, `esbuild`, `vitest`, `vite-node`, `@vitest/mocker`,
   `tinypool`) sólo se cierran con saltos MAYORES —`vite` 5 → 8 y `vitest` 2 → 5—, que es exactamente lo que la
   decisión **D-6** descartó: tres versiones mayores cada uno, con miles de pruebas y la puerta a producción encima, a
   cambio de nada en producción. Afectan al servidor de desarrollo y a la interfaz de vitest, que sólo corren en local.
+- 🆕 **2026-10-26 · el SÉPTIMO, `happy-dom`** (high, GHSA-834v-8h66-3h79: el arreglo de CVE-2026-33943 quedó incompleto
+  y un alias de `import` sin sanear deja que lo que se ejecuta en su DOM llegue a Node). Afecta de la 17.0.0 a la 21.0.3
+  —la nuestra es la 20.10.3— y sólo lo cierra la **21.0.4**, otra versión MAYOR. Se queda (decisión del usuario, como
+  D-6): `happy-dom` es sólo el entorno de las pruebas y en él no corre más contenido que el nuestro (fixtures, nunca
+  HTML ajeno), y las pruebas dependen de su comportamiento MEDIDO en la 20 (el `<select>` de abajo).
 - `npm update` **no es quirúrgica**: arrastraría además `happy-dom` —la versión contra la que está MEDIDO el
   comportamiento raro del `<select>` pintado con `innerHTML`, del que dependen pruebas—, `@types/node` y `undici-types`.
 - ⚠⚠ **Trampa de medición, ya explicada** (2026-10-23): `npm audit fix --dry-run` (npm 11) **reescribe
