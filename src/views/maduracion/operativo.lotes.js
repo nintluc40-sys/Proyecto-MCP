@@ -20,8 +20,9 @@
    fuente (los acumuladores del libro, la hoja de cierres, los avisos) y al final se COMPARAN. El día que no cuadre,
    es un hallazgo de verdad, no un cero que se ha escrito solo.
 
-   ⏳ Lo que la ficha aún NO trae, porque su hoja no existe todavía (medido el 2026-09-19): revisiones y
-   tratamientos. Nacen con su primer envío; hasta entonces dibujar su panel vacío es lo correcto.
+   ⏳ Lo que la ficha aún NO trae: las revisiones (las de nauplios de 📋 Inf. Supervisor) y los tratamientos. Aquí
+   decía que era porque su hoja no existía (medido el 2026-09-19); desde entonces las dos tienen filas, así que lo
+   que falta ya no es el dato sino la tarea de traerlas a la ficha (anotada como pendiente el 2026-10-26).
    ============================================================ */
 import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { estadoDeLote, ESTADO_MIXTO, ubicKey, pesosDeAlimentacion } from '../registros/lib/mad-libro.js';

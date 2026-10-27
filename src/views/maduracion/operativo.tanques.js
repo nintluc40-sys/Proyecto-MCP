@@ -25,10 +25,10 @@
    en esa ronda (muertes, descartes, cópulas, muda, pesos); los vivos salen del LIBRO, que además sabe de
    ingresos, movimientos y cierres. Sumar partes para deducir vivos daría otra cifra y sería la equivocada.
 
-   ⏳ Lo que aún no se puede contrastar con dato real (medido el 2026-09-21): `Maduración Movimientos` tiene CERO
-   filas y los partes de `Maduración Tanques` son del 13 al 18 de agosto, fuera de la ventana de 30 días. El
-   módulo se desarrolla con fixtures FICTICIOS y en pantalla saldrá vacío hasta que esas hojas se llenen; es lo
-   correcto, y `medir-tablero-mad-real` lo dirá en su censo en vez de dar un verde sobre cero.
+   ✅ Contrastado con dato real (2026-10-26, `auditar-tablero-mad-real`: la foto por tanque suma lo mismo que por
+   sala y que el total, y el libro por el export = por `?p=rows`). Aquí decía, medido el 2026-09-21, que
+   `Maduración Movimientos` tenía CERO filas y los partes de `Maduración Tanques` eran de agosto: ya no es así
+   (cuántas filas tienen hoy lo dice `estado-maduracion.mjs`). Los fixtures siguen siendo FICTICIOS.
    ============================================================ */
 import { normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { ubicKey } from '../registros/lib/mad-libro.js';

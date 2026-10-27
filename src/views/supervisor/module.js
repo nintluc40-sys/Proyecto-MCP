@@ -1,22 +1,24 @@
 /* ============================================================
    SUPERVISOR · Resumen Operativo del Módulo
 
-   ⚠ MAPA DEL ARCHIVO — son ~2.170 líneas y CINCO bloques sin relación entre sí.
+   ⚠ MAPA DEL ARCHIVO — más de dos mil líneas (`wc -l`) y CINCO bloques sin relación entre sí.
    Léelo por bloques; casi nunca hay que tocar más de uno a la vez. Los tres modales
    de abajo no aportan datos propios: reutilizan la capa PURA de otras vistas
    (microbiologia/data.js, microbiologia/petri.js, microbiologia/calagua.data.js), así
    que su lógica de negocio no vive aquí — aquí sólo vive su presentación.
 
-     · ~40-190    helpers de comentarios (matutino/vespertino), memo por datos, y
-                  BIOMOLECULAR: alias de columnas, filtrado por módulo y tooltip.
-     · ~192-406   gráficos Biomol en D3: heatmap, swarm y gel.
-     · ~407-671   MICROBIOLOGÍA del módulo: placa de agar, tabla, heatmap y tendencias.
-     · ~672-962   CALIDAD DE AGUA del módulo (`cw*`): tabla, matriz, tendencias,
-                  panel de diagnóstico y fichas por tanque.
-     · ~963-1104  SIEMBRAS (`svSie*`): filas por tanque, rollups y modal.
-     · ~1105-fin  `renderModule`, la función principal. Es larga (~1.060 líneas) porque
-                  arma el banner de KPIs, la rejilla de tanques y CADA UNO de los
-                  modales anteriores, más sus gráficos y su cableado de eventos.
+     · helpers de comentarios (matutino/vespertino), memo por datos, y
+       BIOMOLECULAR (`biomolForModuleCompute`): alias de columnas, filtrado por módulo y tooltip.
+     · gráficos Biomol en D3 (`buildBiomolHeat` / `…Swarm` / `…Gel`): heatmap, swarm y gel.
+     · MICROBIOLOGÍA del módulo (`micro*`): placa de agar, tabla, heatmap y tendencias.
+     · CALIDAD DE AGUA del módulo (`cw*`): tabla, matriz, tendencias,
+       panel de diagnóstico y fichas por tanque.
+     · SIEMBRAS (`svSie*`, `svSiembras*`): filas por tanque, rollups y modal.
+     · `renderModule`, la función principal, al final. Es larga (más de mil líneas) porque
+       arma el banner de KPIs, la rejilla de tanques y CADA UNO de los
+       modales anteriores, más sus gráficos y su cableado de eventos.
+     (Aquí iba cada bloque con su rango de líneas, «~963-1104»…, y un total de «~2.170»: se movieron
+     sin que nadie los tocara. Los nombres de función no se mueven.)
 
    Dividirlo en módulos propios es deuda reconocida y pendiente de decidir; se documenta
    aquí para que el archivo sea navegable mientras tanto. No añadas un sexto bloque:

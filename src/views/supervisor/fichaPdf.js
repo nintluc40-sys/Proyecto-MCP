@@ -3,7 +3,7 @@
    Porta las plantillas compactas de Registros (cabecera/pie/CSS) SIN páginas de
    gráficos: cada PDF = la hoja (tabla con datos). Un documento = varias .ppage
    (una por día). El HTML de la TABLA lo aportan los adaptadores por ficha
-   (tandas siguientes) vía `pages[].tableHtml`.
+   (hoy, los de `trazabilidad.js`) vía `pages[].tableHtml`.
    Fiel a engine.js pdfHeader/pdfFooter/pdfCss, adaptado al módulo del dashboard
    (mod = 'M01'…'CIO', sin globals del motor de captura).
    ============================================================ */
