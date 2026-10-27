@@ -26051,10 +26051,21 @@ if(typeof document!=="undefined" && !window.__calKeyNav){
    columna del td) y opera sobre el input/select/textarea editable de cada celda,
    disparando eventos input/change para que los recálculos por-grilla existentes
    (mic/cal) y el marcado "sin guardar" se ejecuten igual que al teclear.
-   Las fichas estándar (Calidad/Población/etc.) NO están incluidas (no tienen
-   panel en la allowlist), así que conservan su comportamiento.
+   Las fichas estándar (Calidad/Población/etc.) NO estaban incluidas hasta el 2026-10-27: desde ese día entran las SEIS
+   de Larvicultura (_STD_GRID_PANELS, abajo), con su propio pegado de bloques y sus flechas (stdGridPaste, stdGridKey).
 ══════════════════════════════════════════════════════════════════════════ */
-const _GSEL_PANELS = "#fp-salas,#fp-tanques,#fp-biomol,#fp-micnuevo,#fp-marea";
+/* 2026-10-27 (usuario, ronda 8 · tarea 2) · LAS SEIS FICHAS DE LARVICULTURA, COMO BIOMOL: pegar un bloque de Excel,
+   seleccionar un rango (rellenarlo con un valor o borrarlo con Supr) y moverse con flechas e Intro. Sin tocar sus
+   renderizadores —el MCP las pinta con los módulos de fichas/ e index (8) con los suyos—: todo va por la POSICIÓN de la
+   celda en su tabla, como esta selección. Ver stdGridPaste. */
+const _STD_GRID_PANELS = "#fp-calidad,#fp-plg,#fp-params,#fp-poblacion,#fp-calagua,#fp-despacho";
+const _GSEL_PANELS = "#fp-salas,#fp-tanques,#fp-biomol,#fp-micnuevo,#fp-marea," + _STD_GRID_PANELS;
+/** En las seis fichas, una celda que NO se escribe ni por rango ni por pegado aunque tenga un control: el nombre del
+ *  tanque (td.tqc) y el Destino de Despacho (selección múltiple: sus casillas y el CSV oculto). Fuera de ellas, false. */
+function _stdNoSeEscribe(td){
+  if(!td || !td.closest || !td.closest(_STD_GRID_PANELS)) return false;
+  return td.classList.contains("tqc") || !!td.querySelector('details.dest-ms, input[type="checkbox"], input[type="hidden"]');
+}
 let _gsel = null;                 // { tbody, ar, ac, fr, fc }
 let _gselMouseDown = false, _gselDragged = false;
 
@@ -26066,6 +26077,7 @@ function _gridCellInfo(el){
   if(!el || (el.tagName!=="INPUT" && el.tagName!=="SELECT" && el.tagName!=="TEXTAREA")) return null;
   if(el.readOnly || el.disabled) return null;
   const td = el.closest ? el.closest("td") : null; if(!td) return null;
+  if(_stdNoSeEscribe(td)) return null;   // 2026-10-27 · el nombre del tanque y el Destino no entran en un rango
   const tr = td.parentElement; if(!tr || tr.tagName!=="TR") return null;
   const tbody = tr.parentElement; if(!tbody || tbody.tagName!=="TBODY") return null;
   if(!tbody.closest || !tbody.closest(_GSEL_PANELS)) return null;
@@ -26084,6 +26096,7 @@ function _gselClearHighlight(scope){
 }
 function _gselEditable(td){
   if(!td || td.style.display==="none") return null;
+  if(_stdNoSeEscribe(td)) return null;   // 2026-10-27 · ver _stdNoSeEscribe
   return td.querySelector("input:not([readonly]):not([disabled]), select:not([disabled]), textarea:not([readonly])");
 }
 function _gselRect(){
@@ -26179,6 +26192,7 @@ function _gselPasteH(ev){
   ev.preventDefault(); ev.stopImmediatePropagation();
   const val = norm.trim();
   const ctls = _gselControls();
+  if(_gsel.tbody.closest(_STD_GRID_PANELS)){ _stdRellenar(ctls, val); return; }   // 2026-10-27 · el número, normalizado
   /* En LOTE, y no es un adorno: en Biomol la primera celda de resultado disparaba
      `bioPatCambio` -> `renderBiomol`, y las demás del array quedaban desprendidas. El
      aviso de abajo contaba las SELECCIONADAS, así que decía «Pegado en N» mientras
@@ -26201,6 +26215,151 @@ if(typeof document!=="undefined" && !window.__gridSel){
   document.addEventListener("click",     _safeGsel(_gselClickH),     true);
   document.addEventListener("keydown",   _safeGsel(_gselKeyH),       true);   // captura: antes que la navegación
   document.addEventListener("paste",     _safeGsel(_gselPasteH),     true);   // captura: antes que el onpaste por-grilla
+}
+
+/* ── LAS SEIS FICHAS DE LARVICULTURA · pegar un bloque y moverse con flechas (2026-10-27, usuario, ronda 8 · tarea 2) ──
+   Reglas aprobadas por el usuario:
+   · «Tal como se ve»: cada columna del bloque cae en la MISMA columna de la pantalla, desde la celda donde se pega. La que
+     no se escribe —el nombre del tanque, una calculada (readonly) o el Destino— conserva lo suyo y su dato se descarta: así
+     el reparto no cambia cuando una columna pasa a calculada (la Supervivencia con CS). Las filas de más no entran.
+   · Una celda VACÍA del bloque vacía la suya, como en Excel.
+   · Números «normalizados y avisados»: en una celda numérica «28,4» es 28.4, y «2.500.000» o «2,500,000» es 2500000. Lo que
+     no es un número no se pega (la celda se queda como estaba) y se dice cuántas; un <select> sólo toma una de sus opciones.
+     ⚠ El ÚNICO caso que el texto no resuelve es un separador suelto con tres cifras detrás («4.300», «4,300»): es 4300 en un
+     Excel en español y 4,3 en uno en inglés, y Población va en MILES. El navegador NO sirve para saberlo (medido el
+     2026-10-27 en este equipo: Windows y Excel en es-EC —decimal «,», miles «.»— y Chrome en es-419, que dice lo contrario).
+     Decisión del usuario: lo decide el MISMO pegado si otro número delata la convención (_stdConvencion: «28,4» → coma
+     decimal; «28.4» → punto decimal) y, sin pista, la del Excel de Ecuador: «4.300» = 4300 y «4,300» = 4,3.
+   Escribe con _gselSetVal, que dispara input/change: los recálculos (rcPob, chkParam, los de Despacho…) y el «sin guardar»
+   salen igual que al teclear. El rango con un valor y Supr son los de la selección de arriba (_gselPasteH, _gselKeyH). */
+/** La convención de los números de un pegado, por las pistas que dan: "es" (coma decimal: «28,4», «1.234,5», «2.500.000»),
+ *  "en" (punto decimal: «28.4», «1,234.5», «2,500,000») o null si no hay ninguna, o se contradicen. */
+function _stdConvencion(textos){
+  let es = 0, en = 0;
+  (textos || []).forEach(function(raw){
+    const s = String(raw == null ? "" : raw).replace(/\s/g, "").replace(/%$/, "");
+    const comas = (s.match(/,/g) || []).length, puntos = (s.match(/\./g) || []).length;
+    if(comas && puntos){ if(s.lastIndexOf(",") > s.lastIndexOf(".")) es++; else en++; }
+    else if(puntos > 1) es++;
+    else if(comas > 1) en++;
+    else if(comas + puntos === 1 && !/^-?[1-9]\d{0,2}[.,]\d{3}$/.test(s) && /^-?\d+[.,]\d+$/.test(s)){ if(comas) es++; else en++; }
+  });
+  return es && !en ? "es" : en && !es ? "en" : null;
+}
+/** El texto pegado en una celda numérica, como número: "" si viene vacío; null si no es un número. `conv` = la convención del
+ *  pegado (_stdConvencion), que decide «4.300» / «4,300»; sin ella, la del Excel de Ecuador ("es"). */
+function _stdNumPegado(raw, conv){
+  let s = String(raw == null ? "" : raw).replace(/\s/g, "").replace(/%$/, "");
+  if(s === "") return "";
+  const comas = (s.match(/,/g) || []).length, puntos = (s.match(/\./g) || []).length;
+  if(comas && puntos){                       // los dos: el ÚLTIMO es el decimal y el otro, el de miles
+    const dec = s.lastIndexOf(",") > s.lastIndexOf(".") ? "," : ".";
+    s = s.split(dec === "," ? "." : ",").join("").replace(dec, ".");
+  } else if(comas > 1 || puntos > 1){        // uno solo, repetido: miles, en grupos de tres
+    if(!(comas > 1 ? /^-?\d{1,3}(,\d{3})+$/ : /^-?\d{1,3}(\.\d{3})+$/).test(s)) return null;
+    s = s.split(comas > 1 ? "," : ".").join("");
+  } else if(comas + puntos === 1){           // uno suelto: decimal, salvo el ambiguo con tres cifras detrás
+    const sep = comas ? "," : ".";
+    if(/^-?[1-9]\d{0,2}[.,]\d{3}$/.test(s) && sep === (conv === "en" ? "," : ".")) s = s.replace(sep, "");
+    else s = s.replace(sep, ".");
+  }
+  return /^-?\d+(\.\d+)?$/.test(s) ? String(Number(s)) : null;   // «4.300» → «4.3», «028» → «28»
+}
+/** Escribe `raw` en `ctl` con las reglas de arriba; false si no se pudo (no es un número, o no es una de sus opciones). */
+function _stdSetVal(ctl, raw, conv){
+  let v = String(raw == null ? "" : raw).trim();
+  if(ctl.tagName === "INPUT" && ctl.type === "number"){
+    v = _stdNumPegado(v, conv);
+    if(v === null) return false;
+  } else if(ctl.tagName === "SELECT" && v !== ""){
+    const w = v.toLowerCase();
+    if(!Array.prototype.some.call(ctl.options, function(o){ return o.value.toLowerCase() === w || (o.text || "").toLowerCase() === w; })) return false;
+  }
+  _gselSetVal(ctl, v);
+  return true;
+}
+function _stdAvisoPegado(n, malos, fuera){
+  const extra = (malos ? " · " + malos + " no eran números (u opciones de la celda) y no se pegaron" : "")
+    + (fuera ? " · " + fuera + " fila(s) no caben en la ficha" : "");
+  toast("📋 Pegado en " + n + " celda(s)" + extra, (malos || fuera) ? "warn" : "ok", (malos || fuera) ? 5500 : 1800);
+}
+/** Un valor en el rango seleccionado de una de las seis fichas (lo llama _gselPasteH). */
+function _stdRellenar(ctls, val){
+  let n = 0, malos = 0;
+  const conv = _stdConvencion([val]);
+  gridEnLote(function(){ ctls.forEach(function(c){ if(_stdSetVal(c, val, conv)) n++; else malos++; }); });
+  _stdAvisoPegado(n, malos, 0);
+}
+/** La celda escribible de una de las seis fichas: { tbody, tr, td, r, c, el }; null si no es una. */
+function _stdCelda(el){
+  const info = _gridCellInfo(el);
+  return info && info.tbody.closest(_STD_GRID_PANELS) ? info : null;
+}
+/** Pegar en las seis fichas: un BLOQUE se reparte tal como se ve; un número suelto en una celda numérica, normalizado. */
+function stdGridPaste(ev){
+  const info = _stdCelda(ev.target); if(!info) return;
+  const cd = ev.clipboardData || window.clipboardData; if(!cd) return;
+  const txt = cd.getData("text"); if(txt == null) return;
+  const norm = String(txt).replace(/\r/g, "").replace(/\n$/, "");
+  if(norm.indexOf("\t") === -1 && norm.indexOf("\n") === -1){
+    // Una sola celda: el pegado del navegador, salvo en una numérica (allí un «28,4» se quedaría vacío sin avisar).
+    if(!(info.el.tagName === "INPUT" && info.el.type === "number")) return;
+    ev.preventDefault();
+    if(!_stdSetVal(info.el, norm, _stdConvencion([norm]))) toast("«" + norm.trim() + "» no es un número: no se pegó", "warn", 4000);
+    return;
+  }
+  ev.preventDefault();
+  const filas = norm.split("\n").map(function(l){ return l.split("\t"); });
+  const conv = _stdConvencion([].concat.apply([], filas));   // la pista de UN número vale para todo el bloque
+  let n = 0, malos = 0, fuera = 0;
+  gridEnLote(function(){
+    filas.forEach(function(celdas, dr){
+      const tr = info.tbody.rows[info.r + dr];
+      if(!tr){ fuera++; return; }
+      celdas.forEach(function(raw, dc){
+        const ctl = _gselEditable(tr.cells[info.c + dc]);
+        if(!ctl) return;                      // la que no se escribe conserva lo suyo: su dato se descarta
+        if(_stdSetVal(ctl, raw, conv)) n++; else malos++;
+      });
+    });
+  });
+  _stdAvisoPegado(n, malos, fuera);
+}
+/** Flechas e Intro en las seis fichas, como en Biomol (madGridKey): de celda escribible en celda escribible. */
+function stdGridKey(ev){
+  const k = ev.key;
+  const vertical = k === "ArrowUp" || k === "ArrowDown" || k === "Enter";
+  if(!vertical && k !== "ArrowLeft" && k !== "ArrowRight") return;
+  if(ev.altKey || ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
+  const info = _stdCelda(ev.target); if(!info) return;
+  const t = info.el;
+  // En un texto, ←/→ sólo cambian de celda con el cursor en el borde (como madGridKey).
+  if(!vertical && t.tagName === "INPUT" && t.type !== "number"){
+    try{
+      const len = (t.value || "").length;
+      if(k === "ArrowLeft"  && !(t.selectionStart === 0   && t.selectionEnd === 0))   return;
+      if(k === "ArrowRight" && !(t.selectionStart === len && t.selectionEnd === len)) return;
+    }catch(_){ /* sin selección: se trata como borde */ }
+  }
+  if(vertical) ev.preventDefault();         // ni el spinner del número ni el cambio de opción del select
+  let next = null;
+  if(vertical){
+    const paso = k === "ArrowUp" ? -1 : 1, filas = info.tbody.rows;
+    for(let r = info.r + paso; !next && r >= 0 && r < filas.length; r += paso) next = _gselEditable(filas[r].cells[info.c]);
+  } else {
+    const paso = k === "ArrowLeft" ? -1 : 1, celdas = info.tr.cells;
+    for(let c = info.c + paso; !next && c >= 0 && c < celdas.length; c += paso) next = _gselEditable(celdas[c]);
+  }
+  if(!next) return;
+  ev.preventDefault();
+  next.focus();
+  if(next.tagName === "INPUT"){ try{ next.select(); }catch(_){} }
+}
+if(typeof document!=="undefined" && !window.__stdGrid){
+  window.__stdGrid = true;
+  // En BURBUJA: la selección de arriba (en captura) atiende antes el valor único sobre un rango y lo detiene.
+  document.addEventListener("paste",   function(ev){ try{ stdGridPaste(ev); }catch(x){ _silent("stdGrid", x); } });
+  document.addEventListener("keydown", function(ev){ try{ stdGridKey(ev); }catch(x){ _silent("stdGrid", x); } });
 }
 
 // ── Render: grilla ─────────────────────────────────────
