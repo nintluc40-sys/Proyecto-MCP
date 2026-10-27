@@ -28,6 +28,7 @@
    de lo mismo es exactamente la costura donde este proyecto ha encontrado todos sus
    defectos. */
 import { minutosDeHora, minutosEntre, CADENCIA_MAX_MIN } from '../registros/lib/ficha-traslado.schema.js';
+import { parseAnyDate } from '../../core/dates.js';
 
 export { CADENCIA_MAX_MIN };
 
@@ -71,6 +72,12 @@ export const INSUMOS_POSIBLES = ['Artemia', 'Flake', 'Prokura', 'Vitamina C'];
 export const CHECK_POSIBLES = ['Oxigenómetro', 'Linterna', 'Bandeja', 'Esfero'];
 
 const txt = (r, k) => String((r && r[k] != null ? r[k] : '')).trim();
+/* 2026-10-26 (ronda 7, tarea 2 de la Sesión B; usuario: «Cronológica, abre el más reciente») · LA FECHA SE ORDENA COMO
+   FECHA. La hoja la da como TEXTO dd/mm/aaaa, y comparada como texto manda el DÍA: dentro de un mes salía bien de
+   casualidad, y al cruzar de mes «02/10/2026» iba antes que «28/09/2026» (medido el 26-10 con el libro real: «todas las
+   corridas» de un módulo salían revueltas). Por `parseAnyDate` (regla 7); sin fecha legible, la más antigua. */
+const msFecha = (s) => { const d = parseAnyDate(s); return d ? d.getTime() : -Infinity; };
+const porFecha = (a, b) => msFecha(a) - msFecha(b) || 0;   // `|| 0`: dos sin fecha dan NaN
 const num = (r, k) => {
   const v = r ? r[k] : null;
   if (v === '' || v === null || v === undefined) return null;
@@ -212,6 +219,8 @@ export function viajesDe(camiones) {
     porViaje.get(c.viaje).push(c);
   });
   const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  // Orden CRONOLÓGICO (la fecha como fecha, no como texto; el mismo día, por el id del viaje, que lleva la hora de su
+  // creación): la vista abre el ÚLTIMO, el más reciente (usuario, 2026-10-26).
   return [...porViaje.values()].map((cams) => {
     const base = cams[0] || {};
     // Una sola pasada: `nObservaciones` es la longitud de la MISMA lista, no un
@@ -227,7 +236,7 @@ export function viajesDe(camiones) {
       observaciones: obs,
       nObservaciones: obs.length,
     };
-  }).sort((a, b) => cmp(a.fecha, b.fecha) || cmp(a.viaje, b.viaje));
+  }).sort((a, b) => porFecha(a.fecha, b.fecha) || cmp(a.viaje, b.viaje));
 }
 
 /** Las observaciones del conjunto visible, SIN REPETIR.
@@ -488,7 +497,7 @@ export function trasladoDe(data, mod, corrida) {
   // en que ocurrieron y no en el que la hoja los devuelva.
   const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
   const camiones = [...grupos.values()].map((fs) => camionDe(fs))
-    .sort((a, b) => cmp(a.placa, b.placa) || cmp(a.fecha, b.fecha) || cmp(a.viaje, b.viaje));
+    .sort((a, b) => cmp(a.placa, b.placa) || porFecha(a.fecha, b.fecha) || cmp(a.viaje, b.viaje));
   const todasAct = camiones.flatMap((c) => c.paradas.flatMap((p) => Object.values(p.tinas).map((t) => t.act)));
   const todoO2 = camiones.flatMap((c) => c.paradas.flatMap((p) => Object.values(p.tinas).map((t) => t.o2))).filter((v) => v !== null);
   const todoTemp = camiones.flatMap((c) => c.paradas.flatMap((p) => Object.values(p.tinas).map((t) => t.temp))).filter((v) => v !== null);

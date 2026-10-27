@@ -273,20 +273,21 @@ describe('Traslado · los desgloses por parada', () => {
       .map((tr) => tr.children[8].textContent.trim());
     expect(obsPorFila, 'cada viaje cuenta sólo su observación').toEqual(['1', '1']);
 
-    // Y el desglose de cada viaje enseña la observación de ESE viaje, no la del otro.
+    // Y el desglose de cada viaje enseña la observación de ESE viaje, no la del otro. Abre el MÁS RECIENTE (el
+    // segundo, del 28-08; usuario, 2026-10-26) y luego se elige el otro, la fila 0.
     root.querySelector('[data-tras-modal="obs"]').click();
     const c1 = root.querySelector('#sv-tras-modal-b').textContent;
-    root.querySelectorAll('[data-tras-viajesel]')[1].click();
+    root.querySelectorAll('[data-tras-viajesel]')[0].click();
     const root2 = montar(ctxCon(
       aFilas(buildTrasladoPayload(viaje(2, [1])))
         .concat(aFilas(buildTrasladoPayload(segundo))),
     ));
     root2.querySelector('[data-tras-modal="obs"]').click();
     const c2 = root2.querySelector('#sv-tras-modal-b').textContent;
-    expect(c1).toContain('Tracto digestivo');
-    expect(c1).not.toContain('Espuma en la tina 3');
-    expect(c2).toContain('Espuma en la tina 3');
-    expect(c2).not.toContain('Tracto digestivo');
+    expect(c1).toContain('Espuma en la tina 3');
+    expect(c1).not.toContain('Tracto digestivo');
+    expect(c2).toContain('Tracto digestivo');
+    expect(c2).not.toContain('Espuma en la tina 3');
   });
 
   it('sin observaciones el desglose lo dice en vez de salir vacío', () => {
@@ -665,9 +666,9 @@ describe('Traslado · una sección por VIAJE', () => {
     expect(filasIdx(root)[1].className, 'volvió la marca de cadencia a la fila')
       .not.toContain('sv-t-excede');
 
-    // Y el KPI del detalle habla del viaje ABIERTO, que es el primero por defecto.
+    // Y el KPI del detalle habla del viaje ABIERTO, que por defecto es el MÁS RECIENTE (usuario, 2026-10-26): v2.
     const kpi = root.querySelector('[data-tras-modal="tiempo"] .sv-kpi-value').textContent.trim();
-    expect(kpi, 'el KPI del detalle no es el del viaje abierto').toBe('4 h');
+    expect(kpi, 'el KPI del detalle no es el del viaje abierto').toBe('10 h');
   });
 
   it('🔴 el índice trae una fila por viaje, con su fecha y su destino', () => {
@@ -681,16 +682,35 @@ describe('Traslado · una sección por VIAJE', () => {
 
   it('🔴 al elegir otro viaje, el detalle pasa a ser SUYO', () => {
     /* Es la prueba que sostiene todo el layout: si el clic no cambiara el detalle,
-       el índice sería decorativo y el supervisor vería siempre el primer viaje
-       creyendo que mira el segundo. */
+       el índice sería decorativo y el supervisor vería siempre el mismo viaje
+       creyendo que mira el otro. Abre el MÁS RECIENTE (Taura, del 28-08; usuario,
+       2026-10-26) y se elige el otro, la fila 0. */
     const root = montar(ctxCon(dosViajes()));
-    expect(txt(root.querySelector('.sv-tras-viaje-t'))).toContain('Puná 1');
-    filasIdx(root)[1].click();
+    expect(txt(root.querySelector('.sv-tras-viaje-t'))).toContain('Taura');
+    filasIdx(root)[0].click();
     const root2 = montar(ctxCon(dosViajes()));   // el clic repinta la vista
     expect(txt(root2.querySelector('.sv-tras-viaje-t')), 'el detalle no siguió al índice')
-      .toContain('Taura');
+      .toContain('Puná 1');
     expect(root2.querySelector('[data-tras-viajesel][aria-pressed="true"]')
-      .textContent, 'la fila elegida no quedó marcada').toContain('2026-08-28');
+      .textContent, 'la fila elegida no quedó marcada').toContain('2026-08-18');
+  });
+
+  it('🔴 abre el viaje MÁS RECIENTE, también cuando la corrida cruza de mes (usuario, 2026-10-26)', () => {
+    /* Las fechas como las devuelve la hoja (dd/mm/aaaa), y los ids al REVÉS del tiempo: con el orden por texto abriría
+       el del 28/09 (sería el último), y con el primero de la lista, también. */
+    const v1 = viaje(1, []);
+    v1.id = 'tvZ';
+    v1.data.fecha = '28/09/2026';
+    v1.data.camaronera = 'Taura';
+    const v2 = viaje(1, []);
+    v2.id = 'tvA';
+    v2.data.fecha = '02/10/2026';
+    const root = montar(ctxCon(aFilas(buildTrasladoPayload(v1)).concat(aFilas(buildTrasladoPayload(v2)))));
+    expect(filasIdx(root).map((tr) => tr.children[0].textContent.trim()), 'la tabla no sale en orden de fecha')
+      .toEqual(['28/09/2026', '02/10/2026']);
+    expect(txt(root.querySelector('.sv-tras-viaje-t')), 'no abrió el más reciente').toContain('02/10/2026');
+    expect(root.querySelector('[data-tras-viajesel][aria-pressed="true"]').textContent, 'la fila abierta no es la marcada')
+      .toContain('02/10/2026');
   });
 
   it('🔴 se monta UN solo mapa, el del viaje abierto', () => {

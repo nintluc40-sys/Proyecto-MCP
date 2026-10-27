@@ -45,7 +45,7 @@ let _placaSola = null;
  *  puede seguir ocultando algo en otra, donde esa placa ni existe. */
 let _ambito = '';
 
-/** Viaje abierto en el detalle. `null` = el primero de la lista.
+/** Viaje abierto en el detalle. `null` = el más reciente (el último de `viajesDe`).
  *  Vive fuera del render por lo mismo que `_placaSola`: tiene que sobrevivir al
  *  repintado que provoca el propio clic. Se limpia con el ámbito, y además el
  *  render lo descarta si ese viaje ya no existe —cambió la corrida, o el filtro
@@ -410,7 +410,10 @@ export function renderTraslado(ctx, mod) {
      🔑 Con UN SOLO viaje la tabla no se pinta: sería una fila de índice para un
      único destino, y la vista queda exactamente como estaba. */
   if (_viajeSel && !viajes.some((v) => v.viaje === _viajeSel)) _viajeSel = null;
-  const vSel = viajes.find((v) => v.viaje === _viajeSel) || viajes[0] || null;
+  /* 🔑 2026-10-26 (usuario: «Cronológica, abre el más reciente») · sin elección, el viaje MÁS RECIENTE: el ÚLTIMO de
+     `viajesDe`, que sale en orden de fecha real. Antes, `viajes[0]`: el más antiguo dentro de un mes, y uno cualquiera
+     cuando la corrida cruzaba de mes (el orden era el del texto dd/mm/aaaa). */
+  const vSel = viajes.find((v) => v.viaje === _viajeSel) || viajes[viajes.length - 1] || null;
 
   if (viajes.length > 1) {
     html += `<div class="sv-tras-idx">

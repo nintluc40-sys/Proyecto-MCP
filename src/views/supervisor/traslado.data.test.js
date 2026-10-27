@@ -633,3 +633,37 @@ describe('Traslado · una observación es de la PARADA, no del camión', () => {
     });
   });
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   2026-10-26 (ronda 7, tarea 2 de la Sesión B; usuario: «Cronológica, abre el más reciente») · LA FECHA SE ORDENA COMO
+   FECHA. La hoja la da como TEXTO dd/mm/aaaa —así llega por las tres vías de lectura—, y ordenada como texto manda el
+   día: al cruzar de mes «02/10/2026» iba antes que «28/09/2026». Los fixtures de arriba usan fechas ISO, que como texto ya
+   salen en orden, y por eso nunca lo vieron. Aquí las fechas son las del libro y cruzan de mes, y los ids van al REVÉS
+   del tiempo: ni el orden por texto ni un desempate sólo por id pueden dar el orden bueno.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+describe('Traslado · el orden es el de la FECHA real, no el del texto dd/mm/aaaa', () => {
+  const viajeDel = (fecha, id) => {
+    const v = viaje({ viajeId: id });
+    v.data.fecha = fecha;   // como la devuelve la hoja, no como la escribe la captura (ISO)
+    return aFilas(buildTrasladoPayload(v));
+  };
+
+  it('🔴 los viajes salen en orden cronológico aunque crucen de mes', () => {
+    const filas = [...viajeDel('30/09/2026', 'tvM'), ...viajeDel('02/10/2026', 'tvA'), ...viajeDel('28/09/2026', 'tvZ')];
+    const fechas = viajesDe(trasladoDe(filas, 'M07', '555').camiones).map((v) => v.fecha);
+    expect(fechas, 'el orden volvió a ser el del texto').toEqual(['28/09/2026', '30/09/2026', '02/10/2026']);
+  });
+
+  it('el mismo día desempata el id del viaje, y uno sin fecha va primero (el más antiguo)', () => {
+    const filas = [...viajeDel('02/10/2026', 'tvB'), ...viajeDel('', 'tvZ'), ...viajeDel('02/10/2026', 'tvA')];
+    const vs = viajesDe(trasladoDe(filas, 'M07', '555').camiones);
+    expect(vs.map((v) => v.viaje)).toEqual(['tvZ', 'tvA', 'tvB']);
+  });
+
+  it('🔴 los camiones de una misma placa, también por fecha real (el orden en que ocurrieron)', () => {
+    const filas = [...viajeDel('02/10/2026', 'tvA'), ...viajeDel('28/09/2026', 'tvZ')];
+    const t = trasladoDe(filas, 'M07', '555');
+    expect(t.camiones.map((c) => c.placa), 'el fixture no tiene la misma placa en los dos viajes').toEqual(['GSA-1147', 'GSA-1147']);
+    expect(t.camiones.map((c) => c.fecha), 'los dos viajes del camión salieron por el texto').toEqual(['28/09/2026', '02/10/2026']);
+  });
+});
