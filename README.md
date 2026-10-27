@@ -1385,9 +1385,11 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
 8. **La CI sigue sin poder vigilar `index (8)`** —`deploy.yml` corre lint, vitest, auditorías y build, y
    ninguna de las cuatro ve un archivo que no está en el repo—, pero desde el 2026-09-20 **ya no depende
    de acordarse**: un hook `pre-push` corre `node verificar-todo.mjs --copias` (las que comparan
-   repo ↔ `index (8)` —funciones, constantes, estilos, marcado, SheetJS, plantillas del GAS, sintaxis
-   y que esté versionado—, ~1,8 s; **cuántas son lo dice ella al correr**: aquí ponía «seis» y eran
-   ocho desde que entraron `verificar-constantes` y `verificar-index8-git`) y
+   repo ↔ `index (8)` —funciones, constantes, estilos, marcado, SheetJS, plantillas del GAS, sintaxis,
+   que esté versionado y, desde el 2026-10-26, el COMPORTAMIENTO de las 7 fichas estándar
+   (`paridad-fichas-std`, sin su autoprueba, que es lenta y se queda en la batería completa)—, unos
+   segundos; **cuántas son lo dice ella al correr**: aquí ponía «seis» y eran ocho desde que entraron
+   `verificar-constantes` y `verificar-index8-git`, y «~1,8 s» hasta la paridad de las fichas) y
    **para el push** si divergen. Falla CERRADO: si falta el utillaje o falta `index (8)`, también para y
    lo dice. Salida deliberada: `git push --no-verify`.
    🔑 Y desde el 2026-09-21 hace una segunda pregunta, porque este repo es PÚBLICO: `verificar-sin-reales.mjs`
