@@ -2435,7 +2435,7 @@ function motivosHTML(m, p) {
   if (!m.filas.length) {
     return `<div class="mc-card"><h4 class="mc-card-h">📉 Motivos de Fin de Ciclo <span class="mc-h-note">${esc(etiquetaPeriodo(p))}</span></h4>
       <p class="muted" style="margin:4px 0">Ningún lote se cerró en el período.</p>
-      <p class="mc-note">La hoja de Fin de Ciclo nace con su primer envío: mientras no haya cierres, esto se queda vacío y es lo correcto.</p>
+      <p class="mc-note">Mientras no haya cierres en el período, esto se queda vacío y es lo correcto.</p>
       ${ignoraHTML(m.ignora, 'Un cierre de Fin de Ciclo', porqueSi(m.ignora, ['sala', 'tanque', 'código genético'], PORQUE_CIERRE))}</div>`;
   }
   const max = m.filas[0].total;
@@ -2565,7 +2565,7 @@ function semaforoHTML(r, p, o = {}) {
   if (!u) {
     return `<div class="${clase}"><h4 class="mc-card-h">${titulo} <span class="mc-h-note">${esc(o.alcance || etiquetaPeriodo(p))}</span></h4>
       <p class="muted" style="margin:4px 0">Ninguna revisión registrada en ${esc(en)}.</p>
-      <p class="mc-note">Las revisiones viven en la hoja del Inf. Supervisor, que nace con su primer envío.</p>
+      <p class="mc-note">Las revisiones viven en la hoja del 📋 Inf. Supervisor.</p>
       ${ignoraHTML(r.ignora, 'La revisión de nauplios')}</div>`;
   }
   const celda = (v) => {
