@@ -62,13 +62,15 @@ export const PLGM_KEYS = ['Plg (manual)', 'PLG (manual)', 'plg (manual)', 'Plg(m
 // módulo, el día que alguien añada un alias en una sola las dos empezarían a divergir en
 // silencio (el mismo problema que ya obligó a unificar `hasDispatch` con `isDespachoRow`).
 //
-// ⚠ `plgM` es a propósito más estrecho que PLGM_KEYS (le faltan 'PL/g (manual)' y
-// 'pl/g (manual)'): se conserva tal cual estaba en la vista para no alterar lo que ya
-// muestra. Ampliarlo es un cambio de comportamiento y debe decidirse aparte.
+// `plgM` ES `PLGM_KEYS` (2026-10-26, ronda 7, tarea 7 de la Sesión B; usuario: «Unificarlo con PLGM_KEYS»). Antes era
+// más estrecho (le faltaban 'PL/g (manual)' y 'pl/g (manual)'), conservado de la vista «para no alterar lo que ya
+// muestra»; pero el KPI «PL/g (manual)» de la Ejecutiva, la trazabilidad y el calendario leen PLGM_KEYS, y una hoja con
+// esa otra grafía la habrían visto ellos y no Despacho. Medido ese día: las 11 hojas «Datos Larvicultura» la escriben
+// «Plg (manual)» y 0 filas traen las otras dos, así que la pantalla y el Excel no cambian.
 export const DESPACHO_KEYS = {
   densidad: ['Densidad cosechada', 'Densidad Cosechada', 'densidad cosechada'],
   biomasa: ['Biomasa', 'biomasa'],
-  plgM: ['Plg (manual)', 'PLG (manual)', 'plg (manual)', 'Plg(manual)'],
+  plgM: PLGM_KEYS,
   cajas: ['Cajas/Tinas', 'Cajas / Tinas', 'cajas/tinas', 'Cajas-Tinas'],
   destino: ['Destino', 'destino'],
   piscina: ['Piscina', 'piscina'],

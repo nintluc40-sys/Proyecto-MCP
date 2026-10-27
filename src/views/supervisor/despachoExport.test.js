@@ -181,3 +181,33 @@ describe('supervisor · despacho · nombre del archivo', () => {
     expect(despachoFileName(5, null)).toBe('Despacho_Junio_TODOS.xlsx');
   });
 });
+
+/* 2026-10-26 (ronda 7, tarea 7 de la Sesión B; usuario: «Unificarlo con PLGM_KEYS») · el PL/g (manual) de Despacho
+   se lee con las MISMAS cabeceras que el resto de la app (`PLGM_KEYS`): con la grafía «PL/g (manual)» antes salía en el
+   KPI de la Ejecutiva y en blanco aquí. Pantalla y Excel, porque los dos leen `DESPACHO_KEYS`. Datos FICTICIOS. */
+describe('supervisor · despacho · el PL/g (manual) con otra grafía de cabecera', () => {
+  const conOtraGrafia = (o) => {
+    const r = R(o);
+    delete r['Plg (manual)'];
+    r['PL/g (manual)'] = String(o.plgOtra);
+    return r;
+  };
+  const filas = [
+    R({ mod: 'M01', cor: '573', tq: 'T1', fecha: '01/06/2026', pob: 1000 }),
+    conOtraGrafia({ mod: 'M01', cor: '573', tq: 'T1', fecha: '05/06/2026', pob: 800, dens: 12, bio: 3.5, plgOtra: 61, dest: 'Piscina A' }),
+  ];
+
+  it('🔴 sale en su columna del Excel', () => {
+    const aoa = despachoExportAoa(filas, { mIdx: 5, mod: 'M01' });
+    expect(col(aoa, 'Plg (manual)'), 'el Excel dejó el PL/g en blanco').toEqual([61]);
+  });
+
+  it('🔴 y en la tabla y el KPI de la pantalla', async () => {
+    const { renderDespacho } = await import('./despacho.js');
+    const { html } = renderDespacho({ vState: { corrida: '573' }, allMods: ['M01'],
+      larvCM: filas.map((r) => ({ _SheetOrigin: 'Larvicultura', ...r })) }, 'M01');
+    expect(html.match(/<td>61<\/td>/g), 'la tabla dejó el PL/g en blanco').toHaveLength(1);
+    const kpi = (html.match(/PL\/g promedio<\/div>\s*<div class="sv-kpi-value">([^<]*)</) || [])[1];
+    expect(kpi, 'el KPI de PL/g no lo cuenta').toMatch(/^61([.,]0)?$/);
+  });
+});
