@@ -1,0 +1,68 @@
+/* ============================================================
+   PLANTA · el modo «🦐 Broodstock» (M3, 2026-10-27): el mapa 2D de las piscinas y su ficha (broodstock.js).
+   Los colores de fase valen en claro y en oscuro (el número va siempre oscuro sobre un relleno claro).
+   ============================================================ */
+.bs { display: flex; flex-direction: column; gap: 12px; color: var(--c-text); }
+.bs-cab { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 10px 20px; }
+.bs-cab h2 { margin: 0; font-size: 18px; color: var(--c-brand); }
+.bs-sub { margin: 4px 0 0; color: var(--c-text-soft); font-size: 13px; }
+.bs-leyenda { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--c-text-soft); }
+.bs-leyenda li { display: flex; align-items: center; gap: 6px; }
+.bs-leyenda i, .bs-fase i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0, 0, 0, .25); }
+.bs-nav { display: flex; align-items: center; gap: 12px; }
+.bs-nav[hidden], .bs-aparte[hidden] { display: none; }   /* el `display` de arriba ganaba al atributo `hidden` */
+.bs-nav button { font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 8px; border: 1px solid var(--c-border, #d5dde0); background: var(--c-surface); color: var(--c-text); cursor: pointer; }
+.bs-cuerpo { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; align-items: start; }
+.bs-mapa { background: var(--c-surface); border: 1px solid var(--c-border, #d5dde0); border-radius: 12px; padding: 8px; }
+.bs-svg { display: block; width: 100%; height: auto; max-height: 70vh; }
+.bs-ficha { background: var(--c-surface); border: 1px solid var(--c-border, #d5dde0); border-radius: 12px; padding: 12px 14px; font-size: 13px; }
+.bs-ficha h3 { margin: 0 0 6px; font-size: 15px; }
+.bs-ficha h4 { margin: 12px 0 4px; font-size: 13px; color: var(--c-text-soft); }
+.bs-ficha dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 6px 0 0; }
+.bs-ficha dt { color: var(--c-text-soft); }
+.bs-ficha dd { margin: 0; }
+.bs-fase { display: flex; align-items: center; gap: 6px; margin: 0; }
+.bs-ayuda { color: var(--c-text-soft); margin: 4px 0; }
+.bs-obs { margin: 4px 0 0; padding-left: 18px; }
+.bs-aparte { font-size: 13px; color: var(--c-text-soft); }
+.bs-aparte p { margin: 2px 0; }
+.bs-datos { font-size: 12px; color: var(--c-text-soft); margin: 0; }
+
+/* El mapa: zonas, piscinas y sus textos (unidades del esquema, piscinas.js). */
+.bs-zona-marco { fill: rgba(70, 110, 120, .06); stroke: #9fb3b9; stroke-width: 1.5; }
+.bs-zona.aparte .bs-zona-marco { stroke-dasharray: 8 6; }
+.bs-zona-nombre { font: 600 15px system-ui, sans-serif; fill: var(--c-text-soft); }
+.bs-svg.general .bs-zona { cursor: pointer; }
+.bs-svg.general .bs-zona:hover .bs-zona-marco, .bs-svg.general .bs-zona:focus-visible .bs-zona-marco { fill: rgba(70, 110, 120, .14); stroke: var(--c-brand); stroke-width: 2.5; }
+.bs-svg.general .bs-peso { display: none; }
+.bs-svg:not(.general) .bs-zona-nombre { display: none; }
+.bs-svg:not(.general) .bs-pisc { cursor: pointer; }
+.bs-pisc rect { stroke: rgba(0, 0, 0, .35); stroke-width: 1; }
+.bs-pisc text { text-anchor: middle; dominant-baseline: middle; fill: #10282c; font-family: system-ui, sans-serif; pointer-events: none; }
+.bs-num { font-weight: 700; }
+.bs-svg:not(.general) .bs-pisc:hover rect, .bs-pisc:focus-visible rect { stroke: var(--c-brand); stroke-width: 2.5; }
+.bs-pisc.on rect { stroke: #d9622b; stroke-width: 3.5; }
+.bs-pisc:focus { outline: none; }
+
+/* Las fases (mapa, leyenda y ficha). */
+.bs-c-precria, .bs-c-precria rect { background: #9fd3ee; fill: #9fd3ee; }
+.bs-c-engorde, .bs-c-engorde rect { background: #8fd1a8; fill: #8fd1a8; }
+.bs-c-prerrep, .bs-c-prerrep rect { background: #f2b27a; fill: #f2b27a; }
+.bs-c-otra, .bs-c-otra rect { background: #d9c7f0; fill: #d9c7f0; }
+.bs-c-sin, .bs-c-sin rect { background: #dfe5e7; fill: #dfe5e7; }
+.bs-c-sn, .bs-c-sn rect { background: transparent; fill: rgba(255, 255, 255, .35); stroke-dasharray: 5 4; }
+.bs-leyenda .bs-c-sn { border-style: dashed; }
+
+/* La curva de peso de la ficha. */
+.bs-curva { display: block; width: 100%; height: auto; }
+.bs-curva polyline { fill: none; stroke: var(--c-brand); stroke-width: 2; }
+.bs-curva circle { fill: var(--c-brand); }
+.bs-curva text { font-size: 10px; fill: var(--c-text-soft); }
+
+@media (max-width: 860px) { .bs-cuerpo { grid-template-columns: 1fr; } }
+
+[data-theme="dark"] .bs-zona-marco { fill: rgba(160, 200, 210, .05); stroke: #4a5d63; }
+[data-theme="dark"] .bs-leyenda i, [data-theme="dark"] .bs-fase i { border-color: rgba(255, 255, 255, .45); }
+[data-theme="dark"] .bs-c-sin, [data-theme="dark"] .bs-c-sin rect { background: #9aa6aa; fill: #9aa6aa; }
+[data-theme="dark"] .bs-c-sn rect { fill: rgba(255, 255, 255, .06); stroke: #8a979b; }
+[data-theme="dark"] .bs-c-sn text { fill: #c9d3d6; }

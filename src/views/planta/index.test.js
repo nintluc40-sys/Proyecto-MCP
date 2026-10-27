@@ -13,6 +13,9 @@ const montarPlanta = vi.fn((host) => { host.querySelector('.viewport').dataset.e
 const montarAnalisis = vi.fn((host) => { host.innerHTML = '<div class="planta planta-an"></div>'; return vistaFalsa('analisis'); });
 vi.mock('./escena.js', () => ({ montarPlanta: (...a) => montarPlanta(...a) }));
 vi.mock('./analisis.js', () => ({ montarAnalisis: (...a) => montarAnalisis(...a) }));
+// M3 (2026-10-27) · el tercer modo, el mapa de Broodstock
+const montarBroodstock = vi.fn((host) => { host.innerHTML = '<div class="bs"></div>'; return vistaFalsa('broodstock'); });
+vi.mock('./broodstock.js', () => ({ montarBroodstock: (...a) => montarBroodstock(...a) }));
 vi.mock('../../core/refresh.js', () => ({ asegurarLibro: vi.fn() }));
 // el cálculo de larvicultura, controlado desde la prueba: cada pedido queda esperando hasta que se le contesta
 const calculos = [];
@@ -33,7 +36,7 @@ const cajas = (modo) => [...root.querySelectorAll('.planta-cuerpo > [data-cuerpo
 const elegir = (modo) => root.querySelector('[data-modo="' + modo + '"]').click();
 
 beforeEach(() => {
-  montarPlanta.mockClear(); montarAnalisis.mockClear(); estadoPlantaPorPartes.mockClear(); calculos.length = 0;
+  montarPlanta.mockClear(); montarAnalisis.mockClear(); montarBroodstock.mockClear(); estadoPlantaPorPartes.mockClear(); calculos.length = 0;
   store.connected = false; store.globalData = [];
   localStorage.removeItem('planta_modo');
   document.body.innerHTML = '<div id="r"></div>';
@@ -67,6 +70,27 @@ describe('🏭 Planta · cambiar de modo no destruye el que se deja', () => {
     expect(montarAnalisis).toHaveBeenCalledTimes(1);
     expect(cajas('analisis')).toHaveLength(1);
     expect(cajas('maqueta')).toHaveLength(1);
+  });
+
+  it('M3 (2026-10-27): el tercer modo, 🦐 Broodstock, se monta UNA vez, se recuerda y abre la próxima vez; los otros se ocultan', async () => {
+    expect(root.querySelector('[data-modo="broodstock"]'), 'control: antes de montar no hay botón').toBeNull();
+    plantaView(root); await espera();
+    expect(root.querySelector('[data-modo="broodstock"]').textContent).toBe('🦐 Broodstock');
+    elegir('broodstock'); await espera();
+    expect(montarBroodstock).toHaveBeenCalledTimes(1);
+    expect(cajas('broodstock')[0].hidden).toBe(false);
+    expect(cajas('maqueta')[0].hidden).toBe(true);
+    expect(root.querySelector('[data-modo="broodstock"]').getAttribute('aria-pressed')).toBe('true');
+    expect(localStorage.getItem('planta_modo')).toBe('broodstock');
+    elegir('maqueta'); await espera();
+    elegir('broodstock'); await espera();
+    expect(montarBroodstock, 'volver no lo reconstruye').toHaveBeenCalledTimes(1);
+    // la próxima vez que se abre Planta, empieza en Broodstock (y no baja la maqueta)
+    document.body.innerHTML = '<div id="r"></div>'; root = document.getElementById('r'); montarPlanta.mockClear();
+    plantaView(root); await espera();
+    expect(montarBroodstock).toHaveBeenCalledTimes(2);
+    expect(montarPlanta).not.toHaveBeenCalled();
+    expect(cajas('broodstock')[0].hidden).toBe(false);
   });
 
   it('un modo dejado mientras cargaba no queda montado ni a la vista; al volver se monta una sola vez', async () => {

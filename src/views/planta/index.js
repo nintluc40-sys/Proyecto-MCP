@@ -105,13 +105,16 @@ const MAQUETA = `
 /* El selector «🏭 Maqueta | 📊 Análisis» (T1 de Análisis, 2026-10-05, usuario): la maqueta (escena.js, con three.js) o la
    página analítica sin 3D (analisis.js). Las dos reciben lo MISMO —el mes elegido, la memoria por mes, los avisos— por la
    misma interfaz ({ pintarEstado, aviso, alElegirMes }), y el equipo recuerda la última elección (planta_modo). Cada una
-   se carga sólo al elegirla: en Análisis no se descarga three.js. */
+   se carga sólo al elegirla: en Análisis no se descarga three.js.
+   M3 (2026-10-27, usuario) · y un tercero, «🦐 Broodstock» (broodstock.js): el mapa 2D de las piscinas de Broodstock, con
+   la misma interfaz y también sin three.js. */
 const MODO_KEY = 'planta_modo';
-const leerModo = () => { try { return localStorage.getItem(MODO_KEY) === 'analisis' ? 'analisis' : 'maqueta'; } catch (_) { return 'maqueta'; } };
+const MODOS = ['maqueta', 'analisis', 'broodstock'];
+const leerModo = () => { try { const m = localStorage.getItem(MODO_KEY); return MODOS.includes(m) ? m : 'maqueta'; } catch (_) { return 'maqueta'; } };
 const guardarModo = (m) => { try { localStorage.setItem(MODO_KEY, m); } catch (_) { /* sin almacenamiento: sólo en esta sesión */ } };
 const MARCO = `
 <div class="planta-vista">
-  <div class="planta-modos" role="group" aria-label="Cómo ver la planta"><button type="button" data-modo="maqueta" aria-pressed="false">🏭 Maqueta</button><button type="button" data-modo="analisis" aria-pressed="false">📊 Análisis</button></div>
+  <div class="planta-modos" role="group" aria-label="Cómo ver la planta"><button type="button" data-modo="maqueta" aria-pressed="false">🏭 Maqueta</button><button type="button" data-modo="analisis" aria-pressed="false">📊 Análisis</button><button type="button" data-modo="broodstock" aria-pressed="false">🦐 Broodstock</button></div>
   <div class="planta-cuerpo"></div>
   <div class="planta-nuevos" role="status" hidden><span></span><button type="button">🔄 Actualizar</button></div>
 </div>`;
@@ -250,6 +253,10 @@ export function plantaView(root) {
             + `<small class="mono">${esc(e.message)}</small></div>`;
           return;
         }
+      } else if (nuevo === 'broodstock') {   // M3 (2026-10-27): el mapa de las piscinas de Broodstock
+        const { montarBroodstock } = await import('./broodstock.js');
+        if (mio !== turno || !marco.isConnected) { caja.remove(); return; }
+        v = montarBroodstock(caja);
       } else {
         const { montarAnalisis } = await import('./analisis.js');
         if (mio !== turno || !marco.isConnected) { caja.remove(); return; }

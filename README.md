@@ -332,6 +332,18 @@ volver a abrir esto, esto es lo que ya se midió:
   un armado que falla libera lo que había creado, también el del QR de acceso (pauta 3.17, 2026-10-19). La página del QR
   también dice que perdió la memoria gráfica, encima del código, y mientras falte, «Descargar PNG» no baja el lienzo
   vacío y lo avisa (Tarea 27, 2026-10-22).
+  🆕 **«🦐 Broodstock»** (2026-10-27, tercer botón del selector; `planta/broodstock.js`, también sin 3D): un **mapa 2D**
+  de las piscinas de Broodstock, de donde salen los reproductores. Es un ESQUEMA (`planta/piscinas.js`), no la foto de
+  satélite: las zonas **San Rafael** (12 en fila, numeradas de derecha a izquierda), **Roche** (9 en columna, de arriba
+  abajo, la larga 739 y 3 largas aún sin nombre) y **Niágara** (otro sector, 5 aún sin nombre). La vista general enseña
+  las tres zonas; tocar una se acerca a sus piscinas (con «← Todas las zonas») y tocar una piscina abre su **ficha**:
+  fase, peso con su fecha, incremento y crecimiento, sobrevivencia, densidad, área, siembra, edad por fase, código
+  genético, camaronera y piscina de origen, su desempeño como origen de lotes de Maduración y su curva de peso por
+  cortes. Cada piscina va pintada por **fase** (Precría · Engorde · Pre-reproductor), en gris si no vino en el último
+  corte y con borde discontinuo si aún no tiene nombre. No calcula nada propio: es la tabla y la ficha de 🧬 Lotes de
+  Maduración (`tablaDePiscinas`, `fichaDePiscina`) sobre la hoja `Maduración Broodstock`, el ÚLTIMO corte (o el del
+  cierre del mes elegido en los otros modos); lo que no se ubica en el plano sale «fuera del mapa», y lo que vino en el
+  corte anterior y no en éste, aparte.
   Desde el 2026-10-19 (**Plan B**) la maqueta y el plano de 📊 Análisis llevan las áreas del plano ARQ-A3 V4 con su
   nombre: los reservorios, cada uno en su compartimento; el frente en sus 10 recintos; el R.A.S. de Maduración con su
   cuarto de control; las dos naves de servicio, y entre las salas, Eclosión 1 (14 tanques), las salas de eclosión 2 y 3
@@ -666,6 +678,7 @@ src/
     maduracion/            🧬 Microchips (el REPRODUCTIVO, por Trovan) y el TABLERO del registro
                            OPERATIVO (operativo.*) · ⚠ sus FICHAS de captura NO están aquí: ver engine.js
     planta/                🏭 Gerencia: maqueta 3D (escena.js, three.js) · 📊 Análisis sin 3D (analisis.js) ·
+                           🦐 Broodstock, el mapa 2D de sus piscinas (broodstock.js, con su plano piscinas.js) ·
                            textos (lo que dicen ambos) · meta · plano · estado · cifras · qr/ (acceso)
     registros/             Fichas nativas (lib/ + fichas/) sobre el motor engine.js
                            lib/ tiene los esquemas y el LIBRO MAYOR de Maduración, con su
