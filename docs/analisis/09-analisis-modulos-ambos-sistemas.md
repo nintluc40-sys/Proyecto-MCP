@@ -12,6 +12,8 @@
 >   **El estado del proyecto vive ahora en UN solo sitio: la memoria.**
 > ⚠ Su comparación engine.js ↔ Music es de agosto. Hoy las tres copias se vigilan solas
 >   con `verificar-3copias-v3.mjs`, que es la fuente buena.
+> ⚠ (2026-10-26) Cita como del motor `shareFichaPDF`, `shareFichaQR`, `evPdfUrl` y `_micDelAuth`, que ya no
+>   existen ni en el repo ni en `index (8)`.
 >
 > *(Aviso puesto el 2026-09-02. **Deliberadamente sin cifras**: el aviso de*
 > *`04-refactor-plan.md` escribió las suyas y ha caducado TRES veces. Se nombra la*

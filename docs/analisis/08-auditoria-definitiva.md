@@ -6,8 +6,9 @@
 > (`project_punto-guardado.md`, el que indexa `MEMORY.md`) y, ante cualquier discrepancia, **manda el CÓDIGO**.
 >
 > ⚠ Da un tamaño de `engine.js` en líneas que hoy es FALSO: `wc -l public/registros/engine.js`.
-> ⚠ Dice «las 8 vistas» y **ya no son 8**: `ls src/views` da las del día (se añadió
->   `revisiones`). Cualquier barrido «por vista» hecho con esa lista deja una fuera.
+> ⚠ Dice «las 8 vistas» y **ya no son 8**: `ls src/views` da las del día (se añadieron
+>   `maduracion` y `planta`; aquí decía «`revisiones`», que ya estaba el 2026-07-06). Cualquier barrido
+>   «por vista» hecho con esa lista deja fuera las nuevas.
 >
 > *(Aviso puesto el 2026-09-02. **Deliberadamente sin cifras**: el aviso de*
 > *`04-refactor-plan.md` escribió las suyas y ha caducado TRES veces. Se nombra la*

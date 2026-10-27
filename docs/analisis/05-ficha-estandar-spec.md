@@ -7,6 +7,7 @@
 >
 > ⚠ Spec de reconstrucción ya EJECUTADA: las fichas viven hoy en
 >   `src/views/registros/fichas/`. Vale como mapa de intención, no de estado.
+> ⚠ (2026-10-26) Cita `fichas-data.js` y `saveFicha()`, que ya no existen ni en el repo ni en `index (8)`.
 >
 > *(Aviso puesto el 2026-09-02. **Deliberadamente sin cifras**: el aviso de*
 > *`04-refactor-plan.md` escribió las suyas y ha caducado TRES veces. Se nombra la*

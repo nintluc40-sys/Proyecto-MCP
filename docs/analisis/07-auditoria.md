@@ -8,6 +8,7 @@
 > ⚠ Da un tamaño de `engine.js` en líneas que hoy es FALSO: `wc -l public/registros/engine.js`.
 > ⚠ Audita el «Nuevo proyecto definitivo», no esta base. Sus recomendaciones abiertas
 >   no se han seguido desde entonces: no dar por pendiente nada de aquí sin re-medir.
+> ⚠ (2026-10-26) Cita `_noteTm`, que ya no existe ni en el repo ni en `index (8)`.
 >
 > *(Aviso puesto el 2026-09-02. **Deliberadamente sin cifras**: el aviso de*
 > *`04-refactor-plan.md` escribió las suyas y ha caducado TRES veces. Se nombra la*

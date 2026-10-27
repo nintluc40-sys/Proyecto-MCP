@@ -8,6 +8,8 @@
 > ⚠ Da un tamaño de `engine.js` en líneas que hoy es FALSO: `wc -l public/registros/engine.js`.
 > ⚠ Revisa la carpeta `Music\Nuevo proyecto definitivo`, que **no es la base oficial**.
 >   La base es `Desktop\Proyecto Beta 17` (ver `project_base-beta17`).
+> ⚠ (2026-10-26) Cita `fichas-data.js` y `window.__rgNative` / `__rgNativeCalidad`, que ya no existen: el
+>   puente de hoy es `window.__rgLib` (`src/views/registros/index.js`).
 >
 > *(Aviso puesto el 2026-09-02. **Deliberadamente sin cifras**: el aviso de*
 > *`04-refactor-plan.md` escribió las suyas y ha caducado TRES veces. Se nombra la*

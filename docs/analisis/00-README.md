@@ -8,6 +8,8 @@
 > ⚠ Da un tamaño de `engine.js` en líneas que hoy es FALSO (el monolito ha crecido
 >   mucho desde junio): `wc -l public/registros/engine.js`.
 > ⚠ La ruta que dice haber analizado es la del proyecto ANTERIOR, no esta base.
+> ⚠ (2026-10-26) Dice que «No hay documento de estándares»: hoy lo es `CLAUDE.md`. Y su índice sólo
+>   enlaza 01–04: los análisis 05–09 llegaron después (`ls docs/analisis`).
 >
 > *(Aviso puesto el 2026-09-02. **Deliberadamente sin cifras**: el aviso de*
 > *`04-refactor-plan.md` escribió las suyas y ha caducado TRES veces. Se nombra la*
