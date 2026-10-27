@@ -561,7 +561,7 @@ describe('Las ocho fichas, cableadas', () => {
 
   it('son exactamente las ocho, y ninguna es una grilla de MAD_FICHAS', () => {
     expect([...H.MAD_LOC_FICHAS].sort()).toEqual(OCHO.map((s) => s[0]).sort());
-    expect(src).toContain('const MAD_FICHAS    = ["salas","tanques"];');
+    expect(src).toContain('const MAD_FICHAS    = ["salas","tanques","zonas"];');   // 2026-10-27 · «zonas», grilla dentro de 🏠 Salas
   });
 
   it.each(OCHO)('%s · botón 💾, su caja, ☁️ envía antes lo guardado, 🧹 olvida el borrador (si lo tiene) y su portón', (ficha, pre, loc, sello, borrador) => {

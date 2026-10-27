@@ -326,7 +326,8 @@ describe('Desoves · la pestaña sustituyó a la de Lotes', () => {
     for (const viva of ['renderMadSalas', 'renderMadTanques', '_collectSalasGrid', '_collectTanquesGrid', 'syncMadSalasGrid', 'syncMadTanquesGrid']) {
       expect(src).toContain(viva);
     }
-    expect(src).toContain('const MAD_FICHAS    = ["salas","tanques"];');
+    // 2026-10-27 · entra «zonas» (temperatura y O₂ de las zonas de desove, dentro de 🏠 Salas); Lotes sigue fuera.
+    expect(src).toContain('const MAD_FICHAS    = ["salas","tanques","zonas"];');
   });
 
   it('no se re-pinta si ya está montado, para no borrar lo tecleado', () => {

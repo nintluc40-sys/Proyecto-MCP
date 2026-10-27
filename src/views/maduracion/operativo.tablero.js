@@ -688,7 +688,7 @@ export function alertas(M, periodo, F) {
 export const ETIQUETA_HOJA = {
   ingresos: '📥 Ingreso', movimientos: '🔄 Movimientos', desoves: '🥚 Desoves', mortDesove: '📋 Inf. Supervisor',
   cierres: '🏁 Fin de Ciclo', tratamientos: '🧪 Tratamientos', alimentacion: '🍤 Alimentación', broodstock: '📈 Broodstock',
-  sala: '🏠 Salas', tanques: '🛢️ Tanques',
+  sala: '🏠 Salas', tanques: '🛢️ Tanques', zonas: '🌡️ Zonas (en 🏠 Salas)',
 };
 /** Las hojas DIARIAS y cuántos días pueden pasar sin registro antes de marcarse atrasadas: las lecturas de la Sala y
  *  los partes de los Tanques se registran cada día, y el de hoy puede no estar aún. Las demás hojas registran

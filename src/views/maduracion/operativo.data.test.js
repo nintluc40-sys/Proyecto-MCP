@@ -68,7 +68,7 @@ describe('Maduración · operativo · frescura por hoja', () => {
     expect(fr.tanques).toMatchObject({ hoja: 'Maduración Tanques', filas: 4, ultima: '2026-09-16', dias: 3, futuras: 1 });
     expect(fr.broodstock).toMatchObject({ filas: 1, ultima: '2026-09-12', dias: 7 });
     expect(fr.ingresos).toMatchObject({ filas: 0, ultima: '', dias: '', futuras: 0 });
-    expect(Object.keys(fr)).toHaveLength(10);
+    expect(Object.keys(fr)).toHaveLength(11);   // 2026-10-27 · con «Maduración Zonas»
   });
 });
 
@@ -329,6 +329,7 @@ const SONDAS = {
 const SIN_SONDA = {
   ingresos: 'sus filas alimentan el LIBRO; el filtro actúa después, sobre las posiciones',
   sala: 'la filtra `tarjetasDeSalas(M, F)`, que necesita el modelo entero, no sus filas',
+  zonas: 'ninguna pieza del tablero la consume todavía (2026-10-27): sólo se reconoce, para que no entre como Sala',
 };
 
 describe('Maduración · operativo · DIMENSIONES es la conducta, no un comentario', () => {

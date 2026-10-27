@@ -91,7 +91,10 @@ const MAD_PRE       = "larv4_mad_";
    🔑 Dejar viva la grilla habría sido el peligro real: seguía pudiendo escribir el layout
    VIEJO encima de la hoja nueva, corrompiéndola sin un solo error. Al salir de MAD_FICHAS
    y de MAD_TABS, su camino queda cortado. */
-const MAD_FICHAS    = ["salas","tanques"];
+/* 2026-10-27 (usuario) · «zonas» es una grilla por día SIN pestaña propia: se pinta, se guarda y se envía DENTRO de 🏠
+   Salas (ver MAD_ZONAS). Está aquí por su almacenamiento, su envío en el 🔄 global, la cola y los pendientes, que
+   recorren esta lista; lo que va por pestaña (curTab) la trata la grilla de Salas. */
+const MAD_FICHAS    = ["salas","tanques","zonas"];
 /* PE1.4 (2026-09-16) · las fichas de FORMULARIO con 💾 Guardar local (la lista viva es MAD_LOC_FICHAS, justo debajo).
    NO entran en MAD_FICHAS, que es la lista
    de las GRILLAS por día (su render, su commit al cambiar de pestaña): lo suyo vive en larv4_mad_loc_<ficha> (ver
@@ -151,8 +154,27 @@ const MAD_TANQUES_POR_SALA = {
 };
 const MAD_SHEET     = {
   salas:   "Maduración Sala",
-  tanques: "Maduración Tanques"
+  tanques: "Maduración Tanques",
+  zonas:   "Maduración Zonas"
 };
+/* ZONAS DE DESOVE Y RESERVORIOS (2026-10-27, usuario) · temperatura y O₂ con el horario de las salas (temperatura cada 2 h,
+   O₂ cada 6 h), por TANQUE en las salas de desove y por ÁREA en los reservorios. Cada (zona, tanque) es una fila de la
+   grilla, y sólo se guardan y envían las que llevan alguna lectura: se llenan seguidos los tanques que estén en uso.
+   🔑 HOJA PROPIA, «Maduración Zonas», con llave (Fecha, Zona, Tanque): en «Maduración Sala» se mezclarían con las salas en
+   el tablero, el Saldo, Visitante y Planta, y su llave (Fecha, Sala) no distingue tanques. Un reservorio va sin tanque. */
+const MAD_ZONAS = [
+  { zona: "Sala desove (masivos)",  tanques: 6 },
+  { zona: "Sala desove/eclosión 1", tanques: 5 },
+  { zona: "Sala desove/eclosión 2", tanques: 5 },
+  { zona: "Reservorio 1",           tanques: 0 },
+  { zona: "Reservorio 2",           tanques: 0 }
+];
+/** Las filas de la grilla de zonas, en su orden: { zona, tanque } (tanque "" en un reservorio). */
+const MAD_ZONAS_FILAS = MAD_ZONAS.reduce(function(out, z){
+  if(!z.tanques) out.push({ zona: z.zona, tanque: "" });
+  for(let t = 1; t <= z.tanques; t++) out.push({ zona: z.zona, tanque: t });
+  return out;
+}, []);
 
 // ── Biomol: constantes globales ──
 // Muestras locales de Biomol (grilla del día). Cada fila expira a las BIO_TTL
@@ -2357,9 +2379,11 @@ async function syncAll(){
         // siempre y el usuario los reenviaba a mano. Es la única de las 16 rutas donde
         // hoy es posible: _reconcileMark tiene el kind "mad:*" y el modelo marca synced.
         const opts = { mark:{ kind:"mad:"+f, keys: pending.map(p=>p.id) } };
-        /* R2 · Tanques pasa por el portón del sello (ver _madTanquesEnviar); Salas no ha cambiado de llave. */
-        if(f === "tanques" && _gasLoc === undefined) _gasLoc = await _madIngGasAlDia();
-        const sent = f === "tanques" ? await _madTanquesEnviar(payload, opts, _gasLoc) : await postPayload(payload, url, opts);
+        /* R2 · Tanques pasa por el portón del sello (ver _madTanquesEnviar); Salas no ha cambiado de llave. Zonas
+           (2026-10-27) también: es hoja NUEVA y un GAS anterior la rechazaría (ver _madZonasEnviar). */
+        if((f === "tanques" || f === "zonas") && _gasLoc === undefined) _gasLoc = await _madIngGasAlDia();
+        const sent = f === "zonas" ? await _madZonasEnviar(payload, opts, _gasLoc)
+          : f === "tanques" ? await _madTanquesEnviar(payload, opts, _gasLoc) : await postPayload(payload, url, opts);
         if(sent){
           const list2 = loadMad(f);
           pending.forEach(p => {
@@ -2368,6 +2392,7 @@ async function syncAll(){
           });
           saveMadList(f, list2);
           if(curTab === f) renderMad(f);
+          else if(f === "zonas" && curTab === "salas") renderMad("salas");   // 2026-10-27 · las zonas se pintan en 🏠 Salas
           ok++;
         } else { const _b=_syncAllBucket(opts, MAD_SHEET[f]); if(_b==="queued") queued++; else if(_b==="fail") fail++; }
       }
@@ -3066,7 +3091,7 @@ function updateDots(){
     if(!el) return;
     let s;
     if(MAD_FICHAS.includes(f)){
-      const records = loadMad(f);
+      const records = f === "salas" ? loadMad(f).concat(loadMad("zonas")) : loadMad(f);   // 2026-10-27 · las zonas viven en 🏠 Salas
       s = records.some(r => !r.synced) ? "pending"
         : (records.length > 0 ? "synced" : "empty");
     } else if(isMadMod(curMod)){
@@ -6217,7 +6242,8 @@ function _madAfterRender(ficha){
   const sala = ficha==="salas" ? "" : _madTanquesSala;
   /* 2026-09-24 · `conDatos`: si el día ya tenía filas cuando se pintó. Es lo que distingue, al cambiar la fecha, el
      trabajo NUEVO (se lleva al día elegido) de corregir un día que ya tenía datos (se pregunta). Ver _madGridLlevar. */
-  _madRendered[ficha] = { sala, fecha, conDatos: loadMad(ficha).some(_madGridDelDia(ficha, fecha, sala)) };
+  _madRendered[ficha] = { sala, fecha, conDatos: loadMad(ficha).some(_madGridDelDia(ficha, fecha, sala))
+    || (ficha === "salas" && loadMad("zonas").some(_madZonasDelDia(fecha))) };   // 2026-10-27 · las zonas, en la misma grilla
   _madGridDirty = false;   // la grilla recién renderizada refleja lo persistido (limpio)
 }
 /** Las filas que la grilla PINTA para (fecha, sala): en Salas, las del día de las salas del selector; en Tanques, las
@@ -6245,6 +6271,8 @@ function _madMergeRow(list, ficha, data, opts){
      sobre el primero —que es justo el defecto que se viene a arreglar— y el día seguiría teniendo un solo
      registro. Un dato sin parte (los de antes de hoy) casa con los que tampoco lo tienen. */
   else if(ficha==="tanques") ex = list.find(r=> r&&r.data&&r.data.fecha===data.fecha&&r.data.sala===data.sala&&String(r.data.tanque)===String(data.tanque)&&String(r.data.parte||"")===String(data.parte||""));
+  // 2026-10-27 · Zonas casa por su llave de la hoja: (Fecha, Zona, Tanque); un reservorio, sin tanque.
+  else if(ficha==="zonas")   ex = list.find(r=> r&&r.data&&r.data.fecha===data.fecha&&r.data.zona===data.zona&&String(r.data.tanque==null?"":r.data.tanque)===String(data.tanque==null?"":data.tanque));
   else                       ex = list.find(r=> r&&r.data&&r.data.fecha===data.fecha&&r.data.sala===data.sala&&String(r.data.fila)===String(data.fila));
   if(ex){
     const merged = Object.assign({}, ex.data);
@@ -6300,13 +6328,18 @@ function _madCommitActive(){
 function saveMadRecovery(){
   if(!isMadMod(curMod) || !MAD_FICHAS.includes(curTab)) return;
   const ficha = curTab;
-  let rows = [];
-  try{ rows = ficha==="salas" ? _collectSalasGrid() : _collectTanquesGrid(); }catch(_){ return; }
-  if(!rows.length) return;
+  let rows = [], zonas = [];
+  try{
+    rows = ficha==="salas" ? _collectSalasGrid() : _collectTanquesGrid();
+    if(ficha==="salas") zonas = _collectZonasGrid();   // 2026-10-27 · las zonas van en la grilla de Salas
+  }catch(_){ return; }
+  if(!rows.length && !zonas.length) return;
   const sala = ficha==="salas" ? "" : _madTanquesSala;
   const fechaEl = document.getElementById("mad-"+ficha+"-fecha");
   const fecha = (fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today();
-  _lsSet(MAD_RECOV_KEY, JSON.stringify({ ficha, sala, fecha, ts:Date.now(), rows }));
+  const rec = { ficha, sala, fecha, ts:Date.now(), rows };
+  if(zonas.length) rec.zonas = zonas;
+  _lsSet(MAD_RECOV_KEY, JSON.stringify(rec));
 }
 function loadMadRecovery(){
   try{
@@ -6354,15 +6387,21 @@ function recoverMadGrid(){
   const rec = loadMadRecovery();
   if(!rec){ toast("No hay datos de recuperación disponibles","warn"); return; }
   const ts = new Date(rec.ts).toLocaleString("es-EC");
-  if(!confirm("¿Recuperar las "+rec.rows.length+" fila(s) autoguardadas el "+ts+"?\nSe combinarán con la grilla guardada.")) return;
+  const recZonas = (rec.ficha==="salas" && Array.isArray(rec.zonas)) ? rec.zonas : [];   // 2026-10-27 · las de las zonas
+  if(!confirm("¿Recuperar las "+(rec.rows.length + recZonas.length)+" fila(s) autoguardadas el "+ts+"?\nSe combinarán con la grilla guardada.")) return;
   if(rec.ficha==="tanques") _madTanquesSala = rec.sala;
   const list = loadMad(rec.ficha);
-  let entraron = rec.rows.length;
+  let entraron = rec.rows.length + recZonas.length;
   if(rec.ficha==="tanques") entraron = _madRecTanques(list, rec);   // 2026-09-30 · a la ronda abierta, y lo ya guardado no
   else rec.rows.forEach(data=>{
     _madMergeRow(list, rec.ficha, data);
   });
   saveMadList(rec.ficha, list);
+  if(recZonas.length){
+    const zl = loadMad("zonas");
+    recZonas.forEach(function(data){ _madMergeRow(zl, "zonas", data); });
+    saveMadList("zonas", zl);
+  }
   try{ localStorage.removeItem(MAD_RECOV_KEY); }catch(_){}
   _madGridDirty = false;
   renderMad(rec.ficha);
@@ -9196,12 +9235,13 @@ async function _madIngGasAlDia(url){
    anterior la llavea sin Hora ni Parte y funde las rondas del día (ver _madTanquesEnviar).
    V1 (2026-09-18) · y BROODSTOCK, hoja nueva cuya ruta (reemplazo por Fecha de corte · Piscina) es de R1: un GAS anterior
    la escribiría por el camino genérico, con otra llave. Va como guarda propia, fuera de la disyunción que anclan los bancos.
+   2026-10-27 · y ZONAS («Maduración Zonas»), hoja nueva: un GAS anterior la rechazaría. Guarda propia, como Broodstock.
    ⚠⚠ CUÁNTAS SON NO SE ESCRIBE EN NINGÚN COMENTARIO (2026-09-21). Son las de esta función y se cuentan
    aquí. Tres sitios decían «las seis fichas» cuando ya eran OCHO —Tanques entró con R2 y Broodstock
    con V1, cada uno en su línea, sin que nadie tocara la frase— y el README y el punto de guardado lo
    copiaron. Importa porque es lo que deja de enviarse al re-desplegar el GAS: contar de menos hace
    planificar un corte más pequeño que el real. Misma lección que la lista de fichas del README. */
-function _madHojaPideGasNuevo(hoja){ if(hoja === MAD_SHEET.tanques) return true; if(hoja === MAD_BS_SHEET) return true; return hoja === MAD_ING_SHEET || hoja === MAD_DESOVE_SHEET || hoja === MAD_FIN_SHEET || hoja === MAD_TRAT_SHEET || hoja === MAD_MORT_SHEET || hoja === MAD_ALIM_SHEET; }
+function _madHojaPideGasNuevo(hoja){ if(hoja === MAD_SHEET.tanques) return true; if(hoja === MAD_BS_SHEET) return true; if(hoja === MAD_SHEET.zonas) return true; return hoja === MAD_ING_SHEET || hoja === MAD_DESOVE_SHEET || hoja === MAD_FIN_SHEET || hoja === MAD_TRAT_SHEET || hoja === MAD_MORT_SHEET || hoja === MAD_ALIM_SHEET; }
 /* ⚠ 2026-09-16 · el aviso ya no dice «es anterior»: desde que se compara el SELLO, el GAS
    desplegado puede ser anterior O posterior al de esta app, y las dos cosas son igual de malas
    para una hoja que se escribe por posición. Lo que importa —y lo que el técnico puede hacer— es
@@ -9822,7 +9862,8 @@ function _madHistGrillas(){
   const out=[], lim=new Date(Date.now()-MAD_HIST_TTL), desde=lim.getFullYear()+"-"+pad(lim.getMonth()+1)+"-"+pad(lim.getDate());
   ["salas","tanques"].forEach(function(f){
     const g={};
-    loadMad(f).forEach(function(r){
+    // 2026-10-27 · las zonas cuentan en el día de 🏠 Salas: se editan y se imprimen desde su grilla.
+    (f==="salas" ? loadMad(f).concat(loadMad("zonas")) : loadMad(f)).forEach(function(r){
       if(!r || !(r.synced || r.syncedAt) || !r.data) return;
       const fecha=sanitizeStr(r.data.fecha,10); if(!isValidDate(fecha) || fecha < desde) return;
       const sala=f==="tanques" ? String(r.data.sala||"") : "";
@@ -15596,10 +15637,11 @@ function renderMadSalas(){
         <button class="btn" type="button" id="sal-estado-btn" onclick="madSalasProponerEstado()" title="Lee el libro y propone el estado de cada sala y su desglose por lote">🔄 Proponer estado</button>
         <span id="sal-estado-nota" style="font-size:11px;align-self:center"></span>
       </div>
+      ${_madZonasTablaHTML(todayStr)}
       <div class="sa" style="margin-top:12px">
-        <div class="sa-info"><span>💾 Guarda para persistir las ${MAD_SALA_OPTS.length} salas a la vez</span></div>
+        <div class="sa-info"><span>💾 Guarda para persistir las ${MAD_SALA_OPTS.length} salas y las zonas a la vez</span></div>
         <div class="sa-btns">
-          <button class="btn bd" type="button" onclick="clearMadSalasGrid()" title="Borrar todos los registros de Salas del día seleccionado">🗑 Borrar día</button>
+          <button class="btn bd" type="button" onclick="clearMadSalasGrid()" title="Borrar todos los registros de Salas y de las zonas del día seleccionado">🗑 Borrar día</button>
           <button class="btn bpdf" type="button" onclick="downloadMadPDF('salas')" title="PDF con todos los registros visibles">📄 PDF</button>
           ${madRecBtn}
           <button class="btn bs" type="button" onclick="saveMadSalasGrid()">💾 Guardar local</button>
@@ -15780,12 +15822,13 @@ function saveMadSalasGrid(opts){
   opts = opts || {};
   const silent = !!opts.silent;
   const rows = _collectSalasGrid(opts.fechaOverride);
+  const zRows = _collectZonasGrid(opts.fechaOverride);   // 2026-10-27 · las zonas, en la misma grilla y con las mismas reglas
   /* D13 (2026-09-12) · una temperatura fuera de rango NO se guarda, y se DICE siempre:
      · a mano (💾 / ☁️): se BLOQUEA entero, como la regla R2, y devuelve -1 para que
        syncMadSalasGrid no envíe nada. La celda queda en rojo y con lo tecleado.
      · silencioso (al cambiar de fecha o de pestaña): bloquearlo perdería TODO lo demás que se
        tecleó, así que se guardan las celdas válidas y se avisa de las que no. */
-  const _fuera = rows.fueraDeRango || [];
+  const _fuera = (rows.fueraDeRango || []).concat(zRows.fueraDeRango || []);
   if(_fuera.length){
     const _it = _fuera[0];
     const _msg = _it.sala + " · " + _it.hora + ": " + _it.valor + " °C está fuera de rango (permitido "
@@ -15794,25 +15837,32 @@ function saveMadSalasGrid(opts){
     if(!silent){ toast(_msg + " Corrige el dato antes de guardar.", "err", 6500); return -1; }
     toast(_msg + " Esa celda NO se guardó; el resto sí.", "warn", 6500);
   }
-  const _vaciadas = _madSalasVaciar(opts.fechaOverride);   // 2026-10-01 · lecturas BORRADAS (ver la función)
-  if(rows.length === 0 && _vaciadas){
+  const _vaciadas = _madSalasVaciar(opts.fechaOverride) + _madZonasVaciar(opts.fechaOverride);   // 2026-10-01 · lecturas BORRADAS (ver la función)
+  if(rows.length === 0 && zRows.length === 0 && _vaciadas){
     if(!opts.noRender) renderMadSalas();
     updateDots(); updateSyncUI();
     if(!silent) toast("💾 Lecturas borradas guardadas","ok",2500);
     return _vaciadas;
   }
-  if(rows.length === 0){ if(!silent) toast("No hay datos para guardar","warn"); return 0; }
+  if(rows.length === 0 && zRows.length === 0){ if(!silent) toast("No hay datos para guardar","warn"); return 0; }
   // Carga la lista UNA vez, mergea en memoria y persiste UNA vez (O(n)).
-  const list = loadMad("salas");
-  let saved = 0;
-  rows.forEach(data => { if(!isValidDate(data.fecha)) return; _madMergeRow(list, "salas", data); saved++; });
-  const _ok = saveMadList("salas", list);
+  let saved = 0, zSaved = 0, _ok = true;
+  if(rows.length){
+    const list = loadMad("salas");
+    rows.forEach(data => { if(!isValidDate(data.fecha)) return; _madMergeRow(list, "salas", data); saved++; });
+    _ok = saveMadList("salas", list);
+  }
+  if(zRows.length){
+    const zl = loadMad("zonas");
+    zRows.forEach(data => { if(!isValidDate(data.fecha)) return; _madMergeRow(zl, "zonas", data); zSaved++; });
+    _ok = saveMadList("zonas", zl) && _ok;
+  }
   if(_ok) _madGridDirty = false;
   if(!opts.noRender) renderMadSalas();
   updateDots(); updateSyncUI();
   if(!_ok) return -1;                  // almacenamiento falló (ya avisó); no mentir "guardado"
-  if(!silent) toast("💾 "+saved+" sala(s) guardada(s) localmente","ok",2500);
-  return saved;
+  if(!silent) toast("💾 "+(saved ? saved+" sala(s)" : "")+(saved && zSaved ? " y " : "")+(zSaved ? zSaved+" fila(s) de zonas" : "")+" guardada(s) localmente","ok",2500);
+  return saved + zSaved;
 }
 
 async function syncMadSalasGrid(){
@@ -15822,7 +15872,9 @@ async function syncMadSalasGrid(){
   if(!isValidGasUrl(url)){ toast("URL inválida","err"); return; }
   if(!syncRateOk()) return;
   const pending = loadMad("salas").filter(r => !r.synced);
-  if(pending.length === 0){ toast("Sin pendientes","info"); return; }
+  const zPend = loadMad("zonas").filter(r => !r.synced);   // 2026-10-27 · y las de las zonas, a su hoja
+  if(pending.length === 0 && zPend.length === 0){ toast("Sin pendientes","info"); return; }
+  if(pending.length === 0){ await _madZonasSync(zPend); renderMadSalas(); updateDots(); updateSyncUI(); return; }
   setSyncUI("pend","Enviando "+pending.length+" sala(s)…");
   const payload = buildMadPayload("salas", pending);
   const opts = { mark:{ kind:"mad:salas", keys: pending.map(p=>p.id) } };   // F3
@@ -15837,6 +15889,7 @@ async function syncMadSalasGrid(){
   } else {
     _syncNotOkUI(opts.outcome, "Error al sincronizar Salas", null, opts.gasMessage);
   }
+  if(zPend.length) await _madZonasSync(zPend);
   renderMadSalas();
   updateDots(); updateSyncUI();
 }
@@ -15846,16 +15899,201 @@ function clearMadSalasGrid(){
   const fecha = (fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today();
   const list = loadMad("salas");
   const matching = list.filter(r => r && r.data && r.data.fecha === fecha);
-  if(matching.length === 0){
+  // 2026-10-27 · el día de la grilla son también sus zonas
+  const zl = loadMad("zonas");
+  const zMatching = zl.filter(r => r && r.data && r.data.fecha === fecha);
+  if(matching.length === 0 && zMatching.length === 0){
     toast("No hay registros de Salas para "+fecha,"info",2500);
     return;
   }
-  if(!confirm("¿Borrar los "+matching.length+" registro(s) de Salas del "+fecha+"?\nNo se eliminan las filas ya enviadas a Google Sheets.")) return;
+  if(!confirm("¿Borrar los "+(matching.length + zMatching.length)+" registro(s) de Salas"+(zMatching.length ? " y zonas" : "")+" del "+fecha+"?\nNo se eliminan las filas ya enviadas a Google Sheets.")) return;
   const ids = new Set(matching.map(r => r.id));
-  saveMadList("salas", list.filter(r => !ids.has(r.id)));
+  if(matching.length) saveMadList("salas", list.filter(r => !ids.has(r.id)));
+  const zIds = new Set(zMatching.map(r => r.id));
+  if(zMatching.length) saveMadList("zonas", zl.filter(r => !zIds.has(r.id)));
   renderMadSalas();
   updateDots(); updateSyncUI();
-  toast("🗑 "+matching.length+" registro(s) de Salas borrados","ok",3000);
+  toast("🗑 "+(matching.length + zMatching.length)+" registro(s) de Salas"+(zMatching.length ? " y zonas" : "")+" borrados","ok",3000);
+}
+
+/* ══════════════════════════════════════════
+   MADURACIÓN · ZONAS DE DESOVE Y RESERVORIOS (2026-10-27, usuario)
+   Temperatura (cada 2 h) y O₂ (cada 6 h) por (zona, tanque), en una tabla DENTRO de 🏠 Salas: misma fecha, mismos
+   botones y mismas reglas que las salas (fuera de rango no se guarda; una lectura borrada se guarda borrada). Va a su
+   hoja, «Maduración Zonas» (MAD_SHEET.zonas), por la puerta del sello: es hoja NUEVA y un GAS anterior la rechazaría.
+   La tabla vive en #fp-zonas, dentro de #fp-salas: el pegado (madGridPaste) la trata como grilla propia, con sus
+   filas desde 0; las flechas (madGridKey) y el «cambios sin guardar» los recoge el panel de Salas.
+   ⚠ Sus columnas (data-c) empiezan en 100: el pegado y las flechas de las SALAS buscan en todo #fp-salas, y con las
+   mismas coordenadas un bloque pegado que se pasara de la Sala 5 —o la flecha ↓ desde ella— caería en una zona.
+══════════════════════════════════════════ */
+/** Las filas de zonas de `fecha` que pinta la grilla (las de MAD_ZONAS_FILAS). */
+function _madZonasDelDia(fecha){
+  return function(x){
+    const d = x && x.data;
+    return !!d && d.fecha === fecha && MAD_ZONAS_FILAS.some(function(f){ return f.zona === d.zona && String(f.tanque) === String(d.tanque == null ? "" : d.tanque); });
+  };
+}
+/** La tabla de las zonas para el día `fecha`. */
+function _madZonasTablaHTML(fecha){
+  const list = loadMad("zonas");
+  const porFila = {};
+  list.forEach(function(r){ if(r && r.data && r.data.fecha === fecha) porFila[r.data.zona + "|" + String(r.data.tanque == null ? "" : r.data.tanque)] = r; });
+  const filas = MAD_ZONAS_FILAS.map(function(f, zi){
+    const r = porFila[f.zona + "|" + String(f.tanque)];
+    const d = r ? r.data : {};
+    const st = r ? (r.synced ? "✅" : "⏳") : "○";
+    const primera = zi === 0 || MAD_ZONAS_FILAS[zi - 1].zona !== f.zona;
+    const tempCells = _SALA_TEMP_KEYS.map((k,ki) =>
+      `<td><input class="pinp" type="number" name="zg_${zi}_${k}" data-r="${zi}" data-c="${100+ki}" onpaste="madGridPaste(event,'zonas')" value="${vl(d,k)}" min="${_SALA_TEMP_MIN}" max="${_SALA_TEMP_MAX}" step="0.1" inputmode="decimal" placeholder="-"></td>`
+    ).join("");
+    const oxCells = _SALA_OX_KEYS.map((k,ki) =>
+      `<td><input class="pinp" type="number" name="zg_${zi}_${k}" data-r="${zi}" data-c="${112+ki}" onpaste="madGridPaste(event,'zonas')" value="${vl(d,k)}" min="0" max="20" step="0.01" inputmode="decimal" placeholder="-"></td>`
+    ).join("");
+    return `<tr${primera && zi ? ' style="border-top:2px solid #cbd5e1"' : ''}>
+      <td class="tqc" style="font-size:10px;min-width:120px">${primera ? escapeHtml(f.zona) : ""}</td>
+      <td style="font-size:10px;text-align:center">${f.tanque === "" ? "—" : "T" + f.tanque}</td>
+      <td style="font-size:10px;text-align:center">${st}</td>
+      ${tempCells}${oxCells}
+    </tr>`;
+  }).join("");
+  const thTemp = _SALA_TEMP_KEYS.map(k => { const h = k.replace("temp_",""); return `<th>${h.slice(0,2)}:${h.slice(2)}</th>`; }).join("");
+  const thOx = _SALA_OX_KEYS.map(k => { const h = k.replace("ox_",""); return `<th>${h.slice(0,2)}:${h.slice(2)}</th>`; }).join("");
+  const pend = list.filter(r => r.data && r.data.fecha === fecha && !r.synced).length;
+  return `<div id="fp-zonas" style="margin-top:14px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;font-weight:700;color:#0f172a">
+        🌡️ Zonas de desove y reservorios
+        <span class="ssp ssp-mt" style="font-weight:400">${pend ? pend+" pendiente(s)" : "sin pendientes"}</span>
+      </div>
+      <div style="font-size:11px;color:#475569;margin-bottom:6px">Llena seguidos los tanques que estés registrando: sólo se guardan las filas con alguna lectura.</div>
+      <div class="tw"><table class="ft" style="font-size:10.5px">
+        <thead>
+          <tr>
+            <th class="tqh" style="min-width:120px">Zona</th>
+            <th style="min-width:34px">Tanque</th>
+            <th style="min-width:28px">St</th>
+            <th colspan="12" class="thg">Temperatura (°C) · cada 2 horas</th>
+            <th colspan="4" class="thg2">O₂ (mg/L) · cada 6 horas</th>
+          </tr>
+          <tr>
+            <!-- ⚠ un <th> vacío por CADA columna anterior a las temperaturas (Zona · Tanque · St). -->
+            <th></th><th></th><th></th>
+            ${thTemp}${thOx}
+          </tr>
+        </thead>
+        <tbody>${filas}</tbody>
+      </table></div>
+    </div>`;
+}
+/** Las filas de zonas con alguna lectura (como _collectSalasGrid): fuera de rango, la celda en rojo y en `fueraDeRango`. */
+function _collectZonasGrid(fechaOverride){
+  const fp = document.getElementById("fp-zonas");
+  if(!fp) return [];
+  const fechaEl = document.getElementById("mad-salas-fecha");
+  const fecha = isValidDate(fechaOverride) ? fechaOverride : ((fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today());
+  const result = [], fueraDeRango = [];
+  MAD_ZONAS_FILAS.forEach(function(f, zi){
+    const data = { fecha, zona: f.zona, tanque: f.tanque };
+    const nombre = f.zona + (f.tanque === "" ? "" : " · T" + f.tanque);
+    let hasAny = false;
+    _SALA_TEMP_KEYS.forEach(k => {
+      const el = fp.querySelector('[name="zg_' + zi + '_' + k + '"]');
+      const v = el ? el.value : "";
+      if(v === ""){ data[k] = ""; if(el && el.classList) el.classList.remove("inp-bad"); return; }
+      const n = parseFloat(v);
+      const fuera = !isFinite(n) || n < _SALA_TEMP_MIN || n > _SALA_TEMP_MAX;
+      if(el && el.classList) el.classList.toggle("inp-bad", fuera);
+      if(fuera){ fueraDeRango.push({ sala: nombre, hora: "Temperatura " + parseInt(k.replace("temp_",""),10) + ":00", valor: v }); data[k] = ""; return; }
+      data[k] = n; hasAny = true;
+    });
+    _SALA_OX_KEYS.forEach(k => {
+      const el = fp.querySelector('[name="zg_' + zi + '_' + k + '"]');
+      const v = el ? el.value : "";
+      if(v !== ""){ data[k] = sanitizeNum(v,0,20); hasAny = true; } else { data[k] = ""; }
+    });
+    if(hasAny) result.push(data);
+  });
+  result.fueraDeRango = fueraDeRango;
+  return result;
+}
+/** Como _madSalasVaciar: una lectura BORRADA en pantalla se guarda borrada (sólo en la grilla PINTADA para ese día). Si la
+ *  fila ya se envió, la hoja conserva el valor: se avisa. Devuelve cuántas celdas vació. */
+function _madZonasVaciar(fechaOverride){
+  const r = _madRendered.salas;
+  const fp = document.getElementById("fp-zonas");
+  const fechaEl = document.getElementById("mad-salas-fecha");
+  const fecha = isValidDate(fechaOverride) ? fechaOverride : ((fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today());
+  if(!fp || !r || r.fecha !== fecha) return 0;   // sólo en la grilla PINTADA para ese día
+  const claves = _SALA_TEMP_KEYS.concat(_SALA_OX_KEYS);
+  const list = loadMad("zonas");
+  let n = 0;
+  const enHoja = [];
+  MAD_ZONAS_FILAS.forEach(function(f, zi){
+    const x = list.find(function(y){ return y && y.data && y.data.fecha === fecha && y.data.zona === f.zona && String(y.data.tanque == null ? "" : y.data.tanque) === String(f.tanque); });
+    if(!x) return;
+    const borradas = claves.filter(function(k){
+      const el = fp.querySelector('[name="zg_' + zi + '_' + k + '"]');
+      const g = x.data[k];
+      return !!el && String(el.value) === "" && g !== "" && g != null;
+    });
+    if(!borradas.length) return;
+    borradas.forEach(function(k){ x.data[k] = ""; });
+    if(x.synced || x.syncedAt) enHoja.push(f.zona + (f.tanque === "" ? "" : " T" + f.tanque));
+    n += borradas.length;
+  });
+  if(!n) return 0;
+  saveMadList("zonas", list);
+  if(enHoja.length > 0) toast("⚠️ Borraste lecturas que ya estaban en la hoja (" + enHoja.join(", ") + " · " + fecha + "): la hoja no vacía celdas, "
+    + "así que allí SIGUEN. Bórralas también en «" + MAD_SHEET.zonas + "».", "warn", 8000);
+  return n;
+}
+/** Por la puerta del sello, como Tanques (_madTanquesEnviar): a un GAS que no es el de esta app no se le entrega. */
+async function _madZonasEnviar(payload, opts, gas){
+  const g = gas === undefined ? await _madIngGasAlDia() : gas;
+  if(g === false){ opts.gasMessage = _madGasViejoMsg(MAD_SHEET.zonas); return false; }
+  return _madPostConSello(payload, g, opts);
+}
+/** Envía las filas de zonas `pend` (☁️ de 🏠 Salas) y las marca enviadas. */
+async function _madZonasSync(pend){
+  setSyncUI("pend","Enviando "+pend.length+" fila(s) de zonas…");
+  const payload = buildMadPayload("zonas", pend);
+  const opts = { mark:{ kind:"mad:zonas", keys: pend.map(p=>p.id) } };   // F3: si acaba en la cola, se marcan solas al entregarse
+  const sent = await _madZonasEnviar(payload, opts);
+  if(sent){
+    const list2 = loadMad("zonas");
+    pend.forEach(p => { const idx = list2.findIndex(x => x.id === p.id); if(idx >= 0){ list2[idx].synced = true; list2[idx].syncedAt = Date.now(); } });
+    saveMadList("zonas", list2);
+    setSyncUI("ok",pend.length+" fila(s) de zonas sincronizada(s) ✔");
+    toast("✅ Zonas enviadas a Google Sheets","ok");
+    setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
+  } else {
+    _syncNotOkUI(opts.outcome, "Error al sincronizar las zonas", null, opts.gasMessage);
+  }
+}
+/** Las filas de zonas del PDF de Salas: con los MISMOS filtros que sus salas (fecha y búsqueda), en el orden de la grilla. */
+function _madZonasParaPdf(){
+  const orden = function(d){ return MAD_ZONAS_FILAS.findIndex(function(f){ return f.zona === d.zona && String(f.tanque) === String(d.tanque == null ? "" : d.tanque); }); };
+  return applyMadFilters("salas", loadMad("zonas")).sort(function(a, b){
+    const x = a.data || {}, y = b.data || {};
+    return String(y.fecha || "").localeCompare(String(x.fecha || "")) || (orden(x) - orden(y));
+  });
+}
+/** La tabla de las zonas, debajo de la de las salas en su PDF ("" si no hay filas). ⚠ Cabecera y celda van JUNTAS. */
+function _madZonasPdfHTML(zList){
+  if(!zList || !zList.length) return "";
+  const headers = ['#','Fecha','Zona','Tanque',
+    'T 02:00','T 04:00','T 06:00','T 08:00','T 10:00','T 12:00','T 14:00','T 16:00','T 18:00','T 20:00','T 22:00','T 00:00',
+    'O₂ 06:00','O₂ 12:00','O₂ 18:00','O₂ 00:00','Estado sync'];
+  const filas = zList.map(function(r, idx){
+    const d = r.data || {};
+    const st = r.synced ? '<b style="color:#166534">✔ Sinc.</b>' : '<b style="color:#92400e">⏳ Pend.</b>';
+    return '<tr><td class="tqc">' + (idx+1) + '</td><td>' + escapeHtml(d.fecha||'—') + '</td><td>' + escapeHtml(d.zona||'—') + '</td><td>'
+      + (d.tanque === "" || d.tanque == null ? '—' : pdfVal(d.tanque)) + '</td>'
+      + _SALA_TEMP_KEYS.concat(_SALA_OX_KEYS).map(function(k){ return '<td>' + pdfVal(d[k]) + '</td>'; }).join('')
+      + '<td>' + st + '</td></tr>';
+  }).join('');
+  return '<div class="ftitle" style="margin-top:10px">🌡️ Zonas de desove y reservorios · ' + zList.length + ' registro(s)</div>'
+    + '<table><thead><tr>' + headers.map(function(h){ return '<th>' + escapeHtml(h) + '</th>'; }).join('') + '</tr></thead>'
+    + '<tbody>' + filas + '</tbody></table>';
 }
 
 // ── Grilla Tanques (filas = tanques de la sala) ───────
@@ -16500,11 +16738,14 @@ function _madGridLlevar(ficha){
   if(!_madGridDirty || !r || !isValidDate(nueva) || nueva === r.fecha) return null;
   const list = loadMad(ficha);
   const deOrigen = list.filter(_madGridDelDia(ficha, r.fecha, r.sala));
-  if(deOrigen.some(function(x){ return x.synced || x.syncedAt; })){
+  // 2026-10-27 · en Salas, las zonas del día van con ella: se llevan, o se quedan, juntas.
+  const zl = ficha === "salas" ? loadMad("zonas") : [];
+  const zOrigen = zl.filter(_madZonasDelDia(r.fecha));
+  if(deOrigen.concat(zOrigen).some(function(x){ return x.synced || x.syncedAt; })){
     toast("Lo del " + r.fecha + " ya se envió a la hoja: se queda en ese día (corrígelo en la hoja si la fecha era otra).", "warn", 7000);
     return null;
   }
-  const nuevo = !r.conDatos, hayEnDestino = list.some(_madGridDelDia(ficha, nueva, r.sala));
+  const nuevo = !r.conDatos, hayEnDestino = list.some(_madGridDelDia(ficha, nueva, r.sala)) || zl.some(_madZonasDelDia(nueva));
   const llevar = (nuevo && !hayEnDestino) || confirm(hayEnDestino
     ? "El " + nueva + " ya tiene " + (ficha === "salas" ? "datos de Salas" : "un parte abierto de " + r.sala) + " en este dispositivo.\n\nAceptar: llevar lo de pantalla al " + nueva
       + " (lo tecleado reemplaza esas celdas).\nCancelar: dejarlo en el " + r.fecha + " y ver el " + nueva + "."
@@ -16514,6 +16755,7 @@ function _madGridLlevar(ficha){
   // La hora del parte que se deja, antes de quitarlo: la ronda la conserva (Tanques).
   const hora = ficha === "tanques" ? _madParteHora(list, r.fecha, r.sala, _madParteAbierto(list, r.fecha, r.sala)) : "";
   if(deOrigen.length && !saveMadList(ficha, list.filter(function(x){ return deOrigen.indexOf(x) === -1; }))) return null;
+  if(zOrigen.length && !saveMadList("zonas", zl.filter(function(x){ return zOrigen.indexOf(x) === -1; }))) return null;
   if(ficha === "salas") saveMadSalasGrid({ fechaOverride: nueva, silent: true, noRender: true });
   else saveMadTanquesGrid({ salaOverride: r.sala, fechaOverride: nueva, horaOverride: hora, silent: true, noRender: true });
   return { nuevo: nuevo };
@@ -17034,9 +17276,10 @@ function clearMadTanquesGrid(){
 
 // ── PDF horizontal con tabla de registros (todos los visibles) ──
 function downloadMadPDF(ficha){
-  if(!MAD_FICHAS.includes(ficha)) return;
+  if(!MAD_FICHAS.includes(ficha) || ficha === 'zonas') return;   // 2026-10-27 · las zonas salen en el PDF de Salas
   const list = applyMadFilters(ficha, loadMad(ficha));
-  if(list.length === 0){
+  const zList = ficha === 'salas' ? _madZonasParaPdf() : [];
+  if(list.length === 0 && zList.length === 0){
     toast("Sin registros para imprimir en "+FICHA_LABELS[ficha],"warn",2500);
     return;
   }
@@ -17048,7 +17291,7 @@ function downloadMadPDF(ficha){
   const codigo = genCodigo(ficha, MAD_MOD, fecha);
   const tec    = gcfg('tec','');
 
-  let headers, rowsHtml, titleIco, titleText, docCode;
+  let headers, rowsHtml, titleIco, titleText, docCode, extraHtml = '';
   if(ficha === 'salas'){
     titleIco = '🏠'; titleText = 'Maduración · Salas'; docCode = 'OMR-MAD-SAL';
     /* ⚠⚠ CABECERA Y CELDA VAN JUNTAS. El 2026-09-08 se cambió una sin la otra en esta misma
@@ -17086,6 +17329,7 @@ function downloadMadPDF(ficha){
         <td>${st}</td>
       </tr>`;
     }).join('');
+    extraHtml = _madZonasPdfHTML(zList);   // 2026-10-27 · y, debajo, las zonas de desove y reservorios
   } else if(ficha === 'tanques'){
     titleIco = '🛢️'; titleText = 'Maduración · Tanques'; docCode = 'OMR-MAD-TAN';
     // ⚠ Cabecera y celda van JUNTAS: separarlas ya salió mal el 2026-09-08.
@@ -17184,6 +17428,7 @@ function downloadMadPDF(ficha){
       <thead><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>
+    ${extraHtml}
     <div class="spacer"></div>
     ${footHtml}
   </div>
@@ -17235,6 +17480,24 @@ function buildMadPayload(ficha, records){
           num(d.temp_14), num(d.temp_16), num(d.temp_18), num(d.temp_20), num(d.temp_22), num(d.temp_00),
           num(d.ox_06), num(d.ox_12), num(d.ox_18), num(d.ox_00), d.ras,
           d.estado_lote || "", num(d.toneladas)];
+      })
+    };
+  }
+  /* 2026-10-27 · ZONAS DE DESOVE Y RESERVORIOS, a su hoja (ver MAD_ZONAS). La llave del GAS es POSICIONAL [0,1,2] (Fecha,
+     Zona, Tanque) y su firma de esquema, «Tanque» (3) y «Oxígeno 00:00» (19): cabecera, llave y firma van JUNTAS. Las
+     lecturas se llaman igual que las de «Maduración Sala»: son la misma medición en otro sitio. */
+  if(ficha === "zonas"){
+    return {
+      sheetName: "Maduración Zonas",
+      headers: ["Fecha","Zona","Tanque",
+        "Temperatura 2:00","Temperatura 4:00","Temperatura 6:00","Temperatura 8:00","Temperatura 10:00","Temperatura 12:00","Temperatura 14:00","Temperatura 16:00","Temperatura 18:00","Temperatura 20:00","Temperatura 22:00","Temperatura 0:00",
+        "Oxígeno 06:00","Oxígeno 12:00","Oxígeno 18:00","Oxígeno 00:00"],
+      rows: records.map(r => {
+        const d = r.data || {};
+        return [d.fecha, d.zona, int(d.tanque),
+          num(d.temp_02), num(d.temp_04), num(d.temp_06), num(d.temp_08), num(d.temp_10), num(d.temp_12),
+          num(d.temp_14), num(d.temp_16), num(d.temp_18), num(d.temp_20), num(d.temp_22), num(d.temp_00),
+          num(d.ox_06), num(d.ox_12), num(d.ox_18), num(d.ox_00)];
       })
     };
   }
@@ -27049,7 +27312,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "69c44b355137";
+const GAS_VERSION = "372a32cebe97";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -27101,6 +27364,9 @@ const ALLOWED = [
   // con llave POSICIONAL [0,1] al principio, así que la hoja puede crecer por el final sin migrar nada.
   // Es el aguas arriba del reproductivo: de estas piscinas salen las hembras que viven en la MATRIZ.
   "Maduración Broodstock",
+  // Zonas de desove y reservorios (2026-10-27): temperatura y O₂ por (zona, tanque), con llave POSICIONAL [0,1,2]
+  // (Fecha, Zona, Tanque) al principio; la captura va dentro de la ficha de Salas.
+  "Maduración Zonas",
   "BIOMOL",
   "Registro_Supervisión",
   "Registro_Desinfección",
@@ -27325,6 +27591,7 @@ function doPost(e) {
        ⚠ Sin comillas invertidas en este comentario: viaja dentro de la plantilla GAS() de engine.js y
        una sola la cerraría. Pasó al escribirlo, y lo cazó el comparador de copias. */
     else if (payload.sheetName === "Maduración Tanques")  madKeyCols = [0,1,2,13,14]; // Fecha, Sala, Tanque, Hora, Parte
+    else if (payload.sheetName === "Maduración Zonas")    madKeyCols = [0,1,2]; // Fecha, Zona, Tanque (2026-10-27; un reservorio, sin tanque)
     else if (payload.sheetName === "Maduración Lotes")    madKeyCols = [0,1,2]; // Fecha, Lote, Código genético (la hoja de Desoves)
     // Registro reproductivo (upsert por clave, MERGE preserva campos permanentes vacíos):
     // 🔑 2026-09-16 · la MATRIZ va por la CUATERNA que identifica al individuo: Trovan, Piscina,
@@ -28080,7 +28347,8 @@ var MAD_ESQUEMA_FIRMA = {
   "Maduración Movimientos": [[9, "Agua destino"], [12, "ID"]],
   /* 2026-09-17 (segunda tanda) · LAS CINCO QUE FALTABAN. Con esto, las doce hojas de Maduración que
      admitía ALLOWED ese día tienen cerrojo; la decimotercera, «Broodstock», nació después con el suyo
-     (ver abajo), así que hoy lo tienen las TRECE. Dos motivos concretos, no preventivos en abstracto:
+     (ver abajo), así que entonces lo tenían las TRECE (y «Zonas», 2026-10-27, nació también con el suyo). Dos motivos
+     concretos, no preventivos en abstracto:
        · «Transferencias» NO EXISTE todavía (0 filas): nace con el primer traslado, y no la cubría ni la
          guarda V3 —que necesita que la hoja tenga filas— ni la firma. Quien la creara primero le fijaba
          la cabecera para siempre.
@@ -28102,6 +28370,10 @@ var MAD_ESQUEMA_FIRMA = {
   "Maduración MATRIZ":         [[6, "Lote"], [11, "Fecha ingreso"]],
   "Maduración Bitácora":       [[3, "Tipo"], [5, "Tanque"]],
   "Maduración Transferencias": [[4, "Trovan ID"], [12, "Piscinas presentes"]],
+  /* Zonas de desove y reservorios (2026-10-27) · nace con su cerrojo, como Broodstock. Se firma la 3 —«Tanque», la última
+     parte de la llave: si se corre, el upsert casa con la fila que no es— y la 19 —«Oxígeno 00:00», la última de hoy:
+     cualquier inserción por delante la mueve, y un añadido al final no la toca—. */
+  "Maduración Zonas":          [[3, "Tanque"], [19, "Oxígeno 00:00"]],
   /* Control Broodstock (2026-09-17) · nace HOY, así que su cerrojo existe desde el primer envío y no hay
      que esperar a que lo haga falta. Se firma la 2 —«Piscina», la segunda mitad de la llave: si se corre,
      el upsert casa con la fila que no es— y la 8 —«Pl/g», la columna que separa las postlarvas por gramo

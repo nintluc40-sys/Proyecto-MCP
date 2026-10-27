@@ -117,7 +117,8 @@ describe('B · toda marca usa un kind que _reconcileMark sabe reconciliar', () =
        ahora la escribe una ficha de formulario, no una grilla. La lista se sigue fijando
        aquí —no es sobre-especificación— porque el kind de la marca se compone con ella y
        un miembro que loadMad no reconozca deja la marca INERTE sin dar síntoma. */
-    expect(fichas).toEqual(['salas', 'tanques']);
+    // 2026-10-27 · entra «zonas» (sin pestaña: va dentro de 🏠 Salas), y con ella el kind «mad:zonas».
+    expect(fichas).toEqual(['salas', 'tanques', 'zonas']);
     // y loadMad valida contra esa misma lista
     expect(engine).toContain('if(!MAD_FICHAS.includes(ficha)) return [];');
   });

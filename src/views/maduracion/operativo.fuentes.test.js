@@ -2,9 +2,10 @@
    MADURACIÓN · OPERATIVO — las fuentes del tablero (Fase 0.1)
 
    Qué se exige:
-   1 · Cada FIRMA está en su hoja y en NINGUNA otra de las trece de Maduración. Las cabeceras no se
-       teclean aquí: salen de los módulos de esquema y, para Sala y Tanques, del propio monolito. Y las
+   1 · Cada FIRMA está en su hoja y en NINGUNA otra de las de Maduración. Las cabeceras no se
+       teclean aquí: salen de los módulos de esquema y, para Sala, Tanques y Zonas, del propio monolito. Y las
        VIEJAS de Ingreso y Lotes, que siguen en producción hasta el vaciado A2, también se reconocen.
+       La única excepción es la de Sala, que está también en Zonas (las mismas lecturas): ahí manda el ORDEN.
    2 · Las fechas del export (`dd/mm/aaaa` y `aaaa-mm-dd`) salen en `aaaa-mm-dd`, y así ORDENAN bien.
    3 · Los números salen como números, sin tocar los códigos con cero a la izquierda.
    4 · 🔑 El libro y el resumen calculados desde el export ADAPTADO son los mismos que desde `?p=rows`,
@@ -55,6 +56,7 @@ function cabecerasDelMonolito(hoja) {
 }
 const SALA_HEADERS = cabecerasDelMonolito('Maduración Sala');
 const TANQUES_HEADERS = cabecerasDelMonolito('Maduración Tanques');
+const ZONAS_HEADERS = cabecerasDelMonolito('Maduración Zonas');
 
 /* Las cabeceras VIEJAS que siguen en producción (medidas el 2026-09-19): con ellas el GAS rechaza los
    envíos hasta el vaciado A2, pero sus filas de prueba siguen llegando al tablero. */
@@ -67,8 +69,11 @@ const LOTES_VIEJA = ['Fecha', 'Lote', 'Código genético', 'Piscina Broodstock',
 const CABECERAS = {
   ingresos: [MAD_INGRESO_HEADERS, INGRESO_VIEJA], movimientos: [MAD_MOV_HEADERS], desoves: [MAD_DESOVE_HEADERS, LOTES_VIEJA],
   mortDesove: [MAD_MORT_HEADERS], cierres: [MAD_FIN_HEADERS], tratamientos: [MAD_TRAT_HEADERS], alimentacion: [MAD_ALIM_HEADERS],
-  broodstock: [MAD_BS_HEADERS], sala: [SALA_HEADERS], tanques: [TANQUES_HEADERS],
+  broodstock: [MAD_BS_HEADERS], sala: [SALA_HEADERS], tanques: [TANQUES_HEADERS], zonas: [ZONAS_HEADERS],
 };
+/* 2026-10-27 · la ÚNICA firma que puede estar en otra hoja: la de Sala («Temperatura 2:00») está también en Zonas, que
+   lleva las mismas lecturas. No la roba porque Zonas va ANTES en MAD_OP_HOJAS y casa por «Zona» (ver abajo). */
+const COMPARTIDAS = { 'sala/zonas': true };
 const REPRODUCTIVO = [REPRO_MATRIZ_HEADERS, REPRO_BITACORA_HEADERS, REPRO_TRANSFER_HEADERS];
 
 /** Una fila como la deja el export: TODAS las columnas de su hoja (defval ''), todo como texto. */
@@ -80,24 +85,26 @@ function filaExport(cabeceras, valores, origen = MAD_OP_ORIGEN) {
 }
 
 describe('Maduración · operativo · las firmas reconocen cada hoja', () => {
-  it('las diez hojas del registro, una vez cada una, y todas llegan con el origen genérico «Maduracion»', () => {
-    expect(new Set(MAD_OP_HOJAS.map((h) => h.hoja)).size).toBe(10);
-    expect(new Set(MAD_OP_HOJAS.map((h) => h.clave)).size).toBe(10);
+  it('las once hojas del registro, una vez cada una, y todas llegan con el origen genérico «Maduracion»', () => {
+    expect(new Set(MAD_OP_HOJAS.map((h) => h.hoja)).size).toBe(11);
+    expect(new Set(MAD_OP_HOJAS.map((h) => h.clave)).size).toBe(11);
     // Si algún día classifyOrigin les diera origen propio, hojaDeFila dejaría de verlas: esto lo avisaría.
     for (const h of MAD_OP_HOJAS) expect(classifyOrigin(h.hoja), h.hoja).toBe(MAD_OP_ORIGEN);
   });
 
-  it('Sala y Tanques se llaman como en el MAD_SHEET del monolito', () => {
-    expect(ENGINE).toMatch(/const MAD_SHEET\s*=\s*\{[^}]*"Maduración Sala"[^}]*"Maduración Tanques"/);
+  it('Sala, Tanques y Zonas se llaman como en el MAD_SHEET del monolito', () => {
+    expect(ENGINE).toMatch(/const MAD_SHEET\s*=\s*\{[^}]*"Maduración Sala"[^}]*"Maduración Tanques"[^}]*"Maduración Zonas"/);
     expect(MAD_OP_HOJAS.find((h) => h.clave === 'sala').hoja).toBe('Maduración Sala');
     expect(MAD_OP_HOJAS.find((h) => h.clave === 'tanques').hoja).toBe('Maduración Tanques');
+    expect(MAD_OP_HOJAS.find((h) => h.clave === 'zonas').hoja).toBe('Maduración Zonas');
   });
 
-  it('cada firma está en su hoja —también en su cabecera vieja— y en ninguna otra de las trece', () => {
+  it('cada firma está en su hoja —también en su cabecera vieja— y en ninguna otra (salvo la compartida de Sala)', () => {
     for (const h of MAD_OP_HOJAS) {
       for (const cab of CABECERAS[h.clave]) expect(cab, h.clave).toContain(h.firma);
       for (const [otra, cabs] of Object.entries(CABECERAS)) {
-        if (otra !== h.clave) for (const cab of cabs) expect(cab, '«' + h.firma + '» también está en ' + otra).not.toContain(h.firma);
+        if (otra === h.clave || COMPARTIDAS[h.clave + '/' + otra]) continue;
+        for (const cab of cabs) expect(cab, '«' + h.firma + '» también está en ' + otra).not.toContain(h.firma);
       }
       for (const cab of REPRODUCTIVO) expect(cab, '«' + h.firma + '» en el reproductivo').not.toContain(h.firma);
     }
@@ -111,6 +118,23 @@ describe('Maduración · operativo · las firmas reconocen cada hoja', () => {
     // Otro origen con una columna del mismo nombre que una firma: tampoco entra.
     expect(hojaDeFila(filaExport(['Fecha', 'Machos muertos'], {}, 'Maduración Bitácora'))).toBe(null);
     expect(hojaDeFila(filaExport(['Fecha', 'Sala', 'Algo nuevo']))).toBe(null);
+  });
+
+  it('🔴 Zonas lleva la firma de Sala y NO se la roba: va antes y casa por «Zona», que Sala no tiene', () => {
+    // El fixture ejerce algo: la firma de Sala SÍ está en las filas de Zonas, así que el orden decide.
+    const firmaSala = MAD_OP_HOJAS.find((h) => h.clave === 'sala').firma;
+    expect(ZONAS_HEADERS).toContain(firmaSala);
+    expect(SALA_HEADERS).not.toContain('Zona');
+    const i = (c) => MAD_OP_HOJAS.findIndex((h) => h.clave === c);
+    expect(i('zonas'), 'Zonas tiene que ir ANTES que Sala en MAD_OP_HOJAS').toBeLessThan(i('sala'));
+    const zona = filaExport(ZONAS_HEADERS, { Fecha: '01/09/2026', Zona: 'Reservorio 1', 'Temperatura 2:00': '28' });
+    expect(hojaDeFila(zona)?.clave).toBe('zonas');
+    expect(hojaDeFila(filaExport(SALA_HEADERS, { Fecha: '01/09/2026', Sala: 'Sala 1' }))?.clave).toBe('sala');
+    // Y en las fuentes: la fila de una zona no aparece entre las de Sala.
+    const { fuentes, sinHoja } = fuentesDesdeFilas([zona, filaExport(SALA_HEADERS, { Fecha: '01/09/2026', Sala: 'Sala 1' })]);
+    expect(fuentes.zonas.map((r) => r.Zona)).toEqual(['Reservorio 1']);
+    expect(fuentes.sala.map((r) => r.Sala)).toEqual(['Sala 1']);
+    expect(sinHoja).toBe(0);
   });
 });
 
@@ -188,7 +212,7 @@ describe('Maduración · operativo · las fuentes del store', () => {
     ];
     const { fuentes, sinHoja } = fuentesDesdeFilas(store);
     expect(Object.fromEntries(Object.entries(fuentes).map(([k, v]) => [k, v.length]))).toEqual({
-      ingresos: 2, movimientos: 0, desoves: 0, mortDesove: 0, cierres: 0, tratamientos: 0, alimentacion: 0, broodstock: 1, sala: 1, tanques: 1,
+      ingresos: 2, movimientos: 0, desoves: 0, mortDesove: 0, cierres: 0, tratamientos: 0, alimentacion: 0, broodstock: 1, zonas: 0, sala: 1, tanques: 1,
     });
     expect(sinHoja).toBe(1);
     expect(fuentes.ingresos[0].Fecha).toBe('2026-08-29');

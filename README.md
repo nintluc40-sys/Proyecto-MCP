@@ -974,6 +974,7 @@ vacía o no exista**, que es justo cuando el daño se hace.
 | Maduración MATRIZ | 6 `Lote` · 11 `Fecha ingreso` |
 | Maduración Bitácora | 3 `Tipo` · 5 `Tanque` |
 | Maduración Transferencias | 4 `Trovan ID` · 12 `Piscinas presentes` |
+| Maduración Zonas | 3 `Tanque` · 19 `Oxígeno 00:00` |
 | Maduración Broodstock | 2 `Piscina` · 8 `Pl/g` |
 
 > 🔑 **Movimientos no ha cambiado nunca de columnas**: su firma no arregla ningún desfase, es el

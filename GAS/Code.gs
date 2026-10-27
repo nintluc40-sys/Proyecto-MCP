@@ -22,7 +22,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "69c44b355137";
+const GAS_VERSION = "372a32cebe97";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -74,6 +74,9 @@ const ALLOWED = [
   // con llave POSICIONAL [0,1] al principio, así que la hoja puede crecer por el final sin migrar nada.
   // Es el aguas arriba del reproductivo: de estas piscinas salen las hembras que viven en la MATRIZ.
   "Maduración Broodstock",
+  // Zonas de desove y reservorios (2026-10-27): temperatura y O₂ por (zona, tanque), con llave POSICIONAL [0,1,2]
+  // (Fecha, Zona, Tanque) al principio; la captura va dentro de la ficha de Salas.
+  "Maduración Zonas",
   "BIOMOL",
   "Registro_Supervisión",
   "Registro_Desinfección",
@@ -298,6 +301,7 @@ function doPost(e) {
        ⚠ Sin comillas invertidas en este comentario: viaja dentro de la plantilla GAS() de engine.js y
        una sola la cerraría. Pasó al escribirlo, y lo cazó el comparador de copias. */
     else if (payload.sheetName === "Maduración Tanques")  madKeyCols = [0,1,2,13,14]; // Fecha, Sala, Tanque, Hora, Parte
+    else if (payload.sheetName === "Maduración Zonas")    madKeyCols = [0,1,2]; // Fecha, Zona, Tanque (2026-10-27; un reservorio, sin tanque)
     else if (payload.sheetName === "Maduración Lotes")    madKeyCols = [0,1,2]; // Fecha, Lote, Código genético (la hoja de Desoves)
     // Registro reproductivo (upsert por clave, MERGE preserva campos permanentes vacíos):
     // 🔑 2026-09-16 · la MATRIZ va por la CUATERNA que identifica al individuo: Trovan, Piscina,
@@ -1053,7 +1057,8 @@ var MAD_ESQUEMA_FIRMA = {
   "Maduración Movimientos": [[9, "Agua destino"], [12, "ID"]],
   /* 2026-09-17 (segunda tanda) · LAS CINCO QUE FALTABAN. Con esto, las doce hojas de Maduración que
      admitía ALLOWED ese día tienen cerrojo; la decimotercera, «Broodstock», nació después con el suyo
-     (ver abajo), así que hoy lo tienen las TRECE. Dos motivos concretos, no preventivos en abstracto:
+     (ver abajo), así que entonces lo tenían las TRECE (y «Zonas», 2026-10-27, nació también con el suyo). Dos motivos
+     concretos, no preventivos en abstracto:
        · «Transferencias» NO EXISTE todavía (0 filas): nace con el primer traslado, y no la cubría ni la
          guarda V3 —que necesita que la hoja tenga filas— ni la firma. Quien la creara primero le fijaba
          la cabecera para siempre.
@@ -1075,6 +1080,10 @@ var MAD_ESQUEMA_FIRMA = {
   "Maduración MATRIZ":         [[6, "Lote"], [11, "Fecha ingreso"]],
   "Maduración Bitácora":       [[3, "Tipo"], [5, "Tanque"]],
   "Maduración Transferencias": [[4, "Trovan ID"], [12, "Piscinas presentes"]],
+  /* Zonas de desove y reservorios (2026-10-27) · nace con su cerrojo, como Broodstock. Se firma la 3 —«Tanque», la última
+     parte de la llave: si se corre, el upsert casa con la fila que no es— y la 19 —«Oxígeno 00:00», la última de hoy:
+     cualquier inserción por delante la mueve, y un añadido al final no la toca—. */
+  "Maduración Zonas":          [[3, "Tanque"], [19, "Oxígeno 00:00"]],
   /* Control Broodstock (2026-09-17) · nace HOY, así que su cerrojo existe desde el primer envío y no hay
      que esperar a que lo haga falta. Se firma la 2 —«Piscina», la segunda mitad de la llave: si se corre,
      el upsert casa con la fila que no es— y la 8 —«Pl/g», la columna que separa las postlarvas por gramo

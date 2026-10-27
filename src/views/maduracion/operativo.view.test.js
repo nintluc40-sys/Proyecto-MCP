@@ -146,7 +146,7 @@ describe('Maduración · operativo · 📊 Estado actual', () => {
     expect(alertas).toContain('la hoja dice «Producción»');
     expect(alertas).toContain('28–29 °C');
     const filas = [...root.querySelectorAll('.mc-table tbody tr')];
-    expect(filas).toHaveLength(10);
+    expect(filas).toHaveLength(11);   // 2026-10-27 · con «Maduración Zonas» (aún sin filas)
     expect(filas.find((f) => f.textContent.includes('Tanques')).classList.contains('mop-atrasada')).toBe(true);
     expect(root.textContent).toContain('pasa a Producción el 26/09');
     expect(errSpy).not.toHaveBeenCalled();

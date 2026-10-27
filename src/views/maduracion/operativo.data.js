@@ -284,6 +284,9 @@ export const DIMENSIONES = {
   broodstock: ['lote', 'codigo'],
   sala: ['sala'],
   tanques: ['sala', 'tanque'],
+  /* 2026-10-27 · «Maduración Zonas» (temperatura y O₂ de las zonas de desove y los reservorios): ninguna pieza del tablero
+     la consume todavía —sólo se reconoce, para que sus filas no entren como salas—, así que no admite ningún filtro. */
+  zonas: [],
 };
 
 /** Las opciones de los filtros: las salas visibles con sus tanques FÍSICOS, y los lotes con sus códigos

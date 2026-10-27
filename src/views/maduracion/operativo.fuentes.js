@@ -51,12 +51,17 @@ export const MAD_OP_ORIGEN = 'Maduracion';
 
 /* Cada hoja del operativo: la CLAVE con que la esperan `construirLibro`/`resumenMaduracion` (más
    `alimentacion` y `broodstock`, que sólo usa el tablero), su nombre y su FIRMA.
-   🔑 Una firma tiene que estar en su hoja y en NINGUNA otra de las trece de Maduración —también en
+   🔑 Una firma tiene que estar en su hoja y en NINGUNA otra de las de Maduración —también en
    las cabeceras VIEJAS de Ingreso y Lotes, que siguen en producción hasta el vaciado A2—. Lo exige
    `operativo.fuentes.test.js` contra las cabeceras que emiten los módulos y el monolito: si alguien
    renombra una columna firmada, la prueba se pone roja antes de que la hoja desaparezca del tablero.
-   ⚠ Sala y Tanques no tienen módulo de esquema (viven sólo en engine.js): sus nombres van aquí
-   escritos y la prueba los contrasta con el `MAD_SHEET` y las cabeceras del monolito. */
+   ⚠ Sala, Tanques y Zonas no tienen módulo de esquema (viven sólo en engine.js): sus nombres van aquí
+   escritos y la prueba los contrasta con el `MAD_SHEET` y las cabeceras del monolito.
+   ⚠⚠ LA ÚNICA EXCEPCIÓN, y por eso importa el ORDEN (2026-10-27): «Maduración Zonas» lleva las MISMAS lecturas que
+   «Maduración Sala» —es la misma medición en las zonas de desove y los reservorios—, así que la firma de Sala también
+   está en sus filas. `hojaDeFila` devuelve la PRIMERA hoja cuya firma casa: Zonas va ANTES que Sala y se reconoce por
+   «Zona», que Sala no tiene. Puesta detrás, sus filas entrarían en el tablero como si fueran salas. Lo prueba
+   `operativo.fuentes.test.js`. El tablero no la pinta (todavía): sólo deja de confundirla. */
 export const MAD_OP_HOJAS = [
   { clave: 'ingresos', hoja: MAD_INGRESO_SHEET, firma: 'Camaronera origen' },
   { clave: 'movimientos', hoja: MAD_MOV_SHEET, firma: 'Agua destino' },
@@ -66,6 +71,7 @@ export const MAD_OP_HOJAS = [
   { clave: 'tratamientos', hoja: MAD_TRAT_SHEET, firma: 'Productos RAS' },
   { clave: 'alimentacion', hoja: MAD_ALIM_SHEET, firma: 'Fuente del peso' },
   { clave: 'broodstock', hoja: MAD_BS_SHEET, firma: 'Pl/g' },
+  { clave: 'zonas', hoja: 'Maduración Zonas', firma: 'Zona' },
   { clave: 'sala', hoja: 'Maduración Sala', firma: RESUMEN_TEMPS[0] },
   { clave: 'tanques', hoja: 'Maduración Tanques', firma: 'Machos muertos' },
 ];
