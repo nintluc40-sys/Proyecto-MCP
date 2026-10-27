@@ -120,6 +120,11 @@ export const TANQUES_DE_AREA = {
   'Eclosión 1': [...filaEclosion1(115.25, 1), ...filaEclosion1(112.55, 8)],
   'Salas de eclosión 2 y 3': [...salaEclosion(3, 4.54), ...salaEclosion(2, 13.24)],
 };
+/* Plan B (2026-10-26, usuario: «8 cm») · el GROSOR de los muros bajos de una sala abierta, por dentro de su rectángulo
+   (escena.js, rama 'ecl'). Eran 25 cm y la fila de las salas de eclosión 2 y 3 (6,99 m de tanques) no cabía entre ellos
+   (6,80 m): los tanques de las puntas se metían 15,5 cm al oeste y 3,5 cm al este. Con 8 cm cabe sin mover un tanque (el
+   máximo es 9,5 cm, por el oeste); `plano.test.js` exige que cada tanque quede dentro de los muros. */
+export const MURO_ECL = 0.08;
 /** Los tanques de un área de `OTHERS` por su nombre («título · detalle»): [] si no los tiene. */
 export const tanquesDeArea = (nombre) => TANQUES_DE_AREA[String(nombre).split(' · ')[0]] || [];
 

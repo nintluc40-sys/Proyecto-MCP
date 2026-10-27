@@ -72,7 +72,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { BufferGeometryUtils } from 'three/examples/jsm/utils/BufferGeometryUtils.js';   // C4 · unir geometría
-import { LARV, LARV_H, MAT, OTHERS, SITE, C0, STREET, tanquesDeSala, tanquesDeArea } from './plano.js';
+import { LARV, LARV_H, MAT, OTHERS, SITE, C0, STREET, MURO_ECL, tanquesDeSala, tanquesDeArea } from './plano.js';
 import { STAGE_CATS } from '../supervisor/etapas.js';
 import { fmtPop } from '../../core/format.js';
 import { META_POR_DEFECTO, normalizarMeta } from './cifras.js';
@@ -464,9 +464,11 @@ OTHERS.forEach(([a, b, c, d, h, type, nombre, forma, color]) => {
     for (let zz = b + 2; zz < d - 1; zz += 4) box(a + w / 2 - .4, zz, a + w / 2 + .4, zz + .8, h + .12, .25, M.steel, true, others); // escotillas
   } else if (type === 'ecl') {
     // Plan B · B1 (2026-10-19, usuario) · SALA ABIERTA con sus tanques (plano.js · TANQUES_DE_AREA; sin registro en el MCP):
-    // muros bajos de 25 cm, como las piletas de algas, y cada tanque un cilindro abierto con su agua 10 cm bajo el borde
-    box(a, b, c, b + .25, 0, h, M.tankWall, true, others); box(a, d - .25, c, d, 0, h, M.tankWall, true, others);
-    box(a, b + .25, a + .25, d - .25, 0, h, M.tankWall, true, others); box(c - .25, b + .25, c, d - .25, 0, h, M.tankWall, true, others);
+    // muros bajos de MURO_ECL (8 cm desde el 2026-10-26: con los 25 de las piletas de algas los tanques de las puntas se
+    // metían en ellos) y cada tanque un cilindro abierto con su agua 10 cm bajo el borde
+    const g = MURO_ECL;
+    box(a, b, c, b + g, 0, h, M.tankWall, true, others); box(a, d - g, c, d, 0, h, M.tankWall, true, others);
+    box(a, b + g, a + g, d - g, 0, h, M.tankWall, true, others); box(c - g, b + g, c, d - g, 0, h, M.tankWall, true, others);
     tanquesDeArea(nombre).forEach((t) => {
       const [px, pz] = P(t.cx, t.cz), r = t.d / 2, alto = .9;
       const pared = new THREE.Mesh(new THREE.CylinderGeometry(r, r, alto, 20, 1, true), M_TANQUE_ECL); pared.position.set(px, alto / 2, pz);

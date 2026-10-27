@@ -4,7 +4,7 @@
    la maqueta pintaría un tanque con el número de otro: aquí se nota.
    ============================================================ */
 import { describe, it, expect } from 'vitest';
-import { LARV, MAT, NUM_A, NUM_B, OTHERS, STREET, tanquesDeSala, formasDelPlano, tanquesDeArea } from './plano.js';
+import { LARV, MAT, NUM_A, NUM_B, OTHERS, STREET, MURO_ECL, tanquesDeSala, formasDelPlano, tanquesDeArea } from './plano.js';
 import { MAD_SALA_OPTS, MAD_TANQUES_POR_SALA } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
 
 const numeros = (m) => m.rows.flatMap((_, r) => m.cols.map((_c, c) => m.num(r, c)));
@@ -133,14 +133,19 @@ describe('plano · otras áreas (opción F)', () => {
     expect(OTHERS.some((o) => o[0] === 111.4 && o[6] === 'Edificio de servicio'), 'era Eclosión 1').toBe(false);
   });
 
-  it('🔑 los tanques de cada sala abierta, dentro de ella y sin pisarse; las demás áreas, sin tanques', () => {
+  it('🔑 los tanques de cada sala abierta, dentro de sus MUROS y sin pisarse; las demás áreas, sin tanques', () => {
+    /* 2026-10-26 (Plan B, usuario) · dentro de los MUROS, no del rectángulo del área: los muros (escena.js, rama 'ecl')
+       se levantan por dentro de él, y con 25 cm la fila de las salas de eclosión 2 y 3 se metía en ellos sin que esto lo
+       viera. `MURO_ECL` es el grosor que usa la maqueta. */
+    expect(MURO_ECL).toBeGreaterThan(0);
     for (const o of OTHERS) {
       const t = tanquesDeArea(o[6]);
       if (o[5] !== 'ecl') { expect(t, o[6]).toEqual([]); continue; }
       expect(t.length, o[6]).toBeGreaterThan(0);
+      const [x0, z0, x1, z1] = [o[0] + MURO_ECL, o[1] + MURO_ECL, o[2] - MURO_ECL, o[3] - MURO_ECL];
       t.forEach((x, i) => {
         const r = x.d / 2;
-        expect(x.cx - r > o[0] && x.cx + r < o[2] && x.cz - r > o[1] && x.cz + r < o[3], o[6] + ' · ' + x.num + ' dentro').toBe(true);
+        expect(x.cx - r > x0 && x.cx + r < x1 && x.cz - r > z0 && x.cz + r < z1, o[6] + ' · ' + x.num + ' dentro de los muros').toBe(true);
         t.slice(i + 1).forEach((y) => expect(Math.hypot(x.cx - y.cx, x.cz - y.cz) >= (x.d + y.d) / 2, o[6] + ' · ' + x.num + ' pisa').toBe(true));
       });
     }
