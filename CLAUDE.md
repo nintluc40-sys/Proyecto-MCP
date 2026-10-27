@@ -77,7 +77,9 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
    ⚠ **No es decorativa: la vigila una herramienta.** `verificar-3copias-v3.mjs` (utillaje) compara
    el motor con `index (8)` función a función, y las que delegan a través de este puente las compara
    traduciendo la llamada a su contraparte en línea; sólo las de una lista cerrada (las fichas y
-   utilidades de `src/core`) se comparan por nombre. Romperlo deja las fichas sin render, no da
+   utilidades de `src/core`) se comparan por nombre. Y esas, desde el 2026-10-24, por su COMPORTAMIENTO:
+   `paridad-fichas-std.mjs` (utillaje) arranca los dos motores y compara lo que se ve y lo que se guarda;
+   corre en `verificar-todo` y en el pre-push. Romperlo deja las fichas sin render, no da
    error de compilación y la suite no lo ve.
 
    **Criterio para lo nuevo:** que un módulo ES exponga algo en `window` sólo se acepta para

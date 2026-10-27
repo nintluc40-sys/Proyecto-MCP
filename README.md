@@ -10,11 +10,11 @@ gestionado centralmente.
 ## Puesta en marcha
 
 ```bash
-npm install        # dependencias (Vite + Chart.js)
+npm install        # dependencias (las de package.json)
 npm run dev        # servidor de desarrollo con hot-reload  → http://localhost:5173
 npm run build      # build de producción optimizado en /dist
 npm run preview    # sirve el build de /dist
-npm test           # Vitest (tests de la capa de datos)
+npm test           # Vitest (la suite entera: datos, vistas en happy-dom y el monolito de Registros)
 npm run lint       # ESLint
 ```
 
@@ -92,12 +92,12 @@ volver a abrir esto, esto es lo que ya se midió:
 - **Larvicultura** (🦐): calidad larvaria — radar, evolución diaria, heatmap,
   ICL, ranking, población por tanque y modales Comparar/Historia/Decisión.
 - **Revisiones** (🔍): hoja `Registro_Supervisión` — calidad, morfología
-  ⚠ **No confundir con «🔍 Revisiones del supervisor»**, sub-vista del tablero de Maduración. Fue el
-  tercer par de homónimos del proyecto (tras los dos «ICL» y las dos «Fase»), y el único que se
-  deshizo: la de Maduración era nueva y no había costumbre que romper. Ésta se queda así.
   cuantitativa (% Atraso / Protusión / Deformidad / No viables), treemap,
   Sankey hallazgo→acción, cobertura por supervisor y mapa de cobertura
   módulo×día (cada día clicable abre los registros).
+  ⚠ **No confundir con «🔍 Revisiones del supervisor»**, sub-vista del tablero de Maduración. Fue el
+  tercer par de homónimos del proyecto (tras los dos «ICL» y las dos «Fase»), y el único que se
+  deshizo: la de Maduración era nueva y no había costumbre que romper. Ésta se queda así.
 - **Algas** (🌿): `Lab_Algas` por sistema (Masivos/Premasivos/PBR/Fundas/Carboys),
   con filtro de módulo, curva de crecimiento conmutable
   (Líneas/Normalizado/Mini-curvas/Heatmap), parámetros fisicoquímicos, sanidad,
@@ -424,6 +424,8 @@ del módulo se quede sin contraparte en el monolito.
 | 🧪 **Tratamientos** | `Maduración Tratamientos` | una fila por tarjeta: preventivo por lote o desinfección por área |
 | 🍤 **Alimentación** | `Maduración Alimentación` | (fecha, sala, tanque): agenda de tomas y ración calculada |
 | 📈 **Broodstock** | `Maduración Broodstock` | (fecha de corte, piscina): la carga SEMANAL del Excel del área |
+| 🦐 **Reproductivo** | `Maduración MATRIZ` · `Maduración Bitácora` · `Maduración Transferencias` | en la MATRIZ, un individuo con su cuaterna (Trovan · Piscina · Código genético · Lote); en la Bitácora y Transferencias, un evento por fila |
+| 📷 **Fotos y Videos** | *(en el dispositivo)* | lo que se adjunta en el equipo: se borra solo a las 24 h |
 | 🏠 **Salas** · 🛢️ **Tanques** | `Maduración Sala` · `Maduración Tanques` | la grilla diaria; en Tanques, cada ronda de mortalidad es un **parte** con su hora |
 | 📜 **Historial** | *(lo enviado desde ESTE equipo)* | cada envío de las fichas de formulario y de Salas/Tanques: revisarlo, 📄 PDF, 🗑 y ✏️ corregirlo (ver «Las fichas de Maduración»); no escribe por sí mismo |
 
@@ -1368,7 +1370,7 @@ aquí porque explica POR QUÉ las cosas son como son.
   `SOLO_POR_NOMBRE` —las siete fichas estándar, utilidades de una línea de `src/core` y la lectura del store—;
   cuántas son lo dice él al correr («sólo por nombre»). (Hasta ese día toda función que delegara pasaba sin mirarla,
   y así divergió la Consulta del reproductivo.) ✅ **Y desde el 2026-10-24 eso ya no queda sin vigilar** (era el
-  punto P10): `paridad-fichas-std` (utillaje) arranca los dos motores y compara el COMPORTAMIENTO de las 7 fichas y
+  punto P10 de la pauta de trabajo, no el percentil): `paridad-fichas-std` (utillaje) arranca los dos motores y compara el COMPORTAMIENTO de las 7 fichas y
   de esas utilidades —lo que se ve y lo que se guarda—, con sus diferencias visuales conocidas registradas aparte;
   corre en la batería completa y, desde el 2026-10-26, en el pre-push. Las contrapartes EN LÍNEA de la librería del
   reproductivo no las compara él: las ejecuta `paridad-repro-reciclaje`, sobre los mismos casos que el módulo.
