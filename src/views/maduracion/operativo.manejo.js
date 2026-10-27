@@ -350,6 +350,11 @@ export function productosPorArea(fuentes, periodo, F) {
     .sort((a, b) => b.aplicaciones - a.aplicaciones || porNombre(a.area, b.area));
 }
 
+/** Los productos PREVENTIVOS de un tratamiento: los del catálogo, en «Productos» o en «Productos RAS». La regla es UNA
+ *  para la cobertura de aquí y para la ficha del lote (`tratamientosDeLote`, 2026-10-26): dos definiciones de «preventivo»
+ *  harían que la ficha y 🔄 Manejo dijeran cosas distintas del mismo lote. */
+const preventivosDe = (r) => [...lista(r.Productos), ...lista(r['Productos RAS'])].filter((p) => MAD_TRAT_PREVENTIVOS.includes(p));
+
 /**
  * La cobertura PREVENTIVA por lote: cuántos días hace que a cada lote vivo se le aplicó un preventivo.
  * 🔑 Un lote sin ninguno NO sale con cero días: sale con `''` y rotulado «ninguno». Cero diría «hoy mismo»,
@@ -360,8 +365,7 @@ export function coberturaPreventiva(fuentes, libro, periodo, F, hoy) {
   for (const r of (fuentes || {}).tratamientos || []) {
     const fecha = fechaDeFila('tratamientos', r);
     if (!enPeriodo(fecha, periodo) || !tratEnFiltro(r, F)) continue;
-    const preventivos = [...lista(r.Productos), ...lista(r['Productos RAS'])]
-      .filter((p) => MAD_TRAT_PREVENTIVOS.includes(p));
+    const preventivos = preventivosDe(r);
     if (!preventivos.length) continue;
     for (const l of lista(r.Lotes).map(normLote)) {
       const o = ultimo.get(l);
@@ -383,4 +387,31 @@ export function coberturaPreventiva(fuentes, libro, periodo, F, hoy) {
     });
   }
   return filas.sort((a, b) => (a.cubierto === b.cubierto ? porNombre(a.lote, b.lote) : a.cubierto ? 1 : -1));
+}
+
+/**
+ * 2026-10-26 (ronda 7, Sesión B; usuario: «Preventivo + los recientes») · los tratamientos de UN lote, para su ficha en
+ * 🧬 Lotes: los que lo nombran en «Lotes», dentro del período (la ficha le pasa el CICLO del lote), del más reciente al más
+ * antiguo; y su último PREVENTIVO con la MISMA regla que `coberturaPreventiva` —`preventivosDe`, y en un empate de fecha,
+ * el primero de la hoja—, para que la ficha y 🔄 Manejo digan lo mismo. Sin ninguno, `ultimoPreventivo: null`
+ * («ninguno»), nunca cero días. No mira el filtro del tablero: la ficha es de ese lote entero.
+ */
+export function tratamientosDeLote(fuentes, lote, periodo, hoy) {
+  const clave = normLote(lote);
+  const filas = [];
+  let u = null;
+  for (const r of (fuentes || {}).tratamientos || []) {
+    if (!lista(r.Lotes).map(normLote).includes(clave)) continue;
+    const fecha = fechaDeFila('tratamientos', r);
+    if (!enPeriodo(fecha, periodo)) continue;
+    const preventivos = preventivosDe(r);
+    filas.push({ fecha, sala: txt(r.Sala), tipo: txt(r.Tipo), productos: [...lista(r.Productos), ...lista(r['Productos RAS'])] });
+    if (preventivos.length && (!u || fecha > u.fecha)) u = { fecha, productos: preventivos };
+  }
+  filas.sort((a, b) => porNombre(b.fecha, a.fecha) || porNombre(a.sala, b.sala));
+  return {
+    filas,
+    total: filas.length,
+    ultimoPreventivo: u ? { ...u, dias: esIso(txt(hoy)) ? diasEntre(u.fecha, txt(hoy)) : '' } : null,
+  };
 }

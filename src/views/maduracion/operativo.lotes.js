@@ -20,9 +20,9 @@
    fuente (los acumuladores del libro, la hoja de cierres, los avisos) y al final se COMPARAN. El día que no cuadre,
    es un hallazgo de verdad, no un cero que se ha escrito solo.
 
-   ⏳ Lo que la ficha aún NO trae: las revisiones (las de nauplios de 📋 Inf. Supervisor) y los tratamientos. Aquí
-   decía que era porque su hoja no existía (medido el 2026-09-19); desde entonces las dos tienen filas, así que lo
-   que falta ya no es el dato sino la tarea de traerlas a la ficha (anotada como pendiente el 2026-10-26).
+   ✅ Desde el 2026-10-26 la ficha trae también las revisiones de nauplios (📋 Inf. Supervisor) y los tratamientos del
+   lote, en su ciclo (`revisiones`, `tratamientos`). Faltaban «porque su hoja no existía» (medido el 2026-09-19); desde
+   entonces las dos tenían filas.
    ============================================================ */
 import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { estadoDeLote, ESTADO_MIXTO, ubicKey, pesosDeAlimentacion } from '../registros/lib/mad-libro.js';
@@ -31,6 +31,8 @@ import { fechaDeFila, diasDeTanque } from './operativo.data.js';
 import { cociente, proporcionHM, supervivencia, tasaDescarte, tasaEnPartesDelLote } from './operativo.indicadores.js';
 import { posicionEnFiltro, codigoEnFiltro, normalizarFiltro, loteElegido, hayCodigo, haySala, hayTanque, hayPiscina, hayCamaronera, origenEnFiltro, cicloDelLote, piscinaEnFiltro } from './operativo.tablero.js';
 import { normPiscina } from '../registros/lib/ficha-maduracion-broodstock.schema.js';   // 5 · la piscina canónica
+import { revisionesDeNauplios } from './operativo.revisiones.js';   // 2026-10-26 · las revisiones del lote, en su ficha
+import { tratamientosDeLote } from './operativo.manejo.js';          // 2026-10-26 · sus tratamientos, en su ficha
 
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
 const esIso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -423,6 +425,11 @@ export function fichaDeLote(M, serie, lote, periodo, ciclo = null, presencia = n
     ciclo: ciclo || null,
     reproduccion: reproduccionDeLote(M.fuentes, lote, periodo),
     promedios: promediosDeLote(M, lote, periodo, presencia),
+    /* 2026-10-26 (ronda 7, Sesión B; usuario: «Su ciclo, desde el ingreso») · las revisiones de nauplios y los tratamientos
+       del lote, en el MISMO alcance que la curva y sus eventos: su ciclo (o el período, sin fecha de ingreso). Sin cifras
+       propias: son las funciones de 🔍 Revisiones del supervisor y de 🔄 Manejo, sólo con ESTE lote. */
+    revisiones: revisionesDeNauplios(M.fuentes, normalizarFiltro({ lote }), ciclo || periodo),
+    tratamientos: tratamientosDeLote(M.fuentes, lote, ciclo || periodo, M.fecha),
   };
 }
 

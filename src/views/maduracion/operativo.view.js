@@ -93,7 +93,7 @@ import { estadoDeHojas, calendarioDeRegistros, coberturaDePartes, comparacionDeE
 import { partesDelDia } from './operativo.calidad.js';   // 0q·4
 import { cruceConMicrochips } from './operativo.cruce.js';
 import {
-  REPORTES, parteDiario, parteDiarioDoc, parteDiarioHojas, nombreDelParte, alcanceDelParte,
+  REPORTES, TOPE_FILAS, parteDiario, parteDiarioDoc, parteDiarioHojas, nombreDelParte, alcanceDelParte,
   semanalPorLote, semanalDoc, semanalHojas, nombreDelSemanal,
   cierreDeLote, cierreDoc, cierreHojas, nombreDelCierre,
   reporteBroodstock, broodstockDoc, broodstockHojas, nombreDelBroodstock,
@@ -2094,6 +2094,9 @@ function fichaLoteHTML(f, p) {
   const rotuloCurva = f.ciclo
     ? 'desde el ingreso ' + dma(f.ciclo.desde) + (f.cerrado && f.ciclo.hasta === f.cerrado ? ' hasta el cierre ' + dma(f.cerrado) : '')
     : etiquetaPeriodo(p);
+  // 2026-10-26 · 🔍 y 🧪 hablan del mismo alcance que la curva y sus eventos: su ciclo, o el período si no tiene ingreso.
+  const alcance = f.ciclo ? { en: 'su ciclo', del: 'de su ciclo', rotulo: 'su ciclo' }
+    : { en: 'el período', del: 'del período', rotulo: etiquetaPeriodo(p) };
   return `<div class="mop-det-grid" style="margin-bottom:12px">
     <div class="mc-card mop-det-ancho">
       <h4 class="mc-card-h">🧬 ${esc(f.lote)}
@@ -2116,11 +2119,37 @@ function fichaLoteHTML(f, p) {
       <p class="mc-note">El % es POR DÍA de parte, con la regla del ⚖️ Saldo: cópulas (o mudas) ÷ hembras de los tanques que tenían el lote ese día.</p>
       ${pr.compartido ? '<p class="mc-note">⚠ Comparte tanque con otro lote: la hoja de Tanques no dice de qué lote es cada cifra, así que las cópulas y las mudas van repartidas en proporción a sus animales (los pesos se promedian, no se parten).</p>' : ''}
     </div>
+    ${f.revisiones ? semaforoHTML(f.revisiones, p, { titulo: '🔍 Revisiones del lote', clase: 'mc-card', conteo: true, sinLote: true,
+    en: alcance.en, del: alcance.del, alcance: alcance.rotulo }) : ''}
+    ${f.tratamientos ? tratamientosLoteHTML(f.tratamientos, alcance.en) : ''}
     <div class="mc-card mop-det-ancho">
       <h4 class="mc-card-h">📈 Vivos del lote <span class="mc-h-note">${esc(rotuloCurva)}</span></h4>
       <div class="mc-chart" style="height:240px"><canvas id="mopLoteCurva"></canvas></div>
       <h5 class="mop-det-h">Eventos del ${f.ciclo ? 'ciclo' : 'período'}</h5>${eventos}
     </div>
+  </div>`;
+}
+
+/* 2026-10-26 (ronda 7, Sesión B; usuario: «Preventivo + los recientes») · los tratamientos del lote en su ficha: su último
+   preventivo —la regla y los días de la cobertura de 🔄 Manejo— y los más recientes, recortados como el parte diario
+   (`TOPE_FILAS`) con cuántos más hay. Sin preventivo, «ninguno», nunca «hace 0 d». */
+function tratamientosLoteHTML(t, en) {
+  const u = t.ultimoPreventivo;
+  const prev = `<div class="mop-sc-fila"><span class="mop-sc-l">Último preventivo</span><span>${u
+    ? esc(dma(u.fecha)) + (u.dias === '' ? '' : ' · hace ' + nf(u.dias) + ' d') + ' · ' + u.productos.map((x) => esc(x)).join(', ')
+    : '<b>ninguno</b> en ' + esc(en)}</span></div>`;
+  const vis = t.filas.slice(0, TOPE_FILAS);
+  const tabla = t.total
+    ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm">
+      <thead><tr><th>Fecha</th><th>Sala</th><th>Tipo</th><th>Productos</th></tr></thead>
+      <tbody>${vis.map((x) => `<tr><td>${esc(dm(x.fecha))}</td><td>${esc(x.sala || '—')}</td><td>${esc(x.tipo || '—')}</td>
+        <td>${x.productos.length ? x.productos.map((q) => esc(q)).join(', ') : '<span class="muted">—</span>'}</td></tr>`).join('')}</tbody></table></div>
+      ${t.total > vis.length ? `<p class="mc-note">+ ${nf(t.total - vis.length)} más (total ${nf(t.total)})</p>` : ''}`
+    : `<p class="muted" style="margin:4px 0">Ningún tratamiento nombra este lote en ${esc(en)}.</p>`;
+  return `<div class="mc-card">
+    <h4 class="mc-card-h">🧪 Tratamientos del lote <span class="mc-h-note">${t.total ? nf(t.total) + ' en ' : ''}${esc(en)}</span></h4>
+    ${prev}${tabla}
+    <p class="mc-note">El calendario por sala y la cobertura preventiva de todos los lotes, en 🔄 Manejo.</p>
   </div>`;
 }
 
@@ -2524,11 +2553,18 @@ function revFiltroHTML(lotes, F) {
     <p class="mop-lab-per">Se aplica a la revisión de nauplios (deformidad, actividad, hongos, fototropismo, aireación, salinidad y temperatura), a su historial y a la mortalidad en desove y recuperación; la alcalinidad y las observaciones de tanque siguen el filtro del tablero.</p>`;
 }
 
-function semaforoHTML(r, p) {
+/* 2026-10-26 (ronda 7, Sesión B; usuario: «La tarjeta de la sub-vista») · `o` es para la ficha del lote (🧬 Lotes), que pinta
+   ESTA MISMA tarjeta con sólo su lote y su ciclo: el título, el ancho, de qué alcance habla («su ciclo» / «el período»),
+   cuántas revisiones hay y sin el «lote …» (es la ficha de ese lote). Sin `o`, la de 🔍 Revisiones del supervisor, igual. */
+function semaforoHTML(r, p, o = {}) {
   const u = r.ultima;
+  const titulo = o.titulo || '🔍 Revisión de nauplios';
+  const clase = o.clase || 'mc-card mc-card-wide';
+  const en = o.en || 'el período';
+  const del = o.del || 'del período';
   if (!u) {
-    return `<div class="mc-card mc-card-wide"><h4 class="mc-card-h">🔍 Revisión de nauplios <span class="mc-h-note">${esc(etiquetaPeriodo(p))}</span></h4>
-      <p class="muted" style="margin:4px 0">Ninguna revisión registrada en el período.</p>
+    return `<div class="${clase}"><h4 class="mc-card-h">${titulo} <span class="mc-h-note">${esc(o.alcance || etiquetaPeriodo(p))}</span></h4>
+      <p class="muted" style="margin:4px 0">Ninguna revisión registrada en ${esc(en)}.</p>
       <p class="mc-note">Las revisiones viven en la hoja del Inf. Supervisor, que nace con su primer envío.</p>
       ${ignoraHTML(r.ignora, 'La revisión de nauplios')}</div>`;
   }
@@ -2545,15 +2581,15 @@ function semaforoHTML(r, p) {
     <span class="mop-sem-l">${esc(etq)}</span>
     <span class="mop-sem-v">${x.valor === null ? '<span class="muted">—</span>' : nf(x.valor, 2) + ' ' + esc(x.unidad)}${x.aviso ? ' ⚠' : ''}</span>
     <span class="mop-sem-n">avisa por encima de ${nf(x.max)} ${esc(x.unidad)}</span></div>`;
-  const etapas = r.porEtapa.map((e) => `<span class="mop-chip ${e.ultima ? '' : 'is-e-vacio'}" title="${esc(e.ultima ? 'Última: ' + dma(e.ultima.fecha) : 'Sin ninguna revisión de esta etapa en el período')}">${esc(e.etapa)}${e.ultima ? ' · ' + esc(dm(e.ultima.fecha)) : ''}</span>`).join('');
-  return `<div class="mc-card mc-card-wide">
-    <h4 class="mc-card-h">🔍 Revisión de nauplios
-      <span class="mc-h-note">última: ${esc(dma(u.fecha))} · ${esc(u.etapa)} · lote ${esc(u.lote || '—')}</span></h4>
+  const etapas = r.porEtapa.map((e) => `<span class="mop-chip ${e.ultima ? '' : 'is-e-vacio'}" title="${esc(e.ultima ? 'Última: ' + dma(e.ultima.fecha) : 'Sin ninguna revisión de esta etapa en ' + en)}">${esc(e.etapa)}${e.ultima ? ' · ' + esc(dm(e.ultima.fecha)) : ''}</span>`).join('');
+  return `<div class="${clase}">
+    <h4 class="mc-card-h">${titulo}
+      <span class="mc-h-note">${o.conteo ? nf(r.filas.length) + ' en ' + esc(en) + ' · ' : ''}última: ${esc(dma(u.fecha))} · ${esc(u.etapa)}${o.sinLote ? '' : ' · lote ' + esc(u.lote || '—')}</span></h4>
     <div class="mop-sems">${VARIABLES_REVISION.map(celda).join('')}${lectura('Salinidad', u.salinidad)}${lectura('Temperatura', u.temperatura)}</div>
     <h5 class="mop-det-h">Última de cada etapa</h5>
     <div class="mop-sc-lotes">${etapas}</div>
     <p class="mc-note">⚠ Sólo llevan veredicto las reglas que EXISTEN: los dos topes de aviso que confirmó el usuario y la presencia de hongos. Deformidad, actividad, fototropismo y aireación se enseñan tal cual: no hay fuente que diga cuál de «Alta», «Media» o «Baja» está bien, y una escala inventada sería peor que ninguna.</p>
-    ${r.avisos.length ? `<p class="mc-note">🔴 <b>${nf(r.avisos.length)}</b> revisión(es) del período traen algún aviso.</p>` : ''}
+    ${r.avisos.length ? `<p class="mc-note">🔴 <b>${nf(r.avisos.length)}</b> revisión(es) ${del} traen algún aviso.</p>` : ''}
     ${ignoraHTML(r.ignora, 'La revisión de nauplios')}
   </div>`;
 }

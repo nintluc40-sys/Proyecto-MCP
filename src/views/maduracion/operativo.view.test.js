@@ -755,6 +755,42 @@ describe('Maduración · operativo · 🧬 Lotes', () => {
     expect(repro.querySelector('.mc-h-note').textContent, 'Reproducción sigue el período').toBe('30 d');
   });
 
+  /* 2026-10-26 (ronda 7, Sesión B; diseño aprobado por el usuario) · la ficha trae 🔍 las revisiones y 🧪 los tratamientos del
+     lote, en SU CICLO (como la curva) y tras 🥚 Reproducción. QB entró el 12/09 y la foto es el 19/09: lo del 10 y el 11/09
+     cae dentro del período (30 d) pero FUERA de su ciclo, y lo de QA es de otro lote. Datos FICTICIOS. */
+  it('🔴 la ficha trae las revisiones y los tratamientos de SU lote y de SU ciclo, tras la Reproducción', async () => {
+    await montar([...PLANTA_L,
+      INF('10/09/2026', { 'Revisión': 'Lavado', Lote: 'QB', Hongos: 'Ausente', Salinidad: 30, Temperatura: 28 }),
+      INF('15/09/2026', { 'Revisión': 'Entrada', Lote: 'QB', Deformidad: 'Baja', Hongos: 'Ausente', Salinidad: 30, Temperatura: 28 }),
+      INF('18/09/2026', { 'Revisión': 'Postlavado', Lote: 'QB', Hongos: 'Presente', Salinidad: 31, Temperatura: 28 }),
+      INF('17/09/2026', { 'Revisión': 'Entrada', Lote: 'QA', Deformidad: 'Alta', Hongos: 'Ausente', Salinidad: 30, Temperatura: 28 }),
+      TRATX('11/09/2026', 'Sala 4', 'Preventivo', 'Salas y tanques', 'QB', 'Formol'),
+      TRATX('13/09/2026', 'Sala 4', 'Preventivo', 'Salas y tanques', 'QB', 'Cooper'),
+      TRATX('17/09/2026', 'Sala 4', 'Desinfección', 'RAS y tuberías', 'QB', 'Bicarbonato'),
+      TRATX('16/09/2026', 'Sala 2', 'Preventivo', 'Salas y tanques', 'QA', 'Vitamina C')]);
+    abrirLotes();
+    click(filaLote('QB'));
+    const tarjetas = [...root.querySelectorAll('.mop-det-grid > .mc-card')];
+    const titulos = tarjetas.map((c) => c.querySelector('.mc-card-h').firstChild.textContent.trim());
+    const i = (t) => titulos.findIndex((x) => x.startsWith(t));
+    expect(i('🔍 Revisiones del lote'), 'falta la tarjeta de revisiones').toBeGreaterThan(i('🥚 Reproducción'));
+    expect(i('🧪 Tratamientos del lote'), 'falta la tarjeta de tratamientos').toBe(i('🔍 Revisiones del lote') + 1);
+    expect(i('📈 Vivos del lote')).toBe(i('🧪 Tratamientos del lote') + 1);
+
+    const rev = tarjetas[i('🔍 Revisiones del lote')];
+    expect(rev.querySelector('.mc-h-note').textContent.replace(/\s+/g, ' ').trim()).toBe('2 en su ciclo · última: 18/09/2026 · Postlavado');
+    // La última «Entrada» de QB es la del 15/09; con la de QA (17/09) colada, el chip diría 17/09.
+    expect([...rev.querySelectorAll('.mop-chip')].map((c) => c.textContent.trim())).toContain('Entrada · 15/09');
+    expect(rev.textContent).toContain('1 revisión(es) de su ciclo traen algún aviso');   // los hongos del 18/09
+
+    const tra = tarjetas[i('🧪 Tratamientos del lote')];
+    expect(tra.querySelector('.mc-h-note').textContent.trim()).toBe('2 en su ciclo');
+    const prev = [...tra.querySelectorAll('.mop-sc-fila')].find((x) => x.textContent.includes('Último preventivo'));
+    expect(prev.children[1].textContent.trim(), 'no el Bicarbonato del 17/09 ni el Formol del 11/09').toBe('13/09/2026 · hace 6 d · Cooper');
+    expect([...tra.querySelectorAll('tbody tr')].map((tr) => tr.children[0].textContent)).toEqual(['17/09', '13/09']);
+    expect(tra.textContent, 'el preventivo de OTRO lote').not.toContain('Vitamina C');
+  });
+
   it('🔴 0f · 7 · un lote que entró ANTES del período: la curva llega hasta su ingreso (la serie es la de su ciclo, no la del período)', async () => {
     await montar(PLANTA_L);
     abrirLotes();

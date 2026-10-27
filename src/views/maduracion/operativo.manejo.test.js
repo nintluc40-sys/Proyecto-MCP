@@ -18,7 +18,7 @@ import { describe, it, expect } from 'vitest';
 import {
   matrizDeMovimientos, registroDeMovimientos, ignoraDeMovimientos,
   agendaPorProducto, alimentacionPorProducto, procedenciaDelPeso, ignoraDeAlimentacion,
-  calendarioDeTratamientos, productosPorArea, coberturaPreventiva, ignoraDeTratamientos,
+  calendarioDeTratamientos, productosPorArea, coberturaPreventiva, ignoraDeTratamientos, tratamientosDeLote,
 } from './operativo.manejo.js';
 import { modeloOperativo } from './operativo.data.js';
 import { normalizarFiltro, periodoDe } from './operativo.tablero.js';
@@ -286,5 +286,39 @@ describe('Maduración · manejo · pauta 14: lo que no se aplica se dice', () =>
     expect(ignoraDeAlimentacion(F({ lote: 'LA', codigo: 'CA', estado: 'Cuarentena' }))).toEqual(['código genético', 'estado']);
     expect(ignoraDeTratamientos(F({ sala: 'Sala 1', tanque: '1', lote: 'LA', piscina: 'P1' }))).toEqual(['tanque', 'piscina']);
     expect([ignoraDeMovimientos(F({})), ignoraDeAlimentacion(F({})), ignoraDeTratamientos(F({}))]).toEqual([[], [], []]);
+  });
+});
+
+/* 2026-10-26 (ronda 7, Sesión B; usuario: «Preventivo + los recientes») · los tratamientos de UN lote, para su ficha. Cada
+   fila del fixture defiende una regla: 09-10 cae FUERA del período; 09-18 es de OTRO lote; 09-16 es el más reciente pero
+   NO es preventivo (Bicarbonato); y el 09-14 trae DOS preventivos del lote —Formol primero en la hoja, Vitamina C después—,
+   así que el último preventivo es el de Formol, como en `coberturaPreventiva`. Datos FICTICIOS. */
+describe('Maduración · manejo · los tratamientos de un lote (su ficha)', () => {
+  const FX = { tratamientos: [
+    TRAT('2026-09-10', 'Sala 1', 'Preventivo', 'Salas y tanques', 'LX', 'Cooper'),
+    TRAT('2026-09-14', 'Sala 2', 'Preventivo', 'Salas y tanques', 'LX, LY', 'Formol'),
+    TRAT('2026-09-16', 'Sala 2', 'Desinfección', 'RAS y tuberías', 'LX', '', 'Bicarbonato'),
+    TRAT('2026-09-18', 'Sala 1', 'Preventivo', 'Salas y tanques', 'LY', 'Cooper'),
+    TRAT('2026-09-14', 'Sala 1', 'Preventivo', 'Salas y tanques', 'LX', 'Vitamina C'),
+    TRAT('2026-09-15', 'Sala 3', 'Desinfección', 'RAS y tuberías', 'LZ', '', 'Bicarbonato'),
+  ] };
+  const PER = { desde: '2026-09-12', hasta: '2026-09-20' };
+
+  it('🔴 sólo los suyos y sólo del período, del más reciente al más antiguo', () => {
+    const t = tratamientosDeLote(FX, 'LX', PER, '2026-09-20');
+    expect(t.total).toBe(3);
+    expect(t.filas.map((f) => f.fecha + ' ' + f.sala)).toEqual(['2026-09-16 Sala 2', '2026-09-14 Sala 1', '2026-09-14 Sala 2']);
+    expect(t.filas[0]).toMatchObject({ tipo: 'Desinfección', productos: ['Bicarbonato'] });
+  });
+
+  it('🔴 el último PREVENTIVO, con la regla de la cobertura: ni un no-preventivo más reciente ni el segundo del mismo día', () => {
+    const t = tratamientosDeLote(FX, 'LX', PER, '2026-09-20');
+    expect(t.ultimoPreventivo).toEqual({ fecha: '2026-09-14', productos: ['Formol'], dias: 6 });
+  });
+
+  it('🔑 un lote sin preventivo sale «ninguno» (null), no con cero días', () => {
+    const t = tratamientosDeLote(FX, 'LZ', PER, '2026-09-20');
+    expect(t.total).toBe(1);
+    expect(t.ultimoPreventivo).toBe(null);
   });
 });
