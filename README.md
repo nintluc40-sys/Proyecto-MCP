@@ -1287,6 +1287,13 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
 
 ## Pendiente
 
+> **Qué recoge esta lista, y qué no** (2026-10-26, decisión del usuario: «cada una con su papel»). Sólo lo pendiente
+> del CÓDIGO y del DESPLIEGUE: lo que necesita quien lea o publique este repo. La lista de trabajo completa —las
+> decisiones del usuario, lo de campo, lo que está en vigilancia y en qué orden se aborda cada cosa— vive en el punto
+> de guardado de la memoria del proyecto, que no se versiona; y la seguridad, en un documento aparte, fuera del repo:
+> éste es PÚBLICO, así que aquí sólo va lo que ya se puede decir en público. Lo que se cierra sale de aquí (a «Hecho y
+> vigilado», abajo): dos listas que repiten lo mismo acaban divergiendo, y ésta ya había divergido de la pauta.
+>
 > Lo que depende del despliegue **se comprueba contra el despliegue**, no se lee de aquí. Esta lista
 > ya ha estado equivocada dos veces por describir un estado en vez de apuntar dónde mirarlo.
 > 🔍 Para medir el estado real: `node estado-maduracion.mjs` (sólo lectura).
@@ -1296,7 +1303,8 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
 1. 🔴 **El token compartido.** `SHARED_TOKEN` está vacío: la escritura sobre las hojas de producción
    sigue siendo anónima. Se activa desde el panel de Apps Script (Propiedades del script), sin tocar
    código: el código que lo lee ya está desplegado. ⚠ El orden importa: primero el token en ⚙ Config
-   de TODOS los dispositivos y después la propiedad; al revés, nadie puede escribir.
+   de TODOS los dispositivos y después la propiedad; al revés, nadie puede escribir. «Bloquea» dice lo GRAVE
+   que es, no cuándo se hace: el momento lo fija la lista de trabajo (hoy, con el resto de la seguridad, al final).
 
 **Por validar en producción**
 
@@ -1306,9 +1314,9 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
    `estado-maduracion.mjs`. Falta que lo desplegado se use de verdad:
    - Las hojas que aún no existen nacen con su primer envío y tienen que nacer con la cabecera actual.
      Cuáles existen ya, y con cuántas columnas, lo dice `estado-maduracion.mjs`, no esta lista.
-   - Un parte de Tanques REENVIADO tiene que corregir su fila, no añadir otra: es la llave nueva de P12
-     (`[0,1,2,13,14]`). Medido el 2026-10-15: en producción no ha dejado ninguna llave repetida (1 908 filas); las 9
-     que se repiten SIN «Parte» son del 29-09 (Sala 3), la misma ronda desde dos dispositivos, cada uno con su parte.
+   - ✅ Un parte de Tanques REENVIADO corrige su fila, no añade otra: es la llave nueva de P12
+     (`[0,1,2,13,14]`: Fecha, Sala, Tanque, Hora y Parte). **Validado** (re-medido el 2026-10-26 sobre la hoja entera):
+     ninguna llave repetida; las 9 sin «Parte» del 29-09 que se contaron el 15-10 ya no están.
    - En cada dispositivo, recargar la app y pasar ⚙ Config → «🔗 Probar conexión»: tiene que mostrar
      ese sello. Una copia de `index (8)` con OTRO sello no envía las fichas selladas —calcula, guarda
      en el dispositivo y lo dice— y se sustituye por la actual.
@@ -1322,10 +1330,27 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
      el 2026-09-20, cuando esta línea siguió diciendo `2e806a50…` después de que P12 dejara la copia
      buena en otro sha1, y quien la siguiera habría dado por buena la build ANTERIOR—. Se pregunta:
      `git -C "C:/Users/Usuario/Music" log --oneline -1` y `sha1sum "index (8).html"`.
+   - En un TELÉFONO real, con su red: la lectura del libro hoja a hoja, la 2.ª apertura con lo guardado, la franja de
+     versión nueva, las vistas que se bajan al abrirlas y la maqueta de Planta. Todo eso está probado en un equipo de
+     escritorio (`tras-despliegue`), no en un celular.
+
+**Abierto**
+
+3. **Microbiología · Patología en fresco** espera a que los usuarios estrenen su hoja (nace con su primer envío).
+   Cuando lleguen filas, la vista las CUENTA y lo dice («La visualización detallada llega en una tanda posterior»,
+   `patologiaAvisoHTML` en `microbiologia/index.js`): su pantalla de detalle está por hacer.
+4. **Deuda técnica.** `public/registros/engine.js` sigue siendo un monolito (`wc -l` da la cifra) y su plan de retirada no
+   tiene versión vigente: `docs/analisis/04-refactor-plan.md` se declara obsoleto. De la misma familia, los módulos más
+   grandes: `maduracion/operativo.view.js`, `microbiologia/index.js`, `biomolecular/index.js` y `supervisor/module.js`.
+
+## Hecho y vigilado
+
+Lo que salía en «Pendiente» y ya no es un pendiente: o se cerró, o es una salvaguarda que sigue en pie. Se conserva
+aquí porque explica POR QUÉ las cosas son como son.
 
 **Hecho, y comprobado**
 
-3. ✅ **El vaciado (2026-09-20) y P12 (2026-09-21).** Se retiraron del documento todas las hojas de
+- ✅ **El vaciado (2026-09-20) y P12 (2026-09-21).** Se retiraron del documento todas las hojas de
    Maduración salvo las del reproductivo —`MATRIZ` y `Bitácora` siguen ahí, con sus miles de filas— y el
    registro se está estrenando. Y `Maduración Tanques` quedó en sus 15 columnas: se re-desplegó
    `GAS/Code.gs` (P12, `1006532`: `madKeyCols` de `[0,1,3,16,17]` a `[0,1,2,13,14]`) y se borraron de la
@@ -1335,22 +1360,19 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
    🔑 Cuántas filas tiene hoy, y si la cabecera sigue siendo la del código, **no se lee de aquí**: lo dice
    `estado-maduracion.mjs`, que mira también `Tanques` y `Sala`.
 
-**Abierto**
+**Salvaguardas que siguen en pie**
 
-4. ~~**`Maduración Transferencias` se estrenó el 2026-09-26** (primer traslado): queda contrastar su panel con
-   dato real~~ — **descartado por el usuario el 2026-10-12**: no se contrasta. Si se retomara, haría falta una
-   comprobación propia: `auditar-tablero-mad-real.mjs` no lee esa hoja (lee las diez del operativo;
-   Transferencias es del reproductivo). Cuántas filas tiene, lo dice `estado-maduracion.mjs`.
-5. **Microbiología · Patología en fresco** espera a que los usuarios estrenen su hoja.
-6. **Paridad · las funciones que sólo se comparan por NOMBRE** entre `engine.js` e `index (8)`. Desde el
-   2026-09-22, `verificar-3copias-v3` saca las funciones con un parser y compara las que delegan en `__rgLib`
-   TRADUCIENDO la llamada (`window.__rgLib.x` ↔ `_reproX`): tienen que salir iguales. Sólo quedan por nombre
-   las de su lista cerrada `SOLO_POR_NOMBRE` —las siete fichas (su maquetación es P10), utilidades de una
-   línea de `src/core` y la lectura del store—; cuántas son lo dice él al correr («sólo por nombre»).
-   (Hasta ese día toda función que delegara pasaba sin mirarla, y así divergió la Consulta del reproductivo.)
-   Las contrapartes EN LÍNEA de la librería del reproductivo no las compara él: las ejecuta
-   `paridad-repro-reciclaje`, sobre los mismos casos que el módulo.
-7. **El tablero de Maduración: COMPLETO (Fase 0 y F1–F7).** Están sus sub-vistas —de
+- **Paridad · lo que `verificar-3copias-v3` sólo compara por NOMBRE** entre `engine.js` e `index (8)`. Desde el
+  2026-09-22 saca las funciones con un parser y compara las que delegan en `__rgLib` TRADUCIENDO la llamada
+  (`window.__rgLib.x` ↔ `_reproX`): tienen que salir iguales. Sólo quedan por nombre las de su lista cerrada
+  `SOLO_POR_NOMBRE` —las siete fichas estándar, utilidades de una línea de `src/core` y la lectura del store—;
+  cuántas son lo dice él al correr («sólo por nombre»). (Hasta ese día toda función que delegara pasaba sin mirarla,
+  y así divergió la Consulta del reproductivo.) ✅ **Y desde el 2026-10-24 eso ya no queda sin vigilar** (era el
+  punto P10): `paridad-fichas-std` (utillaje) arranca los dos motores y compara el COMPORTAMIENTO de las 7 fichas y
+  de esas utilidades —lo que se ve y lo que se guarda—, con sus diferencias visuales conocidas registradas aparte;
+  corre en la batería completa y, desde el 2026-10-26, en el pre-push. Las contrapartes EN LÍNEA de la librería del
+  reproductivo no las compara él: las ejecuta `paridad-repro-reciclaje`, sobre los mismos casos que el módulo.
+- **El tablero de Maduración: COMPLETO (Fase 0 y F1–F7).** Están sus sub-vistas —de
    📊 Estado actual a 🖨 Reportes; la lista viva es `SUBS`—, con los filtros, el período «ciclo del lote»,
    las etiquetas de filtros activos y el KPI de biomasa, y el Broodstock dentro de 🧬 Lotes.
    🖨 **Reportes** (F7, 2026-09-22) trae los CUATRO del plan. **F7.1**, el **parte diario de UNA página**, en pantalla, en PDF y en Excel
@@ -1382,12 +1404,13 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
    comprobaciones ejercitaron dato y cuántas salieron verdes EN VACÍO**, y nombran las hojas sin
    ninguna fila: tras el vaciado daban «todo en ok» sobre cero, que es un verde que no prueba nada.
    Cuánto cubre hoy el contraste **no se lee de aquí**: lo dicen ellas al correr.
-   ✅ **Y que hoy salgan muchas EN VACÍO no es un defecto del tablero** (decisión del usuario,
-   2026-09-21): el registro se está estrenando en producción y varias de sus diez hojas siguen sin
-   filas (cuántas, lo dice `estado-maduracion.mjs`), así que no hay con qué contrastar. Cada pieza se contrasta **cuando su hoja reciba sus
-   primeras filas**, no antes — y el censo sigue diciéndolo en crudo a propósito, para que ese verde
-   sobre cero no se confunda nunca con una prueba.
-8. **La CI sigue sin poder vigilar `index (8)`** —`deploy.yml` corre lint, vitest, auditorías y build, y
+   ✅ **Y que alguna salga EN VACÍO no es un defecto del tablero** (decisión del usuario,
+   2026-09-21): una hoja que aún no tiene filas no da con qué contrastar (cuáles, lo dice `estado-maduracion.mjs`).
+   Cada pieza se contrasta **cuando su hoja reciba sus primeras filas**, no antes — y el censo sigue diciéndolo en
+   crudo a propósito, para que ese verde sobre cero no se confunda nunca con una prueba. (Aquí decía «que hoy salgan
+   muchas»: era el estreno del registro, en septiembre; el 2026-10-26 el contraste con el libro real dio una sola en
+   vacío, la de las salas 4A/4B, que ya no existen.)
+- **La CI sigue sin poder vigilar `index (8)`** —`deploy.yml` corre lint, vitest, auditorías y build, y
    ninguna de las cuatro ve un archivo que no está en el repo—, pero desde el 2026-09-20 **ya no depende
    de acordarse**: un hook `pre-push` corre `node verificar-todo.mjs --copias` (las que comparan
    repo ↔ `index (8)` —funciones, constantes, estilos, marcado, SheetJS, plantillas del GAS, sintaxis,
