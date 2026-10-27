@@ -692,6 +692,9 @@ public/
   vendor/                  SheetJS y D3, servidos desde aquí (no por CDN)
   sw.js                    Service worker: la app arranca y captura SIN CONEXIÓN
   manifest.webmanifest     PWA instalable (standalone) + icons/ 192 · 512 · maskable
+GAS/
+  Code.gs                  El GAS del Registro (las fichas escriben por él; su sello, GAS_VERSION)
+  Clima.gs                 «MCP · clima», un Apps Script APARTE: escribe «Clima» y «Clima horas»
 ```
 
 ### La PWA no es un adorno: es lo que permite capturar en campo
@@ -790,6 +793,27 @@ Dos consecuencias que conviene tener presentes al desplegar:
      return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
    }
    ```
+
+   **🌦 Clima: otro Apps Script APARTE, «MCP · clima»** (2026-10-27; código en `GAS/Clima.gs`, prueba
+   `core/clima-gas.test.js`). Tampoco es el GAS del Registro: no toca su sello, su `ALLOWED` ni `index (8)`, y se
+   despliega por su cuenta. Escribe en el libro dos hojas que el MCP lee como lee «Marea»: **«Clima horas»** (una fila
+   por hora) y **«Clima»** (una por día: «Registro», el resumen de sus horas, y «Pronóstico», los 3 días siguientes).
+   Cada hora toma la MEJOR fuente que la tenga (decisión del usuario): **1.** lo **observado** en el aeropuerto de Salinas
+   (METAR **SESA**, a ~3 km; NOAA/AWC, dominio público), de 06 a 18 h y sin la lluvia en mm; **2.** **MET Noruega**
+   (malla de ~9 km, CC BY 4.0): cada pasada guarda las horas que quedan del día, así que cada hora acaba con lo que MET
+   dijo de ella a ≤ 3 h vista; **3.** **NASA POWER**, sólo para el historial desde el 01/08/2026, los huecos y la
+   radiación: su malla es GRUESA (½° × ⅝°; nubes y radiación a 1°) y, en las horas comunes con SESA, daba **2,5 °C menos
+   y 7 puntos más de humedad** (medido el 27-10), así que nunca pisa a las otras. La lluvia: MET y, si no, NASA; la
+   nubosidad: SESA > MET > NASA (la de NASA llega ~3 meses tarde); sensación térmica, niebla y UV, sólo MET; la radiación,
+   sólo NASA (la diaria a ~8 días). Cada fila dice de dónde vino cada grupo («Fuente», «Fuente lluvia», «Fuente
+   nubosidad»), y una cifra del día sólo existe si las 24 horas tienen esa variable (con las 13 horas diurnas del
+   aeropuerto, la «media» salía 2–3 °C alta). Activadores: `cadaTresHoras` (METAR + MET) y `nocturno` a las 02:00 (NASA,
+   desde el primer día con hueco); una pasada sin cambios no escribe (esta consulta ligera vería un cambio), y una
+   fuente caída no impide guardar las otras, pero la ejecución termina en error para que Apps Script avise. **Instalar**
+   (con la cuenta dueña del libro): script.google.com → Nuevo proyecto → pegar `GAS/Clima.gs` → ⚙ Zona horaria
+   «(GMT-05:00) Guayaquil» → ejecutar `probar` (pide las tres fuentes sin escribir) y luego `instalar` (crea las hojas,
+   carga el historial y deja los dos activadores; repetirla no duplica nada). La calidad del aire quedó FUERA (decisión
+   del usuario: ninguna fuente gratuita para empresa la da por coordenada a un Apps Script).
 
    **Red atascada** (2026-10-07): los tiempos máximos (`FETCH_TIMEOUT_MS`, `XLSX_TIMEOUT_MS`) cubren sólo hasta las
    cabeceras; el CUERPO se corta si pasan `SIN_DATOS_MS` (30 s) sin recibir nada (`sheets.js · cuerpoDe/textoDe`) y entran
