@@ -591,6 +591,7 @@ function fertBadge(v) {
 
 function drawOperativo(model, f) {
   drawUltimoDesove(model, f);   // 0v·4 · la tarjeta que sustituyó al calendario de desoves
+  drawPostDesove(model, f);     // 2026-10-27 · la tendencia diaria de «🩺 Mortalidad tras el desove»
   const level = vState.locLevel;
   const stats = locationStats(model, f, level).slice(0, 12);
   const labelOf = (x) => level === 'sala' ? (x.sala || x.key) : x.key;
@@ -840,17 +841,53 @@ function postDesoveHTML(model, f) {
   const seg = `<div class="mc-seg">${[1, 2, 3].map((d) => `<button type="button" class="mc-seg-b${d === V ? ' is-on' : ''}" data-mc-postv="${d}" aria-pressed="${d === V}">${d} d</button>`).join('')}</div>`;
   const muertes = (m, d) => `${n0(m)} muerte${m === 1 ? '' : 's'} en ${n0(d)} hembra-días`;
   const dosDec = (v) => v.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const cuerpo = p.dentro.dias + p.fuera.dias ? `<table class="mc-table mc-table-sm mc-post-res"><tbody>
+  /* 2026-10-27 (usuario, ronda 8 · tarea 3) · al lado del resumen, la TENDENCIA DIARIA de las dos tasas (drawPostDesove):
+     «En la misma tarjeta, al lado», «Las dos tasas diarias» y «Toda la historia, como la tabla». La tarjeta pasa a ancha. */
+  const cuerpo = p.dentro.dias + p.fuera.dias ? `<div class="mc-post-cols"><table class="mc-table mc-table-sm mc-post-res"><tbody>
       <tr><td>En los 0–${V} días tras desovar</td><td class="r"><b>${pct2(p.dentro.tasa)}/día</b></td><td>${muertes(p.dentro.muertes, p.dentro.dias)}</td></tr>
       <tr><td>El resto del tiempo</td><td class="r"><b>${pct2(p.fuera.tasa)}/día</b></td><td>${muertes(p.fuera.muertes, p.fuera.dias)}</td></tr>
       <tr><td>Riesgo relativo</td><td class="r"><b>${p.rr == null ? '—' : dosDec(p.rr)}</b></td><td>${lecturaRR(p.rr)}</td></tr>
       <tr><td>Muertas que nunca desovaron</td><td class="r"><b>${n0(p.nuncaDesovaron)}</b></td><td></td></tr>
     </tbody></table>
+    <div class="mc-post-graf"><div class="mc-post-graf-h">Tendencia diaria · % de las hembras que mueren cada día</div>
+      <div class="mc-chart mc-post-chart"><canvas id="mcPostDesove" aria-label="Tendencia diaria de la mortalidad tras el desove y del resto del tiempo"></canvas></div></div></div>
     ${p.porTanque.length ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm"><thead><tr><th>Tanque</th><th class="r">Muertes tras desovar</th><th class="r">El resto</th></tr></thead>
       <tbody>${p.porTanque.map((t) => `<tr><td><b>${esc(t.key)}</b></td><td class="r">${n0(t.dentro)}</td><td class="r">${n0(t.fuera)}</td></tr>`).join('')}</tbody></table></div>` : ''}
     <p class="mc-note">Cuenta desde el primer desove de cada hembra hasta su muerte o el último dato; su muerte cae «tras desovar» si fue a ≤ ${V} días de su último desove. Los huecos del registro de desoves (míralos en el calendario) cargan días al «resto» y pueden exagerar la diferencia. Sigue sala, tanque, lote y código, no el mes.</p>`
     : vacioHTML('Ninguna hembra con desoves en este filtro');
-  return `<div class="mc-card mc-post-card"><h4 class="mc-card-h">🩺 Mortalidad tras el desove ${seg}</h4>${cuerpo}</div>`;
+  return `<div class="mc-card mc-card-wide mc-post-card"><h4 class="mc-card-h">🩺 Mortalidad tras el desove ${seg}</h4>${cuerpo}</div>`;
+}
+/** La tendencia diaria de la tarjeta: las dos tasas de `mortalidadPostDesove(…).porDia`, con la ventana del selector. Un día
+ *  sin hembra-días en una parte deja un hueco en su línea (no un cero: no es «nadie murió»). */
+function drawPostDesove(model, f) {
+  const V = [1, 2, 3].includes(vState.postV) ? vState.postV : 2;
+  const p = mortalidadPostDesove(model, f, V);
+  if (!p.porDia.length || !document.getElementById('mcPostDesove')) return;
+  const E = ejes();
+  const linea = (label, k, color, dash) => ({ type: 'line', label, data: p.porDia.map((d) => d[k].tasa), borderColor: color, backgroundColor: color,
+    borderDash: dash, tension: 0, pointRadius: p.porDia.length > 60 ? 0 : 2.5, borderWidth: 2.2, spanGaps: false });
+  makeChart('mcPostDesove', {
+    type: 'line',
+    data: {
+      labels: p.porDia.map((d) => d.fecha.slice(8, 10) + '/' + d.fecha.slice(5, 7)),
+      datasets: [linea('En los 0–' + V + ' días tras desovar', 'dentro', C.mort, []), linea('El resto del tiempo', 'fuera', '#78909c', [5, 4])],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { ticks: { ...E.tick, maxRotation: 0, autoSkip: true }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: { ...E.tick, callback: (v) => v + ' %' }, grid: { color: E.grid }, title: E.titulo('% por día') },
+      },
+      plugins: {
+        legend: { labels: { usePointStyle: true, boxWidth: 10, font: { size: 12 }, color: E.texto } },
+        tooltip: { callbacks: {
+          title: (it) => { const d = p.porDia[it[0].dataIndex]; return d.fecha.slice(8, 10) + '/' + d.fecha.slice(5, 7) + '/' + d.fecha.slice(0, 4); },
+          label: (c) => { const x = p.porDia[c.dataIndex][c.datasetIndex === 0 ? 'dentro' : 'fuera'];
+            return ` ${c.dataset.label}: ${x.tasa == null ? '—' : pct2(x.tasa)} · ${n0(x.muertes)} muerte${x.muertes === 1 ? '' : 's'} en ${n0(x.dias)} hembra-días`; },
+        } },
+      },
+    },
+  });
 }
 
 /* T9 (2026-09-27, usuario) · desoves y marea: la tasa por noche según la marea (viva/muerta), la fase lunar y el día de la

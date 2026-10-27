@@ -813,12 +813,17 @@ export function ventanaDeDesove(model, f) {
 /** ¿Mueren más en los 0–`V` días tras un desove? Para cada hembra del filtro (`passFem`) que desovó alguna vez, sus días
  *  desde el PRIMER desove hasta su muerte (o el último dato) se reparten en DENTRO (a ≤ `V` días de su último desove) y
  *  FUERA; su muerte cae en uno de los dos. Tasa diaria de cada parte y el riesgo relativo (dentro ÷ fuera). Medido con los
- *  datos reales: 0,42 con 2 días (mueren MENOS tras desovar). `nuncaDesovaron` = muertas sin ningún desove. */
+ *  datos reales: 0,42 con 2 días (mueren MENOS tras desovar). `nuncaDesovaron` = muertas sin ningún desove.
+ *  2026-10-27 (usuario, ronda 8 · tarea 3) · `porDia`: lo MISMO día a día, del mismo recorrido —cada día del primero al
+ *  último, `{ fecha: 'aaaa-mm-dd', dentro, fuera }` con sus hembra-días, muertes y tasa (null sin hembra-días)—, así que
+ *  sumado da los totales y el gráfico de la tarjeta no puede contradecir a su tabla. */
 export function mortalidadPostDesove(model, f, V = 2) {
   const fin = model.dataMaxDate;
   const nd = (d) => Math.round(dia0(d).getTime() / 864e5);   // el día como número entero
   let dd = 0, md = 0, df = 0, mf = 0, nunca = 0;
   const tq = new Map();
+  const dia = new Map();   // el día (nd) → { dd, md, df, mf }
+  const delDia = (t) => { if (!dia.has(t)) dia.set(t, { dd: 0, md: 0, df: 0, mf: 0 }); return dia.get(t); };
   if (fin) model.females.filter((r) => passFem(r, f)).forEach((r) => {
     const muerta = r.estado === ESTADO_MUERTO && !!r._muerte;
     const ds = [...new Set((model.desovesByTrovan.get(r.trovan) || []).map((e) => nd(e.date)))].sort((a, b) => a - b);
@@ -828,9 +833,10 @@ export function mortalidadPostDesove(model, f, V = 2) {
     for (let t = ds[0]; t <= ultimo; t++) {
       while (k + 1 < ds.length && ds[k + 1] <= t) k++;
       const dentro = t - ds[k] <= V;
-      if (dentro) dd++; else df++;
+      const x = delDia(t);
+      if (dentro) { dd++; x.dd++; } else { df++; x.df++; }
       if (muerta && t === ultimo) {
-        if (dentro) md++; else mf++;
+        if (dentro) { md++; x.md++; } else { mf++; x.mf++; }
         const key = locKey(r.sala, r.tanque);
         if (!tq.has(key)) tq.set(key, { key, dentro: 0, fuera: 0 });
         tq.get(key)[dentro ? 'dentro' : 'fuera']++;
@@ -838,10 +844,22 @@ export function mortalidadPostDesove(model, f, V = 2) {
     }
   });
   const td = tasa(md, dd), tf = tasa(mf, df);
+  // `nd` cuenta días de calendario desde 1970 (el redondeo absorbe la hora local): su fecha se lee en UTC.
+  const fechaDe = (t) => { const d = new Date(t * 864e5); return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0'); };
+  const ts = [...dia.keys()];
+  const porDia = [];
+  if (ts.length) {
+    for (let t = Math.min(...ts), u = Math.max(...ts); t <= u; t++) {   // seguidos: un día sin hembras sale vacío, no se salta
+      const x = dia.get(t) || { dd: 0, md: 0, df: 0, mf: 0 };
+      porDia.push({ fecha: fechaDe(t), dentro: { dias: x.dd, muertes: x.md, tasa: tasa(x.md, x.dd) },
+        fuera: { dias: x.df, muertes: x.mf, tasa: tasa(x.mf, x.df) } });
+    }
+  }
   return {
     V, dentro: { dias: dd, muertes: md, tasa: td }, fuera: { dias: df, muertes: mf, tasa: tf },
     rr: td != null && tf ? td / tf : null, nuncaDesovaron: nunca,
     porTanque: [...tq.values()].sort((a, b) => b.dentro - a.dentro || b.fuera - a.fuera || _ordenEs(a.key, b.key)),
+    porDia,
   };
 }
 

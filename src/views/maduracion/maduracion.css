@@ -248,6 +248,11 @@
 .mc-post-rr { font-weight: 700; color: var(--c-text-soft); }
 .mc-post-rr.is-menos { color: #1e7a44; }
 .mc-post-rr.is-mas { color: #c0392b; }
+/* 2026-10-27 (usuario, ronda 8 · tarea 3) · el resumen a la izquierda y su tendencia diaria a la derecha; en estrecho, debajo. */
+.mc-post-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 14px; align-items: start; }
+.mc-post-graf-h { font-size: 12px; font-weight: 600; color: var(--c-text-soft); margin-bottom: 4px; }
+.mc-post-chart { height: 230px; }
+@media (max-width: 900px) { .mc-post-cols { grid-template-columns: 1fr; } }
 
 /* T9 (2026-09-27, usuario) · desoves y marea */
 .mc-marea-tipos { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 8px; }
