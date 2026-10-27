@@ -653,9 +653,10 @@ function closeGenDepto(root) {
 
 /* ============================================================
    CALIDAD DE AGUA (fisicoquímica · rango dentro/fuera) — Tandas A–C
-   Barra de mes + filtros en CASCADA + KPIs de cumplimiento + apartados:
-   Perfil (tarjetas "perfil iónico") · Matriz (muestra × parámetro).
-   Tendencias / ensayo / alertas / export llegan en tandas siguientes.
+   Barra de mes + filtros en CASCADA + KPIs (muestras, cumplimiento, perfil de severidad) + apartados:
+   🔬 Por parámetro (el Analizador: tendencia, control I-MR de Shewhart y distribución en boxplot) ·
+   📍 Por ubicación (fichas Módulo → Tanque y mapa de riesgo) · ⚗️ Ensayo (sólo con parejas antes/después).
+   Más las alertas, los rangos editables (⚙️) y la exportación a Excel y TXT (`renderCalidadAgua`).
    ============================================================ */
 /** Número limpio: entero tal cual; decimal a ≤2 sin ceros finales. */
 function calFmt(v) { return v == null || isNaN(v) ? '—' : String(Number.isInteger(v) ? v : +v.toFixed(2)); }
