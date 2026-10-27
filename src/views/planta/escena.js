@@ -1573,18 +1573,30 @@ function place(el, p) {
   el._x = x; el._y = y; ponRotulo(el, x, y);
   return true;
 }
-/** Pinta el rótulo en (x, y); `_xr` es la x pintada (despejarRotulos puede correrlo de su punto, `_x`, por el ☰). */
+/** Pinta el rótulo en (x, y); `_xr` es la x pintada (despejarRotulos puede correrlo de su punto, `_x`, por el ☰).
+   M1 (2026-10-27, usuario: «los rótulos centellean al mover la maqueta») · EN PÍXEL ENTERO. Antes iba a medio píxel y se
+   centraba con `translate(-50%, …)`, que depende del ancho: medido en Chrome, ningún rótulo caía en un píxel entero y la
+   fracción saltaba de un cuadro a otro (32 % de los de módulo, 27 % de los de tanque), así que el texto se redibujaba en
+   otro subpíxel y temblaba. Ahora el centrado se calcula con su tamaño (medido una vez, y otra si cambia su texto:
+   `_w = 0`) y se redondea; `_wp` es el ancho con el que se pintó. Sin tamaño (oculto con `display: none`, o en las
+   pruebas sin maquetación), el centrado de siempre, por CSS, hasta que se pueda medir. */
 function ponRotulo(el, x, y) {
-  el._xr = x; el.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0) translate(-50%,' + (el.dataset.ty || '-50%') + ')';
+  el._xr = x;
+  if (!el._w) { el._w = el.offsetWidth; el._h = el.offsetHeight; }
+  el._wp = el._w;
+  if (!el._w) { el.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0) translate(-50%,' + (el.dataset.ty || '-50%') + ')'; return; }
+  const alto = el.dataset.ty === '-100%' ? el._h : el._h / 2;   // apoyado en su punto (-100 %) o centrado en él (-50 %)
+  el.style.transform = 'translate3d(' + Math.round(x - el._w / 2) + 'px,' + Math.round(y - alto) + 'px,0)';
 }
 /* Rótulos que aún chocan: se ocultan (clase .tapado) los de menor prioridad. Gana el módulo o sala elegido, luego el que
    tiene más alertas (⚠ y ⏳), luego larvicultura sobre maduración, y a igualdad el orden del plano. El rótulo va
-   centrado en x y apoyado en su punto (translate -50%, -100%); su tamaño se mide al cambiar su texto. */
+   centrado en x y apoyado en su punto (`data-ty` -100 %; lo coloca `ponRotulo`); su tamaño se mide al cambiar su texto. */
 const prioridadRotulo = (g) => {
   const st = g.st, n = !st ? 0 : g.kind === 'larv' ? (st.cuenta ? st.cuenta.alerta : 0) : st.alertaTanques + (st.alerta ? 1 : 0) + (st.reemplazo ? 1 : 0);
   return [g === selected ? 1 : 0, n, g.kind === 'larv' ? 1 : 0];
 };
 const porPrioridad = (a, b) => b.p[0] - a.p[0] || b.p[1] - a.p[1] || b.p[2] - a.p[2] || a.i - b.i;
+const HOLGURA_REAPARECER = 8;   // px (M1)
 function despejarRotulos() {
   if (labelsEl.style.display === 'none') return;
   const puestos = [], M = 2;
@@ -1599,9 +1611,13 @@ function despejarRotulos() {
     // maqueta) se quedaba pegado al borde señalando lo que no se ve; así, el borde lo recorta, como antes del 3.7
     let x = el._x;
     if (franjaMenu > 0 && el._x >= 0 && el._x - el._w / 2 < franjaMenu && !chocaCon(caja(el, franjaMenu + el._w / 2))) x = franjaMenu + el._w / 2;
-    if (x !== el._xr) ponRotulo(el, x, el._y);
+    if (x !== el._xr || el._wp !== el._w) ponRotulo(el, x, el._y);   // M1: también si su ancho cambió (texto nuevo)
     const r = caja(el, x);
-    const choca = chocaCon(r);
+    // M1 (2026-10-27) · MARGEN PARA REAPARECER: el oculto sólo vuelve si queda libre con HOLGURA_REAPARECER px de más; para
+    // ocultarse basta el choque de siempre. Sin margen, el que rozaba a otro se encendía y apagaba al mover la cámara
+    // (medido: 6 idas y vueltas en < 300 ms en 931 cuadros).
+    const holgura = el.classList.contains('tapado') ? HOLGURA_REAPARECER : 0;   // (no `H`: es el alto de la vista)
+    const choca = chocaCon(holgura ? [r[0] - holgura, r[1] - holgura, r[2] + holgura, r[3] + holgura] : r);
     el.classList.toggle('tapado', choca);
     if (!choca) puestos.push(r);
   });
@@ -1755,7 +1771,9 @@ function frameBody(now) {
   controls.update();
   sky.position.copy(camera.position); stars.position.copy(camera.position);
   if (!reduced) { animateLife(t, dt); animarPersonal(t, dt); }
-  const far = camera.position.distanceTo(controls.target) > 135;
+  // M1 (2026-10-27) · el rótulo corto, con MARGEN: pasa a corto al alejarse de 135 y vuelve al largo por debajo de 125.
+  // Sin margen, acercar y alejar alrededor de 135 cambiaba el texto (y el ancho, y los choques) de los 15 rótulos a la vez.
+  const dist = camera.position.distanceTo(controls.target), far = wasFar ? dist > 125 : dist > 135;
   let movidos = false;
   if (far !== wasFar) { wasFar = far; movidos = true; groups.forEach(g => { g.labelText.textContent = textoRotulo(g, far); g.labelDot.style.background = colorRotulo(g); g.label._w = 0; }); }
   groups.forEach(g => { if (place(g.label, g.anchor)) movidos = true; });
