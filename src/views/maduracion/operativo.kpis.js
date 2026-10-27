@@ -8,6 +8,7 @@
      · Ocupación    → tanques ocupados frente al total, por sala;
      · Mortalidad   → la tasa diaria (barras) y la acumulada del período (línea);
      · Reproducción → desoves por día (barras) y N5 (línea);
+     · Cópula       → la tasa del día y la acumulada del período (dos líneas; 2026-10-27, ronda 8 · tarea 4);
      · Biomasa      → ♀ / ♂ por sala.
    🔑 Cada gráfico sale de las MISMAS reglas que la cifra de su tarjeta (operativo.tablero.js) —el mismo filtro, la misma
    regla del Saldo—, y su último punto ES esa cifra: las pruebas lo atan. Con un filtro que el libro no guarda día a día
@@ -20,13 +21,14 @@
 import { ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_MIXTO, sumarDias, ubicKey } from '../registros/lib/mad-libro.js';
 import { SALAS_VISIBLES } from './operativo.data.js';
 import { tasaEntre, kpiBiomasa, posicionEnFiltro, codigoEnFiltro, loteElegido, hayLote, hayCodigo, haySala, hayTanque, salaElegida, tanqueElegido,
-  hayPiscina, hayCamaronera, desoveEnOrigen, ignoraDeDesoves } from './operativo.tablero.js';
+  hayPiscina, hayCamaronera, desoveEnOrigen, ignoraDeDesoves, kpiCopula } from './operativo.tablero.js';
 
-/** Las siete tarjetas que tienen gráfico, en su orden, con su título. */
+/** Las tarjetas que tienen gráfico, en su orden, con su título. */
 export const KPIS_CON_GRAFICO = [
   { clave: 'vivos', titulo: 'Vivos' }, { clave: 'lotes', titulo: 'Lotes por estado' },
   { clave: 'salas', titulo: 'Salas: registrado frente a propuesto' }, { clave: 'ocupacion', titulo: 'Ocupación por sala' },
   { clave: 'mortalidad', titulo: 'Mortalidad' }, { clave: 'reproduccion', titulo: 'Reproducción' },
+  { clave: 'copula', titulo: 'Tasa de cópula' },
   { clave: 'biomasa', titulo: 'Biomasa por sala' },
 ];
 
@@ -255,9 +257,39 @@ export function graficoBiomasa(M, F, periodo) {
   };
 }
 
-/** El gráfico de una tarjeta, por su clave. `ctx`: { M, serie (desde la víspera del período), partes, periodo, F }. */
+/** 2026-10-27 (usuario, ronda 8 · tarea 4) · Cópula: la tasa de cada día del período y la acumulada hasta ese día (Σ ÷ Σ),
+ *  las dos de `kpiCopula` —la de la tarjeta—, así que la acumulada TERMINA en su cifra. Un hueco del registro (o un día
+ *  sin partes) deja la tasa del día en blanco y la acumulada como iba; antes del primer día con dato, en blanco. */
+export function graficoCopula(base, periodo, F) {
+  const k = kpiCopula(base, periodo, F);
+  if (!k.dias) return noAplica(k.huecos ? 'En el período nadie anotó cópulas en ningún tanque de la granja: son huecos del registro, no ceros.'
+    : 'Sin partes de Tanques con hembras en el período y el filtro.');
+  const ds = fechas(periodo);
+  let c = 0;
+  let h = 0;
+  const dia = [];
+  const acumulada = [];
+  for (const f of ds) {
+    const o = k.porDia.get(f);
+    if (o) { c += o.copulas; h += o.hembras; }
+    dia.push(o ? (o.copulas / o.hembras) * 100 : null);
+    acumulada.push(h > 0 ? (c / h) * 100 : null);
+  }
+  return {
+    aplica: true, tipo: 'lineas', unidad: '%', etiquetas: ds,
+    series: [
+      { clave: 'copulaDia', etiqueta: 'Tasa del día (%)', datos: dia, puntos: true },
+      { clave: 'copulaAcumulada', etiqueta: 'Acumulada del período (%)', datos: acumulada },
+    ],
+    ignora: k.ignora, huecos: k.huecos, sinHembras: k.sinHembras,
+  };
+}
+
+/** El gráfico de una tarjeta, por su clave. `ctx`: { M, serie (desde la víspera del período), partes, periodo, F, copulas }
+ *  (`copulas` = la base de la tarjeta de Cópula, `partesConHembras`). */
 export function graficoDeKpi(clave, ctx) {
   const { M, serie, partes, periodo, F } = ctx;
+  if (clave === 'copula') return graficoCopula(ctx.copulas, periodo, F);
   if (clave === 'vivos') return graficoVivos(serie, periodo, F);
   if (clave === 'lotes') return graficoLotes(serie, periodo, F);
   if (clave === 'salas') return graficoSalas(M.salas, F);

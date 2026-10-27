@@ -45,7 +45,7 @@ import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-
 import { modeloOperativo, serieDiaria, diasDeTanque, libroAlCierre } from './operativo.data.js';
 import {
   PERIODOS, PERIODO_INICIAL, periodoDe, normalizarFiltro, hayFiltro, kpiVivos, kpiLotes, kpiSalas, kpiOcupacion,
-  kpiMortalidad, kpiReproduccion, mapaDePlanta, MODOS_MAPA, ESTADO_VACIO, ESTADO_SIN, alertas, ultimosRegistros,
+  kpiMortalidad, kpiReproduccion, kpiCopula, mapaDePlanta, MODOS_MAPA, ESTADO_VACIO, ESTADO_SIN, alertas, ultimosRegistros,
   cuarentenasDeLotes, conIngresoDelLote, curvaDeCuarentena, AVISO_CUARENTENA_DIAS, tarjetasDeSalas, detalleDeSala, ambienteDelDia,
   indiceDeFiltro, cicloDelLote, etiquetasDeFiltro, kpiBiomasa, loteUnico, salaUnica, salaElegida, textoDeTanque,
   filtrosNoAplicados,
@@ -230,6 +230,12 @@ const etiquetaPeriodo = (p) => (p.clave === 'hoy' ? 'hoy' : p.clave === 'mes' ? 
 // ── Modelo memoizado: por los datos, el día de hoy y la foto. La serie y la presencia, además, por el período. ──
 let _memo = { src: null, hoy: '', fecha: '', M: null, partes: null, serieClave: '', serie: null, repro: null, libroHoy: null, presenciaClave: '', presencia: null,
   serieCicloClave: '', serieCiclo: null };
+/** 2026-10-27 (ronda 8 · tarea 4) · la base de la tarjeta de Cópula (`partesConHembras`: cada parte con las hembras de su
+ *  tanque al cierre de su día), UNA vez por datos y foto: es una pasada del libro, y la tarjeta se pinta al abrir. */
+function copulasDe(memo) {
+  if (!memo.copulas) memo.copulas = partesConHembras(memo.M.fuentes, memo.partes);
+  return memo.copulas;
+}
 function memoModelo(hoy, fecha) {
   if (_memo.src !== store.globalData || _memo.hoy !== hoy || _memo.fecha !== fecha) {
     const M = modeloOperativo(store.globalData, { hoy, fecha });
@@ -522,6 +528,7 @@ function estadoHTML(M, memo, p, F) {
   const o = kpiOcupacion(M.salas, M.libro, F);
   const m = kpiMortalidad(serieDe(memo, p), p, F, memo.partes);
   const r = kpiReproduccion(M.fuentes.desoves, p, F);
+  const c = kpiCopula(copulasDe(memo), p, F);   // 2026-10-27 · ronda 8 · tarea 4
   const b = kpiBiomasa(M, F, p);
   _mapa = mapaDePlanta(M.libro, F);
   /* 0f · 3 · lo que necesitan los colores nuevos del mapa y el lienzo de un tanque, que se abre SIN repintar. */
@@ -548,6 +555,14 @@ function estadoHTML(M, memo, p, F) {
     `N5 ${r.n5 ? nf(r.n5 / 1e6, 2) + ' M' : '—'} · fert. ${pc(r.fertilidad)}${r.ignora.length ? ` · <span class="mop-nota">sin filtro de ${esc(r.ignora.join(', '))}</span>` : ''}`, 'is-desove',
     'Desoves del período, por su fecha. Fertilidad = N2 ÷ huevos, sólo de los desoves que ya tienen su N2 (regla del ⚖️ Saldo). Un desove es de su lote y código genético, no de una sala, y no lleva estado ni sexo (es de hembras): esos filtros no se le aplican.', 'reproduccion');
 
+  /* 2026-10-27 (usuario, ronda 8 · tarea 4) · la tasa de cópula, con la regla del ⚖️ Saldo y de 🌊 Mareas (kpiCopula). */
+  const cop = tile('Cópula', c.tasa == null ? '—' : pc(c.tasa),
+    c.tasa == null ? (c.huecos ? 'sin cópulas anotadas en el período' : 'sin partes con hembras en el período')
+      : `${nf(c.copulas)} cópulas · ${nf(c.dias)} día(s) con parte${c.huecos ? ' · ' + nf(c.huecos) + ' sin registro' : ''}${c.ignora.length ? ` · <span class="mop-nota">sin filtro de ${esc(c.ignora.join(', '))}</span>` : ''}`,
+    'is-desove',
+    'Cópulas de los partes de Tanques ÷ hembras que el libro tenía en esos tanques × 100, por cada 100 hembra-días del período (la regla del ⚖️ Saldo y de 🌊 Mareas). Un día en que ningún tanque de la granja anota cópulas es un hueco del registro, no un cero: no cuenta. Con lote o código, cuentan enteros los tanques que los tienen.',
+    'copula');
+
   const kpis = [
     tile('Vivos', nf(v.total), `♀ ${nf(v.hembras)} · ♂ ${nf(v.machos)} · H:M ${nf(v.hm, 2)} ${dot(v.hmEstado, refUmbral('proporcionHM'))}`, '',
       'Animales vivos al cierre de la foto, según el libro mayor. ' + definicion('proporcionHM'), 'vivos'),
@@ -558,7 +573,7 @@ function estadoHTML(M, memo, p, F) {
     tile('Ocupación', `${nf(o.ocupados)}/${nf(o.total)}`,
       o.modo === 'tanque' ? (o.ocupados ? 'tanque ocupado' : 'tanque vacío') : `${pc(o.pct)}${o.modo === 'filtro' ? ' · tanques con lo filtrado' : ''}`, '',
       definicion('ocupacion'), 'ocupacion'),
-    mort, repro,
+    mort, repro, cop,
     tile('Biomasa', b.totalKg === '' ? '—' : nf(b.totalKg, 2) + ' kg',
       b.totalKg === '' ? 'sin pesos registrados'
         : `♀ ${nf(b.hembrasKg, 2)} · ♂ ${nf(b.machosKg, 2)} kg${b.parcial ? ' · <span class="mop-nota">sólo un sexo trae peso</span>' : ''}`, '',
@@ -1255,7 +1270,7 @@ function kpiPanelHTML(M, memo, p, F) {
   _kpiGraf = null;
   const k = KPIS_CON_GRAFICO.find((x) => x.clave === vOp.kpiSel);
   if (!k) { vOp.kpiSel = ''; return ''; }
-  const g = graficoDeKpi(k.clave, { M, serie: serieDe(memo, p), partes: memo.partes, periodo: p, F });
+  const g = graficoDeKpi(k.clave, { M, serie: serieDe(memo, p), partes: memo.partes, periodo: p, F, copulas: k.clave === 'copula' ? copulasDe(memo) : null });
   const cuando = k.clave === 'salas' || k.clave === 'ocupacion' ? 'al cierre de la foto ' + dma(M.fecha)
     : k.clave === 'biomasa' ? 'vivos y pesos de referencia de la foto ' + dma(M.fecha) : etiquetaPeriodo(p);
   let cuerpo;
@@ -1273,7 +1288,15 @@ function kpiPanelHTML(M, memo, p, F) {
     if (F.sexo) notas.push('La mortalidad no se separa por sexo: la tarjeta, el gráfico y la fila de muertos cuentan los dos sexos.');
   }
   /* 🥚 Reproducción (el único gráfico con `ignora`): una nota por filtro que un desove no puede honrar (pauta 3.1, 2026-10-19). */
-  const ign = (g.aplica && g.ignora) || [];
+  /* 2026-10-27 (ronda 8 · tarea 4) · Cópula: su regla, sus huecos y lo que no separa; las notas de abajo son las de un DESOVE. */
+  if (g.aplica && k.clave === 'copula') {
+    notas.push('Tasa del día = cópulas de los partes de Tanques ÷ hembras que el libro tenía en esos tanques × 100 (la regla del ⚖️ Saldo y de 🌊 Mareas); la acumulada, Σ ÷ Σ desde el primer día del período, termina en la cifra de la tarjeta.');
+    if (g.huecos) notas.push(nf(g.huecos) + ' día(s) del período sin cópulas anotadas en ningún tanque de la granja: son huecos del registro, no ceros, y no cuentan.');
+    if (g.sinHembras) notas.push(nf(g.sinHembras) + ' parte(s) de tanques sin hembras en el libro no cuentan.');
+    if ((F.lotes || []).length || (F.codigos || []).length) notas.push('Con lote o código genético, cuentan enteros los tanques que los tienen: una cópula no es de un lote.');
+    if (g.ignora.length) notas.push('La tasa de cópula no se separa por ' + g.ignora.join(', ') + ': ese filtro no se aplica.');
+  }
+  const ign = (g.aplica && k.clave !== 'copula' && g.ignora) || [];
   if (ign.includes('sala')) notas.push('Un desove es de su lote y código genético, no de una sala: el filtro de sala no se aplica.');
   if (ign.includes('estado')) notas.push('El estado es el de un lote en una sala al cierre del día y un desove no lo registra: el filtro de estado no se aplica.');
   if (ign.includes('sexo')) notas.push('Un desove es siempre de hembras: el filtro de sexo no se aplica.');
@@ -1314,7 +1337,7 @@ function salasKpiHTML(filas) {
 }
 const COLOR_KPI = { hembras: '#d81b60', machos: '#1e88e5', total: '#455a64', cuarentena: '#f9a825', produccion: '#43a047', mixto: '#8e24aa',
   otros: '#b0bec5', ocupados: '#00897b', libres: '#cfd8dc', dia: '#e0533b', acumulada: '#b71c1c',
-  desoves: '#0f7c9a', n5: '#3949ab' };
+  desoves: '#0f7c9a', n5: '#3949ab', copulaDia: '#ef6c00', copulaAcumulada: '#8d3a00' };
 /** 0f · 5 · dibuja el gráfico de la tarjeta abierta: líneas, barras apiladas, o barras con una línea en su propio eje. */
 function dibujarKpi(g) {
   const E = ejesOp();
@@ -1327,7 +1350,7 @@ function dibujarKpi(g) {
   let scales;
   if (g.tipo === 'lineas') {
     datasets = g.series.map((s) => ({ type: 'line', label: s.etiqueta, data: s.datos, borderColor: col(s), backgroundColor: col(s),
-      tension: 0, borderWidth: s.clave === 'total' ? 2.5 : 2, pointRadius: 0 }));
+      tension: 0, borderWidth: s.clave === 'total' ? 2.5 : 2, pointRadius: s.puntos ? 2.5 : 0 }));   // puntos: una serie con huecos (Cópula)
     scales = { x, y: { beginAtZero: true, ticks: E.tick, grid: { color: E.grid } } };
   } else if (g.tipo === 'barrasApiladas') {
     datasets = g.series.map((s) => ({ type: 'bar', label: s.etiqueta, data: s.datos, backgroundColor: col(s), stack: 'kpi' }));

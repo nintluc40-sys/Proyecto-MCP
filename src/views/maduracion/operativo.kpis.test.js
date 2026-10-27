@@ -59,10 +59,12 @@ const suma = (g, clave) => serieDe(g, clave).reduce((a, v) => a + (v || 0), 0);
 const enDia = (g, fecha) => Object.fromEntries(g.series.map((s) => [s.clave, s.datos[g.etiquetas.indexOf(fecha)]]));
 const nombre = (f) => JSON.stringify(Object.fromEntries(Object.entries(f).filter(([, v]) => v !== '' && v !== null)));
 
-describe('Maduración · KPI · los siete gráficos', () => {
+describe('Maduración · KPI · los gráficos de las tarjetas', () => {
   it('uno por tarjeta, en su orden, y graficoDeKpi los reparte', () => {
-    expect(KPIS_CON_GRAFICO.map((k) => k.clave)).toEqual(['vivos', 'lotes', 'salas', 'ocupacion', 'mortalidad', 'reproduccion', 'biomasa']);
-    const ctx = { M, serie: SERIE, partes: PARTES, periodo: P, F: F() };
+    // 2026-10-27 (ronda 8 · tarea 4) · entra «copula», antes de Biomasa; su base es la de partesConHembras (una fila basta).
+    expect(KPIS_CON_GRAFICO.map((k) => k.clave)).toEqual(['vivos', 'lotes', 'salas', 'ocupacion', 'mortalidad', 'reproduccion', 'copula', 'biomasa']);
+    const copulas = [{ fecha: P.hasta, sala: 'Sala 1', tanque: 1, copulas: 2, hembras: 10, lotes: [], codigos: [] }];
+    const ctx = { M, serie: SERIE, partes: PARTES, periodo: P, F: F(), copulas };
     for (const { clave } of KPIS_CON_GRAFICO) expect(graficoDeKpi(clave, ctx).aplica, clave).toBe(true);
     expect(graficoDeKpi('lotes', ctx)).toEqual(graficoLotes(SERIE, P, F()));
     expect(graficoDeKpi('mortalidad', ctx)).toEqual(graficoMortalidad(SERIE, P, F(), PARTES));

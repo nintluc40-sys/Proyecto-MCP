@@ -134,7 +134,7 @@ describe('Maduración · operativo · 📊 Estado actual', () => {
     expect(root.querySelector('.mop-f-rango').textContent).toContain('21/08 – 19/09 · 30 días');
     const fecha = root.querySelector('[data-mop-fecha]');
     expect([fecha.value, fecha.getAttribute('max')]).toEqual(['2026-09-19', '2026-09-19']);
-    expect([...root.querySelectorAll('.mc-kpi-lb')].map((x) => x.textContent)).toEqual(['Vivos', 'Lotes', 'Salas', 'Ocupación', 'Mortalidad', 'Reproducción', 'Biomasa']);
+    expect([...root.querySelectorAll('.mc-kpi-lb')].map((x) => x.textContent)).toEqual(['Vivos', 'Lotes', 'Salas', 'Ocupación', 'Mortalidad', 'Reproducción', 'Cópula', 'Biomasa']);   // 2026-10-27 · + Cópula
     expect([kpi('Vivos'), kpi('Lotes'), kpi('Salas'), kpi('Ocupación')]).toEqual(['66', '4', '1 ⚠', '3/38']);
     expect([kpi('Mortalidad'), kpi('Reproducción')]).toEqual(['día 0 %', '0 desoves']);
     expect(root.querySelectorAll('.mop-tq')).toHaveLength(38);
@@ -2545,10 +2545,10 @@ describe('Maduración · operativo · 0f · 5 · el gráfico de cada KPI', () =>
   const ultimoGrafico = () => { const l = makeChart.mock.calls.filter(([id]) => id === 'mopKpiCurva'); return l.length ? l[l.length - 1][1] : null; };
   const numero = (s) => Number(String(s).replace(/[^0-9]/g, ''));
 
-  it('🔴 las siete tarjetas se pulsan, en su orden; ninguna abierta al llegar', async () => {
+  it('🔴 las tarjetas se pulsan, en su orden; ninguna abierta al llegar', async () => {
     await montar(PLANTA);
     expect([...root.querySelectorAll('.mc-kpis [data-mop-kpi]')].map((x) => x.dataset.mopKpi))
-      .toEqual(['vivos', 'lotes', 'salas', 'ocupacion', 'mortalidad', 'reproduccion', 'biomasa']);
+      .toEqual(['vivos', 'lotes', 'salas', 'ocupacion', 'mortalidad', 'reproduccion', 'copula', 'biomasa']);   // 2026-10-27 · + copula
     expect(tarjeta('vivos').getAttribute('role')).toBe('button');
     expect(tarjeta('vivos').getAttribute('aria-pressed')).toBe('false');
     expect(panel()).toBeNull();
@@ -2567,6 +2567,31 @@ describe('Maduración · operativo · 0f · 5 · el gráfico de cada KPI', () =>
     expect(cfg.data.datasets[2].data.at(-1)).toBe(numero(kpi('Vivos')));
     click(tarjeta('vivos'));
     expect(panel()).toBeNull();
+  });
+
+  /* 2026-10-27 (usuario, ronda 8 · tarea 4) · la tasa de cópula: su tarjeta, su gráfico (tasa del día con puntos y
+     acumulada) y sus notas; la acumulada del último día ES la cifra de la tarjeta (las cuentas, en operativo.copula.test.js). */
+  it('🔴 Cópula: la tarjeta da la tasa y su gráfico la del día y la acumulada, que termina en la cifra de la tarjeta', async () => {
+    await montar([...PLANTA, TQ('19/09/2026', 'Sala 1', 1, { 'Cópulas': '3' }), TQ('18/09/2026', 'Sala 1', 1, { 'Cópulas': '1' })]);
+    const v = kpi('Cópula');
+    expect(v).toMatch(/^\d+,\d{2} %$/);
+    click(tarjeta('copula'));
+    expect(panel().querySelector('#mopKpiCurva')).not.toBeNull();
+    expect(panel().textContent).toContain('Tasa de cópula');
+    expect(panel().textContent).toContain('la regla del ⚖️ Saldo y de 🌊 Mareas');
+    const cfg = ultimoGrafico();
+    expect(cfg.data.datasets.map((d) => d.label)).toEqual(['Tasa del día (%)', 'Acumulada del período (%)']);
+    expect([cfg.data.datasets[0].pointRadius, cfg.data.datasets[1].pointRadius]).toEqual([2.5, 0]);
+    expect(cfg.data.labels.at(-1)).toBe('19/09');
+    expect(cfg.data.datasets[1].data.at(-1).toFixed(2).replace('.', ',') + ' %').toBe(v);
+  });
+
+  it('Cópula, sin ninguna cópula anotada: «—» y el gráfico dice que no hay', async () => {
+    await montar(PLANTA);
+    expect(kpi('Cópula')).toBe('—');
+    click(tarjeta('copula'));
+    expect(panel().querySelector('canvas')).toBeNull();
+    expect(panel().textContent).toMatch(/huecos del registro|Sin partes de Tanques/);
   });
 
   it('🔴 Lotes: las barras del último día suman los lotes de la tarjeta; se abre OTRA tarjeta y cambia el gráfico', async () => {
@@ -2892,10 +2917,10 @@ describe('Maduración · operativo · los gráficos se leen', () => {
     expect(makeChart.mock.calls.some(([id]) => id === 'mopReproDest')).toBe(true);
   });
 
-  it('se abren los siete KPI (cada uno dibuja su gráfico)', async () => {
+  it('se abren los KPI (cada uno dibuja su gráfico)', async () => {
     await montar(PLANTA);
     const claves = [...root.querySelectorAll('[data-mop-kpi]')].map((x) => x.dataset.mopKpi);
-    expect(claves.length).toBe(7);
+    expect(claves.length).toBe(8);   // 2026-10-27 · + Cópula
     for (const k of claves) click(root.querySelector(`[data-mop-kpi="${k}"]`));
     expect(makeChart.mock.calls.filter(([id]) => id === 'mopKpiCurva').length).toBeGreaterThanOrEqual(7);
   });

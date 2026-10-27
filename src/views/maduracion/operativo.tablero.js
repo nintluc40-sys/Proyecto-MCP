@@ -526,6 +526,47 @@ export function ignoraDeDesoves(F) {
   return filtrosNoAplicados(F, APLICA_DESOVES);
 }
 
+/* 2026-10-27 (usuario, ronda 8 · tarea 4) · LA TASA DE CÓPULA, tarjeta de 📊 Estado actual con su gráfico (decisiones del
+   usuario: «📊 Estado actual, como indicador» y «Tasa del día + acumulada»). La regla NO es nueva: es la del ⚖️ Saldo (H1 de
+   mad-resumen.js) y la de 🌊 Mareas (operativo.mareas.js), y la base es la suya, `partesConHembras`: cada día, Σ cópulas de
+   los partes de Tanques ÷ Σ hembras que el libro tenía en esos tanques al cierre de ese día × 100; el período, Σ ÷ Σ
+   (cópulas por cada 100 hembra-días).
+   · Un día en que NINGÚN tanque de la GRANJA anota cópulas es un HUECO del registro, no un cero (en la hoja nadie escribe un
+     0): no entra ni en su día ni en el período, y se cuenta. Es de la granja, no del filtro: el 0 de una sala el día en que
+     otras sí anotaron es un 0 de verdad.
+   · El parte de un tanque sin hembras en el libro no cuenta (se cuenta aparte).
+   · Aplican la sala, el tanque, el lote y el código; con lote o código cuentan ENTEROS los tanques que los tienen (una cópula
+     no es de un lote: es la regla de 🌊 Mareas). Lo demás se DICE (`ignora`). */
+const APLICA_COPULA = ['sala', 'tanque', 'lote', 'codigo'];
+/**
+ * @param {Array} base  `partesConHembras(fuentes, diasDeTanque(...))`: { fecha, sala, tanque, copulas, hembras, lotes, codigos }
+ * @returns {{ tasa: number|null, copulas: number, hembras: number, dias: number, huecos: number, sinHembras: number,
+ *   porDia: Map<string, {copulas: number, hembras: number}>, ignora: string[] }}  `hembras` = hembra-días del período
+ */
+export function kpiCopula(base, periodo, F) {
+  const conRegistro = new Set((base || []).filter((b) => b.copulas > 0).map((b) => b.fecha));
+  const porDia = new Map();
+  const huecos = new Set();
+  let sinHembras = 0;
+  for (const b of base || []) {
+    if (!enPeriodo(b.fecha, periodo)) continue;
+    if (!conRegistro.has(b.fecha)) { huecos.add(b.fecha); continue; }
+    if (!salaElegida(b.sala, F) || !tanqueElegido(b.sala, b.tanque, F)) continue;
+    if (hayLote(F) && !(b.lotes || []).some((l) => loteElegido(l, F))) continue;
+    if (hayCodigo(F) && !(b.codigos || []).some((c) => codigoEnFiltro(c, F))) continue;
+    if (!(b.hembras > 0)) { sinHembras++; continue; }
+    const o = porDia.get(b.fecha) || { copulas: 0, hembras: 0 };
+    o.copulas += b.copulas;
+    o.hembras += b.hembras;
+    porDia.set(b.fecha, o);
+  }
+  let copulas = 0;
+  let hembras = 0;
+  for (const o of porDia.values()) { copulas += o.copulas; hembras += o.hembras; }
+  return { tasa: hembras > 0 ? (copulas / hembras) * 100 : null, copulas, hembras, dias: porDia.size, huecos: huecos.size, sinHembras,
+    porDia, ignora: filtrosNoAplicados(F, APLICA_COPULA) };
+}
+
 /* ── EL MAPA DE PLANTA ──────────────────────────────────────── */
 
 export const ESTADO_VACIO = 'Vacío';
