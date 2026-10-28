@@ -340,6 +340,30 @@ const SHORE = 127, CH = [-26, -10], DIKE = [-37, -26];
    arena saldría aplastada 1,9× (revisión de la maqueta, 2026-10-18). `M.sand` sólo lo usa este plano. */
 { const [, zOrilla] = P(0, SHORE + 1); const g = new THREE.Mesh(new THREE.PlaneGeometry(3000, zOrilla + 1500), M.sand); g.rotation.x = -Math.PI / 2; g.position.set(0, -.1, (zOrilla - 1500) / 2); g.receiveShadow = true; M.sand.map = rep(TX.sand, 90, 90 * (zOrilla + 1500) / 3000); scene.add(g); }
 plane(SITE[0], SITE[1], SITE[2], SITE[3], .01, M.site);
+/* Calidad visual · suelo con desgaste (2026-10-27, usuario). El hormigón del predio repite la misma baldosa de 6 m en
+   175 × 88 m y se veía uniforme. Encima va UNA capa sin repetición, una textura para todo el predio: manchas de humedad y
+   desgaste y el borde sucio de las dos vías internas (polvo y aceite que arrastran los vehículos). Es material ILUMINADO,
+   no básico: así las manchas siguen la hora y las sombras como el suelo que tienen debajo (una básica clara brillaría de
+   noche). Su generador aleatorio es propio: no gasta la semilla común (B0). Bajo las vías (a 2 cm) no se ve: la tapan. */
+{
+  let s = 20261027; const al = () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; }, A = (a, b) => a + al() * (b - a);
+  const [x0, z0, x1, z1] = SITE, W = 1024, H = 512, kx = W / (x1 - x0), kz = H / (z1 - z0);
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
+  const mancha = (x, y, r, c) => { const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, c); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); };
+  for (let i = 0; i < 110; i++) mancha(A(0, W), A(0, H), A(18, 85), al() < .72 ? `rgba(92,86,74,${A(.12, .26).toFixed(3)})` : `rgba(246,243,234,${A(.1, .22).toFixed(3)})`);
+  // el borde sucio, a lo largo de cada orilla de las vías: oscuro junto al asfalto y nada a 1,6 m
+  const borde = (xa, za, xb, zb, haciaX, haciaZ) => {
+    const px = (x) => (x - x0) * kx, pz = (z) => (z - z0) * kz, m = 1.6;
+    const gr = g.createLinearGradient(px(xa), pz(za), px(xa + haciaX * m), pz(za + haciaZ * m));
+    gr.addColorStop(0, 'rgba(58,56,52,.38)'); gr.addColorStop(1, 'rgba(58,56,52,0)'); g.fillStyle = gr;
+    const ax = Math.min(xa, xb, xa + haciaX * m), bx = Math.max(xa, xb, xb + haciaX * m), az = Math.min(za, zb, za + haciaZ * m), bz = Math.max(za, zb, zb + haciaZ * m);
+    g.fillRect(px(ax), pz(az), px(bx) - px(ax), pz(bz) - pz(az));
+  };
+  borde(72, 28.4, 72, 89.2, -1, 0); borde(77.6, 28.4, 77.6, 75.2, 1, 0); borde(77.6, 78.6, 77.6, 89.2, 1, 0);   // la calle interior (a lo largo de z)
+  borde(77.6, 75.2, 176, 75.2, 0, -1); borde(77.6, 78.6, 176, 78.6, 0, 1);                                     // la vía hacia el este (a lo largo de x)
+  const t = new THREE.CanvasTexture(cv); t.encoding = THREE.sRGBEncoding; t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  plane(x0, z0, x1, z1, .016, std({ map: t, transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+}
 plane(-60, 89.4, 240, STREET[0] - 1.2, .015, M.gravel);                  // piedra 3/4 entre el cerramiento y la calle
 plane(-60, STREET[0] - 1.2, 240, STREET[0], .03, M.paint);              // bordillo
 plane(-60, STREET[0], 240, STREET[1], .02, M.asphalt);
@@ -436,6 +460,14 @@ const nightMats = [];
    —personas, autos, aves, tintes de los tanques—. Al terminar las áreas la semilla vuelve al estado de las 11 fachadas
    de entonces: hoy la maqueta sale IDÉNTICA y, con más o menos edificios, lo de después ya no cambia. */
 const semillaAntesDeAreas = seed, RND_FACHADAS_DE_REFERENCIA = 11 * 10004;
+/* Calidad visual · materiales (2026-10-27, usuario: «Muros más vivos» y «Tonos de techo»). Los colores de `OTHERS` (plano.js,
+   que vigila plano.test.js) son pasteles casi blancos y, con la luz de la maqueta, todas las fachadas salían iguales: aquí
+   se avivan al pintarlas —el doble de saturación, con tope, y un poco menos de luz— sin tocar el plano. Y cada techo de
+   chapa, que eran todos del mismo gris, toma un tono FIJO elegido por el nombre del edificio (zinc nuevo, envejecido,
+   algo azulado o con óxido): no gasta la semilla común (B0) y no cambia al añadir o quitar áreas. */
+const muroVivo = (hex) => { const c = new THREE.Color(hex), h = {}; c.getHSL(h); c.setHSL(h.h, Math.min(.5, h.s * 2), Math.max(0, h.l - .05)); return '#' + c.getHexString(); };
+const TONOS_DE_TECHO = ['#ffffff', '#d9dcd7', '#dce6ec', '#ecdccb'];
+const tonoDeTecho = (nombre) => { let k = 0; for (const ch of String(nombre)) k = (k * 31 + ch.charCodeAt(0)) % 9973; return TONOS_DE_TECHO[k % TONOS_DE_TECHO.length]; };
 const cil = (x, z, r, h, y0, mat, tumbado) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 16), mat); const [px, pz] = P(x, z); m.position.set(px, y0 + (tumbado ? r : h / 2), pz); if (tumbado) m.rotation.x = Math.PI / 2; m.castShadow = m.receiveShadow = true; others.add(m); return m; };
 const M_SOPLADOR = std({ color: col('#3d6fa0'), roughness: .5, metalness: .3 }), M_ACERO = std({ color: col('#9aa3a8'), roughness: .35, metalness: .7 });
 const M_VIDRIO = std({ color: col('#2c3e48'), roughness: .15, metalness: .4 }), M_PORTON = std({ map: rep(TX.zinc, 1, 1), color: col('#b8c0c4'), roughness: .5, metalness: .4 });
@@ -475,9 +507,9 @@ OTHERS.forEach(([a, b, c, d, h, type, nombre, forma, color]) => {
     [a + w * .35, a + w * .65].forEach((x) => cil(x, b + 3, .28, 2.6, h, M_ACERO));
   }
   if (type === 'bld') {
-    const hex = color, side = windowsTex(hex, false), lit = windowsTex(hex, true);
+    const hex = muroVivo(color), side = windowsTex(hex, false), lit = windowsTex(hex, true);
     const mk = (len) => { const m = std({ map: rep(side, Math.max(1, Math.round(len / 4)), 1), emissiveMap: lit, emissive: col('#ffffff'), emissiveIntensity: 0 }); nightMats.push(m); return m; };
-    const roof = std({ map: rep(TX.zinc, Math.max(1, w / 3), 1), roughness: .5, metalness: .35, normalMap: TXN.zinc, normalScale: new THREE.Vector2(.7, .7) });
+    const roof = std({ map: rep(TX.zinc, Math.max(1, w / 3), 1), color: col(tonoDeTecho(nombre)), roughness: .5, metalness: .35, normalMap: TXN.zinc, normalScale: new THREE.Vector2(.7, .7) });
     const md = mk(dd), mw = mk(w), mats = [md, md, roof, roof, mw, mw];   // C3a · las caras del mismo largo, el mismo material
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, dd), mats); const [x, z] = P(a + w / 2, b + dd / 2); m.position.set(x, h / 2, z); m.castShadow = m.receiveShadow = true; others.add(m);
     pieDeContacto(piesOtras, a, b, c, d, h);

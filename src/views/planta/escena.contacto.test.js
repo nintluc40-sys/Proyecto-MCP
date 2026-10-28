@@ -10,6 +10,9 @@
    · un anillo por pie, con el número exacto de pies (un edificio de más en `OTHERS` suma uno) y la forma de anillo:
      el borde de dentro opaco, el de fuera transparente y fuera del de dentro por su margen;
    · materiales que no escriben profundidad y no ensucian el suelo (transparente, polygonOffset).
+   Y del mismo pedido («Tonos de techo», «Suelo con desgaste»): cada techo de edificio lleva un tono FIJO por su nombre
+   (con un edificio de más en medio de `OTHERS`, los demás no cambian de tono) y sobre el predio hay UNA capa de desgaste,
+   iluminada y sin escribir profundidad.
    ============================================================ */
 import { describe, it, expect, vi } from 'vitest';
 
@@ -93,7 +96,7 @@ function anillos(malla) {
 }
 const piesDeOtras = (otras) => otras.filter((o) => o[5] === 'bld' || o[5] === 'res').length;
 
-describe('🏭 Planta · sombras de contacto al pie de lo construido (calidad visual, 2026-10-27)', { timeout: 120000 }, () => {
+describe('🏭 Planta · calidad visual (2026-10-27): sombras de contacto, tonos de techo y desgaste del suelo', { timeout: 120000 }, () => {
   it('🔴 dos mallas: la de las otras áreas DENTRO de su grupo, la de cerco, módulos y salas en la escena; un anillo por pie', async () => {
     const escena = await montarCon(plano.original);
     const mallas = contactos(escena);
@@ -127,6 +130,37 @@ describe('🏭 Planta · sombras de contacto al pie de lo construido (calidad vi
       expect(Math.min(...zs(dentro)) - Math.min(...zs(fuera))).toBeCloseTo(margen, 3);
       expect(Math.max(...zs(fuera)) - Math.max(...zs(dentro))).toBeCloseTo(margen, 3);
     }
+  });
+
+  it('🔴 cada techo de edificio, con su tono por NOMBRE: un edificio de más en medio no cambia el de los demás', async () => {
+    const techos = (escena) => {
+      const [malla] = contactos(escena).filter((m) => m.parent !== escena), l = [];
+      malla.parent.children.forEach((o) => { if (o.isMesh && Array.isArray(o.material) && o.material.length === 6 && o.geometry.type === 'BoxGeometry') l.push(o.material[2].color.getHexString()); });
+      return l;
+    };
+    const base = techos(await montarCon(plano.original));
+    expect(base.length, 'un techo por edificio de OTHERS').toBe(plano.original.filter((o) => o[5] === 'bld').length);
+    expect(new Set(base).size, 'ya no todos iguales').toBeGreaterThanOrEqual(3);
+    const k = plano.original.findIndex((o) => o[6] === 'Sala de carboys · y sala de UV');
+    const enMedio = plano.original.slice(0, k).filter((o) => o[5] === 'bld').length;
+    const con = techos(await montarCon([...plano.original.slice(0, k), [300, 300, 312, 310, 6, 'bld', 'Edificio de prueba · techo', null, '#e7eef0'], ...plano.original.slice(k)]));
+    expect(con.length).toBe(base.length + 1);
+    expect([...con.slice(0, enMedio), ...con.slice(enMedio + 1)], 'los demás conservan su tono').toEqual(base);
+  });
+
+  it('🔴 una capa de desgaste sobre TODO el predio: iluminada (sigue la hora y las sombras), con su textura, sin escribir profundidad', async () => {
+    const escena = await montarCon(plano.original);
+    const { SITE } = await import('./plano.js');
+    const capas = [];
+    escena.traverse((o) => { const p = o.geometry && o.geometry.parameters; if (o.isMesh && o.geometry.type === 'PlaneGeometry' && o.material.transparent && Math.abs(p.width - (SITE[2] - SITE[0])) < 1e-6 && Math.abs(p.height - (SITE[3] - SITE[1])) < 1e-6) capas.push(o); });
+    expect(capas.length).toBe(1);
+    const [c] = capas;
+    expect(c.material.isMeshStandardMaterial, 'iluminada: una básica clara brillaría de noche').toBe(true);
+    expect(c.material.map && c.material.map.isCanvasTexture).toBe(true);
+    expect(c.material.depthWrite).toBe(false);
+    expect(c.material.polygonOffset).toBe(true);
+    expect(c.receiveShadow).toBe(true);
+    expect(c.position.y).toBeCloseTo(.016, 5);
   });
 
   it('el material no escribe profundidad ni parpadea con el suelo', async () => {
