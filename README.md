@@ -807,9 +807,14 @@ Dos consecuencias que conviene tener presentes al desplegar:
    nubosidad: SESA > MET > NASA (la de NASA llega ~3 meses tarde); sensación térmica, niebla y UV, sólo MET; la radiación,
    sólo NASA (la diaria a ~8 días). Cada fila dice de dónde vino cada grupo («Fuente», «Fuente lluvia», «Fuente
    nubosidad»), y una cifra del día sólo existe si las 24 horas tienen esa variable (con las 13 horas diurnas del
-   aeropuerto, la «media» salía 2–3 °C alta). Activadores: `cadaTresHoras` (METAR + MET) y `nocturno` a las 02:00 (NASA,
-   desde el primer día con hueco); una pasada sin cambios no escribe (esta consulta ligera vería un cambio), y una
-   fuente caída no impide guardar las otras, pero la ejecución termina en error para que Apps Script avise. **Instalar**
+   aeropuerto, la «media» salía 2–3 °C alta). Activadores: `cadaTresHoras` (METAR + MET) y `nocturno` hacia las 02:30
+   (NASA, desde el primer día con hueco); una pasada sin cambios no escribe (esta consulta ligera vería un cambio), y una
+   fuente caída no impide guardar las otras, pero la ejecución termina en error para que Apps Script avise. Casi cada
+   pasada de 3 h trae algo nuevo (MET rehace su pronóstico), así que esta consulta ligera verá el libro cambiado y cada
+   equipo abierto hará una descarga más cada 3 h (aceptado). En el MCP (`core/sheets.js`), las dos hojas tienen su origen
+   propio («Clima» y «Clima horas», por el nombre o por sus columnas) y, como «Marea», **no cuentan para la fecha más
+   reciente** (`applySheets`): el pronóstico la llevaría al futuro y «Clima horas», que se escribe cada 3 h, la dejaría
+   siempre en hoy aunque el último registro del laboratorio fuera de ayer. **Instalar**
    (con la cuenta dueña del libro): script.google.com → Nuevo proyecto → pegar `GAS/Clima.gs` → ⚙ Zona horaria
    «(GMT-05:00) Guayaquil» → ejecutar `probar` (pide las tres fuentes sin escribir) y luego `instalar` (crea las hojas,
    carga el historial y deja los dos activadores; repetirla no duplica nada). La calidad del aire quedó FUERA (decisión

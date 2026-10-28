@@ -75,6 +75,10 @@ export function classifyOrigin(name) {
   if (/microbiolog/i.test(n)) return 'Microbiología';
   if (/calidad\s*de\s*agua/i.test(n)) return 'Calidad de Agua';
   if (/^marea/i.test(n)) return 'Marea';
+  // 🌦 Clima (2026-10-27): las dos hojas que escribe el Apps Script APARTE «MCP · clima» (GAS/Clima.gs). «horas» va
+  // ANTES: si no, la regla de «Clima» se la quedaría. `\b`: «Climatización» no es una de ellas.
+  if (/^clima\s+horas/i.test(n)) return 'Clima horas';
+  if (/^clima\b/i.test(n)) return 'Clima';
   if (/biomol/i.test(n)) return 'Biomol';
   if (/larvicultura|larvi/i.test(n)) return 'Larvicultura';
   // Hojas del Registro reproductivo (Maduración): _SheetOrigin específico para que la
@@ -210,6 +214,10 @@ export function detectSheetName(rows, gid, rawTitle) {
       has((k) => k.includes('elemento'))) return 'Registro_Desinfección';
   if (has((k) => k.includes('pleamar') || k.includes('bajamar')
               || k.includes('fase lunar'))) return 'Marea';
+  // 🌦 Clima (2026-10-27): sus cabeceras son las de GAS/Clima.gs (COL_HORAS y COL_DIAS); ninguna otra pestaña lleva
+  // «Fuente nubosidad» ni «Temp mín (°C)».
+  if (has((k) => k === 'fuente nubosidad') && has((k) => k === 'hora')) return 'Clima horas';
+  if (has((k) => k === 'temp mín (°c)') && has((k) => k === 'tipo')) return 'Clima';
   if (has((k) => k.includes('corrida') || k.includes('módulo') || k.includes('modulo') || k.includes('supervivencia'))) return 'Larvicultura';
   return rawTitle || ('Hoja' + (gid + 1));
 }
@@ -762,6 +770,10 @@ async function fetchViaCsv(ids, avisar = null) {
 }
 
 // ---------- pipeline público ----------
+/** Los orígenes que NO cuentan para la fecha más reciente del store (`latestDateMs`): hojas de referencia del sitio,
+ *  no registros del laboratorio. */
+const FUERA_DEL_RANGO = new Set(['Marea', 'Clima', 'Clima horas']);
+
 /** Aplica un set de hojas { name: rows } al store: aplana las filas, limpia la caché
  *  de fechas, fija globalData/sheetNames/latestDateMs y deriva Mortalidad. NO emite
  *  eventos ni toca el estado de conexión/fingerprint: eso lo decide cada caller
@@ -780,7 +792,9 @@ export function applySheets(sheets) {
   rows.forEach((row) => {
     // La hoja "Marea" trae PREDICCIONES futuras (INOCAR): no deben estirar el rango de
     // fecha global (presets 7/30 días, "última fecha") del resto de vistas operativas.
-    if (row._SheetOrigin === 'Marea') return;
+    // 🌦 2026-10-27 · tampoco las del clima: «Clima» trae el pronóstico de 3 días y «Clima horas» se escribe cada 3 h,
+    // así que la última fecha sería siempre hoy aunque el último registro del laboratorio fuera de ayer.
+    if (FUERA_DEL_RANGO.has(row._SheetOrigin)) return;
     const d = parseAnyDate(getField(row, F.fecha));
     if (d && !isNaN(d) && d.getTime() > latest) latest = d.getTime();
   });

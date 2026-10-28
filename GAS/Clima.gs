@@ -24,7 +24,7 @@
 //
 // ACTIVADORES (los crea `instalar`, que se puede repetir sin duplicarlos):
 //  · `cadaTresHoras` — METAR + MET: las horas de hoy y el pronóstico.
-//  · `nocturno` (02:00) — NASA: rellena huecos, la nubosidad y la radiación que vaya publicando.
+//  · `nocturno` (hacia las 02:30) — NASA: rellena huecos, la nubosidad y la radiación que vaya publicando.
 // Sólo escribe si algo cambió (la consulta ligera del MCP lee la fecha de modificación del libro).
 //
 // Atribución que el MCP muestra: «Datos: METAR SESA (NOAA) · MET Norway · NASA POWER».
@@ -448,7 +448,7 @@ function libro_() { return SpreadsheetApp.openById(CLIMA.libro); }
 function comprobarZona_(ss) {
   var z = ss.getSpreadsheetTimeZone();
   if (z !== CLIMA.zona) throw new Error("El libro está en la zona «" + z + "» y el script escribe en hora de Ecuador (" + CLIMA.zona + ").");
-  if (Session.getScriptTimeZone() !== CLIMA.zona) Logger.log("⚠ El proyecto no está en " + CLIMA.zona + ": el activador nocturno no caerá a las 02:00 de Ecuador.");
+  if (Session.getScriptTimeZone() !== CLIMA.zona) Logger.log("⚠ El proyecto no está en " + CLIMA.zona + ": el activador nocturno no caerá hacia las 02:30 de Ecuador.");
 }
 
 function conCandado_(fn) {
