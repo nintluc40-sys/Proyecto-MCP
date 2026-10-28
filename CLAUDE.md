@@ -34,8 +34,9 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
   `src/sw.test.js`, que lo carga en un ámbito falso y comprueba qué hace con cada petición.
 - `public/registros/engine.js` — **DEUDA TÉCNICA**: monolito heredado embebido de
   decenas de miles de líneas (`wc -l public/registros/engine.js` da la cifra del día). No seguir su
-  estilo. Su plan de retirada es `docs/analisis/04-refactor-plan.md`, pero su cabecera lo declara
-  OBSOLETO: sirve para saber de dónde salió la red de pruebas, no como estado actual.
+  estilo. Su plan de retirada es `docs/analisis/10-plan-engine.md` (2026-10-28, medido: estrangular,
+  no reescribir, y el gemelo `index (8)` en el MISMO cambio); `04-refactor-plan.md` sólo explica de
+  dónde salió la red de pruebas.
   ⚠ Aquí vivía la cifra exacta y caducaba cada pocos días, igual que la del número de
   pruebas en `.github/workflows/deploy.yml`. Se deja el orden de magnitud —que es lo
   único que informa una decisión: «esto es un monolito, no un módulo»— y el comando.

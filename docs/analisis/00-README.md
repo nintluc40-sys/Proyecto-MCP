@@ -10,6 +10,8 @@
 > ⚠ La ruta que dice haber analizado es la del proyecto ANTERIOR, no esta base.
 > ⚠ (2026-10-26) Dice que «No hay documento de estándares»: hoy lo es `CLAUDE.md`. Y su índice sólo
 >   enlaza 01–04: los análisis 05–09 llegaron después (`ls docs/analisis`).
+> ✅ (2026-10-28) El ÚNICO documento VIGENTE de esta carpeta es [`10-plan-engine.md`](10-plan-engine.md), el plan de
+>   retirada de `engine.js`; sustituye al de 04.
 >
 > *(Aviso puesto el 2026-09-02. **Deliberadamente sin cifras**: el aviso de*
 > *`04-refactor-plan.md` escribió las suyas y ha caducado TRES veces. Se nombra la*

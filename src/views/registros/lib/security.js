@@ -3,7 +3,7 @@
    Primer módulo "estrangulado" del monolito public/registros/engine.js.
    Funciones PURAS (sin DOM ni estado) de encoding/validación/sanitización.
    engine.js delega en estas vía el puente window.__rgLib (ver index.js).
-   Ref. plan: docs/analisis/04-refactor-plan.md (Fase C).
+   Salió de la Fase C de docs/analisis/04-refactor-plan.md; el plan vigente es docs/analisis/10-plan-engine.md.
    ============================================================ */
 
 /** Rellena a 2 dígitos: 3 → "03". */

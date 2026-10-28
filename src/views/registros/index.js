@@ -52,7 +52,7 @@ import { resolveDesinfeccionData } from './fichas/desinfeccion.data.js';
 
 // Puente hacia el monolito engine.js (script clásico): expone los módulos ES ya
 // extraídos en window.__rgLib ANTES de cargar el motor, que delega en ellos.
-// Estrangulamiento incremental del monolito (ver docs/analisis/04-refactor-plan.md).
+// Estrangulamiento incremental del monolito (el plan vigente: docs/analisis/10-plan-engine.md).
 const regLib = {
   ...regSecurity,
   ...regModules,

@@ -1411,8 +1411,10 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
 3. **Microbiología · Patología en fresco** espera a que los usuarios estrenen su hoja (nace con su primer envío).
    Cuando lleguen filas, la vista las CUENTA y lo dice («La visualización detallada llega en una tanda posterior»,
    `patologiaAvisoHTML` en `microbiologia/index.js`): su pantalla de detalle está por hacer.
-4. **Deuda técnica.** `public/registros/engine.js` sigue siendo un monolito (`wc -l` da la cifra) y su plan de retirada no
-   tiene versión vigente: `docs/analisis/04-refactor-plan.md` se declara obsoleto. De la misma familia, los módulos más
+4. **Deuda técnica.** `public/registros/engine.js` sigue siendo un monolito (`wc -l` da la cifra). Su plan de retirada
+   es [`docs/analisis/10-plan-engine.md`](docs/analisis/10-plan-engine.md) (2026-10-28): la anatomía medida, lo que no se
+   puede romper, la decisión sobre el gemelo `index (8)` (generarlo desde el repo o seguir a mano) y las tajadas en orden
+   de riesgo; el de `04-refactor-plan.md` y el del artifact del 2026-08-11 caducaron. De la misma familia, los módulos más
    grandes: `maduracion/operativo.view.js`, `microbiologia/index.js`, `biomolecular/index.js` y `supervisor/module.js`.
 
 ## Hecho y vigilado

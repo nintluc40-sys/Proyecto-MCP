@@ -15,8 +15,10 @@
 >
 > **La Fase A está COMPLETA** (ESLint+Prettier, `CLAUDE.md`, Vitest y los tests de
 > `core/dates`, `core/format`, `core/fields` y `core/sheets`: los cuatro existen).
-> **Para `engine.js` manda el plan medido del artifact**, no la Fase C de aquí:
-> `claude.ai/code/artifact/6f887dc8-e2ff-4ae8-b2c4-6795922cd0d6`
+> **Para `engine.js` manda [`10-plan-engine.md`](10-plan-engine.md)** (2026-10-28, medido), no la Fase C de aquí.
+> ⚠ Aquí remitía al plan del artifact `claude.ai/code/artifact/6f887dc8-…` (2026-08-11), y CADUCÓ también: medía
+> otro monolito (menos de la mitad de líneas, ninguna prueba del motor, `index (8)` sin versionar y el GAS por
+> re-desplegar). Lo que se cumplió de él y lo que no, en la §1 del plan nuevo.
 
 # Plan de refactor — Domesticar el monolito `engine.js` + red de seguridad
 
