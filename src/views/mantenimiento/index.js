@@ -13,12 +13,13 @@ import { esc } from '../../core/format.js';
 import {
   MNT_ESTADO, MNT_PROXIMO, MNT_TOLERANCIAS, MNT_EQUIPOS_SHEET, MNT_PLAN_SHEET, MNT_TRAB_SHEET, MNT_LECT_SHEET,
   leerTrabajos, leerLecturas, leerEquipos, leerPlan, horometros, horometroActual, proximos, porUrgencia, resumenLecturas,
-  serie, umbrales, indicadores, mensual, porActividad, anios,
+  serie, umbrales, indicadores, mensual, porActividad, anios, historial, horasReales, hojasExcel,
 } from './mantenimiento.data.js';
+import { toast } from '../../ui/toast.js';
 import './mantenimiento.css';
 
-const vState = { tab: 'semaforo', lecEquipo: '', lecParam: 'corriente', anio: '' };
-const TABS = [['semaforo', '🚦 Semáforo'], ['lecturas', '📈 Lecturas'], ['indicadores', '📊 Indicadores']];
+const vState = { tab: 'semaforo', lecEquipo: '', lecParam: 'corriente', anio: '', histEquipo: '' };
+const TABS = [['semaforo', '🚦 Semáforo'], ['lecturas', '📈 Lecturas'], ['indicadores', '📊 Indicadores'], ['historial', '📜 Historial']];
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 /* Del Excel («Estadísticas»): % preventivo con meta de 80 % o más; disponibilidad en rojo por debajo de 95 %. */
 const META = { preventivo: 80, disponibilidad: 95 };
@@ -211,7 +212,52 @@ function dibujarIndicadores(root, m) {
     plugins: { legend: { position: 'bottom' } } } });
 }
 
-const SECCION = { semaforo: semaforoHTML, lecturas: lecturasHTML, indicadores: indicadoresHTML };
+/* ── 📜 Historial ── */
+function historialHTML(m) {
+  if (vState.histEquipo && !m.equipos.some((e) => e.codigo === vState.histEquipo)) vState.histEquipo = '';
+  const h = historial({ trabajos: m.trabajos, lecturas: m.lecturas, equipo: vState.histEquipo });
+  const eq = new Map(m.equipos.map((e) => [e.codigo, e]));
+  /* El horómetro real y, si el ajuste lo cambió, lo que marcaba el tablero. */
+  const horo = (x) => { if (x.horometro == null) return '—'; const r = horasReales(x.horometro, eq.get(x.equipo), x.fecha);
+    return fmtH(r) + (r !== x.horometro ? ' <span class="mn-muted">(tablero ' + fmtH(x.horometro) + ')</span>' : ''); };
+  const corto = (s, n = 60) => (s.length > n ? '<span title="' + esc(s) + '">' + esc(s.slice(0, n)) + '…</span>' : esc(s));
+  const opts = '<option value="">Todos los equipos</option>' + m.equipos.map((e) => '<option value="' + esc(e.codigo) + '"' + (e.codigo === vState.histEquipo ? ' selected' : '') + '>'
+    + esc(e.codigo + (e.ubicacion ? ' · ' + e.ubicacion : '')) + '</option>').join('');
+  const trab = h.trabajos.length
+    ? '<div class="mn-scroll"><table class="mn-tabla"><thead><tr><th>Fecha</th><th>Equipo</th><th>Tipo</th><th>Actividad</th><th>Horómetro (h)</th>'
+      + '<th>Parada (h)</th><th>Estado</th><th>Costo</th><th>Técnico</th><th>Descripción</th><th>Observaciones</th></tr></thead><tbody>'
+      + h.trabajos.map((t) => '<tr><td>' + dma(t.fecha) + '</td><td><b>' + esc(t.equipo) + '</b></td><td>' + esc(t.tipo) + '</td><td>' + esc(t.actividad) + '</td>'
+        + '<td class="mn-num">' + horo(t) + '</td><td class="mn-num">' + fmtH(t.parada) + '</td><td>' + esc(t.estado) + '</td>'
+        + '<td class="mn-num">' + (t.costo != null ? usd(t.costo) : '—') + '</td><td>' + (esc(t.tecnico) || '—') + '</td>'
+        + '<td>' + corto(t.descripcion) + '</td><td>' + corto(t.observaciones) + '</td></tr>').join('') + '</tbody></table></div>'
+    : '<div class="mn-vacio">Sin trabajos' + (vState.histEquipo ? ' de ' + esc(vState.histEquipo) : '') + '.</div>';
+  const lect = h.lecturas.length
+    ? '<div class="mn-scroll"><table class="mn-tabla"><thead><tr><th>Fecha</th><th>Hora</th><th>Equipo</th><th>Horómetro (h)</th><th>Corriente</th>'
+      + '<th>Presión</th><th>Temp.</th><th>Técnico</th><th>Observaciones</th></tr></thead><tbody>'
+      + h.lecturas.map((l) => '<tr><td>' + dma(l.fecha) + '</td><td>' + (esc(l.hora) || '—') + '</td><td><b>' + esc(l.equipo) + '</b></td>'
+        + '<td class="mn-num">' + horo(l) + '</td><td class="mn-num">' + (l.corriente != null ? fmtH(l.corriente) + ' A' : '—') + '</td>'
+        + '<td class="mn-num">' + (l.presion != null ? fmtH(l.presion) + ' psi' : '—') + '</td>'
+        + '<td class="mn-num">' + (l.temperatura != null ? fmtH(l.temperatura) + ' °C' : '—') + '</td><td>' + (esc(l.tecnico) || '—') + '</td>'
+        + '<td>' + corto(l.observaciones) + '</td></tr>').join('') + '</tbody></table></div>'
+    : '<div class="mn-vacio">Sin lecturas' + (vState.histEquipo ? ' de ' + esc(vState.histEquipo) : '') + '.</div>';
+  return '<section class="card mn-card"><div class="mn-filtros"><select class="mn-sel" data-mn-sel="histEquipo" aria-label="Equipo">' + opts + '</select>'
+    + '<button type="button" class="mn-btn" data-mn-accion="excel">⬇ Excel</button></div>'
+    + '<p class="mn-nota">El Excel lleva todo, no sólo lo filtrado: próximos cambios, lecturas e indicadores calculados, y los trabajos y lecturas con el horómetro real y el del tablero.</p></section>'
+    + '<section class="card mn-card"><h3 class="mn-h3">Trabajos (' + h.trabajos.length + ')</h3>' + trab + '</section>'
+    + '<section class="card mn-card"><h3 class="mn-h3">Lecturas (' + h.lecturas.length + ')</h3>' + lect + '</section>';
+}
+function descargarExcel() {
+  const XLSX = window.XLSX;
+  if (!XLSX) { toast('Exportación no disponible: SheetJS (XLSX) no se cargó. Revisa tu conexión y recarga la página.', 'err'); return; }
+  const m = modelo();
+  if (!m.trabajos.length && !m.lecturas.length) { toast('Aún no hay registros de Mantenimiento en el libro.', 'warn'); return; }
+  const wb = XLSX.utils.book_new();
+  hojasExcel({ ...m, ind: indicadores(m) }).forEach(([nombre, aoa]) => XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), nombre));
+  XLSX.writeFile(wb, 'Mantenimiento_Blowers_' + m.hoy + '.xlsx');
+  toast('📊 Excel descargado: ' + m.trabajos.length + ' trabajo(s) y ' + m.lecturas.length + ' lectura(s).', 'ok', 4000);
+}
+
+const SECCION = { semaforo: semaforoHTML, lecturas: lecturasHTML, indicadores: indicadoresHTML, historial: historialHTML };
 const DIBUJO = { lecturas: dibujarLecturas, indicadores: dibujarIndicadores };
 
 export function mantenimientoView(root) {
@@ -233,6 +279,8 @@ function bind(root) {
   if (root._mnBound) return;
   root._mnBound = true;
   root.addEventListener('click', (e) => {
+    const a = e.target.closest('[data-mn-accion="excel"]');
+    if (a && root.contains(a)) { descargarExcel(); return; }
     const t = e.target.closest('[data-mn-tab]');
     if (!t || !root.contains(t)) return;
     vState.tab = t.dataset.mnTab;

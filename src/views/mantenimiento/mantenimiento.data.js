@@ -286,6 +286,38 @@ export function porActividad(trabajos, plan) {
   });
 }
 
+/* ── ⬇ El Excel de la vista ─────────────────────────────── */
+/** Las hojas del Excel: [nombre, filas (la primera, la cabecera)]. Lo calculado (próximos, lecturas, indicadores) y lo
+    registrado (trabajos y lecturas, del más reciente al más viejo, con el horómetro real y el del tablero). */
+export function hojasExcel({ prox, lec, ind, trabajos, lecturas, equipos }) {
+  const eq = new Map((equipos || []).map((e) => [e.codigo, e]));
+  const v = (x) => (x == null ? '' : x);
+  const desc = (a, b) => -orden(a, b);
+  return [
+    ['Próximos cambios', [['Equipo', 'Actividad', 'Intervalo (h)', 'Intervalo (días)', 'Último cambio', 'Horómetro último cambio', 'Horómetro actual',
+      'Próximo (h)', 'Faltan (h)', 'Próximo (fecha)', 'Faltan (días)', 'Base del cálculo', 'Estado']]
+      .concat(porUrgencia((prox || []).filter((p) => p.estado !== MNT_ESTADO.SIN_PLAN)).map((p) => [p.equipo, p.actividad, v(p.intervaloH), v(p.intervaloD),
+        p.ultimoFecha, v(p.ultimoH), v(p.actualH), v(p.proxH), v(p.faltanH), p.proxF, v(p.faltanD), p.base, p.estado]))],
+    ['Lecturas por equipo', [['Equipo', 'Ubicación', 'Lecturas', 'Última', 'Corriente (A)', 'Prom. corriente', 'Máx. corriente', 'Presión (psi)',
+      'Prom. presión', 'Temperatura (°C)', 'Prom. temperatura', 'Máx. temperatura', 'Carga (%)', 'Estado']]
+      .concat((lec || []).map((r) => { const u = r.ultima || {}; return [r.equipo, r.ubicacion, r.n, u.fecha || '', v(u.corriente), v(r.promedio.corriente),
+        v(r.maximo.corriente), v(u.presion), v(r.promedio.presion), v(u.temperatura), v(r.promedio.temperatura), v(r.maximo.temperatura), v(r.carga), r.estado]; }))],
+    ['Indicadores', [['Equipo', 'Ubicación', 'Horas operadas', 'Preventivos', 'Correctivos', 'Total', '% preventivo', 'Parada total (h)',
+      'Parada por fallas (h)', 'MTBF (h)', 'MTTR (h)', 'Disponibilidad (%)', 'Costo (USD)']]
+      .concat(((ind && ind.porEquipo) || []).map((x) => [x.equipo, x.ubicacion, v(x.horas), x.preventivos, x.correctivos, x.total, v(x.pctPreventivo),
+        x.paradaTotal, x.paradaFallas, v(x.mtbf), v(x.mttr), v(x.disponibilidad), x.costo]))],
+    ['Trabajos', [['Fecha', 'Equipo', 'Tipo', 'Actividad', 'Horómetro real (h)', 'Horómetro del tablero (h)', 'Descripción', 'Repuestos / materiales',
+      'Cantidad', 'Costo (USD)', 'Técnico', 'Hora inicio', 'Hora fin', 'Parada (h)', 'Estado', 'Observaciones', 'Aceite usado (L)', 'ID']]
+      .concat((trabajos || []).map((t) => ({ ...t, hora: t.horaInicio })).sort(desc).map((t) => [t.fecha, t.equipo, t.tipo, t.actividad,
+        v(horasReales(t.horometro, eq.get(t.equipo), t.fecha)), v(t.horometro), t.descripcion, t.repuestos, v(t.cantidad), v(t.costo), t.tecnico,
+        t.horaInicio, t.horaFin, v(t.parada), t.estado, t.observaciones, v(t.aceite), t.id]))],
+    ['Lecturas', [['Fecha', 'Hora', 'Equipo', 'Horómetro real (h)', 'Horómetro del tablero (h)', 'Corriente (A)', 'Presión (psi)', 'Temperatura (°C)',
+      'Técnico', 'Observaciones', 'ID']]
+      .concat((lecturas || []).slice().sort(desc).map((l) => [l.fecha, l.hora, l.equipo, v(horasReales(l.horometro, eq.get(l.equipo), l.fecha)),
+        v(l.horometro), v(l.corriente), v(l.presion), v(l.temperatura), l.tecnico, l.observaciones, l.id]))],
+  ];
+}
+
 /* ── 📜 Historial ───────────────────────────────────────── */
 /** Trabajos y lecturas de un equipo (o de todos), del más reciente al más viejo. */
 export function historial({ trabajos, lecturas, equipo }) {

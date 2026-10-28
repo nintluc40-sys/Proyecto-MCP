@@ -10,7 +10,7 @@ import { describe, it, expect } from 'vitest';
 import {
   MNT_EQUIPOS_SHEET, MNT_PLAN_SHEET, MNT_ESTADO, leerTrabajos, leerLecturas, leerEquipos, leerPlan, horasReales, horometros,
   horometroActual, proximos, porUrgencia, resumenLecturas, serie, indicadores, mensual, porActividad, anios, historial, diaIso,
-  horaHM, numero,
+  horaHM, numero, hojasExcel,
 } from './mantenimiento.data.js';
 
 const T = (fecha, equipo, tipo, actividad, horo, v = {}) => ({ _SheetOrigin: 'Mantenimiento Trabajos', Fecha: fecha, Equipo: equipo,
@@ -210,5 +210,22 @@ describe('Mantenimiento · 📜 historial', () => {
     expect(h.trabajos.map((t) => t.fecha)).toEqual(['2026-10-21', '2026-10-21', '2026-10-06']);
     expect(h.lecturas.map((x) => x.fecha)).toEqual(['2026-10-22', '2026-10-06']);
     expect(historial(modelo()).trabajos).toHaveLength(13);
+  });
+});
+
+describe('Mantenimiento · ⬇ el Excel', () => {
+  it('cinco hojas, cada una con su cabecera; los trabajos con el horómetro real y el del tablero', () => {
+    const m = modelo(LIBRO.concat([T('24/10/2026', 'BLW-09', 'Preventivo', 'Limpieza general', '210')]));
+    const ind = indicadores(m);
+    const h = hojasExcel({ ...m, prox: proximos({ ...m, hoy: '2026-10-24' }), lec: resumenLecturas(m.lecturas, m.equipos), ind });
+    expect(h.map(([n]) => n)).toEqual(['Próximos cambios', 'Lecturas por equipo', 'Indicadores', 'Trabajos', 'Lecturas']);
+    expect(h[0][1][1].slice(0, 2), 'lo más urgente primero').toEqual(['BLW-04', 'Cambio de aceite']);
+    const trab = h[3][1];
+    expect(trab).toHaveLength(15);
+    const cab = trab[0];
+    expect(trab[1][cab.indexOf('Equipo')]).toBe('BLW-09');
+    expect([trab[1][cab.indexOf('Horómetro real (h)')], trab[1][cab.indexOf('Horómetro del tablero (h)')]]).toEqual([543.51, 210]);
+    expect(h[4][1]).toHaveLength(14);
+    expect(h[2][1][0]).toContain('MTBF (h)');
   });
 });

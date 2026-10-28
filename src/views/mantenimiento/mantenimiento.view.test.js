@@ -9,6 +9,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 const graf = vi.hoisted(() => ({ makeChart: vi.fn(() => null) }));
+const toastMock = vi.hoisted(() => vi.fn());
+vi.mock('../../ui/toast.js', () => ({ toast: toastMock }));
 vi.mock('../../core/charts.js', () => ({ destroyAllCharts: () => {}, makeChart: graf.makeChart }));
 const { store } = await import('../../core/store.js');
 const { mantenimientoView } = await import('./index.js');
@@ -154,5 +156,49 @@ describe('Mantenimiento · 📊 Indicadores', () => {
     const cfg = graf.makeChart.mock.calls.at(-1)[1];
     expect(cfg.type).toBe('bar');
     expect(cfg.data.datasets.map((d) => d.data[9])).toEqual([2, 2, 0]);
+  });
+});
+
+describe('Mantenimiento · 📜 Historial', () => {
+  const abrir = (rows) => { pintar(rows); root.querySelector('[data-mn-tab="historial"]').click(); };
+
+  it('trabajos y lecturas del más reciente al más viejo, y el filtro por equipo', () => {
+    abrir(LIBRO);
+    const tablas = root.querySelectorAll('.mn-tabla');
+    expect(tablas).toHaveLength(2);
+    expect(root.textContent).toContain('Trabajos (2)');
+    const sel = root.querySelector('[data-mn-sel="histEquipo"]');
+    sel.value = 'BLW-02';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(root.textContent).toContain('Trabajos (1)');
+    const fechas = [...root.querySelectorAll('.mn-tabla')[1].querySelectorAll('tbody tr')].map((tr) => tr.children[0].textContent);
+    expect(fechas).toEqual(['23/10/2026', '22/10/2026', '06/10/2026']);
+  });
+
+  it('🔴 el horómetro del BLW-09 leído después de su ajuste se enseña en horas reales, con lo del tablero al lado', () => {
+    abrir(LIBRO.concat([E('BLW-09', { 'Ajuste horómetro (h)': '333,51', 'Ajuste desde': '23/10/2026' }), L('24/10/2026', 'BLW-09', '210')]));
+    const sel = root.querySelector('[data-mn-sel="histEquipo"]');
+    sel.value = 'BLW-09';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(root.textContent, 'el BLW-09 no tiene trabajos').toContain('Sin trabajos de BLW-09');
+    const fila = [...[...root.querySelectorAll('.mn-tabla')].at(-1).querySelectorAll('tbody tr')].find((tr) => tr.children[2].textContent === 'BLW-09');
+    expect(fila.children[3].textContent).toBe('543,51 (tablero 210)');
+  });
+
+  it('⬇ Excel: sin SheetJS lo dice; con él escribe las cinco hojas', () => {
+    abrir(LIBRO);
+    const avisos = [];
+    toastMock.mockImplementation((t) => avisos.push(t));
+    delete window.XLSX;
+    root.querySelector('[data-mn-accion="excel"]').click();
+    expect(avisos.at(-1)).toContain('Exportación no disponible');
+    const hojas = [];
+    let archivo = '';
+    window.XLSX = { utils: { book_new: () => ({}), aoa_to_sheet: (a) => a, book_append_sheet: (_wb, _ws, n) => hojas.push(n) }, writeFile: (_wb, n) => { archivo = n; } };
+    root.querySelector('[data-mn-accion="excel"]').click();
+    expect(hojas).toHaveLength(5);
+    expect(archivo).toMatch(/^Mantenimiento_Blowers_\d{4}-\d{2}-\d{2}\.xlsx$/);
+    expect(avisos.at(-1)).toContain('Excel descargado');
+    delete window.XLSX;
   });
 });

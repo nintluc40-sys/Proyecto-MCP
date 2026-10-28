@@ -45,6 +45,10 @@
 .mn-filtros { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
 .mn-sel { padding: 6px 10px; border-radius: 8px; border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-text); font: inherit; font-size: 13px; }
 .mn-graf { position: relative; height: 280px; }
+.mn-btn { padding: 6px 14px; border-radius: 8px; border: 1.5px solid var(--c-brand-600); background: var(--c-surface); color: var(--c-brand-600);
+  font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.mn-btn:hover { background: var(--c-brand-600); color: #fff; }
+.mn-btn:focus-visible { outline: 2px solid var(--c-brand-600); outline-offset: 2px; }
 .mn-graf--bajo { height: 220px; margin-bottom: 10px; }
 
 /* Semáforo */

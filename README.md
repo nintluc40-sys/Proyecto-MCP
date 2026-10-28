@@ -372,6 +372,21 @@ volver a abrir esto, esto es lo que ya se midió:
   `…/?qr=gerencia` es la página con su **QR de acceso** («🔗 Compartir acceso»). Vive SÓLO en la web: **no va a
   `index (8)`** (excepción expresa a los dos destinos). `three` va FIJO en **0.128.0** y la vista queda **fuera de la
   precarga** (`ENTRADAS_FUERA_DE_PRECACHE` en `vite.config.js`): sólo la descarga quien la abre.
+- **Mantenimiento** (🔧, 2026-10-28): los blowers Kaeser (BLW-01…BLW-11), a partir del Excel
+  «Registro_Blowers_Kaeser» de Proyectos Mantenimiento. La **captura** es el módulo 16 de 📝 Registros («🔧 Mantenim.»,
+  con su PIN): 📋 **Ronda** (lo que marca el tablero de cada equipo: horómetro, corriente, presión, temperatura) y 🔧
+  **Trabajo** (una intervención: tipo, actividad del plan, horómetro, repuestos, costo, parada, estado), que escriben
+  **`Mantenimiento Lecturas`** y **`Mantenimiento Trabajos`** por su ID (el último, sin merge). La ficha técnica la llena
+  el área A MANO en **`Mantenimiento Equipos`** (ubicación, en servicio o stand by, ajuste del horómetro y desde cuándo,
+  referencias de lectura, plena carga) y **`Mantenimiento Plan`** (intervalo de cada actividad en horas y en días, y el
+  primer cambio): el repo es público, así que series y ubicaciones no viven en el código. La **vista** la ve el rol
+  **Mantenimiento** (🛠️, aterriza en ella; ve también Registros) y Administrativo: 🚦 Semáforo y próximos cambios
+  (PRÓXIMO a ≤ 100 h o ≤ 7 días; lo nunca hecho, desde 0 h o desde su primer cambio), 📈 Lecturas contra la referencia
+  de cada equipo (+10 % A, +15 % psi, +10 °C) con su curva, 📊 Indicadores (MTBF, MTTR, disponibilidad, % preventivo,
+  mes a mes, por actividad) y 📜 Historial con su Excel. El técnico anota lo del **tablero** y la vista le suma el ajuste
+  de su equipo desde su fecha (el BLW-09 lleva +333,51 h). Las cuatro hojas no mueven la «última fecha» de las vistas
+  de producción. Lógica pura en `src/views/mantenimiento/mantenimiento.data.js` y, la de la ficha, en
+  `src/views/registros/lib/ficha-mantenimiento.schema.js` (con su gemelo en el motor, atado por paridad).
 - **Registros**: fichas de captura (estrangulamiento gradual del monolito
   `public/registros/engine.js`) que escriben al Sheet vía Google Apps Script.
   Incluye el **registro operativo de Maduración**, que tiene su propia sección aquí abajo
