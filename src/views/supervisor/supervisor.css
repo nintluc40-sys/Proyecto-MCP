@@ -449,6 +449,10 @@ th.sv-sie-proy { white-space: nowrap; }
 .sv-marea-months { display: flex; gap: 6px; flex-wrap: wrap; }
 .sv-marea-mbtn { padding: 4px 12px; border-radius: 14px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
 .sv-marea-mbtn.is-on { background: color-mix(in srgb, var(--c-brand) 14%, transparent); border-color: var(--c-brand); color: var(--c-brand); }
+/* 2026-10-28 · En oscuro, el teal de marca sobre su propio 14 % no se leía (texto 2,06:1 y borde 2,24:1 sobre la tarjeta
+   del modal): lleva el mismo par que los otros teal del tema oscuro de este archivo (.sv-tras-filtros-n). Lo usan Mareas,
+   su Correlación y el modal de 🌦 Clima; lo vigila mareaMesContraste.test.js. */
+[data-theme="dark"] .sv-marea-mbtn.is-on { background: #0f3b3f; border-color: #7fe3d4; color: #7fe3d4; }
 /* Selector de mes sin efecto (Correlación · todo el periodo): atenuado y deshabilitado. */
 .sv-marea-mbtn.is-inert { opacity: .38; cursor: default; }
 .sv-marea-daynav { display: flex; align-items: center; gap: 6px; }
