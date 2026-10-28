@@ -920,8 +920,15 @@ for (let i = 0; i < 9; i++) {
 M.waterL.envMapIntensity = M.waterM.envMapIntensity = .25 * ENV_REFLEJO;
 
 /* ---------- Hora del día ---------- */
+/* Calidad visual · luz y contraste (2026-10-27, usuario): de día la luz ambiente baja de .6 a .32, el sol sube de 1,5 a 1,8
+   y la exposición, de 1 a .9. Con el sol a ~58° (las 10:00 a 2° S) lo horizontal —techos, suelo y el agua de los tanques,
+   cuyo color es el dato de su estado— recibe casi lo mismo; lo que cambia es lo que mira lejos del sol y lo que queda a la
+   sombra: muros y sombras se oscurecen y los volúmenes se leen. La exposición algo más baja saca los colores del tramo
+   alto del tono ACES, donde se lavaban a pastel. Medido en la vista general (Chrome, Intel UHD): contraste 50,7 → 55,1,
+   píxeles casi blancos 4,6 % → 2,2 %; los colores de estado se distinguen igual (algo más saturados). Tarde y noche, sin
+   cambios. Con .38 / 1,75 / 1 el contraste sólo subía a 53,3: no se notaba. */
 const TOD = {
-  day: { sun: [-55, 140, 75], sunI: 1.5, sunC: '#fff1dc', hemiI: .6, sky: ['#5f9fd8', '#cfe3ee', '#e5dccb'], skySun: '#fff4dc', exp: 1.0, lights: 0 },
+  day: { sun: [-55, 140, 75], sunI: 1.8, sunC: '#fff1dc', hemiI: .32, sky: ['#5f9fd8', '#cfe3ee', '#e5dccb'], skySun: '#fff4dc', exp: .9, lights: 0 },
   dusk: { sun: [-150, 30, 175], sunI: 1.15, sunC: '#ffad73', hemiI: .5, sky: ['#3f5f9a', '#f2b487', '#c99a76'], skySun: '#ffb070', exp: 1.0, lights: .55 },
   night: { sun: [70, 110, -40], sunI: .22, sunC: '#a9bdff', hemiI: .16, sky: ['#030914', '#14223f', '#0b0f17'], skySun: '#20304f', exp: 1.25, lights: 1 },
 };
