@@ -344,16 +344,23 @@ plane(SITE[0], SITE[1], SITE[2], SITE[3], .01, M.site);
    175 × 88 m y se veía uniforme. Encima va UNA capa sin repetición, una textura para todo el predio: manchas de humedad y
    desgaste y el borde sucio de las dos vías internas (polvo y aceite que arrastran los vehículos). Es material ILUMINADO,
    no básico: así las manchas siguen la hora y las sombras como el suelo que tienen debajo (una básica clara brillaría de
-   noche). Su generador aleatorio es propio: no gasta la semilla común (B0). Bajo las vías (a 2 cm) no se ve: la tapan. */
+   noche). Su generador aleatorio es propio: no gasta la semilla común (B0). Donde están las dos vías internas es
+   transparente (abajo). */
 {
   let s = 20261027; const al = () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; }, A = (a, b) => a + al() * (b - a);
   const [x0, z0, x1, z1] = SITE, W = 1024, H = 512, kx = W / (x1 - x0), kz = H / (z1 - z0);
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
   const mancha = (x, y, r, c) => { const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, c); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); };
   for (let i = 0; i < 110; i++) mancha(A(0, W), A(0, H), A(18, 85), al() < .72 ? `rgba(92,86,74,${A(.12, .26).toFixed(3)})` : `rgba(246,243,234,${A(.1, .22).toFixed(3)})`);
+  const px = (x) => (x - x0) * kx, pz = (z) => (z - z0) * kz;
+  // sobre el asfalto, nada: las vías van sólo 4 mm por encima y, vistas de lado, la capa asomaba sobre ellas (medido en
+  // Chrome; su polygonOffset la acerca a la cámara). Transparente ahí, no depende de la precisión de la profundidad.
+  g.save(); g.globalCompositeOperation = 'destination-out'; g.fillStyle = '#000';
+  [[72, 28.4, 77.6, 89.2], [76, 75.2, 176, 78.6]].forEach(([a, b, c, d]) => g.fillRect(px(a), pz(b), px(c) - px(a), pz(d) - pz(b)));
+  g.restore();
   // el borde sucio, a lo largo de cada orilla de las vías: oscuro junto al asfalto y nada a 1,6 m
   const borde = (xa, za, xb, zb, haciaX, haciaZ) => {
-    const px = (x) => (x - x0) * kx, pz = (z) => (z - z0) * kz, m = 1.6;
+    const m = 1.6;
     const gr = g.createLinearGradient(px(xa), pz(za), px(xa + haciaX * m), pz(za + haciaZ * m));
     gr.addColorStop(0, 'rgba(58,56,52,.38)'); gr.addColorStop(1, 'rgba(58,56,52,0)'); g.fillStyle = gr;
     const ax = Math.min(xa, xb, xa + haciaX * m), bx = Math.max(xa, xb, xb + haciaX * m), az = Math.min(za, zb, za + haciaZ * m), bz = Math.max(za, zb, zb + haciaZ * m);
