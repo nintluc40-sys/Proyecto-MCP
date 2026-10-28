@@ -198,6 +198,32 @@ describe('Larvicultura · las seis fichas · pegar un bloque', () => {
     }
   });
 
+  /* 2026-10-28 (ronda 10, auditoría) · tres defectos del pegado en Calidad de Agua: la observación votaba la convención
+     («150.000» → 150), el Estadío pegado no rehacía el menú de Color (sólo `input`, y aguaSyncRowColor escucha `change`) y
+     el texto entraba entero por encima de su `maxlength` (el envío lo cortaba sin avisar). */
+  it('🔴 Calidad de Agua: una fila entera con su observación; el Estadío rehace el menú de Color; los números, intactos', () => {
+    pinta('calagua');
+    const est = cel('calagua', 'e_0');
+    est.value = 'Z3'; est.dispatchEvent(new Event('change', { bubbles: true }));
+    const colores = () => [...cel('calagua', 'tr_0').options].map((o) => o.value);
+    expect(colores(), 'control: el menú de Z3 no tiene el color de M2').not.toContain('Oliva parduzco');
+    pegar(est, 'M2\t150.000\tOliva parduzco\t5\t10\t20\tAgua turbia, con espuma.\t12');
+    expect(['e_0', 'cm_0', 'tr_0', 'ep_0', 'sc_0', 'rc_0', 'ob_0', 'tn_0'].map((n) => cel('calagua', n).value))
+      .toEqual(['M2', '150000', 'Oliva parduzco', '5', '10', '20', 'Agua turbia, con espuma.', '12']);
+    expect(avisos.at(-1)).toMatchObject({ tipo: 'ok' });
+  });
+
+  it('🔴 un texto más largo que su casilla entra RECORTADO a su máximo, y se dice', () => {
+    pinta('calagua');
+    const ob = cel('calagua', 'ob_0');
+    expect(ob.maxLength, 'control: la casilla tiene su tope').toBe(200);
+    pegar(ob, 'x'.repeat(250) + '\t12');
+    expect(ob.value.length).toBe(200);
+    expect(cel('calagua', 'tn_0').value).toBe('12');
+    expect(avisos.at(-1).tipo).toBe('warn');
+    expect(avisos.at(-1).msg).toContain('1 texto(s) recortado(s) a su largo máximo');
+  });
+
   it('un número suelto en una celda numérica se normaliza; en una de texto, el pegado es el del navegador', () => {
     pinta('despacho');
     const ev1 = pegar(cel('despacho', 'pgm_0'), '1,25');
@@ -240,6 +266,9 @@ describe('Larvicultura · las seis fichas · los números pegados', () => {
     expect(C(['0,125'])).toBe('es');         // con cero delante no es ambiguo: es la decimal
     expect(C(['4.300', '4.100', '12', ''])).toBe(null);
     expect(C(['28,4', '28.4'])).toBe(null);
+    // 2026-10-28 · sólo votan las cifras: un texto con comas y punto no es una pista
+    expect(C(['Agua turbia, con espuma.', '150.000'])).toBe(null);
+    expect(C(['Espuma, suciedad, turbia', '28,4'])).toBe('es');
   });
   it('lo que no es un número da null', () => {
     for (const s of ['n/d', '1.23.4', '12a', '—', '1,2,3']) expect(N(s, '.'), s).toBe(null);

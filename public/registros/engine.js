@@ -26901,6 +26901,9 @@ function _stdConvencion(textos){
   let es = 0, en = 0;
   (textos || []).forEach(function(raw){
     const s = String(raw == null ? "" : raw).replace(/\s/g, "").replace(/%$/, "");
+    // 2026-10-28 · sólo votan las cifras: un texto como «Agua turbia, con espuma.» votaba «en» y el «150.000» del mismo
+    // bloque se pegaba como 150, sin aviso.
+    if(!/^-?[\d.,]+$/.test(s)) return;
     const comas = (s.match(/,/g) || []).length, puntos = (s.match(/\./g) || []).length;
     if(comas && puntos){ if(s.lastIndexOf(",") > s.lastIndexOf(".")) es++; else en++; }
     else if(puntos > 1) es++;
@@ -26928,30 +26931,38 @@ function _stdNumPegado(raw, conv){
   }
   return /^-?\d+(\.\d+)?$/.test(s) ? String(Number(s)) : null;   // «4.300» → «4.3», «028» → «28»
 }
-/** Escribe `raw` en `ctl` con las reglas de arriba; false si no se pudo (no es un número, o no es una de sus opciones). */
+/** Escribe `raw` en `ctl` con las reglas de arriba; false si no se pudo (no es un número, o no es una de sus opciones); 2 si
+ *  entró RECORTADO a su `maxlength` (2026-10-28: escribir por código no lo respeta, y el envío lo cortaba sin avisar). */
 function _stdSetVal(ctl, raw, conv){
-  let v = String(raw == null ? "" : raw).trim();
+  let v = String(raw == null ? "" : raw).trim(), recortado = false;
   if(ctl.tagName === "INPUT" && ctl.type === "number"){
     v = _stdNumPegado(v, conv);
     if(v === null) return false;
   } else if(ctl.tagName === "SELECT" && v !== ""){
     const w = v.toLowerCase();
     if(!Array.prototype.some.call(ctl.options, function(o){ return o.value.toLowerCase() === w || (o.text || "").toLowerCase() === w; })) return false;
+  } else if(ctl.maxLength > 0 && v.length > ctl.maxLength){
+    v = v.slice(0, ctl.maxLength); recortado = true;
   }
   _gselSetVal(ctl, v);
-  return true;
+  /* 2026-10-28 · y `change`, como al teclear y salir de la celda (un SELECT ya lo dispara): el menú de Color de Calidad de
+     Agua se rehace con el Estadío en su `change` (aguaSyncRowColor), y sin él el color del MISMO bloque se descartaba. */
+  if(ctl.tagName !== "SELECT") ctl.dispatchEvent(new Event("change", {bubbles:true}));
+  return recortado ? 2 : true;
 }
-function _stdAvisoPegado(n, malos, fuera){
+function _stdAvisoPegado(n, malos, fuera, cortos){
   const extra = (malos ? " · " + malos + " no eran números (u opciones de la celda) y no se pegaron" : "")
-    + (fuera ? " · " + fuera + " fila(s) no caben en la ficha" : "");
-  toast("📋 Pegado en " + n + " celda(s)" + extra, (malos || fuera) ? "warn" : "ok", (malos || fuera) ? 5500 : 1800);
+    + (fuera ? " · " + fuera + " fila(s) no caben en la ficha" : "")
+    + (cortos ? " · " + cortos + " texto(s) recortado(s) a su largo máximo" : "");
+  const aviso = malos || fuera || cortos;
+  toast("📋 Pegado en " + n + " celda(s)" + extra, aviso ? "warn" : "ok", aviso ? 5500 : 1800);
 }
 /** Un valor en el rango seleccionado de una de las seis fichas (lo llama _gselPasteH). */
 function _stdRellenar(ctls, val){
-  let n = 0, malos = 0;
+  let n = 0, malos = 0, cortos = 0;
   const conv = _stdConvencion([val]);
-  gridEnLote(function(){ ctls.forEach(function(c){ if(_stdSetVal(c, val, conv)) n++; else malos++; }); });
-  _stdAvisoPegado(n, malos, 0);
+  gridEnLote(function(){ ctls.forEach(function(c){ const r = _stdSetVal(c, val, conv); if(r){ n++; if(r === 2) cortos++; } else malos++; }); });
+  _stdAvisoPegado(n, malos, 0, cortos);
 }
 /** La celda escribible de una de las seis fichas: { tbody, tr, td, r, c, el }; null si no es una. */
 function _stdCelda(el){
@@ -26974,7 +26985,7 @@ function stdGridPaste(ev){
   ev.preventDefault();
   const filas = norm.split("\n").map(function(l){ return l.split("\t"); });
   const conv = _stdConvencion([].concat.apply([], filas));   // la pista de UN número vale para todo el bloque
-  let n = 0, malos = 0, fuera = 0;
+  let n = 0, malos = 0, fuera = 0, cortos = 0;
   gridEnLote(function(){
     filas.forEach(function(celdas, dr){
       const tr = info.tbody.rows[info.r + dr];
@@ -26982,11 +26993,12 @@ function stdGridPaste(ev){
       celdas.forEach(function(raw, dc){
         const ctl = _gselEditable(tr.cells[info.c + dc]);
         if(!ctl) return;                      // la que no se escribe conserva lo suyo: su dato se descarta
-        if(_stdSetVal(ctl, raw, conv)) n++; else malos++;
+        const r = _stdSetVal(ctl, raw, conv);
+        if(r){ n++; if(r === 2) cortos++; } else malos++;
       });
     });
   });
-  _stdAvisoPegado(n, malos, fuera);
+  _stdAvisoPegado(n, malos, fuera, cortos);
 }
 /** Flechas e Intro en las seis fichas, como en Biomol (madGridKey): de celda escribible en celda escribible. */
 function stdGridKey(ev){
