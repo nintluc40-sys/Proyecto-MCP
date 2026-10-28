@@ -140,6 +140,8 @@ const noAplicaVivos = (ctx, F) => { const g = graficoVivos(ctx.serie, ctx.period
  * El catálogo, en su orden y por grupo. Cada variable:
  *   valor(ctx, F, desde, hasta) → número o null, con la regla de su tarjeta;
  *   tipo: 'tasa' | 'nivel' | 'flujo' | 'promedio' (cómo se lee y cómo se suaviza);
+ *   suaviza (opcional): 'flujo' si su valor en una ventana CRECE con la ventana aunque se lea como tasa (la mortalidad
+ *     acumulada): su media móvil es entonces el valor de los 7 días ÷ 7, en la escala de sus puntos de un día;
  *   comparar: por qué se puede comparar ('lote', 'sala'): lo que su regla sí separa;
  *   ignora(F, ctx): los filtros que su regla no aplica (se dicen); noAplica(ctx, F): por qué no hay serie, si no la hay.
  */
@@ -173,8 +175,10 @@ export const VARIABLES = [
   { clave: 'machos', grupo: 'Población', etiqueta: 'Vivos ♂', unidad: 'machos', tipo: 'nivel', comparar: ['lote', 'sala'],
     valor: vivosAl('machos'), ignora: () => [], noAplica: noAplicaVivos },
   /* La regla de la tarjeta (`graficoMortalidad`): sin sala, la TASA del Saldo entre el cierre de la víspera del rango y
-     su último cierre; con sala o tanque, las muertes REGISTRADAS en los partes (un flujo). El rótulo lo dice. */
-  { clave: 'mortalidad', grupo: 'Población', etiqueta: 'Mortalidad', unidad: '% (sin sala) · muertes (con sala)', tipo: 'tasa', comparar: ['lote', 'sala'],
+     su último cierre; con sala o tanque, las muertes REGISTRADAS en los partes (un flujo). El rótulo lo dice.
+     2026-10-28 · las dos ACUMULAN con la ventana (la de 7 días es unas 7 veces la de un día): su media móvil se suaviza
+     como un flujo (÷ 7). Como tasa, la línea de 7 días salía ~7× por encima de sus puntos, en el mismo eje. */
+  { clave: 'mortalidad', grupo: 'Población', etiqueta: 'Mortalidad', unidad: '% (sin sala) · muertes (con sala)', tipo: 'tasa', suaviza: 'flujo', comparar: ['lote', 'sala'],
     valor: (ctx, F, desde, hasta) => {
       const g = graficoMortalidad(ctx.serie, { desde, hasta }, F, ctx.partes);
       if (!g.aplica) return null;
@@ -277,9 +281,9 @@ export function evolucion(ctx, op = {}) {
     if (agrupar === 'dia' && op.movil !== false) {
       movil = tramos.map((t, k) => {
         if (k < 6) return null;
-        const desde = tramos[k - 6].desde;
-        if (l.v.tipo === 'tasa') return valor(desde, t.hasta);
-        if (l.v.tipo === 'flujo') { const s = valor(desde, t.hasta); return s === null ? null : s / 7; }
+        const desde = tramos[k - 6].desde, suave = l.v.suaviza || l.v.tipo;
+        if (suave === 'tasa') return valor(desde, t.hasta);
+        if (suave === 'flujo') { const s = valor(desde, t.hasta); return s === null ? null : s / 7; }
         const vs = datos.slice(k - 6, k + 1).filter((x) => x !== null);
         return vs.length ? vs.reduce((a, x) => a + x, 0) / vs.length : null;
       });

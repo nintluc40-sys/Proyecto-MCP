@@ -237,6 +237,19 @@ describe('📈 Evolución · ver dobles, media móvil, resumen y notas', () => {
     expect(ev({ a: 'copula', agrupar: 'semana' }, SIN).series[0].movil, 'sólo por día').toBeNull();
   });
 
+  /* 2026-10-28 (ronda 10, auditoría) · la mortalidad se lee como tasa pero ACUMULA con la ventana: la de 7 días es unas 7
+     veces la de un día. Como tasa, su media móvil salía ~7× por encima de sus puntos, en el mismo eje y en el Excel. */
+  it('🔴 la media móvil de la MORTALIDAD es la de sus 7 días ÷ 7, en la escala de sus puntos (sin sala y con sala)', () => {
+    for (const [Fx, campo] of [[SIN, 'pct'], [F({ sala: 'Sala 1' }), 'muertos']]) {
+      const R = ev({ a: 'mortalidad' }, Fx);
+      const k = R.tramos.findIndex((t) => t.desde === '2026-09-18');   // la ventana del 12 al 18/09 lleva las bajas del 15/09
+      const ventana = { desde: R.tramos[k - 6].desde, hasta: R.tramos[k].hasta };
+      const deLaVentana = kpiMortalidad(SERIE, ventana, Fx, PARTES).periodo[campo];
+      expect(deLaVentana, campo).toBeGreaterThan(0);
+      expect(R.series[0].movil[k], campo).toBeCloseTo(deLaVentana / 7, 10);
+    }
+  });
+
   it('el resumen: puntos con dato, mínimo y máximo con su tramo, primero, último, cambio y el total del período', () => {
     const R = ev({ a: 'desoves', agrupar: 'semana' }, SIN);
     const x = R.resumen[0];
