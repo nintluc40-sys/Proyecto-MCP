@@ -573,6 +573,12 @@ describe('Maduración · tablero · las salas con lo del Saldo, por lote (0f · 
     expect(s.cargaVolumetrica).toEqual({ prom: prom('cargaVolumetrica'), min: Math.min(...t.map((x) => x.cargaVolumetrica)), max: Math.max(...t.map((x) => x.cargaVolumetrica)), n: 2 });
     expect(s.cargaMetrica.min < s.cargaMetrica.max, 'control: los dos tanques cargan distinto').toBe(true);
     expect(loteEn('Sala 5', 'QX').saldo.cargaMetrica.n, 'la Sala 5 cuenta sólo su tanque').toBe(1);
+    // 2026-10-28 (usuario: «como la biomasa») · con UN tanque elegido, sus cargas son las de ESE tanque, no las de la sala
+    const uno = t[0], r2 = (x) => Math.round(x * 100) / 100;
+    const s1 = tarjetasDeSalas(MS, normalizarFiltro({ sala: 'Sala 1', tanque: String(uno.tanque) }))
+      .find((x) => x.sala === 'Sala 1').lotes.find((l) => l.lote === 'QX').saldo;
+    expect(s1.cargaMetrica).toEqual({ prom: r2(uno.cargaMetrica), min: uno.cargaMetrica, max: uno.cargaMetrica, n: 1 });
+    expect(s1.cargaVolumetrica).toEqual({ prom: r2(uno.cargaVolumetrica), min: uno.cargaVolumetrica, max: uno.cargaVolumetrica, n: 1 });
   });
 
   it('🔴 la mortalidad es la del Saldo (acumulada y del último día), y se dice si el lote está en más de una sala', () => {

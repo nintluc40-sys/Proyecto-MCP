@@ -860,7 +860,8 @@ function variableDeSala(filasSala, sala, columnas, id, R, hasta) {
  *  🆕 2026-10-25 (auditoría de las tareas 7–12, usuario) · esos pesos son los de REFERENCIA de cada tanque donde está
  *  (`pesosDeReferencia`, los de su carga), ponderados por SUS animales en cada uno: antes, el peso medio del lote entero.
  *  🆕 2026-10-28 · y los de las MISMAS posiciones que sus vivos (`F`, el filtro de la tarjeta): con un tanque elegido, la
- *  biomasa multiplicaba sus vivos en ese tanque por el peso medio de TODOS sus tanques de la sala. */
+ *  biomasa multiplicaba sus vivos en ese tanque por el peso medio de TODOS sus tanques de la sala. Y las cargas, las de
+ *  los tanques ELEGIDOS (usuario: «como la biomasa»): con un tanque, la suya, no el promedio de toda la sala. */
 function saldoDeLoteEnSala(L, sala, l, M, F) {
   const r2 = (n) => Math.round(n * 100) / 100;
   const resume = (vals) => {
@@ -872,7 +873,7 @@ function saldoDeLoteEnSala(L, sala, l, M, F) {
     return { mortAcum: '', mortDia: '', mortDiaEstado: '', fechaDia: '', variasSalas: false, cargaMetrica: resume([]), cargaMetricaEstado: '',
       cargaVolumetrica: resume([]), cargaVolumetricaEstado: '', biomasa: '' };
   }
-  const tanques = (L.tanques || []).filter((t) => t.sala === sala);
+  const tanques = (L.tanques || []).filter((t) => t.sala === sala && (!F || tanqueElegido(t.sala, t.tanque, F)));
   const refs = pesosDeReferencia(M);
   const suyas = (((M || {}).libro || {}).posiciones || [])
     .filter((p) => p.lote === l.lote && p.sala === sala && vivo(p) && (!F || posicionEnFiltro(p, F)));
