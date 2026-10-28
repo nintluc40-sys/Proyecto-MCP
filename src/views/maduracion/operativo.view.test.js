@@ -416,6 +416,17 @@ describe('Maduración · operativo · 0f · 6 · 🏠 Salas con lo del Saldo por
     expect([v('Sala 5', 'QW', 'cvol'), v('Sala 5', 'QW', 'cmet'), v('Sala 5', 'QW', 'bio')]).toEqual(['—', '—', '—']);
   });
 
+  /* 2026-10-28 (ronda 10, auditoría) · el peso «… del lote» lleva la fecha de OTRO tanque: en el detalle de la sala se dice,
+     como el de Ingreso. QD, en el t16 de la Sala 2, no tiene peso propio: el de sus machos es el de QA en la Sala 1. */
+  it('🔴 el peso «… del lote» (pesado en OTRO tanque) va marcado en el detalle de la sala', async () => {
+    await montar(PLANTA_S);
+    abrirSalas();
+    click(root.querySelector('[data-mop-sala="Sala 2"]'));
+    const tr = [...root.querySelectorAll('.mop-detalle tbody tr')].find((x) => x.cells[0].textContent.trim() === '16');
+    expect(tr.textContent).toMatch(/♂ 32 del lote \d\d\/\d\d/);
+    expect(tr.textContent, 'sus ♀, sin peso').toMatch(/♀ —/);
+  });
+
   it('🔴 un lote en dos salas lleva su asterisco y la nota dice que la mortalidad es del lote entero', async () => {
     await montar(PLANTA_S);
     abrirSalas();
@@ -1513,6 +1524,9 @@ describe('Maduración · operativo · 🛢 Tanques', () => {
     // el contraste: el t1 de la Sala 1 tiene biometría de ♂ (16/09) y ninguna de ♀; sin Ingreso, sin marca
     expect(celda('Sala 1|1').textContent).not.toContain('ingreso');
     expect(celda('Sala 1|1').getAttribute('title')).toBe('♀: sin peso · ♂: Biometría del 16/09');
+    // 2026-10-28 · y la nota de la tabla dice las TRES fuentes, también la de en medio («… del lote»)
+    expect(root.querySelector('.mop-tanques').closest('.mc-card').querySelector('.mc-note').textContent)
+      .toMatch(/biometría con sus lotes de\s+hoy; si no la hay, la última de esos lotes en el tanque donde estaban/);
     // 🏠 Salas, el detalle de la Sala 3: el t22 con los mismos pesos, de Ingreso
     click(root.querySelector('[data-mop-sub="salas"]'));
     click(root.querySelector('[data-mop-sala="Sala 3"]'));

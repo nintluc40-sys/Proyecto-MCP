@@ -1830,8 +1830,10 @@ function cargaTxt(cargas, campo) {
   if (new Set(conValor.map((c) => c[campo])).size === 1) return nf(conValor[0][campo], 2);
   return conValor.map((c) => `${esc(c.lote)} ${nf(c[campo], 2)}`).join(' · ');
 }
-// el peso de un tanque en el detalle de 🏠 Salas (el de referencia, como en 🛢 Tanques): si es de Ingreso, lo dice (2026-10-25)
-const pesoTxt = (x) => (vacio(x.valor) ? '—' : `${nf(x.valor, 1)} <span class="mop-nota">${x.fuente === 'Ingreso' ? 'ingreso ' : ''}${esc(dm(x.fecha))}</span>`);
+// el peso de un tanque en el detalle de 🏠 Salas (el de referencia, como en 🛢 Tanques): si es de Ingreso, lo dice (2026-10-25);
+// y 🆕 2026-10-28 si es «… del lote» (pesado en OTRO tanque, donde estaban sus lotes ese día): su fecha no es de este tanque
+const pesoTxt = (x) => (vacio(x.valor) ? '—'
+  : `${nf(x.valor, 1)} <span class="mop-nota">${x.fuente === 'Ingreso' ? 'ingreso ' : / del lote$/.test(x.fuente || '') ? 'del lote ' : ''}${esc(dm(x.fecha))}</span>`);
 function obsTxt(o) {
   if (!o.fecha) return '<span class="muted">—</span>';
   const todas = [...o.sanitarias.map((s) => `<span class="mop-obs-s">${esc(s)}</span>`), ...o.operativas.map((s) => esc(s))];
@@ -2854,7 +2856,8 @@ function tablaTanquesHTML(filas, F) {
       <tbody>${filas.map(fila).join('')}</tbody></table></div>
     <p class="mc-note">Los VIVOS y la CARGA son del tanque ENTERO —el área y el volumen son suyos, no del lote—, y los
       PESOS son los de referencia del tanque, de los que sale su carga y su ración: su última biometría con sus lotes de
-      hoy o, si no la hay, la de Ingreso (marcada); no el promedio del período. El punto de color compara con el umbral que manda (el
+      hoy; si no la hay, la última de esos lotes en el tanque donde estaban («… del lote», en el globo); y si tampoco, la de
+      Ingreso (marcada); no el promedio del período. El punto de color compara con el umbral que manda (el
       del laboratorio, al pasar el ratón por encima), el mismo que en 🏠 Salas para ese tanque.${avisos.length ? ' ⚠ ' + esc(avisos[0]) : ''}</p>
   </div>`;
 }
