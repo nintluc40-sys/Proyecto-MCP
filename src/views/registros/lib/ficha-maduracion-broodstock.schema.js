@@ -286,7 +286,8 @@ export function validarBroodstock(model) {
    Decisión del usuario (2026-09-18): en las hojas de julio —sin columna «Camaronera»— el área escribía el origen como
    el número de la piscina con la camaronera pegada como sufijo, y se separa en piscina de origen y camaronera. Sólo los
    sufijos de esta tabla, con la grafía del catálogo de camaroneras de la app (`DESTINO_OPTS`): uno que no esté aquí NO
-   se adivina (se sube tal cual y se avisa). El área va a pedir que la hoja traiga las dos columnas por separado. */
+   se adivina (se sube tal cual y se avisa). El área ya trae las dos columnas por separado (comprobado en la hoja el
+   2026-10-28: ningún origen con «ch»); el puente se conserva como red para un Excel con la camaronera pegada (usuario). */
 export const MAD_BS_SUFIJO_CAMARONERA = { ch: 'Chongón' };
 
 /* Cada campo, con cómo se reconoce su rótulo (sin tildes, espacios ni signos) y si es OBLIGATORIO. Los calculados
