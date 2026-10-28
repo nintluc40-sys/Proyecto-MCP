@@ -308,6 +308,27 @@ function box(x0, z0, x1, z1, y0, h, mat, cast, parent) {
   return m;
 }
 function plane(x0, z0, x1, z1, y, mat, parent) { const m = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, z1 - z0), mat); m.rotation.x = -Math.PI / 2; const [x, z] = P((x0 + x1) / 2, (z0 + z1) / 2); m.position.set(x, y, z); m.receiveShadow = true; (parent || scene).add(m); return m; }
+/* Calidad visual · sombras de contacto (2026-10-27, usuario): un degradado oscuro en el suelo al pie de edificios,
+   depósitos, salas, módulos y cerco, para que asienten (con el sol casi vertical de las 10:00 la sombra del sol apenas
+   asoma al pie). No es oclusión de pantalla (SSAO: el Intel UHD y el celular no la aguantan): es geometría fija, un
+   anillo por pie con el alfa en cada vértice —oscuro junto al muro, transparente a `margen` metros, que crece con el
+   alto—, todo en UNA malla por grupo (`mallaDeContacto`): una llamada de dibujo más por grupo y ningún cálculo por cuadro.
+   Bajo el edificio no hay nada que dibujar: lo tapa él mismo. No gasta números de la semilla común. */
+const Y_CONTACTO = .045, ALFA_CONTACTO = .42, piesSitio = [], piesOtras = [];   // con .3 se dibujaban bien pero no se notaban
+const pieDeContacto = (lista, x0, z0, x1, z1, alto) => lista.push([Math.min(x0, x1), Math.min(z0, z1), Math.max(x0, x1), Math.max(z0, z1), Math.min(2.4, Math.max(.6, alto * .4))]);
+const M_CONTACTO = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+  polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });   // A4/A5 · el suelo está a 1–3 cm: que no parpadee
+function mallaDeContacto(lista) {
+  const pos = [], color = [], idx = [];
+  lista.forEach(([a, b, c, d, m]) => {
+    const k = pos.length / 3;
+    [[a, b], [c, b], [c, d], [a, d]].forEach(([x, z]) => { const [px, pz] = P(x, z); pos.push(px, Y_CONTACTO, pz); color.push(0, 0, 0, ALFA_CONTACTO); });
+    [[a - m, b - m], [c + m, b - m], [c + m, d + m], [a - m, d + m]].forEach(([x, z]) => { const [px, pz] = P(x, z); pos.push(px, Y_CONTACTO, pz); color.push(0, 0, 0, 0); });
+    for (let i = 0; i < 4; i++) { const j = (i + 1) % 4; idx.push(k + i, k + j, k + 4 + j, k + i, k + 4 + j, k + 4 + i); }
+  });
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(color, 4)); g.setIndex(idx);
+  const malla = new THREE.Mesh(g, M_CONTACTO); malla.renderOrder = 1; return malla;   // antes que las láminas de los invernaderos (2)
+}
 
 /* ---------- Terreno, calle, parqueadero y cerramiento ---------- */
 // A5 (2026-10-18) · las constantes de la costa, aquí: la arena base las necesita (antes se declaraban más abajo, con la costa)
@@ -332,7 +353,7 @@ const roadM = std({ map: (() => { const t = copiaPropia(TX.asphalt, 12, 1); t.ce
 plane(72, 28.4, 77.6, 89.2, .02, roadM); plane(76, 75.2, 176, 78.6, .02, std({ map: rep(TX.asphalt, 16, 1), roughness: .95 }));
 // cerramiento perimetral con ingreso
 const fenceSegs = [[SITE[0], SITE[1], SITE[2], SITE[1] + .25], [SITE[0], SITE[1], SITE[0] + .25, SITE[3]], [SITE[2] - .25, SITE[1], SITE[2], SITE[3]], [SITE[0], SITE[3] - .25, 71.5, SITE[3]], [78.2, SITE[3] - .25, SITE[2], SITE[3]]];
-fenceSegs.forEach(([a, b, c, d]) => box(a, b, c, d, 0, 2.4, M.fence, true));
+fenceSegs.forEach(([a, b, c, d]) => { box(a, b, c, d, 0, 2.4, M.fence, true); pieDeContacto(piesSitio, a, b, c, d, 2.4); });
 box(71.5, 88.6, 71.9, 89.4, 0, 2.8, M.wall, true); box(77.8, 88.6, 78.2, 89.4, 0, 2.8, M.wall, true);
 { const bar = box(72, 89, 75.5, 89.15, 1, .1, std({ color: col('#d9473a') }), true); bar.rotation.y = 0; }
 // césped y jardineras junto a oficinas
@@ -459,8 +480,9 @@ OTHERS.forEach(([a, b, c, d, h, type, nombre, forma, color]) => {
     const roof = std({ map: rep(TX.zinc, Math.max(1, w / 3), 1), roughness: .5, metalness: .35, normalMap: TXN.zinc, normalScale: new THREE.Vector2(.7, .7) });
     const md = mk(dd), mw = mk(w), mats = [md, md, roof, roof, mw, mw];   // C3a · las caras del mismo largo, el mismo material
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, dd), mats); const [x, z] = P(a + w / 2, b + dd / 2); m.position.set(x, h / 2, z); m.castShadow = m.receiveShadow = true; others.add(m);
+    pieDeContacto(piesOtras, a, b, c, d, h);
   } else if (type === 'res') {
-    box(a, b, c, d, 0, h, M.tankWall, true, others); box(a + .3, b + .3, c - .3, d - .3, h, .12, M.lid, true, others);
+    box(a, b, c, d, 0, h, M.tankWall, true, others); pieDeContacto(piesOtras, a, b, c, d, h); box(a + .3, b + .3, c - .3, d - .3, h, .12, M.lid, true, others);
     for (let zz = b + 2; zz < d - 1; zz += 4) box(a + w / 2 - .4, zz, a + w / 2 + .4, zz + .8, h + .12, .25, M.steel, true, others); // escotillas
   } else if (type === 'ecl') {
     // Plan B · B1 (2026-10-19, usuario) · SALA ABIERTA con sus tanques (plano.js · TANQUES_DE_AREA; sin registro en el MCP):
@@ -492,6 +514,7 @@ OTHERS.forEach(([a, b, c, d, h, type, nombre, forma, color]) => {
   }
 });
 seed = semillaAntesDeAreas; for (let i = 0; i < RND_FACHADAS_DE_REFERENCIA; i++) rnd();   // B0 · ver arriba
+others.add(mallaDeContacto(piesOtras));   // con su grupo: la casilla «Otras áreas» las oculta juntas
 // tuberías principales (ambientación de forma)
 [[2, 14.2, 64, 14.5], [79, 19.9, 176, 20.2], [7.5, 86.2, 55.6, 86.5]].forEach(([a, b, c, d]) => box(a, b, c, d, .9, .3, M.pipe, true, others));
 
@@ -515,6 +538,7 @@ groups.forEach(g => {
   const [x0, z0, x1, z1] = g.box, top = .26;
   g.slab = box(x0, z0, x1, z1, 0, top, g.kind === 'larv' ? M.slabL.clone() : M.slabM.clone(), false);
   g.slab.userData.group = g; roofs.add(g.roof);
+  pieDeContacto(piesSitio, x0, z0, x1, z1, g.kind === 'larv' ? 3.2 : g.H);   // el invernadero, por su alero; la sala, por su muro
   if (g.kind === 'larv') {
     g.canals.forEach(([a, b]) => box(a, z0 + .6, b, z1 - .6, top - .04, .05, M.canal));
     // invernadero: arcos metálicos cada ~5 m, cumbrera y lámina traslúcida con malla de sombra
@@ -589,6 +613,7 @@ groups.forEach(g => {
 });
 
 cajasInst(salaCols, M_COLUMNA, null, true); cajasInst(salaZoc, M_ZOCALO); cajasInst(salaPuertas, M.lid, null, true); cajasInst(salaMarcos, M.steel, null, true);
+scene.add(mallaDeContacto(piesSitio));   // cerco, módulos y salas
 
 /* ---------- Cerco y portón (opción G): pilares, concertina, portón corredizo y garita ---------- */
 {
