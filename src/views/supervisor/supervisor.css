@@ -234,6 +234,10 @@
 .sv-modal-card { background: var(--c-surface); border-radius: var(--r-lg); box-shadow: var(--sh-3); width: min(820px, 100%); max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
 .sv-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 15px 20px; border-bottom: 1px solid var(--c-border); }
 .sv-modal-title { font-size: 16px; font-weight: 900; color: var(--c-brand); }
+/* 2026-10-28 · En oscuro, el teal de marca sobre la tarjeta no se leía (2,24:1, medido en Mareas y Clima): el mismo par
+   que los otros teal del tema oscuro de este archivo. Vale para todos los modales `.sv-modal`; lo vigila
+   mareaMesContraste.test.js. */
+[data-theme="dark"] .sv-modal-title { color: #7fe3d4; }
 .sv-modal-x { width: 32px; height: 32px; border-radius: var(--r-sm); border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); font-size: 14px; cursor: pointer; }
 .sv-modal-x:hover { background: var(--c-surface-2); color: var(--c-text); }
 .sv-modal-body { padding: 16px 20px; overflow: auto; }

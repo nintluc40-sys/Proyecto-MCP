@@ -10,6 +10,8 @@
      1. una regla PROPIA del tema oscuro para el botón activo, con su texto legible sobre su fondo
         (≥ 4,5:1: es texto de 12 px) y un borde que se distinga de la tarjeta (≥ 3:1);
      2. que el tema claro siga con la regla de siempre: el arreglo es un OVERRIDE del oscuro.
+   🆕 Y el TÍTULO de los modales (`.sv-modal-title`, todos los `.sv-modal`), con el mismo defecto (2,24:1 en oscuro,
+   medido en Mareas y Clima el 2026-10-28): su propia regla oscura, ≥ 4,5:1 sobre la tarjeta (texto de 16 px).
    ============================================================ */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -74,6 +76,13 @@ describe('Mareas y Clima · el botón activo se lee en el tema oscuro', () => {
     const borde = valor(regla(CSS, OSCURO), 'border-color');
     expect(borde).toMatch(HEX);
     expect(contraste(borde, superficieOscura())).toBeGreaterThanOrEqual(3);
+  });
+
+  it('🔴 el TÍTULO de los modales también tiene su regla oscura y se lee sobre la tarjeta (≥ 4,5:1)', () => {
+    const texto = valor(regla(CSS, '[data-theme="dark"] .sv-modal-title'), 'color');
+    expect(texto, 'falta la regla del título en el tema oscuro').toMatch(HEX);
+    expect(contraste(texto, superficieOscura())).toBeGreaterThanOrEqual(4.5);
+    expect(valor(regla(CSS, '.sv-modal-title'), 'color'), 'el claro, el de siempre').toBe('var(--c-brand)');
   });
 
   it('el tema claro no cambia: la regla de siempre, con el color de marca', () => {
