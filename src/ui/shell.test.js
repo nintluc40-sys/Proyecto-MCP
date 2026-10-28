@@ -17,17 +17,19 @@ const allows = (role, viewId) => {
   const r = ROLES[role];
   return !!r && (r.allow === '*' || r.allow.includes(viewId));
 };
-// Réplica de la regla de aterrizaje de selectRole().
+// Réplica de la regla de aterrizaje de selectRole(): la vista que el rol declara en `inicio` o, si no, la primera permitida.
 const landing = (role) => {
+  const r = ROLES[role];
+  if (r && r.inicio && allows(role, r.inicio) && MAIN_VIEWS.some((x) => x.id === r.inicio)) return r.inicio;
   const v = MAIN_VIEWS.find((x) => allows(role, x.id) && !x.pending)
     || MAIN_VIEWS.find((x) => allows(role, x.id));
   return v ? v.id : null;
 };
 
 describe('shell · permisos por rol', () => {
-  it('existen exactamente los 5 roles del sistema', () => {
+  it('existen exactamente los 7 roles del sistema', () => {
     expect(Object.keys(ROLES).sort()).toEqual(
-      ['administrativo', 'chequeador', 'gerencia', 'supervisor', 'tecnico', 'visitante'],
+      ['administrativo', 'chequeador', 'gerencia', 'mantenimiento', 'supervisor', 'tecnico', 'visitante'],
     );
   });
 
@@ -60,6 +62,14 @@ describe('shell · permisos por rol', () => {
     expect(ROLES.gerencia.allow).toEqual(['planta']);
     expect(allows('gerencia', 'supervisor')).toBe(false);
     expect(landing('gerencia')).toBe('planta');
+  });
+
+  it('mantenimiento (2026-10-28): su vista 🔧 y Registros, y aterriza en su vista (no en Registros, que va antes)', () => {
+    expect([...ROLES.mantenimiento.allow].sort()).toEqual(['mantenimiento', 'registros']);
+    expect(allows('mantenimiento', 'supervisor')).toBe(false);
+    expect(landing('mantenimiento')).toBe('mantenimiento');
+    expect(MAIN_VIEWS.findIndex((v) => v.id === 'registros')).toBeLessThan(MAIN_VIEWS.findIndex((v) => v.id === 'mantenimiento'));
+    ['supervisor', 'tecnico', 'chequeador', 'visitante', 'gerencia'].forEach((r) => expect(allows(r, 'mantenimiento'), r).toBe(false));
   });
 
   it('todos los ids permitidos existen en MAIN_VIEWS (sin typos silenciosos)', () => {

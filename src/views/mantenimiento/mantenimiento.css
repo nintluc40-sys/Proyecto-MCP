@@ -1,0 +1,53 @@
+/* 🔧 Mantenimiento · la vista del MCP (2026-10-28). Sólo tokens del tema (claro y oscuro salen de tokens.css). Los estados
+   del semáforo usan los colores de estado del proyecto con el TEXTO dentro: el color nunca es la única señal. */
+.mn { display: flex; flex-direction: column; gap: 14px; }
+.mn-cab { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
+.mn-h2 { margin: 0; font-size: 20px; color: var(--c-text); }
+.mn-sub { font-size: 12.5px; color: var(--c-text-soft); }
+.mn-h3 { margin: 0 0 6px; font-size: 15px; color: var(--c-text); }
+.mn-nota { margin: 0 0 10px; font-size: 12.5px; color: var(--c-text-soft); }
+.mn-muted { color: var(--c-text-muted); }
+.mn-card { overflow: hidden; }
+.mn-aviso { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--c-atencion); background: rgba(245, 185, 66, .12); color: var(--c-text); font-size: 13px; }
+.mn-vacio { padding: 18px; text-align: center; color: var(--c-text-soft); font-size: 13px; }
+
+/* Contadores */
+.mn-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.mn-kpi { background: var(--c-surface); border: 1px solid var(--c-border-soft); border-radius: 10px; padding: 10px 12px; }
+.mn-kpi-v { font-size: 22px; font-weight: 800; color: var(--c-text); font-variant-numeric: tabular-nums; }
+.mn-kpi-l { font-size: 11.5px; color: var(--c-text-soft); }
+.mn-kpi--vencido { border-color: var(--c-critico); }
+.mn-kpi--vencido .mn-kpi-v { color: var(--c-critico); }
+.mn-kpi--proximo { border-color: var(--c-atencion); }
+
+/* Pestañas */
+.mn-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.mn-tab { padding: 6px 14px; border-radius: 999px; border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft);
+  font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.mn-tab:hover { border-color: var(--c-brand-600); color: var(--c-brand-600); }
+.mn-tab.is-on { background: var(--c-brand-600); border-color: var(--c-brand-600); color: #fff; }
+.mn-tab:focus-visible { outline: 2px solid var(--c-brand-600); outline-offset: 2px; }
+.mn-seccion { display: flex; flex-direction: column; gap: 14px; }
+
+/* Tablas */
+.mn-scroll { overflow-x: auto; }
+.mn-tabla { width: 100%; border-collapse: collapse; font-size: 12.5px; white-space: nowrap; }
+.mn-tabla th, .mn-tabla td { padding: 6px 8px; border-bottom: 1px solid var(--c-border-soft); text-align: left; vertical-align: middle; }
+.mn-tabla thead th { background: var(--c-surface-2); color: var(--c-text-soft); font-size: 11.5px; font-weight: 700; }
+.mn-tabla tbody th { color: var(--c-text); font-weight: 600; }
+.mn-th-sub { display: block; font-size: 10.5px; font-weight: 500; color: var(--c-text-muted); }
+.mn-num { text-align: right; font-variant-numeric: tabular-nums; }
+.mn-standby { opacity: .55; }
+.mn-chip { display: inline-block; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--c-border); font-size: 10.5px; color: var(--c-text-soft); }
+
+/* Semáforo */
+.mn-sem td.mn-sem-c { text-align: center; }
+.mn-sem-f { display: block; font-size: 10.5px; color: var(--c-text-soft); font-variant-numeric: tabular-nums; }
+.mn-est { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 800; letter-spacing: .3px; border: 1px solid transparent; }
+.mn-est--vencido { background: rgba(232, 48, 62, .14); border-color: var(--c-critico); color: #a3121f; }
+.mn-est--proximo { background: rgba(245, 185, 66, .2); border-color: var(--c-atencion); color: #7a4f00; }
+.mn-est--aldia { background: rgba(30, 200, 106, .14); border-color: var(--c-optimo); color: #0f6b3a; }
+.mn-est--sindatos, .mn-est--sinplan { background: var(--c-surface-2); border-color: var(--c-border); color: var(--c-text-soft); }
+[data-theme="dark"] .mn-est--vencido { color: #ff9aa2; }
+[data-theme="dark"] .mn-est--proximo { color: #ffd78a; }
+[data-theme="dark"] .mn-est--aldia { color: #7be3a8; }

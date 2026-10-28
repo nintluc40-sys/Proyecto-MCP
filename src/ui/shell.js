@@ -129,6 +129,8 @@ export const MAIN_VIEWS = [
   { id: 'microbiologia', label: 'Microbiología',     icon: '🧫' },
   { id: 'biomolecular', label: 'Biología Molecular', icon: '🧬' },
   { id: 'visitante',    label: 'Visitante',          icon: '🚪' },
+  // 🔧 Mantenimiento (2026-10-28): detrás de las de producción; el rol «Mantenimiento» aterriza en ella por su `inicio`.
+  { id: 'mantenimiento', label: 'Mantenimiento',     icon: '🔧' },
   // Al FINAL: el orden decide dónde aterriza cada rol, y el Administrativo debe seguir entrando al Supervisor.
   { id: 'planta',       label: 'Planta',             icon: '🏭' },
 ];
@@ -144,6 +146,9 @@ export const ROLES = {
   // Gerencia (2026-10-04, decisión del usuario): SÓLO la vista 🏭 Planta, el tablero de producción sobre la
   // maqueta 3D; sin clave, como los demás roles.
   gerencia:       { label: 'Gerencia',       icon: '📈', allow: ['planta'] },
+  // Mantenimiento (2026-10-28, decisión del usuario): su vista 🔧 y 📝 Registros, para capturar desde el MCP. `inicio`: aterriza
+  // en su vista, no en la primera permitida del orden de MAIN_VIEWS (sería Registros).
+  mantenimiento:  { label: 'Mantenimiento',  icon: '🛠️', allow: ['mantenimiento', 'registros'], inicio: 'mantenimiento' },
 };
 
 const roleAllows = (viewId) => {
@@ -169,12 +174,13 @@ function renderEntryRoles() {
 function selectRole(key) {
   if (!ROLES[key]) return;
   store.role = key;
-  // Vista inicial: la primera permitida al rol, en el orden de MAIN_VIEWS.
-  // Todas las vistas listadas están desarrolladas y registradas en main.js, así que no
+  // Vista inicial: la que el rol declara en `inicio` (Mantenimiento, 2026-10-28) o, si no, la primera permitida al rol, en
+  // el orden de MAIN_VIEWS. Todas las vistas listadas están desarrolladas y registradas en main.js, así que no
   // hay que esquivar placeholders. (Existía aquí un respaldo para vistas marcadas como
   // pendientes; ninguna entrada de MAIN_VIEWS lo declaraba nunca, así que era código
   // inalcanzable. Si algún día se añade una vista a medias, el respaldo vuelve aquí.)
-  const def = MAIN_VIEWS.find((v) => roleAllows(v.id));
+  const r = ROLES[key];
+  const def = (r.inicio && roleAllows(r.inicio) && MAIN_VIEWS.find((v) => v.id === r.inicio)) || MAIN_VIEWS.find((v) => roleAllows(v.id));
   renderDrawer();
   hideEntry();
   if (def) changeView(def.id);

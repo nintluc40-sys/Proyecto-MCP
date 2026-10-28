@@ -772,7 +772,9 @@ async function fetchViaCsv(ids, avisar = null) {
 // ---------- pipeline público ----------
 /** Los orígenes que NO cuentan para la fecha más reciente del store (`latestDateMs`): hojas de referencia del sitio,
  *  no registros del laboratorio. */
-const FUERA_DEL_RANGO = new Set(['Marea', 'Clima', 'Clima horas']);
+// 🔧 2026-10-28 · ni las cuatro de Mantenimiento: una ronda de hoy no es producción, y movería la «última fecha» de las demás vistas.
+const FUERA_DEL_RANGO = new Set(['Marea', 'Clima', 'Clima horas',
+  'Mantenimiento Trabajos', 'Mantenimiento Lecturas', 'Mantenimiento Equipos', 'Mantenimiento Plan']);
 
 /** Aplica un set de hojas { name: rows } al store: aplana las filas, limpia la caché
  *  de fechas, fija globalData/sheetNames/latestDateMs y deriva Mortalidad. NO emite

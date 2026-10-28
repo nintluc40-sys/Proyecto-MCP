@@ -96,6 +96,8 @@ function boot() {
     },
   });
   registerView('visitante', diferida({ label: 'Visitante', icon: '🚪' }, () => import('./views/visitante/index.js').then((m) => m.visitanteView)));
+  // 🔧 Mantenimiento (2026-10-28, usuario): la vista de los blowers; la ve el rol «Mantenimiento» (y Administrativo).
+  registerView('mantenimiento', diferida({ label: 'Mantenimiento', icon: '🔧' }, () => import('./views/mantenimiento/index.js').then((m) => m.mantenimientoView)));
 
   // Registros (captura) — carga DIFERIDA: la migración de Fichas es pesada y solo
   // se descarga cuando el usuario entra a la vista. `repintaConDatos: false`: un refresco
