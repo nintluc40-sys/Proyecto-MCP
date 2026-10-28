@@ -1262,6 +1262,8 @@ describe('Maduración · operativo · 💀 Bajas', () => {
     abrir('bajas');
     const cal = card('Bajas por sala y día');
     expect(cal.querySelectorAll('.mop-calor tbody tr')).toHaveLength(1);
+    // su escala de intensidad va acotada a su tabla (operativo.css): sin la clase, pintaría el mapa de temperatura
+    expect(cal.querySelector('table.mop-calor').classList.contains('mop-bajas-cal')).toBe(true);
     const celdas = [...cal.querySelectorAll('.mop-calor tbody td')];
     expect(celdas.filter((t) => t.textContent.trim() === '').length).toBeGreaterThan(20);  // los días sin parte
     expect(cal.textContent).toContain('no se registró ningún parte');

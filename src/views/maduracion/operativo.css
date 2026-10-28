@@ -207,10 +207,13 @@
 .mop-cruz thead th { text-align: center; }
 .mop-cruz thead th.r { text-align: right; }
 .mop-pico td { font-weight: 700; }
-.mop-calor td.is-cero { background: var(--c-surface-2); color: var(--c-text-muted); }
-.mop-calor td.is-bajo { background: color-mix(in srgb, var(--c-malo) 22%, transparent); }
-.mop-calor td.is-medio { background: color-mix(in srgb, var(--c-malo) 50%, transparent); }
-.mop-calor td.is-alto { background: color-mix(in srgb, var(--c-grave) 45%, transparent); }
+/* La escala de intensidad del mapa «🔥 Bajas por sala y día», ACOTADA a su tabla (2026-10-27, ronda 9): sin
+   `.mop-bajas-cal`, estas reglas —detrás de las del mapa de temperatura de 🏠 Salas— pintaban de ÁMBAR sus tomas
+   «bajo», que su nota llama azules. */
+.mop-calor.mop-bajas-cal td.is-cero { background: var(--c-surface-2); color: var(--c-text-muted); }
+.mop-calor.mop-bajas-cal td.is-bajo { background: color-mix(in srgb, var(--c-malo) 22%, transparent); }
+.mop-calor.mop-bajas-cal td.is-medio { background: color-mix(in srgb, var(--c-malo) 50%, transparent); }
+.mop-calor.mop-bajas-cal td.is-alto { background: color-mix(in srgb, var(--c-grave) 45%, transparent); }
 .mop-sems { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 10px; }
 .mop-sem { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid var(--c-border); border-radius: 10px; background: var(--c-surface-2); }
 .mop-sem.is-malo { border-color: var(--c-grave); background: color-mix(in srgb, var(--c-grave) 12%, transparent); }
@@ -379,10 +382,6 @@
 .mop-zonas-t thead th { text-align: center; }
 .mop-zonas-t .mop-zonas-ox { border-left: 2px solid var(--c-border); }
 .mop-zonas-t td.mop-zonas-tq { color: var(--c-text-soft); }
-/* Los colores del umbral de la sala, ACOTADOS a esta tabla: las reglas del mapa de 💀 Bajas (arriba) redefinen
-   `is-bajo` / `is-alto` de toda `.mop-calor` con su escala de intensidad. */
-.mop-calor.mop-zonas-t td.is-ok { background: color-mix(in srgb, var(--c-bueno) 30%, transparent); }
-.mop-calor.mop-zonas-t td.is-bajo { background: color-mix(in srgb, var(--c-excelente) 40%, transparent); }
-.mop-calor.mop-zonas-t td.is-alto { background: color-mix(in srgb, var(--c-grave) 40%, transparent); }
+/* (sus tomas usan los colores del mapa de temperatura de la sala, `.mop-calor td.is-*`) */
 .mop-zonas-bajo { color: var(--c-excelente); font-weight: 700; }
 .mop-zonas-alto { color: var(--c-grave); font-weight: 700; }

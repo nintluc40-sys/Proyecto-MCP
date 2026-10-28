@@ -2581,7 +2581,7 @@ function calorHTML(c, p) {
   };
   return `<div class="mc-card mc-card-wide">
     <h4 class="mc-card-h">🔥 Bajas por sala y día <span class="mc-h-note">${esc(etiquetaPeriodo(p))} · máximo ${nf(c.max)} en un día</span></h4>
-    <div class="mop-calor-wrap"><table class="mop-calor">
+    <div class="mop-calor-wrap"><table class="mop-calor mop-bajas-cal">
       <thead><tr><th></th>${c.dias.map((d) => `<th>${esc(dm(d))}</th>`).join('')}</tr></thead>
       <tbody>${c.salas.map((s) => `<tr><th>${esc(s.sala)}</th>${s.valores.map((v, i) => `<td class="${tono(v)}" title="${esc(s.sala + ' · ' + dma(c.dias[i]) + ' · ' + (v === null ? 'sin parte registrado' : v + ' bajas'))}">${v === null ? '' : nf(v)}</td>`).join('')}</tr>`).join('')}</tbody>
     </table></div>
