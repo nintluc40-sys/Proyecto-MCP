@@ -35,7 +35,9 @@ export const MAT = [
   // Sala 4 · 6 tanques en 3 × 2 y Sala 5 · 5 tanques en 3 + 2 (MCP); `pos`: [x, z, número] de cada uno
   { id: 'S4', n: 4, sala: 'Sala 4', box: [24.2, 1.4, 46.7, 12.0], L: 6.49, W: 3.5, real: [6.49, 3.5], h: .9, assumed: true,
     pos: [[25.02, 3.0, 1], [32.21, 3.0, 2], [39.4, 3.0, 3], [25.02, 7.5, 4], [32.21, 7.5, 5], [39.4, 7.5, 6]] },
-  { id: 'S5', n: 5, sala: 'Sala 5', box: [0.6, 1.4, 24.2, 12.0], L: 6.85, W: 3.5, real: [6.85, 3.5], h: .9, assumed: true,
+  // 2026-10-28 · la caja de la Sala 5 empezaba en 0,6, 0,3 m por fuera del predio (el cerco va de 0,9 a 1,15): en el plano su
+  // pared oeste va sobre el perímetro. Empieza en la cara interior del cerco (decisión del usuario); sus tanques no se mueven.
+  { id: 'S5', n: 5, sala: 'Sala 5', box: [1.15, 1.4, 24.2, 12.0], L: 6.85, W: 3.5, real: [6.85, 3.5], h: .9, assumed: true,
     pos: [[1.42, 3.0, 7], [8.97, 3.0, 8], [16.52, 3.0, 9], [1.42, 7.5, 10], [8.97, 7.5, 11]] },
 ];
 /** Los tanques rectangulares de una sala (2 a 5): { x, z, num }, con x y z en la esquina del tanque. */

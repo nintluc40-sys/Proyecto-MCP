@@ -4,7 +4,7 @@
    la maqueta pintaría un tanque con el número de otro: aquí se nota.
    ============================================================ */
 import { describe, it, expect } from 'vitest';
-import { LARV, MAT, NUM_A, NUM_B, OTHERS, STREET, MURO_ECL, tanquesDeSala, formasDelPlano, tanquesDeArea } from './plano.js';
+import { LARV, MAT, NUM_A, NUM_B, OTHERS, SITE, STREET, MURO_ECL, tanquesDeSala, formasDelPlano, tanquesDeArea } from './plano.js';
 import { MAD_SALA_OPTS, MAD_TANQUES_POR_SALA } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
 
 const numeros = (m) => m.rows.flatMap((_, r) => m.cols.map((_c, c) => m.num(r, c)));
@@ -172,6 +172,13 @@ describe('plano · maduración', () => {
   it('5 salas, S1 a S5, con el nombre de sala del MCP', () => {
     expect(MAT.map((s) => s.id)).toEqual(['S1', 'S2', 'S3', 'S4', 'S5']);
     expect(MAT.map((s) => s.sala)).toEqual(MAD_SALA_OPTS);
+  });
+
+  /* 2026-10-28 · la caja de la Sala 5 empezaba en x 0,6, 0,3 m por fuera del predio y a través del cerco (en el plano ARQ-A3
+     V4 su pared oeste va sobre el perímetro): ninguna sala ni módulo sale de SITE. */
+  it('🔴 ninguna sala ni módulo sale del predio', () => {
+    const fuera = [...LARV, ...MAT].filter(({ box: [a, b, c, d] }) => a < SITE[0] || b < SITE[1] || c > SITE[2] || d > SITE[3]);
+    expect(fuera.map((g) => g.id + ' ' + g.box.join(','))).toEqual([]);
   });
 
   it('cada sala tiene EXACTAMENTE los tanques del catálogo del MCP (las salas 4 y 5 siguen al MCP, no al plano)', () => {
