@@ -24,6 +24,7 @@ import { presentMonths, corridasOfMonth, monthLabelAt } from '../../core/prodCal
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import { tankColorInfo } from '../../core/aguaColor.js';
 import { diagSemaforo, popSemaforo, aguaSemaforo, cultivoInfo, semMeta } from './status.js';
+import { climaPastillaHTML, climaModalHTML, cablearClima } from '../clima/clima.js';
 
 const state = { stage: 'larv', month: null, modulo: null, corrida: null, tanque: null, histVar: 'estres', range: '15', popMode: 'dumbbell', evoSmooth: false };
 const BITA_VISIBLE = 5; // registros visibles antes de desplegar
@@ -546,6 +547,7 @@ export function larviculturaView(root) {
       <div class="lq-subtitle">Diagnóstico rápido · Semáforo 0–100 (menor = mejor)</div>
     </div>
     <div class="lq-controls">
+      ${climaPastillaHTML()}
       <div class="lq-monthbar">
         <button class="lq-month-nav" data-month-nav="-1" ${months.indexOf(state.month) <= 0 ? 'disabled' : ''} aria-label="Mes anterior">◀</button>
         <span class="lq-month-lbl">📅 ${esc(monthLabelAt(state.month))}</span>
@@ -578,7 +580,7 @@ export function larviculturaView(root) {
   if (!ready) {
     h += `<div class="empty-state">👈 Elige tu <b>módulo</b> para ver el tablero de ${stageCfg.label}.<br>
       <span class="muted" style="font-size:.85em">Mostrando <b>${esc(monthLabelAt(state.month))}</b> · ${d.corridas.length} corrida(s) · ${d.modulos.length} módulo(s). Usa ◀ ▶ para cambiar de mes.</span></div>`;
-    h += modalsShellHTML();
+    h += modalsShellHTML() + climaModalHTML();
     root.innerHTML = h;
     bind(root);
     return;
@@ -586,7 +588,7 @@ export function larviculturaView(root) {
 
   if (!d.rows.length) {
     h += `<div class="empty-state">Sin datos de ${stageCfg.label} para la selección actual.</div>`;
-    h += modalsShellHTML();
+    h += modalsShellHTML() + climaModalHTML();
     root.innerHTML = h;
     bind(root);
     return;
@@ -653,7 +655,7 @@ export function larviculturaView(root) {
   /* ═══════════ 🔬 DETALLE DEL TANQUE (bloque dependiente del tanque) ═══════════ */
   h += `<div id="lqDetalle">${detalleInner(ctx)}</div>`;
 
-  h += modalsShellHTML();
+  h += modalsShellHTML() + climaModalHTML();
   h += envModalHTML();
 
   root.innerHTML = h;
@@ -669,6 +671,7 @@ function fmtBig(v) {
 }
 
 function bind(root) {
+  cablearClima(root, root.querySelector('#climaModal'));   // 🌦 la pastilla «Hoy» (2026-10-27)
   root.querySelectorAll('[data-stage]').forEach((b) =>
     b.addEventListener('click', () => { state.stage = b.dataset.stage; larviculturaView(root); }));
   // Corrida/Módulo → re-render completo. El Tanque hace refresco PARCIAL (bindDetalle).

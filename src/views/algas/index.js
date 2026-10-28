@@ -25,6 +25,7 @@ import { DESCARTE_CLASES, CLASE_POR_CLAVE, esDescartado, claseDescarte, conteoDe
 // de algas (formatos del departamento Algas: Hisopado / Mensual / Fundas y Masivos).
 import { isMicroRow, rowContext as micCtx, meltRow as micMelt, deptoOfFormato, isAlerta, NIVEL_COLOR, NIVEL_RANK } from '../microbiologia/data.js';
 import { isCalAguaRow, calCtx } from '../microbiologia/calagua.data.js';
+import { climaPastillaHTML, climaModalHTML, cablearClima } from '../clima/clima.js';
 
 // ── Acceso tolerante a las cabeceras de Lab_Algas ──
 const AF = {
@@ -618,7 +619,8 @@ export function algasView(root) {
   const all = algaeRows();
   if (!all.length) {
     root.innerHTML = headHTML(0)
-      + `<div class="empty-state">No se encontraron registros en la hoja <b>Lab_Algas</b> del Google Sheet.</div>`;
+      + `<div class="empty-state">No se encontraron registros en la hoja <b>Lab_Algas</b> del Google Sheet.</div>`
+      + climaModalHTML();
     bind(root);
     return;
   }
@@ -922,6 +924,7 @@ export function algasView(root) {
     + monthModalShell('algSanitModal', '🧫 Control sanitario');
   // Modal de descarga Excel (pide rango de fechas).
   h += algExportModalHTML();
+  h += climaModalHTML();   // 🌦 el de la pastilla «Hoy» de la cabecera (2026-10-27)
 
   root.innerHTML = h;
 
@@ -950,6 +953,7 @@ function headHTML(n) {
         <div class="alg-title"><span class="alg-title-ic">🌿</span> Algas · Laboratorio de microalgas</div>
         <div class="alg-sub">Cultivos por corrida y sistema · ${n} registro(s)</div>
       </div>
+      ${climaPastillaHTML()}
     </div>`;
 }
 
@@ -1776,6 +1780,8 @@ function collapsibleCard(icon, title, theadHtml, cells, visibleN, emptyMsg, extr
    EVENTOS (delegados, una sola vez)
    ============================================================ */
 function bind(root) {
+  // 🌦 Antes de la guarda: la pastilla y su modal se pintan de nuevo en cada render, la delegación de abajo no.
+  cablearClima(root, root.querySelector('#climaModal'));
   if (root._algBound) return;
   root._algBound = true;
 

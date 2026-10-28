@@ -56,6 +56,7 @@ import {
 } from '../microbiologia/data.js';
 import { petriSVG } from '../microbiologia/petri.js';
 import { mareasModalHTML, cablearMareas } from './mareas.js';
+import { climaPastillaHTML, climaModalHTML, cablearClima } from '../clima/clima.js';
 import {
   isCalAguaRow, calCtx, calMeasured, loadCalRanges, CAL_PARAMS, CAL_SEV,
   calDiagnosis, calGroupTree, CAL_RISK, calRangeText,
@@ -1345,6 +1346,7 @@ export function renderModule(ctx, mod) {
     ${calAguaRows.length ? `<button class="sv-action-btn" data-cw-open>💧 Calidad de Agua (${calAguaRows.length})</button>` : ''}
     ${desinf ? `<button class="sv-action-btn" data-desinf-open>🧴 Desinfección${desinf.cumplimiento !== null ? ` (${desinf.cumplimiento}%)` : ''}</button>` : ''}
     <button class="sv-action-btn" data-mareas-open>🌊 Mareas</button>
+    ${climaPastillaHTML({ clase: 'sv-action-btn' })}
     <button class="sv-action-btn" data-modday-open>📅 Resumen del día</button>
   </div>`;
 
@@ -1551,6 +1553,8 @@ export function renderModule(ctx, mod) {
   // módulos. Lee la hoja "Marea" del store; render en views/supervisor/mareas.js (0r·1: el marcado también, porque
   // Maduración · Operativo abre el MISMO modal).
   h += mareasModalHTML();
+  // 🌦 Clima (2026-10-27): su modal, también de SITIO; la pastilla va junto a 🌊 Mareas. Vacío sin hojas de clima.
+  h += climaModalHTML();
 
   // #5 · Modal de gráfico por métrica (SV/Población = tendencia · OD/Temp = perfil 12 tomas)
   h += `<div class="sv-modal" id="svModMetricModal" data-modmetricmodal>
@@ -1758,6 +1762,7 @@ export function renderModule(ctx, mod) {
     // Modal de SITIO (Anconcito): la Correlación usa siempre todos los módulos. 0r·1: su cableado vive en mareas.js,
     // con el marcado, porque Maduración · Operativo abre el MISMO modal.
     cablearMareas(root, root.querySelector('#svMareasModal'));
+    cablearClima(root, root.querySelector('#climaModal'));
 
     // #5 · Modal de gráfico por métrica (SV/Pob = tendencia · OD/Temp = perfil 12 tomas)
     const mmOverlay = root.querySelector('#svModMetricModal');

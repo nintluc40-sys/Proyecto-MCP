@@ -12,6 +12,7 @@
 import { destroyAllCharts } from '../../core/charts.js';
 import { esc } from '../../core/format.js';
 import { maduracionView as microchipsView } from './index.js';
+import { climaPastillaHTML, climaModalHTML, cablearClima } from '../clima/clima.js';
 
 export const FAMILIAS = [
   { clave: 'operativo', etiqueta: 'Operativo', icono: '📋' },
@@ -26,11 +27,13 @@ const estado = { familia: 'operativo' };
  */
 export function maduracionEntrada(root) {
   destroyAllCharts();
-  root.innerHTML = `<div class="mad-fam" role="group" aria-label="Registro de Maduración">${FAMILIAS.map((f) => {
+  // 🌦 2026-10-27 (usuario) · la pastilla «Hoy» del clima, en la misma fila que el selector: la ven las dos familias.
+  root.innerHTML = `<div class="clima-con"><div class="mad-fam" role="group" aria-label="Registro de Maduración">${FAMILIAS.map((f) => {
     const on = f.clave === estado.familia;
     return `<button class="mad-fam-b ${on ? 'is-on' : ''}" data-mad-fam="${f.clave}" aria-pressed="${on}">${f.icono} ${esc(f.etiqueta)}</button>`;
-  }).join('')}</div><div class="mad-cuerpo"></div>`;
+  }).join('')}</div>${climaPastillaHTML()}</div><div class="mad-cuerpo"></div>${climaModalHTML()}`;
   enlazar(root);
+  cablearClima(root, root.querySelector('#climaModal'));
   const cuerpo = root.querySelector('.mad-cuerpo');
   if (estado.familia === 'microchips') {
     microchipsView(cuerpo);

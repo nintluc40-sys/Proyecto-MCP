@@ -683,6 +683,8 @@ src/
     registros/             Fichas nativas (lib/ + fichas/) sobre el motor engine.js
                            lib/ tiene los esquemas y el LIBRO MAYOR de Maduración, con su
                            prueba de paridad contra el gemelo inline del monolito
+    clima/                 🌦 La pastilla «Hoy» y su modal Día/Mes (clima.js), de las hojas del script de
+                           clima (clima.data.js, puro); la pintan Supervisor, Larvicultura, Algas y Maduración
   sw.test.js               Ejerce las reglas de enrutado de public/sw.js en un ámbito falso
 public/
   registros/engine.js      Monolito heredado de las fichas (se estrangula gradualmente)
@@ -822,6 +824,15 @@ Dos consecuencias que conviene tener presentes al desplegar:
    guarda una hora de pared en la zona del libro, así que «Fecha» se escribe como el día de Ecuador y «Actualizado» con
    la hora de Ecuador en esa zona, y se releen igual (`fechaACelda_`, `actACelda_` y sus inversas). La calidad del aire
    quedó FUERA (decisión del usuario: ninguna fuente gratuita para empresa la da por coordenada a un Apps Script).
+   **En pantalla** (`views/clima/`, decisiones del usuario del 27-10): una pastilla **«🌦 Hoy»** en 👁️ Supervisor (en
+   el módulo, junto a 🌊 Mareas), 🦐 Larvicultura, 🌿 Algas y 🥚 Maduración (la barra Operativo/Microchips) con la hora
+   más reciente que ya llegó —temperatura · humedad · viento; la hora y la fuente en la ayuda—, SÓLO el dato (sin
+   semáforo: no hay umbrales del laboratorio). Si lo último escrito («Actualizado», no la hora del dato: con el script
+   parado, las horas que quedan del día siguen ahí) tiene más de 6 h, avisa «sin actualizar desde…»; sin hojas de clima,
+   no aparece. Al pulsarla, un modal como el de 🌊 Mareas: **Día** (los indicadores del día —o, sin sus 24 horas,
+   «incompleto (N de 24 h)»—, la curva por horas con lo que queda de hoy discontinuo, las franjas de 6 h, el pronóstico
+   de 3 días y las horas con su fuente) y **Mes** (la tendencia de mínima, media, máxima y lluvia, y los días). Las
+   horas son de Ecuador (UTC − 5), no las del equipo.
 
    **Red atascada** (2026-10-07): los tiempos máximos (`FETCH_TIMEOUT_MS`, `XLSX_TIMEOUT_MS`) cubren sólo hasta las
    cabeceras; el CUERPO se corta si pasan `SIN_DATOS_MS` (30 s) sin recibir nada (`sheets.js · cuerpoDe/textoDe`) y entran
