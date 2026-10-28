@@ -216,6 +216,20 @@ describe('Clima.gs · las fuentes → candidatos por hora', () => {
     expect(api.horasDeMetar_([metar('2026-10-20T15:00', { temp: null })])).toEqual([]);
   });
 
+  /* 2026-10-28 · AWC guarda 15 días: lo anterior sale del archivo METAR de la IEM (el historial sólo NASA daba el máximo
+     del día ~4 °C bajo). Es el MISMO METAR, así que tiene que dar la MISMA hora que el JSON de AWC. */
+  it('el archivo METAR de la IEM pasa por el MISMO camino que AWC: inHg → el Q en hPa, «M» = sin dato, nubes y tiempo presente', () => {
+    const csv = 'station,valid,tmpc,dwpc,sknt,drct,alti,skyc1,skyc2,skyc3,skyc4,wxcodes\n'
+      + 'SESA,2026-10-20 15:00,28.00,22.00,10.00,250.00,29.85,SCT,M,M,M,M\n'
+      + 'SESA,2026-10-20 16:00,30.00,M,0.00,0.00,29.80,FEW,BKN,M,M,-RA\n'
+      + 'SESA,2026-10-20 17:00,M,22.00,10.00,250.00,29.85,SCT,M,M,M,M\n';   // sin temperatura: no es una hora
+    const desdeArchivo = api.horasDeMetar_(api.metarDeArchivo_(csv));
+    expect(desdeArchivo[0]).toEqual(api.horasDeMetar_([metar('2026-10-20T15:00')])[0]);   // Q1011 → «29.85» → 1011
+    expect(desdeArchivo[1]).toMatchObject({ hora: 11, t: 30, hr: null, v: 0, dir: null, p: 1009, nube: 75, wx: 'lluvia débil' });
+    expect(desdeArchivo).toHaveLength(2);
+    expect(api.metarDeArchivo_('station,valid,tmpc\n')).toEqual([]);
+  });
+
   it('MET: sólo los pasos HORARIOS de hoy y de antes (los días siguientes van al pronóstico), m/s → km/h', () => {
     const j = met([...horarios('2026-10-27T21:00', 4, () => ({ ws: 5, mm: 0.4 })), { time: '2026-10-28T01:00', g: 6 }]);
     const c = api.horasDeMet_(j, '2026-10-27');
@@ -303,9 +317,11 @@ describe('Clima.gs · el resumen del día y el pronóstico', () => {
 });
 
 describe('Clima.gs · las pasadas sobre el libro', () => {
-  let ctx, metResp, metarResp, nasaH, nasaD;
+  let ctx, metResp, metarResp, nasaH, nasaD, iemResp;
+  const CAB_IEM = 'station,valid,tmpc,dwpc,sknt,drct,alti,skyc1,skyc2,skyc3,skyc4,wxcodes\n';
   const fuentes = (url, cab) => {
     if (url.includes('aviationweather')) return metarResp === null ? { codigo: 204, cuerpo: '' } : { codigo: 200, cuerpo: metarResp };
+    if (url.includes('mesonet.agron.iastate.edu')) return iemResp === null ? { codigo: 503, cuerpo: '' } : { codigo: 200, cuerpo: iemResp };
     if (url.includes('api.met.no')) {
       if (cab['If-Modified-Since'] && metResp.lm === cab['If-Modified-Since']) return { codigo: 304, cuerpo: '' };
       return { codigo: 200, cuerpo: metResp.json, cabeceras: { 'Last-Modified': metResp.lm } };
@@ -324,6 +340,7 @@ describe('Clima.gs · las pasadas sobre el libro', () => {
     // NASA: del 25-10 00:00 local al 26-10 23:00 local, entero.
     nasaH = nasaHoras('2026-10-25T05:00', 48);
     nasaD = { properties: { parameter: { ALLSKY_SFC_SW_DWN: { 20261025: 5.1, 20261026: -999 } } } };
+    iemResp = CAB_IEM;   // el archivo, sin filas
     ctx = cargar({ fuentes });
     ctx.api.CLIMA.desde = '2026-10-25';
   });
@@ -347,6 +364,8 @@ describe('Clima.gs · las pasadas sobre el libro', () => {
     expect(dias[2]).toMatchObject({ tMed: null, hSesa: 2, hMet: 12 });   // hoy aún sin las 24 horas
     // Las fechas se escriben a la medianoche de Ecuador.
     expect(leer(libro, 'Clima horas')[1][0].toISOString()).toBe('2026-10-25T05:00:00.000Z');
+    // El historial cabe en los 15 días que guarda AWC: no se pide el archivo de la IEM.
+    expect(ctx.pedidos.some((p) => p.url.includes('mesonet'))).toBe(false);
   });
 
   it('una pasada sin nada nuevo NO escribe (MET responde 304 con If-Modified-Since)', () => {
@@ -438,6 +457,44 @@ describe('Clima.gs · las pasadas sobre el libro', () => {
     const ajeno = libroSimulado();
     ajeno.insertSheet('Clima').filas.push(['Fecha', 'Otra cosa']);
     expect(() => cargar({ libro: ajeno, fuentes }).api.cadaTresHoras()).toThrow(/columnas esperadas/);
+  });
+
+  it('una hoja que existe VACÍA recibe su cabecera y la pasada sigue (el tiempo de espera de Google del 27-10)', () => {
+    const libro = libroSimulado();
+    libro.insertSheet('Clima');   // creada, sin una sola celda
+    const c = cargar({ libro, fuentes });
+    expect(() => c.api.cadaTresHoras()).not.toThrow();
+    expect(leer(libro, 'Clima')[0]).toEqual(c.api.COL_DIAS);
+    expect(leer(libro, 'Clima horas')[0]).toEqual(c.api.COL_HORAS);
+    expect(leer(libro, 'Clima horas').length - 1).toBeGreaterThan(0);
+  });
+
+  it('rellenarObservado: lo OBSERVADO de los días que AWC ya no guarda llega del archivo de la IEM, pisa a NASA y rehace el día', () => {
+    ctx.api.CLIMA.desde = '2026-10-10';
+    nasaH = nasaHoras('2026-10-10T05:00', 48);   // el 10 y el 11 de octubre, enteros (24 °C)
+    ctx.api.instalar();   // con el archivo vacío: esos dos días, sólo NASA
+    // sólo los días que AWC ya no guarda (hoy, 27-10, menos 15): del 10-10 a las 00:00 al 12-10 a las 24:00 de Ecuador
+    expect(ctx.pedidos.find((p) => p.url.includes('mesonet')).url).toMatch(/station=SESA&.*sts=2026-10-10T05:00Z&ets=2026-10-13T05:00Z&tz=UTC/);
+    iemResp = CAB_IEM + ['15:00,30.00', '16:00,31.00', '17:00,29.00']
+      .map((x) => 'SESA,2026-10-10 ' + x + ',22.00,10.00,250.00,29.85,SCT,M,M,M,M').join('\n') + '\n';
+    ctx.pedidos.length = 0;
+    ctx.api.rellenarObservado();
+    const { libro, api } = ctx;
+    expect(ctx.pedidos.map((p) => p.url.split('?')[0])).toEqual(['https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py']);
+    expect(ctx.pedidos[0].url).toMatch(/sts=2026-10-10T05:00Z&ets=2026-10-13T05:00Z/);   // el mismo rango que al instalar
+    expect(filaDeHora(api, libro, '2026-10-10', 11)).toMatchObject({ fuente: 'Observado SESA', t: 31, p: 1011 });
+    expect(filaDeHora(api, libro, '2026-10-10', 0)).toMatchObject({ fuente: 'NASA', t: 24 });
+    const dias = leer(libro, 'Clima').slice(1).map(api.deFila_(['dia', 'tipo', 'tMin', 'tMax', 'tMed', 'hr', 'lluvia', 'nube', 'v', 'vMax', 'dir', 'p', 'sensMax', 'nieblaMax', 'uvMax', 'rad', 'wx', 'hSesa', 'hMet', 'hNasa', 'act']));
+    expect(dias.find((d) => d.dia === '2026-10-10')).toMatchObject({ tipo: 'Registro', tMin: 24, tMax: 31, hSesa: 3, hNasa: 21 });
+    expect(dias.find((d) => d.dia === '2026-10-11')).toMatchObject({ tMax: 24, hSesa: 0, hNasa: 24 });
+    // Repetirla no escribe nada.
+    const antes = [libro.hojas.get('Clima horas').escritas, libro.hojas.get('Clima').escritas];
+    api.rellenarObservado();
+    expect([libro.hojas.get('Clima horas').escritas, libro.hojas.get('Clima').escritas]).toEqual(antes);
+    // Con el archivo caído, la ejecución termina EN ERROR (Apps Script avisa) y no toca lo que ya había.
+    iemResp = null;
+    expect(() => api.rellenarObservado()).toThrow(/METAR \(archivo IEM\): HTTP 503/);
+    expect(filaDeHora(api, libro, '2026-10-10', 11)).toMatchObject({ fuente: 'Observado SESA', t: 31 });
   });
 
   it('una fuente caída no impide guardar las demás, y la ejecución termina EN ERROR (Apps Script la marca)', () => {

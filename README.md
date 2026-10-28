@@ -814,7 +814,10 @@ Dos consecuencias que conviene tener presentes al desplegar:
    despliega por su cuenta. Escribe en el libro dos hojas que el MCP lee como lee «Marea»: **«Clima horas»** (una fila
    por hora) y **«Clima»** (una por día: «Registro», el resumen de sus horas, y «Pronóstico», los 3 días siguientes).
    Cada hora toma la MEJOR fuente que la tenga (decisión del usuario): **1.** lo **observado** en el aeropuerto de Salinas
-   (METAR **SESA**, a ~3 km; NOAA/AWC, dominio público), de 06 a 18 h y sin la lluvia en mm; **2.** **MET Noruega**
+   (METAR **SESA**, a ~3 km; NOAA/AWC, dominio público), de 06 a 18 h y sin la lluvia en mm; AWC guarda sólo 15 días, y
+   lo anterior sale del archivo METAR de la **IEM** (Iowa Environmental Mesonet, Iowa State University; dominio público):
+   el MISMO METAR por el MISMO camino (2026-10-28: con el historial sólo de NASA, el máximo del día salía ~4 °C por debajo
+   de lo observado, medido en 988 horas del 01/08 al 12/10); **2.** **MET Noruega**
    (malla de ~9 km, CC BY 4.0): cada pasada guarda las horas que quedan del día, así que cada hora acaba con lo que MET
    dijo de ella a ≤ 3 h vista; **3.** **NASA POWER**, sólo para el historial desde el 01/08/2026, los huecos y la
    radiación: su malla es GRUESA (½° × ⅝°; nubes y radiación a 1°) y, en las horas comunes con SESA, daba **2,5 °C menos
@@ -831,8 +834,11 @@ Dos consecuencias que conviene tener presentes al desplegar:
    reciente** (`applySheets`): el pronóstico la llevaría al futuro y «Clima horas», que se escribe cada 3 h, la dejaría
    siempre en hoy aunque el último registro del laboratorio fuera de ayer. **Instalar**
    (con la cuenta dueña del libro): script.google.com → Nuevo proyecto → pegar `GAS/Clima.gs` → ⚙ Zona horaria
-   «(GMT-05:00) Guayaquil» → ejecutar `probar` (pide las tres fuentes sin escribir) y luego `instalar` (crea las hojas,
-   carga el historial y deja los dos activadores; repetirla no duplica nada). La zona del PROYECTO es la del activador
+   «(GMT-05:00) Guayaquil» → ejecutar `probar` (pide las fuentes sin escribir) y luego `instalar` (crea las hojas,
+   carga el historial y deja los dos activadores; repetirla no duplica nada). Lo instalado ANTES del 2026-10-28: pegar el
+   código nuevo y ejecutar UNA vez `rellenarObservado` (trae lo observado del archivo de la IEM; repetirla no cambia
+   nada). Una hoja que exista VACÍA —un tiempo de espera de Google a mitad de crearla la dejó así el 27-10— recibe su
+   cabecera en la pasada siguiente; una con otras columnas no se toca. La zona del PROYECTO es la del activador
    nocturno; la del LIBRO puede ser otra (el del MCP está en «America/Los_Angeles», medido el 27-10): una celda de fecha
    guarda una hora de pared en la zona del libro, así que «Fecha» se escribe como el día de Ecuador y «Actualizado» con
    la hora de Ecuador en esa zona, y se releen igual (`fechaACelda_`, `actACelda_` y sus inversas). La calidad del aire

@@ -67,7 +67,7 @@ describe('la pastilla', () => {
   it('la hora más reciente que ya llegó, con su hora y su fuente en la ayuda', () => {
     const b = montar();
     expect(b.textContent).toBe('🌦 27,5 °C · 80 % · 10 km/h');
-    expect(b.getAttribute('title')).toMatch(/^15:00 · Observado SESA · Datos: METAR SESA \(NOAA\) · MET Norway · NASA POWER$/);
+    expect(b.getAttribute('title')).toMatch(/^15:00 · Observado SESA · Datos: METAR SESA \(NOAA · IEM\) · MET Norway · NASA POWER$/);
     expect(b.classList.contains('clima-pastilla--vieja')).toBe(false);
     expect(climaPastillaHTML({ clase: 'sv-action-btn' })).toMatch(/class="sv-action-btn clima-pastilla"/);
   });
@@ -99,7 +99,7 @@ describe('el modal', () => {
     expect(m.querySelectorAll('.clima-horas tr.clima-futura')).toHaveLength(8);   // de las 16 a las 23: pronóstico
     expect(horas[15].textContent).toContain('Observado SESA');
     expect(m.querySelector('.clima-aviso')).toBeNull();
-    expect(m.querySelector('.clima-cita').textContent).toBe('Datos: METAR SESA (NOAA) · MET Norway · NASA POWER');
+    expect(m.querySelector('.clima-cita').textContent).toBe('Datos: METAR SESA (NOAA · IEM) · MET Norway · NASA POWER');
   });
 
   it('◀ y el selector cambian de día; un día pasado no trae pronóstico', () => {

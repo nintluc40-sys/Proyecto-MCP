@@ -16,7 +16,8 @@ import { parseAnyDate } from '../../core/dates.js';
 
 export const CLIMA_HORAS = 'Clima horas';
 export const CLIMA_DIAS = 'Clima';
-export const ATRIBUCION = 'Datos: METAR SESA (NOAA) · MET Norway · NASA POWER';
+// 2026-10-28 · y la IEM: el historial de SESA anterior a los 15 días de AWC sale de su archivo METAR (GAS/Clima.gs).
+export const ATRIBUCION = 'Datos: METAR SESA (NOAA · IEM) · MET Norway · NASA POWER';
 /** Con lo último escrito hace más de esto, la pastilla avisa (el script escribe cada 3 h: es más de una pasada perdida). */
 export const HORAS_VIEJO = 6;
 const OFFSET_H = -5;   // Ecuador no tiene horario de verano: su hora es UTC − 5 todo el año (GAS/Clima.gs, CLIMA.offsetH)

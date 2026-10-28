@@ -3,6 +3,7 @@
 // Es un proyecto APARTE: NO es el GAS del Registro (no toca su sello, su `ALLOWED` ni `index (8)`).
 // script.google.com → Nuevo proyecto (con la cuenta dueña del libro) → pega este código completo →
 // ⚙ Configuración del proyecto → Zona horaria «(GMT-05:00) Guayaquil» → ejecuta `probar` y luego `instalar`.
+// (Instalado ANTES del 2026-10-28: pega el código nuevo y ejecuta UNA vez `rellenarObservado`.)
 // ════════════════════════════════════════════════════════════════════════════════════
 //
 // QUÉ HACE: escribe en el libro del MCP dos hojas que el tablero lee como lee «Marea»:
@@ -12,7 +13,9 @@
 //
 // DE DÓNDE SALE CADA HORA (decisión del usuario, 27-10): de la MEJOR fuente que la tenga, por este orden —
 //  1. «Observado SESA»: el METAR del aeropuerto de Salinas (a ~3 km del laboratorio; NOAA/AWC, dominio
-//     público). Observa de 06 a 18 h, sin la lluvia en mm.
+//     público). Observa de 06 a 18 h, sin la lluvia en mm. AWC guarda sólo 15 días: lo anterior sale del
+//     archivo METAR de la IEM (Iowa Environmental Mesonet, Iowa State University; dominio público), el MISMO
+//     METAR por el MISMO camino (2026-10-28: el historial sólo NASA daba el máximo del día ~4 °C bajo).
 //  2. «MET»: el pronóstico de MET Noruega (malla de ~9 km; CC BY 4.0). Cada pasada guarda las horas que
 //     QUEDAN del día, así que cada hora termina con lo que MET dijo de ella a ≤ 3 h vista.
 //  3. «NASA»: NASA POWER (MERRA-2 de ½° × ⅝°; nubes y radiación de CERES, 1°). Malla GRUESA: sólo llena el
@@ -27,7 +30,7 @@
 //  · `nocturno` (hacia las 02:30) — NASA: rellena huecos, la nubosidad y la radiación que vaya publicando.
 // Sólo escribe si algo cambió (la consulta ligera del MCP lee la fecha de modificación del libro).
 //
-// Atribución que el MCP muestra: «Datos: METAR SESA (NOAA) · MET Norway · NASA POWER».
+// Atribución que el MCP muestra: «Datos: METAR SESA (NOAA · IEM) · MET Norway · NASA POWER».
 // ════════════════════════════════════════════════════════════════════════════════════
 
 var CLIMA = {
@@ -38,6 +41,7 @@ var CLIMA = {
   estacion: "SESA",
   agente: "MCP-Omarsa-clima/1.0 nintluc40@gmail.com",  // MET Noruega exige identificarse con un contacto
   desde: "2026-08-01",             // historial (decisión del usuario)
+  diasAwc: 15,                     // lo que guarda AWC (pedirMetar_(360)); lo anterior, del archivo de la IEM
   diasPronostico: 3,
   diasNasa: 120,                   // hasta dónde vuelve la pasada nocturna a buscar lo que NASA publique tarde
   hojaHoras: "Clima horas",
@@ -75,6 +79,7 @@ function instalar() {
     var hoy = claveDia_(Date.now());
     return pasada_(ss, {
       metar: intentar_(errores, function () { return pedirMetar_(360); }),   // los 15 días que guarda AWC
+      metarArchivo: intentar_(errores, function () { return pedirMetarArchivo_(CLIMA.desde, sumarDias_(hoy, -CLIMA.diasAwc)); }),
       met: intentar_(errores, function () { return pedirMet_(true); }),
       nasaHoras: intentar_(errores, function () { return pedirNasaHoras_(CLIMA.desde, hoy); }),
       nasaDias: intentar_(errores, function () { return pedirNasaDias_(CLIMA.desde, hoy); })
@@ -115,6 +120,20 @@ function nocturno() {
   cerrar_("", r, errores);
 }
 
+/** Una vez, para lo instalado antes del 2026-10-28 (`instalar` ya lo hace): lo OBSERVADO en SESA de los días que AWC
+ *  ya no guarda, desde el archivo METAR de la IEM. Pisa a NASA en esas horas (nunca al revés) y rehace esos días.
+ *  Repetirla no cambia nada. */
+function rellenarObservado() {
+  var ss = libro_(), errores = [];
+  var r = conCandado_(function () {
+    var hoy = claveDia_(Date.now());
+    return pasada_(ss, {
+      metarArchivo: intentar_(errores, function () { return pedirMetarArchivo_(CLIMA.desde, sumarDias_(hoy, -CLIMA.diasAwc)); })
+    }, Date.now());
+  });
+  cerrar_("Rellenado: ", r, errores);
+}
+
 /** Una fuente caída no tumba a las demás: su error se apunta y la pasada guarda lo que sí llegó. */
 function intentar_(errores, fn) {
   try { return fn(); } catch (e) { errores.push(e.message); return null; }
@@ -134,6 +153,7 @@ function probar() {
     Session.getScriptTimeZone());
   var hoy = claveDia_(Date.now());
   [["METAR SESA", function () { return horasDeMetar_(pedirMetar_(24)).length + " horas observadas"; }],
+   ["METAR SESA (archivo IEM)", function () { return horasDeMetar_(pedirMetarArchivo_(sumarDias_(hoy, -20), sumarDias_(hoy, -16))).length + " horas observadas"; }],
    ["MET Noruega", function () { var j = pedirMet_(true); return j ? horasDeMet_(j, hoy).length + " horas de hoy" : "sin cambios (304)"; }],
    ["NASA horas", function () { return horasDeNasa_(pedirNasaHoras_(sumarDias_(hoy, -10), hoy)).length + " horas"; }],
    ["NASA días", function () { return Object.keys(radiacionDiaria_(pedirNasaDias_(sumarDias_(hoy, -15), hoy))).length + " días con radiación"; }]
@@ -144,7 +164,7 @@ function probar() {
 
 // ── LA PASADA (pura salvo la lectura y escritura de las dos hojas) ──────────────────────
 
-/** Funde lo recibido en las dos hojas y escribe sólo lo que cambió. `datos`: {metar, met, nasaHoras, nasaDias},
+/** Funde lo recibido en las dos hojas y escribe sólo lo que cambió. `datos`: {metar, metarArchivo, met, nasaHoras, nasaDias},
  *  cada uno opcional (null = esa fuente no se pidió o no trajo nada nuevo). */
 function pasada_(ss, datos, ahora) {
   var hoy = claveDia_(ahora), act = new Date(ahora);
@@ -153,6 +173,7 @@ function pasada_(ss, datos, ahora) {
   if (datos.nasaHoras) candidatos = candidatos.concat(horasDeNasa_(datos.nasaHoras));
   if (datos.met) candidatos = candidatos.concat(horasDeMet_(datos.met, hoy));
   if (datos.metar) candidatos = candidatos.concat(horasDeMetar_(datos.metar));
+  if (datos.metarArchivo) candidatos = candidatos.concat(horasDeMetar_(datos.metarArchivo));
   var fusion = fusionarHoras_(H.filas, candidatos.filter(function (c) { return c.dia >= CLIMA.desde && c.dia <= hoy; }), act);
   var rad = datos.nasaDias ? radiacionDiaria_(datos.nasaDias) : {};
   var pron = datos.met ? pronosticoDeMet_(datos.met, hoy, CLIMA.diasPronostico) : null;
@@ -160,7 +181,7 @@ function pasada_(ss, datos, ahora) {
   var eh = escribir_(H.hoja, COL_HORAS, H.crudas, fusion.filas.map(aFilaHoras_));
   var ed = escribir_(D.hoja, COL_DIAS, D.crudas, nuevosDias.map(aFilaDias_));
   return { horas: fusion.filas.length, horasCambiadas: fusion.cambiadas, filasEscritasHoras: eh, filasEscritasDias: ed,
-    metar: !!datos.metar, met: !!datos.met, nasaHoras: !!datos.nasaHoras, nasaDias: !!datos.nasaDias };
+    metar: !!datos.metar, metarArchivo: !!datos.metarArchivo, met: !!datos.met, nasaHoras: !!datos.nasaHoras, nasaDias: !!datos.nasaDias };
 }
 
 /** Funde los candidatos en las filas por hora. Devuelve las filas ordenadas, cuántas cambiaron y qué días. */
@@ -288,6 +309,29 @@ function horasDeMetar_(lista) {
   return Object.keys(porHora).map(function (k) { return porHora[k].c; });
 }
 
+/** El archivo METAR de la IEM (CSV con `tz=UTC`) → la MISMA forma que el JSON de AWC, para que pase por horasDeMetar_.
+ *  La presión llega en pulgadas de mercurio («alti», sacada del Q del METAR): redondeada a hPa enteros vuelve a ser el
+ *  Q. «M» = sin dato. Sólo se piden los METAR ordinarios (report_type=3). */
+function metarDeArchivo_(texto) {
+  var lineas = String(texto || "").trim().split(/\r?\n/);
+  if (lineas.length < 2) return [];
+  var cab = lineas[0].split(",");
+  var dato = function (f, n) { var x = f[cab.indexOf(n)]; return x == null || x === "" || x === "M" ? null : x; };
+  var numero = function (f, n) { var x = dato(f, n); return x == null || !isFinite(+x) ? null : +x; };
+  var out = [];
+  for (var i = 1; i < lineas.length; i++) {
+    var f = lineas[i].split(","), ms = Date.parse(String(dato(f, "valid") || "").replace(" ", "T") + ":00Z");
+    if (isNaN(ms)) continue;
+    var alti = numero(f, "alti");
+    out.push({ obsTime: ms / 1000, metarType: "METAR", temp: numero(f, "tmpc"), dewp: numero(f, "dwpc"),
+      wdir: numero(f, "drct"), wspd: numero(f, "sknt"), altim: alti != null ? Math.round(alti * 33.8639) : null,
+      clouds: ["skyc1", "skyc2", "skyc3", "skyc4"].map(function (n) { return dato(f, n); })
+        .filter(function (c) { return c; }).map(function (c) { return { cover: c }; }),
+      wxString: dato(f, "wxcodes") });
+  }
+  return out;
+}
+
 /** MET Noruega (`complete`). Sólo los pasos horarios de hoy y de días anteriores: los días siguientes van
  *  al pronóstico diario. */
 function horasDeMet_(json, hoy) {
@@ -409,6 +453,18 @@ function pedirMetar_(horas) {
   return JSON.parse(r.texto);
 }
 
+/** El archivo METAR de la IEM, de los días locales [desde, hasta]: de desde 00:00 a hasta 24:00 de Ecuador, en UTC.
+ *  null si el rango está vacío (lo instalado hace menos de 15 días ya lo tiene AWC). */
+function pedirMetarArchivo_(desde, hasta) {
+  if (!desde || !hasta || desde > hasta) return null;
+  var h = "T" + pad2_(-CLIMA.offsetH) + ":00Z";
+  var r = pedir_("https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py?station=" + CLIMA.estacion +
+    "&data=tmpc&data=dwpc&data=sknt&data=drct&data=alti&data=skyc1&data=skyc2&data=skyc3&data=skyc4&data=wxcodes" +
+    "&sts=" + desde + h + "&ets=" + sumarDias_(hasta, 1) + h + "&tz=UTC&format=onlycomma&latlon=no&missing=M&direct=no&report_type=3");
+  if (r.codigo !== 200) throw new Error("METAR (archivo IEM): HTTP " + r.codigo);
+  return metarDeArchivo_(r.texto);
+}
+
 /** MET pide no repetir lo que no cambió: con `If-Modified-Since` responde 304 y la pasada sigue sin MET. */
 function pedirMet_(forzar) {
   var props = PropertiesService.getScriptProperties(), cab = { "User-Agent": CLIMA.agente };
@@ -469,10 +525,12 @@ function conCandado_(fn) {
   try { return fn(); } finally { lock.releaseLock(); }
 }
 
+/** La hoja, con su cabecera. Si no existe la crea y, si existe VACÍA, le pone la cabecera: un tiempo de espera de
+ *  Google a mitad de crearla (27-10 21:32) la dejó así, y esta función se negaba a tocarla en TODAS las pasadas.
+ *  Una hoja con contenido y otras columnas sigue sin tocarse. */
 function hoja_(ss, nombre, cabecera) {
-  var h = ss.getSheetByName(nombre);
-  if (!h) {
-    h = ss.insertSheet(nombre);
+  var h = ss.getSheetByName(nombre) || ss.insertSheet(nombre);
+  if (h.getLastRow() === 0) {
     h.getRange(1, 1, 1, cabecera.length).setValues([cabecera]).setFontWeight("bold");
     h.setFrozenRows(1);
   }
