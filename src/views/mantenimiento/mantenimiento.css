@@ -45,6 +45,7 @@
 .mn-filtros { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
 .mn-sel { padding: 6px 10px; border-radius: 8px; border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-text); font: inherit; font-size: 13px; }
 .mn-graf { position: relative; height: 280px; }
+.mn-graf--bajo { height: 220px; margin-bottom: 10px; }
 
 /* Semáforo */
 .mn-sem td.mn-sem-c { text-align: center; }

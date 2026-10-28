@@ -13,12 +13,16 @@ import { esc } from '../../core/format.js';
 import {
   MNT_ESTADO, MNT_PROXIMO, MNT_TOLERANCIAS, MNT_EQUIPOS_SHEET, MNT_PLAN_SHEET, MNT_TRAB_SHEET, MNT_LECT_SHEET,
   leerTrabajos, leerLecturas, leerEquipos, leerPlan, horometros, horometroActual, proximos, porUrgencia, resumenLecturas,
-  serie, umbrales,
+  serie, umbrales, indicadores, mensual, porActividad, anios,
 } from './mantenimiento.data.js';
 import './mantenimiento.css';
 
-const vState = { tab: 'semaforo', lecEquipo: '', lecParam: 'corriente' };
-const TABS = [['semaforo', '🚦 Semáforo'], ['lecturas', '📈 Lecturas']];
+const vState = { tab: 'semaforo', lecEquipo: '', lecParam: 'corriente', anio: '' };
+const TABS = [['semaforo', '🚦 Semáforo'], ['lecturas', '📈 Lecturas'], ['indicadores', '📊 Indicadores']];
+const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+/* Del Excel («Estadísticas»): % preventivo con meta de 80 % o más; disponibilidad en rojo por debajo de 95 %. */
+const META = { preventivo: 80, disponibilidad: 95 };
+const usd = (x) => (x == null ? '—' : '$' + Number(x).toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 /* Los parámetros de la curva: [clave, rótulo, unidad]. El horómetro, en horas reales. */
 const PARAMS = [['corriente', 'Corriente', 'A'], ['presion', 'Presión', 'psi'], ['temperatura', 'Temperatura', '°C'], ['horometro', 'Horómetro', 'h']];
 
@@ -157,8 +161,58 @@ function dibujarLecturas(root, m) {
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } } });
 }
 
-const SECCION = { semaforo: semaforoHTML, lecturas: lecturasHTML };
-const DIBUJO = { lecturas: dibujarLecturas };
+/* ── 📊 Indicadores ── */
+function indicadoresHTML(m) {
+  const ind = indicadores(m), f = ind.flota;
+  const pctTxt = (x) => (x == null ? '—' : x + ' %');
+  const kpi = (v, l, cls = '') => '<div class="mn-kpi ' + cls + '"><div class="mn-kpi-v">' + v + '</div><div class="mn-kpi-l">' + l + '</div></div>';
+  const kpis = '<div class="mn-kpis">' + kpi(f.total, 'Intervenciones') + kpi(f.preventivos, 'Preventivos') + kpi(f.correctivos, 'Correctivos (fallas)')
+    + kpi(pctTxt(f.pctPreventivo), '% preventivo (meta ≥ ' + META.preventivo + ' %)', f.pctPreventivo != null && f.pctPreventivo < META.preventivo ? 'mn-kpi--proximo' : '')
+    + kpi(fmtH(f.paradaTotal) + ' h', 'Horas de parada')
+    + kpi(f.mtbf != null ? fmtH(f.mtbf) + ' h' : '—', 'MTBF de la flota (entre fallas)') + kpi(f.mttr != null ? fmtH(f.mttr) + ' h' : '—', 'MTTR de la flota (por reparación)')
+    + kpi(pctTxt(f.disponibilidad != null ? fmtH(f.disponibilidad) : null), 'Disponibilidad promedio', f.disponibilidad != null && f.disponibilidad < META.disponibilidad ? 'mn-kpi--vencido' : '')
+    + kpi(usd(f.costo), 'Costo total') + kpi(esc(f.masFallas) || '—', 'Equipo con más fallas') + '</div>';
+  const filas = ind.porEquipo.map((x) => '<tr class="' + (x.standBy ? 'mn-standby' : '') + '"><td><b>' + esc(x.equipo) + '</b>' + (x.standBy ? ' <span class="mn-chip">stand by</span>' : '') + '</td>'
+    + '<td>' + (esc(x.ubicacion) || '—') + '</td><td class="mn-num">' + fmtH(x.horas) + '</td><td class="mn-num">' + x.preventivos + '</td>'
+    + '<td class="mn-num">' + x.correctivos + '</td><td class="mn-num">' + x.total + '</td><td class="mn-num">' + pctTxt(x.pctPreventivo) + '</td>'
+    + '<td class="mn-num">' + fmtH(x.paradaTotal) + '</td><td class="mn-num">' + fmtH(x.paradaFallas) + '</td>'
+    + '<td class="mn-num">' + fmtH(x.mtbf) + '</td><td class="mn-num">' + fmtH(x.mttr) + '</td>'
+    + '<td class="mn-num' + (x.disponibilidad < META.disponibilidad ? ' mn-fuera' : '') + '">' + fmtH(x.disponibilidad) + ' %</td><td class="mn-num">' + usd(x.costo) + '</td></tr>').join('');
+  const listaAnios = anios(m.trabajos);
+  if (!listaAnios.includes(+vState.anio)) vState.anio = String(listaAnios[0] || new Date().getFullYear());
+  const mes = mensual(m.trabajos, +vState.anio);
+  const selAnio = '<select class="mn-sel" data-mn-sel="anio" aria-label="Año">' + (listaAnios.length ? listaAnios : [+vState.anio])
+    .map((a) => '<option value="' + a + '"' + (String(a) === vState.anio ? ' selected' : '') + '>' + a + '</option>').join('') + '</select>';
+  const tablaMes = '<div class="mn-scroll"><table class="mn-tabla"><thead><tr><th>Mes</th><th>Preventivos</th><th>Correctivos</th><th>Total</th><th>Parada (h)</th><th>Costo</th></tr></thead><tbody>'
+    + mes.map((x) => '<tr><td>' + MESES[x.mes - 1] + '</td><td class="mn-num">' + x.preventivos + '</td><td class="mn-num">' + x.correctivos + '</td>'
+      + '<td class="mn-num">' + x.total + '</td><td class="mn-num">' + fmtH(x.parada) + '</td><td class="mn-num">' + usd(x.costo) + '</td></tr>').join('') + '</tbody></table></div>';
+  const act = porActividad(m.trabajos, m.plan);
+  const tablaAct = '<div class="mn-scroll"><table class="mn-tabla"><thead><tr><th>Actividad</th><th>Veces</th><th>Parada (h)</th><th>Costo</th></tr></thead><tbody>'
+    + act.map((x) => '<tr><td>' + esc(x.actividad) + '</td><td class="mn-num">' + x.veces + '</td><td class="mn-num">' + fmtH(x.parada) + '</td><td class="mn-num">' + usd(x.costo) + '</td></tr>').join('')
+    + '</tbody></table></div>';
+  return '<section class="card mn-card"><h3 class="mn-h3">La flota</h3><p class="mn-nota">Horas operadas = horómetro actual (los equipos arrancaron en 0 h). '
+    + 'MTBF = horas ÷ correctivos; MTTR = parada por fallas ÷ correctivos; disponibilidad = MTBF ÷ (MTBF + MTTR), 100 % mientras no haya fallas.</p>' + kpis + '</section>'
+    + '<section class="card mn-card"><h3 class="mn-h3">Por equipo</h3><div class="mn-scroll"><table class="mn-tabla"><thead><tr><th>Equipo</th><th>Ubicación</th>'
+    + '<th>Horas operadas</th><th>Prev.</th><th>Corr.</th><th>Total</th><th>% prev.</th><th>Parada (h)</th><th>Por fallas (h)</th><th>MTBF (h)</th><th>MTTR (h)</th>'
+    + '<th>Disponibilidad</th><th>Costo</th></tr></thead><tbody>' + filas + '</tbody></table></div></section>'
+    + '<section class="card mn-card"><h3 class="mn-h3">Mes a mes</h3><div class="mn-filtros">' + selAnio + '</div>'
+    + '<div class="mn-graf mn-graf--bajo"><canvas id="mnMesChart" aria-label="Preventivos y correctivos por mes"></canvas></div>' + tablaMes + '</section>'
+    + '<section class="card mn-card"><h3 class="mn-h3">Por actividad</h3>' + tablaAct + '</section>';
+}
+function dibujarIndicadores(root, m) {
+  const cv = root.querySelector('#mnMesChart');
+  if (!cv) return;
+  const mes = mensual(m.trabajos, +vState.anio);
+  makeChart(cv, { type: 'bar', data: { labels: MESES.map((x) => x.slice(0, 3)), datasets: [
+    { label: 'Preventivos', data: mes.map((x) => x.preventivos), backgroundColor: '#1ec86a' },
+    { label: 'Correctivos', data: mes.map((x) => x.correctivos), backgroundColor: '#e8303e' },
+    { label: 'Otros (inspección, predictivo)', data: mes.map((x) => x.total - x.preventivos - x.correctivos), backgroundColor: '#90a4ae' },
+  ] }, options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } },
+    plugins: { legend: { position: 'bottom' } } } });
+}
+
+const SECCION = { semaforo: semaforoHTML, lecturas: lecturasHTML, indicadores: indicadoresHTML };
+const DIBUJO = { lecturas: dibujarLecturas, indicadores: dibujarIndicadores };
 
 export function mantenimientoView(root) {
   if (!store.globalData.length) {
