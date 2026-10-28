@@ -345,15 +345,19 @@ volver a abrir esto, esto es lo que ya se midió:
   un armado que falla libera lo que había creado, también el del QR de acceso (pauta 3.17, 2026-10-19). La página del QR
   también dice que perdió la memoria gráfica, encima del código, y mientras falte, «Descargar PNG» no baja el lienzo
   vacío y lo avisa (Tarea 27, 2026-10-22).
-  🆕 **«🦐 Broodstock»** (2026-10-27, tercer botón del selector; `planta/broodstock.js`, también sin 3D): un **mapa 2D**
-  de las piscinas de Broodstock, de donde salen los reproductores. Es un ESQUEMA (`planta/piscinas.js`), no la foto de
-  satélite: las zonas **San Rafael** (12 en fila, numeradas de derecha a izquierda), **Roche** (9 en columna, de arriba
+  🆕 **«🦐 Broodstock»** (2026-10-27, tercer botón del selector; `planta/broodstock.js`, también sin 3D): un **mapa**
+  de las piscinas de Broodstock, de donde salen los reproductores. 🛰 Desde el 2026-10-28 con **aspecto de satélite**: la
+  FORMA medida sobre las capturas del usuario (`planta/piscinas.js`: la fila de San Rafael inclinada, las largas de Roche
+  como en la foto, el entorno de aguas, caminos y vegetación, y Niágara en su recuadro), y todo DIBUJADO por el SVG
+  —texturas, la sombra del bordo sobre el agua, la luz sobre la tierra—: las capturas de Google no se usan ni se guardan.
+  Las zonas **San Rafael** (12 en fila, numeradas de derecha a izquierda), **Roche** (9 en columna, de arriba
   abajo, la larga 739 y 3 largas aún sin nombre) y **Niágara** (otro sector, 5 aún sin nombre). La vista general enseña
   las tres zonas; tocar una se acerca a sus piscinas (con «← Todas las zonas») y tocar una piscina abre su **ficha**:
   fase, peso con su fecha, incremento y crecimiento, sobrevivencia, densidad, área, siembra, edad por fase, código
   genético, camaronera y piscina de origen, su desempeño como origen de lotes de Maduración y su curva de peso por
-  cortes. Cada piscina va pintada por **fase** (Precría · Engorde · Pre-reproductor), en gris si no vino en el último
-  corte y con borde discontinuo si aún no tiene nombre. No calcula nada propio: es la tabla y la ficha de 🧬 Lotes de
+  cortes. Cada piscina lleva el agua TEÑIDA por su **fase** (Precría · Engorde · Pre-reproductor), se ve SECA si no vino
+  en el último corte y oscura con borde discontinuo si aún no tiene nombre; al acercarse, las zonas vecinas se ven
+  atenuadas y no se tocan, y en un celular el mapa se desplaza dentro de su caja. No calcula nada propio: es la tabla y la ficha de 🧬 Lotes de
   Maduración (`tablaDePiscinas`, `fichaDePiscina`) sobre la hoja `Maduración Broodstock`, el ÚLTIMO corte (o el del
   cierre del mes elegido en los otros modos); lo que no se ubica en el plano sale «fuera del mapa», y lo que vino en el
   corte anterior y no en éste, aparte.
@@ -706,7 +710,7 @@ src/
     maduracion/            🧬 Microchips (el REPRODUCTIVO, por Trovan) y el TABLERO del registro
                            OPERATIVO (operativo.*) · ⚠ sus FICHAS de captura NO están aquí: ver engine.js
     planta/                🏭 Gerencia: maqueta 3D (escena.js, three.js) · 📊 Análisis sin 3D (analisis.js) ·
-                           🦐 Broodstock, el mapa 2D de sus piscinas (broodstock.js, con su plano piscinas.js) ·
+                           🦐 Broodstock, el mapa de sus piscinas (broodstock.js, con su plano piscinas.js) ·
                            textos (lo que dicen ambos) · meta · plano · estado · cifras · qr/ (acceso)
     registros/             Fichas nativas (lib/ + fichas/) sobre el motor engine.js
                            lib/ tiene los esquemas y el LIBRO MAYOR de Maduración, con su

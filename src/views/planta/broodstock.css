@@ -1,6 +1,8 @@
 /* ============================================================
-   PLANTA · el modo «🦐 Broodstock» (M3, 2026-10-27): el mapa 2D de las piscinas y su ficha (broodstock.js).
-   Los colores de fase valen en claro y en oscuro (el número va siempre oscuro sobre un relleno claro).
+   PLANTA · el modo «🦐 Broodstock» (M3, 2026-10-27): el mapa de las piscinas y su ficha (broodstock.js).
+   🛰 2026-10-28 · con aspecto de satélite: el mapa lleva su propia paleta (tierra, monte, agua oscura de las vecinas y
+   agua TEÑIDA por fase en las de Broodstock) y se ve igual en claro y en oscuro, como una foto. Los rótulos van en blanco
+   con halo oscuro: se leen sobre cualquier agua y sobre la tierra seca. La leyenda y la ficha usan los mismos colores.
    ============================================================ */
 .bs { display: flex; flex-direction: column; gap: 12px; color: var(--c-text); }
 .bs-cab { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 10px 20px; }
@@ -8,13 +10,13 @@
 .bs-sub { margin: 4px 0 0; color: var(--c-text-soft); font-size: 13px; }
 .bs-leyenda { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--c-text-soft); }
 .bs-leyenda li { display: flex; align-items: center; gap: 6px; }
-.bs-leyenda i, .bs-fase i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0, 0, 0, .25); }
+.bs-leyenda i, .bs-fase i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0, 0, 0, .3); }
 .bs-nav { display: flex; align-items: center; gap: 12px; }
 .bs-nav[hidden], .bs-aparte[hidden] { display: none; }   /* el `display` de arriba ganaba al atributo `hidden` */
 .bs-nav button { font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 8px; border: 1px solid var(--c-border, #d5dde0); background: var(--c-surface); color: var(--c-text); cursor: pointer; }
 .bs-cuerpo { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; align-items: start; }
-.bs-mapa { background: var(--c-surface); border: 1px solid var(--c-border, #d5dde0); border-radius: 12px; padding: 8px; }
-.bs-svg { display: block; width: 100%; height: auto; max-height: 70vh; }
+.bs-mapa { background: #1b2418; border: 1px solid var(--c-border, #d5dde0); border-radius: 12px; padding: 6px; overflow: hidden; }
+.bs-svg { display: block; width: 100%; height: auto; max-height: 72vh; border-radius: 8px; }
 .bs-ficha { background: var(--c-surface); border: 1px solid var(--c-border, #d5dde0); border-radius: 12px; padding: 12px 14px; font-size: 13px; }
 .bs-ficha h3 { margin: 0 0 6px; font-size: 15px; }
 .bs-ficha h4 { margin: 12px 0 4px; font-size: 13px; color: var(--c-text-soft); }
@@ -28,30 +30,47 @@
 .bs-aparte p { margin: 2px 0; }
 .bs-datos { font-size: 12px; color: var(--c-text-soft); margin: 0; }
 
-/* El mapa: zonas, piscinas y sus textos (unidades del esquema, piscinas.js). */
-.bs-zona-marco { fill: rgba(70, 110, 120, .06); stroke: #9fb3b9; stroke-width: 1.5; }
-.bs-zona.aparte .bs-zona-marco { stroke-dasharray: 8 6; }
-.bs-zona-nombre { font: 600 15px system-ui, sans-serif; fill: var(--c-text-soft); }
-.bs-svg.general .bs-zona { cursor: pointer; }
-.bs-svg.general .bs-zona:hover .bs-zona-marco, .bs-svg.general .bs-zona:focus-visible .bs-zona-marco { fill: rgba(70, 110, 120, .14); stroke: var(--c-brand); stroke-width: 2.5; }
-.bs-svg.general .bs-peso { display: none; }
-.bs-svg:not(.general) .bs-zona-nombre { display: none; }
-.bs-svg:not(.general) .bs-pisc { cursor: pointer; }
-.bs-pisc rect { stroke: rgba(0, 0, 0, .35); stroke-width: 1; }
-.bs-pisc text { text-anchor: middle; dominant-baseline: middle; fill: #10282c; font-family: system-ui, sans-serif; pointer-events: none; }
-.bs-num { font-weight: 700; }
-.bs-svg:not(.general) .bs-pisc:hover rect, .bs-pisc:focus-visible rect { stroke: var(--c-brand); stroke-width: 2.5; }
-.bs-pisc.on rect { stroke: #d9622b; stroke-width: 3.5; }
-.bs-pisc:focus { outline: none; }
+/* ── El mapa (unidades de la captura, piscinas.js) ── */
+.bs-tierra, .bs-recuadro-fondo { fill: #7d7a55; }
+.bs-monte polygon { fill: #2f4a26; }
+.bs-aguas polygon { fill: url(#bs-g-vecina); }
+.bs-caminos polyline { fill: none; stroke: #b9ab8c; stroke-linecap: round; stroke-linejoin: round; }
+.bs-recuadro-marco { fill: none; stroke: rgba(255, 255, 255, .85); stroke-width: 2; stroke-dasharray: 10 6; }
+.bs-bordos polygon { fill: #a59a7a; }
+.bs-pisc .bs-agua { stroke: rgba(10, 18, 22, .55); stroke-width: .8; }
+.bs-pisc text { text-anchor: middle; dominant-baseline: middle; fill: #fff; stroke: rgba(8, 14, 18, .82); stroke-width: 3px;
+  stroke-linejoin: round; paint-order: stroke; font-family: system-ui, sans-serif; pointer-events: none; }
+.bs-num { font-weight: 800; }
+.bs-peso { font-weight: 600; }
 
-/* Las fases (mapa, leyenda y ficha). */
-.bs-c-precria, .bs-c-precria rect { background: #9fd3ee; fill: #9fd3ee; }
-.bs-c-engorde, .bs-c-engorde rect { background: #8fd1a8; fill: #8fd1a8; }
-.bs-c-prerrep, .bs-c-prerrep rect { background: #f2b27a; fill: #f2b27a; }
-.bs-c-otra, .bs-c-otra rect { background: #d9c7f0; fill: #d9c7f0; }
-.bs-c-sin, .bs-c-sin rect { background: #dfe5e7; fill: #dfe5e7; }
-.bs-c-sn, .bs-c-sn rect { background: transparent; fill: rgba(255, 255, 255, .35); stroke-dasharray: 5 4; }
-.bs-leyenda .bs-c-sn { border-style: dashed; }
+/* Las zonas: en la vista general, el contorno es el botón; al acercarse, las vecinas se atenúan y no se tocan. */
+.bs-zona-marco { fill: rgba(255, 255, 255, .001); stroke: rgba(255, 255, 255, .55); stroke-width: 1.5; stroke-dasharray: 7 5; }
+.bs-zona-nombre { font: 800 19px system-ui, sans-serif; fill: #fff; stroke: rgba(8, 14, 18, .85); stroke-width: 4px; paint-order: stroke; stroke-linejoin: round; pointer-events: none; }
+.bs-svg.general .bs-zona { cursor: pointer; }
+.bs-svg.general .bs-zona:hover .bs-zona-marco, .bs-svg.general .bs-zona:focus-visible .bs-zona-marco { fill: rgba(255, 255, 255, .14); stroke: #fff; stroke-width: 3; stroke-dasharray: none; }
+.bs-svg.general .bs-peso { display: none; }
+.bs-svg:not(.general) .bs-zona-marco { stroke: none; pointer-events: none; }
+.bs-svg:not(.general) .bs-zona.elegida .bs-zona-nombre { display: none; }
+.bs-zona.ajena { opacity: .45; pointer-events: none; }
+.bs-zona.ajena .bs-peso { display: none; }
+.bs-svg:not(.general) .bs-zona.elegida .bs-pisc { cursor: pointer; }
+.bs-svg:not(.general) .bs-zona.elegida .bs-pisc:hover .bs-agua, .bs-pisc:focus-visible .bs-agua { stroke: #fff; stroke-width: 2.5; }
+.bs-pisc.on .bs-agua { stroke: #ffd84a; stroke-width: 3.5; }
+.bs-pisc:focus, .bs-zona:focus { outline: none; }
+
+/* Las fases: agua teñida en el mapa, el mismo color en la leyenda y en la ficha. Sin datos: tierra seca (con su textura). */
+.bs-c-precria .bs-agua { fill: url(#bs-g-precria); }
+.bs-c-engorde .bs-agua { fill: url(#bs-g-engorde); }
+.bs-c-prerrep .bs-agua { fill: url(#bs-g-prerrep); }
+.bs-c-otra .bs-agua { fill: url(#bs-g-otra); }
+.bs-c-sin .bs-agua { fill: #b8a486; filter: url(#bs-terreno); }
+.bs-c-sn .bs-agua { fill: url(#bs-g-sn); stroke: rgba(255, 255, 255, .7); stroke-width: 1.4; stroke-dasharray: 6 4; }
+.bs-leyenda .bs-c-precria, .bs-fase .bs-c-precria { background: linear-gradient(135deg, #4f93c4, #25638f); }
+.bs-leyenda .bs-c-engorde, .bs-fase .bs-c-engorde { background: linear-gradient(135deg, #4c9a76, #256a4c); }
+.bs-leyenda .bs-c-prerrep, .bs-fase .bs-c-prerrep { background: linear-gradient(135deg, #c08a45, #8a5a22); }
+.bs-leyenda .bs-c-otra, .bs-fase .bs-c-otra { background: linear-gradient(135deg, #8a78c0, #5a4a92); }
+.bs-leyenda .bs-c-sin { background: #b8a486; }
+.bs-leyenda .bs-c-sn { background: #1d3a52; border: 1.5px dashed #9fb3bf; }
 
 /* La curva de peso de la ficha. */
 .bs-curva { display: block; width: 100%; height: auto; }
@@ -60,9 +79,11 @@
 .bs-curva text { font-size: 10px; fill: var(--c-text-soft); }
 
 @media (max-width: 860px) { .bs-cuerpo { grid-template-columns: 1fr; } }
+/* En un celular el mapa entero quedaba a escala ≈ 0,39 (números de 4–6 px; hallazgo 2 de la Sesión A): se dibuja a un
+   ancho fijo legible y se DESPLAZA dentro de su caja. */
+@media (max-width: 760px) {
+  .bs-mapa { overflow: auto; -webkit-overflow-scrolling: touch; }
+  .bs-svg { width: 900px; max-width: none; max-height: none; }
+}
 
-[data-theme="dark"] .bs-zona-marco { fill: rgba(160, 200, 210, .05); stroke: #4a5d63; }
 [data-theme="dark"] .bs-leyenda i, [data-theme="dark"] .bs-fase i { border-color: rgba(255, 255, 255, .45); }
-[data-theme="dark"] .bs-c-sin, [data-theme="dark"] .bs-c-sin rect { background: #9aa6aa; fill: #9aa6aa; }
-[data-theme="dark"] .bs-c-sn rect { fill: rgba(255, 255, 255, .06); stroke: #8a979b; }
-[data-theme="dark"] .bs-c-sn text { fill: #c9d3d6; }

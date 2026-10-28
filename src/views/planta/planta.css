@@ -207,7 +207,9 @@
 }
 
 /* ---- Selector «🏭 Maqueta | 📊 Análisis» (T1 de Análisis, 2026-10-05): fuera de .planta, con los tokens de la app ---- */
-.planta-modos { display: inline-flex; gap: 3px; padding: 3px; margin: 0 0 10px; border: 1px solid var(--c-border); border-radius: 10px; background: var(--c-surface); }
+/* flex-wrap + max-width (2026-10-28, hallazgo 5 de la Sesión A): con el tercer botón, «🦐 Broodstock», los tres no cabían en un celular de 360 px y
+   desbordaban la página; ahora el último baja de línea. */
+.planta-modos { display: inline-flex; flex-wrap: wrap; max-width: 100%; gap: 3px; padding: 3px; margin: 0 0 10px; border: 1px solid var(--c-border); border-radius: 10px; background: var(--c-surface); }
 .planta-modos button { font: 600 13px/1 var(--font-sans); color: var(--c-text); background: transparent; border: 0; border-radius: 7px; padding: 8px 14px; cursor: pointer; }
 .planta-modos button:hover { background: var(--c-surface-2); }
 .planta-modos button[aria-pressed="true"] { background: var(--c-text); color: var(--c-surface); }

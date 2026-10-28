@@ -94,7 +94,12 @@ describe('🦐 Broodstock · el mapa y la ficha (montarBroodstock)', () => {
     expect($('svg').getAttribute('viewBox')).toBe(`${c[0]} ${c[1]} ${c[2] - c[0]} ${c[3] - c[1]}`);
     expect($('[data-r="nav"]').hidden).toBe(false);
     expect($('[data-r="zona"]').textContent).toBe('San Rafael');
-    expect([...caja.querySelectorAll('[data-zona]')].map((z) => z.dataset.zona), 'sólo la zona elegida').toEqual(['san-rafael']);
+    // 🛰 2026-10-28: las vecinas se ven (atenuadas, como en un mapa) pero no se tocan ni se leen
+    expect(caja.querySelector('[data-zona="san-rafael"]').classList.contains('elegida')).toBe(true);
+    expect([...caja.querySelectorAll('.bs-zona.ajena')].map((z) => z.dataset.zona)).toEqual(['roche', 'niagara']);
+    expect([...caja.querySelectorAll('.bs-zona.ajena')].every((z) => z.getAttribute('aria-hidden') === 'true')).toBe(true);
+    expect(caja.querySelectorAll('[data-zona][role="button"]'), 'al acercarse, las zonas ya no son botones').toHaveLength(0);
+    expect([...caja.querySelectorAll('[data-piscina][role="button"]')].every((p) => p.closest('[data-zona]').dataset.zona === 'san-rafael'), 'los botones: sólo las piscinas de la elegida').toBe(true);
     expect($('[data-r="ficha"]').textContent).toContain('Toca una piscina');
     click(piscina(SR1));
     const f = $('[data-r="ficha"]');
@@ -157,5 +162,66 @@ describe('🦐 Broodstock · de punta a punta con el modelo REAL de Maduración 
     expect(f.textContent).toContain('24 g');
     expect(f.querySelectorAll('.bs-curva circle')).toHaveLength(2);
     store.globalData = [];
+  });
+});
+
+describe('🦐 Broodstock · 🛰 el aspecto de satélite y el teclado (2026-10-28)', () => {
+  it('🔴 la forma de la captura: cada piscina es su polígono; el entorno y el recuadro de Niágara están; nada de imágenes', () => {
+    vista.pintarEstado({});
+    const pol = piscina(SR1).querySelector('polygon.bs-agua');
+    const p = Z['san-rafael'].piscinas.find((x) => x.nombre === SR1);
+    expect(pol.getAttribute('points')).toBe(p.poly.map((v) => v[0] + ',' + v[1]).join(' '));
+    expect(caja.querySelectorAll('.bs-bordos polygon')).toHaveLength(ZONAS.reduce((n, z) => n + z.piscinas.length, 0));
+    expect(caja.querySelectorAll('.bs-aguas polygon').length).toBeGreaterThan(3);
+    expect(caja.querySelectorAll('.bs-caminos polyline').length).toBeGreaterThan(3);
+    expect(caja.querySelector('.bs-recuadro')).not.toBeNull();
+    expect(caja.querySelector('svg image, svg [href*="google"]'), 'ni una imagen: todo dibujado').toBeNull();
+    ['bs-terreno', 'bs-agua', 'bs-hundido', 'bs-relieve', 'bs-monte'].forEach((f) => expect(caja.querySelector('filter#' + f), f).not.toBeNull());
+  });
+
+  it('🔴 en la vista general el botón es la ZONA y ninguna piscina es foco (no hay botones dentro de botones)', () => {
+    vista.pintarEstado({});
+    expect(caja.querySelectorAll('[data-zona][role="button"][tabindex="0"]')).toHaveLength(3);
+    expect(caja.querySelectorAll('[data-piscina][role], [data-piscina][tabindex]')).toHaveLength(0);
+  });
+
+  it('🔴 el foco no se pierde: Intro en una zona lo lleva a su primera piscina; elegir una piscina no rehace el mapa; volver, a la zona', () => {
+    vista.pintarEstado({});
+    const roche = caja.querySelector('[data-zona="roche"]');
+    roche.focus();
+    roche.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    const primera = caja.querySelector('[data-zona="roche"] [data-piscina]');
+    expect(document.activeElement).toBe(primera);
+    const antes = piscina(RO1);
+    antes.focus();
+    antes.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(piscina(RO1), 'el mismo nodo: el SVG no se reconstruyó').toBe(antes);
+    expect(document.activeElement).toBe(antes);
+    expect(antes.getAttribute('aria-pressed')).toBe('true');
+    click($('[data-accion="general"]'));
+    expect(document.activeElement).toBe(caja.querySelector('[data-zona="roche"]'));
+  });
+
+  it('al acercarse, tocar una piscina de una zona VECINA no hace nada', () => {
+    vista.pintarEstado({});
+    click(caja.querySelector('[data-zona="roche"]'));
+    click(piscina(SR1));
+    expect($('[data-r="zona"]').textContent).toBe('Roche');
+    expect($('[data-r="ficha"]').textContent).toContain('Toca una piscina');
+  });
+
+  it('las de la columna de Roche (anchas y bajas) llevan número y peso en UNA línea; la 739 (larga), en dos', () => {
+    vista.pintarEstado({});
+    click(caja.querySelector('[data-zona="roche"]'));
+    const peso = piscina(RO1).querySelector('.bs-peso');
+    expect(peso.tagName.toLowerCase()).toBe('tspan');
+    expect(peso.parentNode.querySelector('.bs-num').textContent).toBe(RO1);
+    expect(piscina(RO1).querySelectorAll('text')).toHaveLength(1);
+  });
+
+  it('la piscina sin datos se ve SECA y la leyenda lo dice', () => {
+    vista.pintarEstado({});
+    expect(piscina(SR2).classList.contains('bs-c-sin')).toBe(true);
+    expect($('.bs-leyenda').textContent).toContain('(seca)');
   });
 });

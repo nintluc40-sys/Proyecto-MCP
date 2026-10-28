@@ -1,12 +1,19 @@
 /* ============================================================
-   PLANTA · el modo «🦐 Broodstock» (M3, 2026-10-27, usuario): un MAPA 2D, tipo tablero, de las piscinas de Broodstock
-   —donde crecen los reproductores antes de entrar a Maduración— con lo que trae su hoja.
+   PLANTA · el modo «🦐 Broodstock» (M3, 2026-10-27, usuario): el MAPA de las piscinas de Broodstock —donde crecen los
+   reproductores antes de entrar a Maduración— con lo que trae su hoja.
 
-   Diseño aprobado por el usuario: un esquema 2D (no la foto de satélite: el repo es público y es de Google) con una
-   VISTA GENERAL de las tres zonas; al tocar una, el mapa se acerca a sus piscinas («← Todas las zonas» vuelve); al
-   tocar una piscina, su FICHA. Cada piscina, con su número y su peso, pintada POR FASE (Precría, Engorde,
-   Pre-reproductor), en gris si no vino en el último corte y con borde discontinuo si aún no tiene nombre. La geometría y
-   la numeración son de `piscinas.js`.
+   Diseño aprobado por el usuario: una VISTA GENERAL de las tres zonas; al tocar una, el mapa se acerca a sus piscinas
+   («← Todas las zonas» vuelve); al tocar una piscina, su FICHA. La geometría y la numeración son de `piscinas.js`.
+   🛰 2026-10-28 (usuario, ronda 10, tarea 2) · con ASPECTO DE SATÉLITE, relieve y la FORMA de la captura: la fila de San
+   Rafael inclinada, las largas de Roche como en la foto, el entorno (las piscinas grandes vecinas, los canales, los
+   caminos y la vegetación) y Niágara en su recuadro. Todo DIBUJADO por el SVG —texturas de ruido, la sombra del bordo
+   sobre el agua, la luz sobre la tierra—: las capturas de Google NO se usan ni se guardan (repo público). Cada piscina,
+   con agua TEÑIDA por su fase (Precría, Engorde, Pre-reproductor); la que no vino en el último corte, SECA, como las
+   vacías de la foto; la que aún no tiene nombre, con el agua oscura de las de producción y el borde discontinuo.
+   El SVG se CONSTRUYE una vez por cada dato nuevo; elegir una zona o una piscina sólo mueve el encuadre y cambia clases
+   y roles: los filtros no se recalculan en cada toque y el FOCO del teclado no se pierde (hallazgo 3 de la auditoría
+   de la Sesión A, 28-10, que también señaló los botones anidados: ahora en la vista general el botón es la ZONA, y al
+   acercarse, cada PISCINA; las zonas vecinas se ven atenuadas y no se tocan).
 
    🔑 NO calcula nada propio: la tabla y la ficha son las de 🧬 Lotes de Maduración (`tablaDePiscinas` y
    `fichaDePiscina`, operativo.broodstock.js) sobre el mismo modelo (`modeloOperativo`), así que el mapa no puede
@@ -24,7 +31,7 @@ import { modeloOperativo } from '../maduracion/operativo.data.js';
 import { normalizarFiltro } from '../maduracion/operativo.tablero.js';
 import { tablaDePiscinas, fichaDePiscina } from '../maduracion/operativo.broodstock.js';
 import { hoyLocal } from './estado.js';
-import { ZONAS, CAJA_GENERAL, zonaDePiscina, nombreDePiscina } from './piscinas.js';
+import { ZONAS, CAJA_GENERAL, TIERRA, ENTORNO, RECUADRO_NIAGARA, centro, zonaDePiscina, nombreDePiscina } from './piscinas.js';
 
 /* Las fases del catálogo de la carga (MAD_BS_FASES), cada una con su clase; lo que no está en él, «otra». */
 export const FASES = [['Precría', 'precria'], ['Engorde', 'engorde'], ['Pre-reproductor', 'prerrep']];
@@ -53,11 +60,111 @@ export function datosDelMapa(T) {
   return { corte: T.corte || '', zonas, fuera, ausentes: T.ausentes || [] };
 }
 
+/* ── El aspecto de satélite: todo dibujado ─────────────────
+   · bs-terreno: manchas grandes y grano fino, multiplicados sobre el color (tierra, monte, piscinas secas).
+   · bs-agua: un rizo suave sobre el agua.
+   · bs-hundido: la sombra del bordo sobre el agua (la piscina está más baja que su bordo): relieve.
+   · bs-relieve: la luz del noroeste sobre los bordos y caminos de tierra (los realza).
+   · bs-monte: el borde irregular y el moteado de la vegetación.
+   Se aplican a GRUPOS (un pase por capa), no a cada piscina. */
+const DEFS = `<defs>
+<filter id="bs-terreno" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+  <feTurbulence type="fractalNoise" baseFrequency=".018" numOctaves="3" seed="11" result="manchas"/>
+  <feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="1" seed="4" result="grano"/>
+  <feComposite in="manchas" in2="grano" operator="arithmetic" k2=".75" k3=".35" result="ruido"/>
+  <feColorMatrix in="ruido" type="saturate" values="0" result="gris"/>
+  <feComponentTransfer in="gris" result="mult"><feFuncR type="linear" slope=".55" intercept=".62"/><feFuncG type="linear" slope=".55" intercept=".62"/><feFuncB type="linear" slope=".55" intercept=".62"/></feComponentTransfer>
+  <feBlend in="SourceGraphic" in2="mult" mode="multiply" result="b"/>
+  <feComposite in="b" in2="SourceAlpha" operator="in"/>
+</filter>
+<filter id="bs-agua" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+  <feTurbulence type="fractalNoise" baseFrequency=".05 .22" numOctaves="2" seed="8" result="rizo"/>
+  <feColorMatrix in="rizo" type="saturate" values="0" result="gris"/>
+  <feComponentTransfer in="gris" result="mult"><feFuncR type="linear" slope=".3" intercept=".82"/><feFuncG type="linear" slope=".3" intercept=".82"/><feFuncB type="linear" slope=".3" intercept=".82"/></feComponentTransfer>
+  <feBlend in="SourceGraphic" in2="mult" mode="multiply" result="b"/>
+  <feComposite in="b" in2="SourceAlpha" operator="in"/>
+</filter>
+<filter id="bs-hundido" x="-4%" y="-4%" width="108%" height="108%" color-interpolation-filters="sRGB">
+  <feComponentTransfer in="SourceAlpha" result="fuera"><feFuncA type="table" tableValues="1 0"/></feComponentTransfer>
+  <feGaussianBlur in="fuera" stdDeviation="2.4" result="difusa"/>
+  <feOffset in="difusa" dx="1.6" dy="2.2" result="corrida"/>
+  <feFlood flood-color="#05090c" flood-opacity=".6"/>
+  <feComposite in2="corrida" operator="in" result="sombra"/>
+  <feComposite in="sombra" in2="SourceAlpha" operator="in" result="dentro"/>
+  <feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="dentro"/></feMerge>
+</filter>
+<filter id="bs-relieve" x="-3%" y="-3%" width="106%" height="106%" color-interpolation-filters="sRGB">
+  <feGaussianBlur in="SourceAlpha" stdDeviation="1.6" result="alto"/>
+  <feDiffuseLighting in="alto" surfaceScale="4" diffuseConstant="1.15" lighting-color="#fff" result="luz"><feDistantLight azimuth="225" elevation="52"/></feDiffuseLighting>
+  <feComposite in="luz" in2="SourceAlpha" operator="in" result="luz2"/>
+  <feBlend in="SourceGraphic" in2="luz2" mode="multiply"/>
+</filter>
+<filter id="bs-monte" x="-5%" y="-5%" width="110%" height="110%" color-interpolation-filters="sRGB">
+  <feTurbulence type="fractalNoise" baseFrequency=".045" numOctaves="2" seed="21" result="desvio"/>
+  <feDisplacementMap in="SourceGraphic" in2="desvio" scale="16" xChannelSelector="R" yChannelSelector="G" result="borde"/>
+  <feTurbulence type="fractalNoise" baseFrequency=".14" numOctaves="2" seed="9" result="copas"/>
+  <feColorMatrix in="copas" type="saturate" values="0" result="gris"/>
+  <feComponentTransfer in="gris" result="mult"><feFuncR type="linear" slope=".9" intercept=".35"/><feFuncG type="linear" slope=".9" intercept=".35"/><feFuncB type="linear" slope=".9" intercept=".35"/></feComponentTransfer>
+  <feBlend in="borde" in2="mult" mode="multiply" result="b"/>
+  <feComposite in="b" in2="borde" operator="in"/>
+</filter>
+${[['precria', '#4f93c4', '#25638f'], ['engorde', '#4c9a76', '#256a4c'], ['prerrep', '#c08a45', '#8a5a22'], ['otra', '#8a78c0', '#5a4a92'],
+    ['sn', '#1d3a52', '#0e2131'], ['vecina', '#14283a', '#0a1622']]
+    .map(([k, a, b]) => `<linearGradient id="bs-g-${k}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient>`).join('')}
+<clipPath id="bs-recorte-niagara"><rect x="${RECUADRO_NIAGARA[0]}" y="${RECUADRO_NIAGARA[1]}" width="${RECUADRO_NIAGARA[2] - RECUADRO_NIAGARA[0]}" height="${RECUADRO_NIAGARA[3] - RECUADRO_NIAGARA[1]}" rx="10"/></clipPath>
+</defs>`;
+
+const pts = (poly) => poly.map((p) => p[0] + ',' + p[1]).join(' ');
+const fondoHTML = (E, extra = '') => `<g class="bs-fondo"${extra}>`
+  + `<g class="bs-monte" filter="url(#bs-monte)">${E.vegetacion.map((p) => `<polygon points="${pts(p)}"/>`).join('')}</g>`
+  + `<g class="bs-aguas" filter="url(#bs-agua)">${E.aguas.map((p) => `<polygon points="${pts(p)}"/>`).join('')}</g>`
+  + `<g class="bs-caminos" filter="url(#bs-relieve)">${E.caminos.map((c) => `<polyline points="${pts(c.p)}" stroke-width="${c.w}"/>`).join('')}</g></g>`;
+const [TI0, TI1, TI2, TI3] = TIERRA, [RN0, RN1, RN2, RN3] = RECUADRO_NIAGARA;
+/* El fondo: la tierra, el entorno del sector principal y el recuadro de Niágara con el suyo. Va UNA vez y no se toca. */
+const FONDO = `<rect class="bs-tierra" x="${TI0}" y="${TI1}" width="${TI2 - TI0}" height="${TI3 - TI1}" filter="url(#bs-terreno)"/>`
+  + fondoHTML(ENTORNO)
+  + `<g class="bs-recuadro"><rect class="bs-recuadro-fondo" x="${RN0}" y="${RN1}" width="${RN2 - RN0}" height="${RN3 - RN1}" rx="10" filter="url(#bs-terreno)"/>`
+  + fondoHTML(ENTORNO.recuadro, ' clip-path="url(#bs-recorte-niagara)"')
+  + `<rect class="bs-recuadro-marco" x="${RN0}" y="${RN1}" width="${RN2 - RN0}" height="${RN3 - RN1}" rx="10"/></g>`;
+
+const lado = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+/** Lo que se lee de una piscina: su número y, al acercarse, su peso. El tamaño, el que cabe en su ancho y su alto; si no
+    hay alto para dos líneas (las nueve de Roche son anchas y bajas), número y peso van en UNA. */
+function piscinaHTML(z, p) {
+  const [mx, my] = centro(p.poly);
+  const ancho = Math.min(lado(p.poly[0], p.poly[1]), lado(p.poly[3], p.poly[2]));
+  const alto = Math.min(lado(p.poly[0], p.poly[3]), lado(p.poly[1], p.poly[2]));
+  const clase = !p.nombre ? 'sn' : p.dato ? claseDeFase(p.dato.fase) : 'sin';
+  const peso = p.dato && n1(p.dato.peso) ? n1(p.dato.peso) + ' g' : '';
+  const etiqueta = p.nombre ? 'Piscina ' + p.nombre + (p.dato ? ' · ' + (p.dato.fase || 'sin fase') + (peso ? ' · ' + peso : '') : ' · sin datos en el último corte')
+    : 'Piscina sin nombre de ' + z.nombre;
+  const tam = Math.max(11, Math.min(18, ancho * .3, alto * .48));
+  const unaLinea = alto < tam * 2.4;
+  const x = mx.toFixed(1), num = esc(p.nombre || 's/n');
+  const textos = !peso ? `<text class="bs-num" x="${x}" y="${(my + tam * .35).toFixed(1)}" font-size="${tam}">${num}</text>`
+    : unaLinea ? `<text x="${x}" y="${(my + tam * .35).toFixed(1)}" font-size="${tam}"><tspan class="bs-num">${num}</tspan><tspan class="bs-peso" dx="${(tam * .45).toFixed(1)}" font-size="${(tam * .8).toFixed(1)}">${esc(peso)}</tspan></text>`
+      : `<text class="bs-num" x="${x}" y="${(my - tam * .35).toFixed(1)}" font-size="${tam}">${num}</text>`
+        + `<text class="bs-peso" x="${x}" y="${(my + tam * .95).toFixed(1)}" font-size="${(tam * .8).toFixed(1)}">${esc(peso)}</text>`;
+  return `<g class="bs-pisc bs-c-${clase}" data-piscina="${esc(p.id)}" data-etiqueta="${esc(etiqueta)}">`
+    + `<polygon class="bs-agua" points="${pts(p.poly)}"/>` + textos + '</g>';
+}
+/** Una zona: su contorno (lo que se toca en la vista general), los bordos en relieve, el agua hundida y los rótulos. */
+function zonaHTML(z) {
+  const titulo = z.nombre + (z.aparte ? ' · otro sector' : '') + ' · ' + z.piscinas.length + ' piscinas · ' + z.conDatos + ' con datos';
+  const rotulo = z.rotulo;
+  return `<g class="bs-zona${z.aparte ? ' aparte' : ''}" data-zona="${esc(z.id)}" data-titulo="${esc(titulo)}">`
+    + `<polygon class="bs-zona-marco" points="${pts(z.contorno)}"/>`
+    + `<g class="bs-bordos" filter="url(#bs-relieve)">${z.piscinas.map((p) => `<polygon points="${pts(p.bordo)}"/>`).join('')}</g>`
+    + `<g class="bs-piscinas" filter="url(#bs-hundido)">${z.piscinas.map((p) => piscinaHTML(z, p)).join('')}</g>`
+    + `<text class="bs-zona-nombre" x="${rotulo[0]}" y="${rotulo[1]}">${esc(z.nombre + (z.aparte ? ' · otro sector' : ''))}</text>`
+    + '</g>';
+}
+
 const MARCO = `
 <div class="bs">
   <div class="bs-cab">
     <div><h2>🦐 Broodstock · piscinas</h2><p class="bs-sub" data-r="sub">Cargando datos de Broodstock…</p></div>
-    <ul class="bs-leyenda">${FASES.map(([f, c]) => `<li><i class="bs-c-${c}"></i>${esc(f)}</li>`).join('')}<li><i class="bs-c-sin"></i>Sin datos en el último corte</li><li><i class="bs-c-sn"></i>Sin nombre aún</li></ul>
+    <ul class="bs-leyenda">${FASES.map(([f, c]) => `<li><i class="bs-c-${c}"></i>${esc(f)}</li>`).join('')}<li><i class="bs-c-sin"></i>Sin datos en el último corte (seca)</li><li><i class="bs-c-sn"></i>Sin nombre aún</li></ul>
   </div>
   <div class="bs-nav" data-r="nav" hidden><button type="button" data-accion="general">← Todas las zonas</button><strong data-r="zona"></strong></div>
   <div class="bs-cuerpo">
@@ -77,31 +184,28 @@ export function montarBroodstock(caja, opciones = {}) {
   let D = null, ficha = () => null, zonaElegida = null, piscinaElegida = null, mesFoto = null;
 
   const viewBox = (c) => `${c[0]} ${c[1]} ${c[2] - c[0]} ${c[3] - c[1]}`;
-  function pintarMapa() {
+  /** El SVG entero, con los datos de ahora. Sólo al llegar datos nuevos. */
+  function construirMapa() {
+    svg.innerHTML = DEFS + FONDO + D.zonas.map(zonaHTML).join('');
+  }
+  /** El encuadre, las clases y los roles de la vista elegida. No reconstruye nada: el foco se queda donde estaba. */
+  function ajustarVista() {
     const z0 = zonaElegida && D.zonas.find((z) => z.id === zonaElegida);
     svg.setAttribute('viewBox', viewBox(z0 ? z0.caja : CAJA_GENERAL));
     svg.classList.toggle('general', !z0);
-    // con una zona elegida, sólo ella: el SVG conserva su proporción y, si no, asomaban trozos de la zona de al lado
-    svg.innerHTML = D.zonas.filter((z) => !z0 || z === z0).map((z) => {
-      const [x0, y0, x1, y1] = z.caja;
-      const titulo = z.nombre + (z.aparte ? ' · otro sector' : '') + ' · ' + z.piscinas.length + ' piscinas · ' + z.conDatos + ' con datos';
-      const piscinas = z.piscinas.map((p) => {
-        const [a, b, c, d] = p.rect, w = c - a, h = d - b, mx = a + w / 2, my = b + h / 2;
-        const clase = !p.nombre ? 'sn' : p.dato ? claseDeFase(p.dato.fase) : 'sin';
-        const peso = p.dato && n1(p.dato.peso) ? n1(p.dato.peso) + ' g' : '';
-        const etiqueta = p.nombre ? 'Piscina ' + p.nombre + (p.dato ? ' · ' + (p.dato.fase || 'sin fase') + (peso ? ' · ' + peso : '') : ' · sin datos en el último corte')
-          : 'Piscina sin nombre de ' + z.nombre;
-        const tam = Math.max(9, Math.min(16, w * .32));   // el número cabe en la más estrecha
-        return `<g class="bs-pisc bs-c-${clase}${p.id === piscinaElegida ? ' on' : ''}" data-piscina="${esc(p.id)}" tabindex="${z0 ? 0 : -1}" role="button" aria-label="${esc(etiqueta)}">`
-          + `<rect x="${a}" y="${b}" width="${w}" height="${h}" rx="3"/>`
-          + `<text class="bs-num" x="${mx}" y="${my - (peso ? tam * .35 : -tam * .35)}" font-size="${tam}">${esc(p.nombre || 's/n')}</text>`
-          + (peso ? `<text class="bs-peso" x="${mx}" y="${my + tam * .95}" font-size="${tam * .8}">${esc(peso)}</text>` : '')
-          + '</g>';
-      }).join('');
-      return `<g class="bs-zona${z.aparte ? ' aparte' : ''}" data-zona="${esc(z.id)}" tabindex="${z0 ? -1 : 0}" role="button" aria-label="${esc(titulo)}">`
-        + `<rect class="bs-zona-marco" x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" rx="10"/>`
-        + `<text class="bs-zona-nombre" x="${x0 + 10}" y="${y0 - 6}">${esc(titulo)}</text>${piscinas}</g>`;
-    }).join('');
+    svg.querySelectorAll('[data-zona]').forEach((g) => {
+      const elegida = !!z0 && g.dataset.zona === z0.id;
+      g.classList.toggle('elegida', elegida);
+      g.classList.toggle('ajena', !!z0 && !elegida);
+      // en la vista general, el botón es la ZONA; al acercarse, cada PISCINA de la elegida (nunca uno dentro de otro)
+      if (!z0) { g.setAttribute('role', 'button'); g.setAttribute('tabindex', '0'); g.setAttribute('aria-label', g.dataset.titulo); g.removeAttribute('aria-hidden'); }
+      else { g.removeAttribute('role'); g.removeAttribute('tabindex'); g.removeAttribute('aria-label'); if (elegida) g.removeAttribute('aria-hidden'); else g.setAttribute('aria-hidden', 'true'); }
+      g.querySelectorAll('[data-piscina]').forEach((p) => {
+        p.classList.toggle('on', elegida && p.dataset.piscina === piscinaElegida);
+        if (elegida) { p.setAttribute('role', 'button'); p.setAttribute('tabindex', '0'); p.setAttribute('aria-label', p.dataset.etiqueta); p.setAttribute('aria-pressed', String(p.dataset.piscina === piscinaElegida)); }
+        else { ['role', 'tabindex', 'aria-label', 'aria-pressed'].forEach((a) => p.removeAttribute(a)); }
+      });
+    });
     $('nav').hidden = !z0;
     $('zona').textContent = z0 ? z0.nombre + (z0.aparte ? ' · otro sector' : '') : '';
   }
@@ -148,9 +252,11 @@ export function montarBroodstock(caja, opciones = {}) {
       + (F && F.observaciones.length ? '<h4>Observaciones</h4><ul class="bs-obs">' + F.observaciones.map((o) => `<li><b>${esc(fechaIso(o.corte))}</b> ${esc(o.texto)}</li>`).join('') + '</ul>' : '');
   }
 
-  function pintar() {
+  /** `mapa`: reconstruir el SVG (datos nuevos); si no, sólo el encuadre, las clases y la ficha. */
+  function pintar({ mapa = false } = {}) {
     if (!D) return;
-    pintarMapa(); pintarFicha();
+    if (mapa) construirMapa();
+    ajustarVista(); pintarFicha();
     const z = zonaElegida && D.zonas.find((x) => x.id === zonaElegida);
     $('sub').textContent = (D.corte ? 'Último corte: ' + fechaIso(D.corte) : 'Aún no hay ningún corte de Broodstock cargado')
       + (mesFoto ? ' · foto al cierre de ' + mesFoto : '')
@@ -162,18 +268,30 @@ export function montarBroodstock(caja, opciones = {}) {
     $('aparte').hidden = !partes.length;
   }
 
-  const elegirZona = (id) => { zonaElegida = id; piscinaElegida = null; pintar(); };
+  /* Al acercarse, el foco pasa a la primera piscina de la zona; al volver a la general, a la zona que se dejó. Así quien
+     usa el teclado sigue donde estaba (hallazgo 3 de la Sesión A). */
+  const enfocar = (sel) => { const el = svg.querySelector(sel); if (el && el.focus) el.focus(); };
+  const elegirZona = (id) => {
+    const dejada = zonaElegida;
+    zonaElegida = id; piscinaElegida = null; pintar();
+    if (id) enfocar('[data-zona="' + id + '"] [data-piscina]');
+    else if (dejada) enfocar('[data-zona="' + dejada + '"]');
+  };
   caja.addEventListener('click', (e) => {
     if (e.target.closest('[data-accion="general"]')) { elegirZona(null); return; }
     if (!D) return;
     const p = e.target.closest('[data-piscina]');
-    if (zonaElegida && p) { piscinaElegida = p.dataset.piscina; pintar(); return; }
+    if (zonaElegida) {
+      // al acercarse sólo cuentan las piscinas de la zona elegida (las vecinas se ven, atenuadas, y no se tocan)
+      if (p && p.closest('[data-zona]').dataset.zona === zonaElegida) { piscinaElegida = p.dataset.piscina; pintar(); }
+      return;
+    }
     const z = e.target.closest('[data-zona]');
-    if (!zonaElegida && z) elegirZona(z.dataset.zona);
+    if (z) elegirZona(z.dataset.zona);
   });
   caja.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
-    const b = e.target.closest('[data-piscina], [data-zona]');
+    const b = e.target.closest('[role="button"][data-piscina], [role="button"][data-zona]');
     if (!b || !svg.contains(b)) return;
     e.preventDefault(); b.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   });
@@ -183,7 +301,7 @@ export function montarBroodstock(caja, opciones = {}) {
       if (!E) { $('sub').textContent = 'Cargando datos de Broodstock…'; return []; }
       const C = calcular(E);
       D = datosDelMapa(C.T); ficha = C.ficha; mesFoto = E.mes ? E.mes.mes : null;
-      pintar();
+      pintar({ mapa: true });
       return [];
     },
     aviso: (texto) => { $('datos').textContent = texto || ''; },
@@ -197,11 +315,11 @@ function curvaHTML(serie) {
   if (serie.length < 2) return '<h4>Curva de peso</h4><p class="bs-ayuda">Un solo corte: la curva sale con dos o más.</p>';
   const W = 280, H = 90, m = 8, ps = serie.map((s) => +s.peso);
   const lo = Math.min(...ps), hi = Math.max(...ps), rango = hi - lo || 1;
-  const pts = serie.map((s, i) => [m + i * (W - 2 * m) / (serie.length - 1), H - m - (+s.peso - lo) / rango * (H - 2 * m)]);
+  const pts2 = serie.map((s, i) => [m + i * (W - 2 * m) / (serie.length - 1), H - m - (+s.peso - lo) / rango * (H - 2 * m)]);
   return '<h4>Curva de peso</h4>'
     + `<svg class="bs-curva" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc('Peso por corte: ' + serie.map((s) => fechaIso(s.corte) + ' ' + n1(s.peso) + ' g').join(', '))}">`
-    + `<polyline points="${pts.map((p) => p.map((x) => x.toFixed(1)).join(',')).join(' ')}"/>`
-    + pts.map(([x, y]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3"/>`).join('')
+    + `<polyline points="${pts2.map((p) => p.map((x) => x.toFixed(1)).join(',')).join(' ')}"/>`
+    + pts2.map(([x, y]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3"/>`).join('')
     + `<text x="${m}" y="${H - 1}">${esc(fechaIso(serie[0].corte))}</text><text x="${W - m}" y="${H - 1}" text-anchor="end">${esc(fechaIso(serie[serie.length - 1].corte))}</text>`
     + '</svg>';
 }
