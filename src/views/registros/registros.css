@@ -75,6 +75,11 @@
 .registros-app .mc.mc-bio.sel{border-color:#ec4899;background:rgba(236,72,153,.18);box-shadow:0 0 0 3px rgba(236,72,153,.2)}
 .registros-app .mc.mc-bio .mc-num{color:#ec4899;font-size:18px}
 .registros-app .mc.mc-bio .mc-lbl{color:rgba(236,72,153,.6)}
+.registros-app .mc.mc-mnt{background:rgba(148,163,184,.08);border-color:rgba(148,163,184,.3)}
+.registros-app .mc.mc-mnt:hover{border-color:rgba(148,163,184,.7)}
+.registros-app .mc.mc-mnt.sel{border-color:#94a3b8;background:rgba(148,163,184,.2);box-shadow:0 0 0 3px rgba(148,163,184,.22)}
+.registros-app .mc.mc-mnt .mc-num{color:#cbd5e1;font-size:18px}
+.registros-app .mc.mc-mnt .mc-lbl{color:rgba(148,163,184,.75)}
 .registros-app .pin-row{display:flex;align-items:center;gap:9px;margin-bottom:6px}
 .registros-app .pin-in{flex:1;background:var(--bg3);border:1.5px solid rgba(255,255,255,.09);
   border-radius:9px;padding:10px 14px;font-family:var(--mono);font-size:15px;
@@ -108,6 +113,8 @@
   color:#0ea5e9;}
 .registros-app .tb-badge.bio{background:rgba(236,72,153,.18);border-color:rgba(236,72,153,.45);
   color:#ec4899;}
+.registros-app .tb-badge.mnt{background:rgba(148,163,184,.18);border-color:rgba(148,163,184,.45);
+  color:#cbd5e1;}
 .registros-app .tb-r{display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap}
 .registros-app .spill-bar{display:flex;align-items:center;gap:7px;
   background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.09);

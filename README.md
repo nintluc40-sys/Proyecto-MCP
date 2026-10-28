@@ -1051,6 +1051,8 @@ vacía o no exista**, que es justo cuando el daño se hace.
 | Maduración Transferencias | 4 `Trovan ID` · 12 `Piscinas presentes` |
 | Maduración Zonas | 3 `Tanque` · 19 `Oxígeno 00:00` |
 | Maduración Broodstock | 2 `Piscina` · 8 `Pl/g` |
+| Mantenimiento Trabajos | 2 `Equipo` · 17 `ID` |
+| Mantenimiento Lecturas | 3 `Equipo` · 10 `ID` |
 
 > 🔑 **Movimientos no ha cambiado nunca de columnas**: su firma no arregla ningún desfase, es el
 > cerrojo puesto ANTES de necesitarlo — una firma añadida después del desfase llega tarde por

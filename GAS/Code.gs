@@ -22,7 +22,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "372a32cebe97";
+const GAS_VERSION = "b34f45a6187c";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -88,7 +88,10 @@ const ALLOWED = [
   "Microbiología",
   "Calidad de Agua",
   "Patología en Fresco",
-  "Marea"
+  "Marea",
+  // 🔧 Mantenimiento (2026-10-28): las rondas de lecturas y los trabajos de los blowers, las dos por su columna "ID".
+  // «Mantenimiento Equipos» (la ficha técnica de cada equipo) NO entra: se edita a mano y la vista la lee por su exportación.
+  "Mantenimiento Trabajos", "Mantenimiento Lecturas"
 ];
 
 const LIMITS = {
@@ -159,7 +162,10 @@ const LIMITS = {
   score:   { maxRows: 300, maxCols: 40 },
   // 🧾 Auditoría (2026-10-03): 29 columnas (Tipo, los datos de la siembra, la transferencia y la cosecha, pie e ID) +
   // margen. Una auditoría son sus siembras, transferencias y partidas: 500 cubre una corrida de dos módulos con holgura.
-  aud:     { maxRows: 500, maxCols: 40 }
+  aud:     { maxRows: 500, maxCols: 40 },
+  // 🔧 Mantenimiento (2026-10-28): Trabajos son 17 columnas y Lecturas 10, las dos con el ID al final, + margen. Una ronda
+  // son 11 filas como mucho (los blowers) y un trabajo, una: 300 cubre de sobra un envío.
+  mnt:     { maxRows: 300, maxCols: 30 }
 };
 
 // Rate limit state: persistido en CacheService (60s TTL) para que sobreviva
@@ -281,6 +287,7 @@ function doPost(e) {
     var isCal    = payload.sheetName === "Calidad de Agua";
     var isPat    = payload.sheetName === "Patología en Fresco";
     var isMarea  = payload.sheetName === "Marea";
+    var isMnt    = payload.sheetName === "Mantenimiento Trabajos" || payload.sheetName === "Mantenimiento Lecturas";
     // Routing Maduración: clave compuesta por columnas (0-indexed)
     var madKeyCols = null;
     if      (payload.sheetName === "Maduración Sala")     madKeyCols = [0,1];   // Fecha, Sala
@@ -357,6 +364,7 @@ function doPost(e) {
                 : isCal    ? LIMITS.cal
                 : isPat    ? LIMITS.pat
                 : isMarea  ? LIMITS.marea
+                : isMnt    ? LIMITS.mnt
                 : (isCtrl  ? LIMITS.control : LIMITS.datos);
 
     if (payload.rows.length > limits.maxRows) {
@@ -546,6 +554,16 @@ function doPost(e) {
         if (_cAu >= 0 && ws.getMaxRows() > 1 && ws.getMaxColumns() > _cAu) ws.getRange(2, _cAu + 1, ws.getMaxRows() - 1, 1).setNumberFormat("@");
       });
     }
+    // 🔧 Mantenimiento (2026-10-28): las HORAS como TEXTO («08:00» lo convertiría Sheets en una hora del 30/12/1899), localizadas
+    // por la cabecera del envío, como en la Auditoría.
+    if (isMnt) {
+      var _filasMn = lastRow(ws) + rows.length;
+      if (_filasMn > ws.getMaxRows()) ws.insertRowsAfter(ws.getMaxRows(), _filasMn - ws.getMaxRows());
+      ["Hora", "Hora inicio", "Hora fin"].forEach(function (h) {
+        var _cMn = (payload.headers || []).indexOf(h);
+        if (_cMn >= 0 && ws.getMaxRows() > 1 && ws.getMaxColumns() > _cMn) ws.getRange(2, _cMn + 1, ws.getMaxRows() - 1, 1).setNumberFormat("@");
+      });
+    }
     var result;
     if (isMad) {
       // Las hojas POSICIONALES del registro operativo usan upsert con su clave compuesta (las del reproductivo, en madKeyCols):
@@ -612,6 +630,8 @@ function doPost(e) {
     else if (isScore)  result = upsertAstRows(ws, rows);
     // 🧾 Auditoría (2026-10-03): el MISMO upsert por "ID" (el último), sin merge: reenviar una auditoría la corrige.
     else if (isAud)    result = upsertAstRows(ws, rows);
+    // 🔧 Mantenimiento (2026-10-28): el MISMO upsert por "ID" (el último), sin merge: reenviar una ronda o un trabajo lo corrige.
+    else if (isMnt)    result = upsertAstRows(ws, rows);
     // Las tres de Maduración van con MERGE (3.er argumento), al revés que AsT y
     // Traslado: ver la cabecera de upsertAstRows para el porqué.
     else if (isMadId)  result = upsertAstRows(ws, rows, true, payload.headers);
@@ -1084,6 +1104,11 @@ var MAD_ESQUEMA_FIRMA = {
      parte de la llave: si se corre, el upsert casa con la fila que no es— y la 19 —«Oxígeno 00:00», la última de hoy:
      cualquier inserción por delante la mueve, y un añadido al final no la toca—. */
   "Maduración Zonas":          [[3, "Tanque"], [19, "Oxígeno 00:00"]],
+  /* 🔧 Mantenimiento (2026-10-28) · no son de Maduración, pero nacen con su cerrojo por lo mismo que Zonas y Broodstock: quien
+     las cree primero les fija la cabecera. Se firma el Equipo —si se corre, cada lectura sería de otro blower— y el ID, el
+     último: cualquier inserción por delante lo mueve. */
+  "Mantenimiento Trabajos":    [[2, "Equipo"], [17, "ID"]],
+  "Mantenimiento Lecturas":    [[3, "Equipo"], [10, "ID"]],
   /* Control Broodstock (2026-09-17) · nace HOY, así que su cerrojo existe desde el primer envío y no hay
      que esperar a que lo haga falta. Se firma la 2 —«Piscina», la segunda mitad de la llave: si se corre,
      el upsert casa con la fila que no es— y la 8 —«Pl/g», la columna que separa las postlarvas por gramo

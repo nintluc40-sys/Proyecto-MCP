@@ -2022,3 +2022,99 @@ describe('GAS · B5 · la carrera de doPost: un envío no puede escribir dos vec
     expect(hoja.filas).toHaveLength(2);
   });
 });
+
+/* 2026-10-28 (usuario, ronda 10, tarea 4) · 🔧 MANTENIMIENTO: las dos hojas nuevas, «Mantenimiento Trabajos» y
+   «Mantenimiento Lecturas», por su ID (el último) y SIN merge —reenviar una ronda o un trabajo corregido lo sustituye—,
+   con las HORAS como TEXTO y nacidas con su firma. Los envíos salen del MODELO REAL del motor (su bloque de engine.js,
+   gemelo de ficha-mantenimiento.schema.js): si la cabecera del cliente y la firma del GAS no casan, esto lo ve. */
+function modeloDeMantenimiento() {
+  const desde = 'const MNT_TRAB_SHEET = "Mantenimiento Trabajos";';
+  const i = engineSrc.indexOf(desde);
+  const j = engineSrc.indexOf('/* ── fin del modelo de Mantenimiento ── */', i);
+  if (i < 0 || j < 0) throw new Error('no se encontró el modelo de Mantenimiento en engine.js');
+  const ctx = { sanitizeStr };
+  createContext(ctx);
+  new Script(engineSrc.slice(i, j) + '\n;globalThis.__m = { MNT_TRAB_HEADERS, MNT_LECT_HEADERS, buildMntTrabajoPayload, buildMntRondaPayload };')
+    .runInContext(ctx);
+  return ctx.__m;
+}
+describe('GAS · 🔧 Mantenimiento · Trabajos y Lecturas (2026-10-28)', () => {
+  const MN = modeloDeMantenimiento();
+  const trabajo = (v) => ({ id: 'MT-2026-10-21-a', fecha: '2026-10-21', equipo: 'BLW-03', tipo: 'Preventivo',
+    actividad: 'Cambio de aceite', horometro: '927,30', estado: 'Completado', ...v });
+  const ronda = (equipos, v) => ({ id: 'MR-2026-10-22-b', fecha: '2026-10-22', hora: '08:05', tecnico: 'Técnico A', equipos, ...v });
+  const postT = (g, data) => g.post(MN.buildMntTrabajoPayload([{ data }]));
+  const postR = (g, data) => g.post(MN.buildMntRondaPayload([{ data }]));
+  const cT = (h) => MN.MNT_TRAB_HEADERS.indexOf(h);
+  const cL = (h) => MN.MNT_LECT_HEADERS.indexOf(h);
+
+  it('el fixture viene del motor: 17 y 10 columnas, el ID el último', () => {
+    expect(MN.MNT_TRAB_HEADERS).toHaveLength(17);
+    expect(MN.MNT_LECT_HEADERS).toHaveLength(10);
+    expect(MN.MNT_TRAB_HEADERS.at(-1)).toBe('ID');
+    expect(MN.MNT_LECT_HEADERS.at(-1)).toBe('ID');
+  });
+
+  it('🔴 Trabajos: permitida, NACE con su cabecera y reenviar CORRIGE la fila (sin duplicar y sin merge)', () => {
+    const hojas = {};
+    const g = gas(hojas);
+    expect(postT(g, trabajo({ observaciones: 'Horómetro ESTIMADO' })).status).toBe('ok');
+    expect(postT(g, trabajo({ id: 'MT-2026-10-21-b', actividad: 'Cambio de bandas', repuestos: 'Bandas', cantidad: '4' })).status).toBe('ok');
+    const h = hojas['Mantenimiento Trabajos'];
+    expect(h.filas[0]).toEqual(MN.MNT_TRAB_HEADERS);
+    expect(h.filas).toHaveLength(3);
+    expect(postT(g, trabajo({ horometro: '930' })).status).toBe('ok');
+    expect(h.filas).toHaveLength(3);
+    expect(h.filas[1][cT('Horómetro (h)')]).toBe(930);
+    expect(h.filas[1][cT('Observaciones')], 'sin merge: la corrección la sustituye entera').toBe('');
+    expect(h.filas[2][cT('Cantidad')]).toBe(4);
+  });
+
+  it('🔴 Lecturas: una fila por equipo; reenviar la MISMA ronda corrige sus filas', () => {
+    const hojas = {};
+    const g = gas(hojas);
+    expect(postR(g, ronda({ 'BLW-02': { horometro: '1028,42', presion: '4' }, 'BLW-09': { horometro: '534,51' } })).status).toBe('ok');
+    const h = hojas['Mantenimiento Lecturas'];
+    expect(h.filas).toHaveLength(3);
+    expect(postR(g, ronda({ 'BLW-02': { horometro: '1030', presion: '4' }, 'BLW-09': { horometro: '534,51', corriente: '61' } }, { hora: '09:00' })).status).toBe('ok');
+    expect(h.filas, 'otra hora, la MISMA ronda: el ID no cambia').toHaveLength(3);
+    expect(h.filas[1][cL('Horómetro (h)')]).toBe(1030);
+    expect(h.filas[2][cL('Corriente (A)')]).toBe(61);
+    expect(h.filas[2][cL('ID')]).toBe('MR-2026-10-22-b-BLW-09');
+  });
+
+  it('🔴 las HORAS se guardan como TEXTO (Sheets convertiría «08:05» en una hora de 1899)', () => {
+    const lect = hojaFalsa([MN.MNT_LECT_HEADERS], { comoSheets: true });
+    const trab = hojaFalsa([MN.MNT_TRAB_HEADERS], { comoSheets: true });
+    const g = gas({ 'Mantenimiento Lecturas': lect, 'Mantenimiento Trabajos': trab });
+    expect(postR(g, ronda({ 'BLW-01': { horometro: '1' } })).status).toBe('ok');
+    expect(lect.filas[1][cL('Hora')]).toBe('08:05');
+    expect(postT(g, trabajo({ horaInicio: '08:00', horaFin: '09:30' })).status).toBe('ok');
+    expect(trab.filas[1][cT('Hora inicio')]).toBe('08:00');
+    expect(trab.filas[1][cT('Hora fin')]).toBe('09:30');
+    expect(trab.filas[1][cT('Parada (h)')]).toBe(1.5);
+  });
+
+  it('🔴 nacen con su FIRMA: un envío con la cabecera corrida no crea la hoja ni escribe', () => {
+    const hojas = {};
+    const g = gas(hojas);
+    const p = MN.buildMntTrabajoPayload([{ data: trabajo() }]);
+    const corrida = ['Unidad'].concat(p.headers);
+    const r = g.post({ sheetName: p.sheetName, headers: corrida, rows: p.rows.map((f) => [''].concat(f)) });
+    expect(r.status).toBe('error');
+    expect(r.message).toContain('Esquema desactualizado');
+    expect(hojas['Mantenimiento Trabajos']).toBeUndefined();
+  });
+
+  it('«Mantenimiento Equipos» (la ficha técnica, a mano) NO se puede escribir desde fuera', () => {
+    const g = gas({});
+    expect(g.post({ sheetName: 'Mantenimiento Equipos', headers: ['Código'], rows: [['BLW-01']] }).message).toBe('Hoja no permitida');
+  });
+
+  it('se pueden leer con ?p=rows', () => {
+    const g = gas({ 'Mantenimiento Trabajos': hojaFalsa([MN.MNT_TRAB_HEADERS, MN.buildMntTrabajoPayload([{ data: trabajo() }]).rows[0]]) });
+    const r = g.leer({ p: 'rows', sheet: 'Mantenimiento Trabajos' });
+    expect(r.rows).toHaveLength(1);
+    expect(r.rows[0].Equipo).toBe('BLW-03');
+  });
+});

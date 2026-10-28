@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  CIO_MOD, LAB_MOD, MAD_MOD, AST_MOD, MIC_MOD, BIO_MOD,
-  isValidMod, isMicMod, isBioMod, isAstMod, isLabMod, isMadMod, isStdMod, mLabel,
+  CIO_MOD, LAB_MOD, MAD_MOD, AST_MOD, MIC_MOD, BIO_MOD, MNT_MOD,
+  isValidMod, isMicMod, isBioMod, isAstMod, isLabMod, isMadMod, isMntMod, isStdMod, mLabel,
 } from './modules.js';
 
 describe('isValidMod', () => {
@@ -10,10 +10,11 @@ describe('isValidMod', () => {
     expect(isValidMod(10)).toBe(true);
     expect(isValidMod(CIO_MOD)).toBe(true);
     expect(isValidMod(BIO_MOD)).toBe(true);
+    expect(isValidMod(MNT_MOD)).toBe(true); // 🔧 Mantenimiento (2026-10-28), el 16
   });
   it('rechaza fuera de rango y no enteros', () => {
     expect(isValidMod(11)).toBe(true); // LAB_MOD es válido
-    expect(isValidMod(16)).toBe(false);
+    expect(isValidMod(17)).toBe(false);
     expect(isValidMod(-1)).toBe(false);
     expect(isValidMod(2.5)).toBe(false);
     expect(isValidMod('3')).toBe(false);
@@ -27,6 +28,8 @@ describe('predicados de módulo', () => {
     expect(isAstMod(AST_MOD)).toBe(true);
     expect(isLabMod(LAB_MOD)).toBe(true);
     expect(isMadMod(MAD_MOD)).toBe(true);
+    expect(isMntMod(MNT_MOD)).toBe(true);
+    expect(isMntMod(BIO_MOD)).toBe(false);
   });
 
   it('isStdMod true para larvicultura estándar (M01..M10 y CIO), false para especiales', () => {
@@ -38,6 +41,7 @@ describe('predicados de módulo', () => {
     expect(isStdMod(BIO_MOD)).toBe(false);
     expect(isStdMod(AST_MOD)).toBe(false);
     expect(isStdMod(MIC_MOD)).toBe(false);
+    expect(isStdMod(MNT_MOD), 'Mantenimiento no es larvicultura: sin esto, sus fichas serían las de un módulo M').toBe(false);
   });
 });
 
@@ -49,6 +53,7 @@ describe('mLabel', () => {
     expect(mLabel(AST_MOD)).toBe('AsT');
     expect(mLabel(MIC_MOD)).toBe('Mic');
     expect(mLabel(BIO_MOD)).toBe('Bio');
+    expect(mLabel(MNT_MOD)).toBe('Mnt');
   });
   it('rellena M01..M10 con cero', () => {
     expect(mLabel(1)).toBe('M01');

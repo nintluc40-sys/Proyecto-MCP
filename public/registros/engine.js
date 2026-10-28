@@ -22,6 +22,7 @@ const MAD_MOD = 12;  // Módulo Maduración (sus pestañas: MAD_TABS)
 const AST_MOD = 13;  // Módulo As Técnico
 const MIC_MOD = 14;  // Módulo Microbiología
 const BIO_MOD = 15;  // Módulo Biomol
+const MNT_MOD = 16;  // Módulo 🔧 Mantenimiento (2026-10-28)
 // Evidencias por QR (Fase 1): carpeta raíz de Drive + token del portal. El
 // token se interpola al código GAS (GAS()) para que SIEMPRE coincidan sin
 // configuración manual. Cambiar ambos = re-desplegar el GAS.
@@ -79,7 +80,8 @@ const PINS = {
   12:"2027", // Maduración
   13:"2020", // As Técnico
   14:"2121", // Microbiología
-  15:"2023"  // Biomol
+  15:"2023", // Biomol
+  16:"2024"  // 🔧 Mantenimiento (2026-10-28, usuario)
 };
 
 // ── Maduración: constantes globales ──
@@ -316,6 +318,8 @@ function fixupLabels(root){
 function isLabMod(m){ return window.__rgLib.isLabMod(m); }
 // ── True when module is Maduración ──
 function isMadMod(m){ return window.__rgLib.isMadMod(m); }
+// ── True para el módulo 🔧 Mantenimiento (2026-10-28) ──
+function isMntMod(m){ return window.__rgLib.isMntMod(m); }
 
 /* ══════════════════════════════════════════
    HERENCIA PEREZOSA ENTRE FICHAS
@@ -1202,6 +1206,8 @@ function startAutoRecovery(){
     }
     // Maduración: respalda la grilla activa (sus paneles tampoco existen aquí).
     if(isMadMod(curMod)){ try{ saveMadRecovery(); }catch(_){} return; }
+    // 🔧 Mantenimiento (2026-10-28): sus fichas se guardan al instante en su borrador; no hay paneles estándar que respaldar.
+    if(isMntMod(curMod)) return;
     ALL_FICHAS.forEach(fid => {
       const fp = document.getElementById("fp-"+fid);
       if(!fp) return;
@@ -1974,6 +1980,9 @@ function _reconcileMark(mark){
     else if(mark.kind === "score" && typeof _scoreRaw === "function"){ raw=_scoreRaw; save=_scoreSave; keyOf=(r)=> r.id + "@" + r.ts; }
     // 🧾 Auditoría (2026-10-03): igual que el Score, la marca lleva la VERSIÓN (id@ts).
     else if(mark.kind === "auditoria" && typeof _audRaw === "function"){ raw=_audRaw; save=_audSave; keyOf=(r)=> r.id + "@" + String(r.ts); }
+    // 🔧 Mantenimiento (2026-10-28): rondas y trabajos, con la VERSIÓN (id@ts) como el Score.
+    else if(mark.kind === "mntronda" && typeof _mntRondaRaw === "function"){ raw=_mntRondaRaw; save=_mntRondaSave; keyOf=(r)=> r.id + "@" + r.ts; }
+    else if(mark.kind === "mnttrabajo" && typeof _mntTrabRaw === "function"){ raw=_mntTrabRaw; save=_mntTrabSave; keyOf=(r)=> r.id + "@" + r.ts; }
     else if(mark.kind.indexOf("mad:") === 0 && typeof loadMad === "function" && typeof saveMadList === "function"){
       const _mk = mark.kind.slice(4);   // salas | tanques | lotes
       raw=()=>loadMad(_mk); save=(l)=>saveMadList(_mk, l); keyOf=(r)=> r.id;
@@ -2319,6 +2328,8 @@ async function syncAll(){
     if(audP)   await syncAllPendingAud();
     return;
   }
+  // 🔧 Mantenimiento (2026-10-28): sus rondas y sus trabajos, cada uno a su hoja.
+  if(isMntMod(curMod)){ await syncAllPendingMnt(); return; }
   if(!syncRateOk()) return;
 
   const url = gasUrl();
@@ -2787,6 +2798,15 @@ function buildGrid(){
     <div class="mc-lbl">Biomol</div>
     <span class="mc-dot"></span>
   </div>`;
+  // 🔧 Mantenimiento tile (2026-10-28) — pinta dot pend/sync según sus rondas y trabajos.
+  let mntList = [];
+  try{ mntList = loadMntRondas().concat(loadMntTrabajos()); }catch(_){}
+  const mntCls = mntList.some(r => !r.synced) ? "pend" : mntList.some(r => r.synced) ? "sync" : "";
+  h += `<div class="mc mc-mnt ${mntCls}" id="mc16" onclick="pickMod(16)">
+    <div class="mc-num">🔧</div>
+    <div class="mc-lbl">Mantenim.</div>
+    <span class="mc-dot"></span>
+  </div>`;
   // Guarda: el contenedor puede no estar en el DOM. En el proyecto Vite ocurre al
   // cargar el motor y salir de la vista Registros antes de que termine; en el
   // monolito, si algo repinta antes de que exista la rejilla. Sin ella, asignar
@@ -2850,12 +2870,14 @@ function enter(){
    : curMod === AST_MOD ? " ast"
    : curMod === MIC_MOD ? " mic"
    : curMod === BIO_MOD ? " bio"
+   : curMod === MNT_MOD ? " mnt"
    : "");
   curTab = isLabMod(curMod) ? "algas"
          : isMadMod(curMod) ? "ingreso"   /* decisión del usuario, 2026-09-08 */
          : isBioMod(curMod) ? "biomol"
          : isAstMod(curMod) ? "ast"
          : isMicMod(curMod) ? "micnuevo"
+         : isMntMod(curMod) ? "mntronda"
          : "calidad";
   buildTabs();
   renderAll();
@@ -2918,6 +2940,8 @@ const MAD_TABS      = ["ingreso","saldo","movimientos","salas","tanques","desove
 const BIO_TABS      = ["biomol","fotos"];
 // Tabs del módulo As Técnico — form de supervisión + registro de mareas + fotos
 const AST_TABS      = ["ast","traslado","score","auditoria","marea","fotos"];
+// Tabs del módulo 🔧 Mantenimiento (2026-10-28) — la ronda de lecturas y los trabajos
+const MNT_TABS      = ["mntronda","mnttrabajo"];
 // Rendered as [id, icon, label]
 const TAB_META = {
   calidad:  ["🔬","Calidad Larvaria"],
@@ -2949,6 +2973,8 @@ const TAB_META = {
   score:    ["🎯","Score"],
   auditoria:["🧾","Auditoría"],
   marea:    ["🌊","Mareas"],
+  mntronda: ["📋","Ronda"],
+  mnttrabajo: ["🔧","Trabajo"],
   blanco:   ["📝","Blanco"],
   micnuevo: ["🧫","Nuevo análisis"],
   michist:  ["📜","Historial"],
@@ -2962,6 +2988,7 @@ function buildTabs(){
              : isBioMod(curMod) ? BIO_TABS
              : isAstMod(curMod) ? AST_TABS
              : isMicMod(curMod) ? MIC_TABS
+             : isMntMod(curMod) ? MNT_TABS
              : STANDARD_TABS;
   const first = tabs[0];
   document.getElementById("ftabs").innerHTML = tabs.map(t => {
@@ -2978,6 +3005,7 @@ function selTab(t){
              : isBioMod(curMod) ? BIO_TABS
              : isAstMod(curMod) ? AST_TABS
              : isMicMod(curMod) ? MIC_TABS
+             : isMntMod(curMod) ? MNT_TABS
              : STANDARD_TABS;
   if(!tabs.includes(t)) return;
   // Al salir del "Nuevo análisis" de Microbiología, vuelca de inmediato el
@@ -3029,6 +3057,8 @@ function selTab(t){
   if(t==="score")  renderScore();
   if(t==="auditoria") renderAud();
   if(t==="marea")  renderMarea();
+  if(t==="mntronda")   renderMntRonda();
+  if(t==="mnttrabajo") renderMntTrabajo();
   if(t==="micnuevo") micDispatchNuevo();
   if(t==="michist")  micDispatchHist();
   if(t==="micfact")  micDispatchFact();
@@ -3039,6 +3069,15 @@ function selTab(t){
 }
 
 function updateDots(){
+  // 🔧 Mantenimiento (2026-10-28): sus dos fichas, cada una con su lista.
+  if(isMntMod(curMod)){
+    [["mntronda", loadMntRondas()], ["mnttrabajo", loadMntTrabajos()]].forEach(function(p){
+      const el = document.getElementById("dot-" + p[0]);
+      if(!el) return;
+      el.className = "fdot " + (p[1].some(r => !r.synced) ? "pend" : p[1].length ? "ok" : "mt");
+    });
+    return;
+  }
   // Microbiología: pinta el dot del tab "Nuevo análisis" según pendientes.
   if(isMicMod(curMod)){
     const el = document.getElementById("dot-micnuevo");
@@ -3110,6 +3149,7 @@ function _syncUIResumen(p, cosa){
   setSyncUI("pend", p + " " + cosa + " pendiente(s)" + (q ? " · " + q + " en cola" : ""));
 }
 function updateSyncUI(){
+  if(isMntMod(curMod)){ _syncUIResumen(mntPendientes(), "registro(s)"); return; }   // 🔧 Mantenimiento (2026-10-28)
   if(isMicMod(curMod)){
     const p = loadMic().filter(r=>!r.synced).length + (typeof _calRaw==="function"?_calRaw().filter(r=>!r.synced).length:0) + (typeof _patRaw==="function"?_patRaw().filter(r=>!r.synced).length:0);
     _syncUIResumen(p, "muestra(s)");
@@ -3594,6 +3634,9 @@ function renderAll(){
     micDispatchNuevo();
     updateDots();
     selTab("micnuevo");
+  } else if(isMntMod(curMod)){
+    updateDots();
+    selTab("mntronda");     // selTab ya renderiza → sin render doble
   } else {
     STD_FICHAS_ALL.forEach(fid => renderFicha(fid));
     updateDots();
@@ -20713,6 +20756,613 @@ function renderScore(){
 
 
 /* ══════════════════════════════════════════
+   🔧 MANTENIMIENTO · Blowers Kaeser (módulo 16 de la carátula, 2026-10-28, usuario)
+   ──────────────────────────────────────────
+   El Excel «Registro_Blowers_Kaeser_CAMPOS_DE_ENTRADA» (Proyectos Mantenimiento) como un módulo propio, con su PIN, y
+   dos fichas:
+   • 📋 RONDA: lo que marca el tablero de cada blower a una hora (horómetro, corriente, presión y temperatura). Una fila
+     por equipo leído en «Mantenimiento Lecturas».
+   • 🔧 TRABAJO: una intervención con los campos VERDES del Excel. Una fila en «Mantenimiento Trabajos».
+   Decisiones del usuario (2026-10-28): baldosa propia con PIN; hojas «Mantenimiento …»; las LISTAS (códigos, modelos,
+   tipos, actividades del plan, estados) aquí, y la ficha técnica de cada equipo y los técnicos en la hoja
+   «Mantenimiento Equipos», a mano, que sólo lee la vista del MCP (el repo es PÚBLICO: ni nombres ni series aquí).
+   • Las dos hojas van por «ID» (el último), sin merge: reenviar CORRIGE la fila entera. El ID nace con el registro.
+   • Lo tecleado se guarda al instante en su borrador; lo pendiente no caduca; lo enviado se queda 60 días en el
+     dispositivo, que son la memoria del aviso «el horómetro baja».
+   • ⚠ El MODELO (de aquí a «fin del modelo») tiene gemelo en src/views/registros/lib/ficha-mantenimiento.schema.js y la
+     paridad lo ata (ficha-mantenimiento.paridad.test.js): lo que cambie aquí, allí también.
+══════════════════════════════════════════ */
+const MNT_TRAB_SHEET = "Mantenimiento Trabajos";
+const MNT_LECT_SHEET = "Mantenimiento Lecturas";
+// Los 11 blowers del Excel («Equipos y Plan»). El modelo decide sus referencias de lectura, que juzga la vista.
+const MNT_EQUIPOS = [
+  ["BLW-01","FB 441 C"], ["BLW-02","FB 441 C"], ["BLW-03","FB 441 C"], ["BLW-04","FB 441 C"],
+  ["BLW-05","FB 441 C"], ["BLW-06","FB 441 C"], ["BLW-07","FB 441 C"], ["BLW-08","FB 441 C"],
+  ["BLW-09","FB 441 C"], ["BLW-10","FB 441 C"], ["BLW-11","FB 621 C"]
+].map(function(p){ return { codigo: p[0], modelo: p[1] }; });
+const MNT_TIPOS = ["Preventivo","Correctivo","Predictivo","Inspección"];
+// El plan de mantenimiento del Excel (A21:A30), en su orden.
+const MNT_ACTIVIDADES = [
+  "Cambio de aceite","Cambio de bandas","Revisión / tensión de bandas","Cambio de filtro de aire",
+  "Engrase de rodamientos del motor","Revisión de válvula de alivio",
+  "Inspección eléctrica (bornes, corriente, aislamiento)","Limpieza general","Reparación / correctivo","Otro"
+];
+const MNT_ESTADOS = ["Completado","Pendiente","En proceso"];
+// Lo POSIBLE, no lo habitual: fuera de esto es un error de tecleo (lo habitual de cada modelo lo juzga la vista).
+const MNT_RANGOS = {
+  horometro:[0,200000], corriente:[0,300], presion:[0,15], temperatura:[0,150],
+  cantidad:[0,10000], costo:[0,1000000], aceite:[0,200], parada:[0,2000]
+};
+// ⚠ Este orden ES el de la hoja, y el ID va el ÚLTIMO.
+const MNT_TRAB_COLUMNS = [
+  { h:"Fecha",                  k:"fecha",         t:"dia" },
+  { h:"Equipo",                 k:"equipo",        t:"txt", max:20 },
+  { h:"Tipo",                   k:"tipo",          t:"txt", max:20 },
+  { h:"Actividad",              k:"actividad",     t:"txt", max:80 },
+  { h:"Horómetro (h)",          k:"horometro",     t:"num" },
+  { h:"Descripción",            k:"descripcion",   t:"txt", max:500 },
+  { h:"Repuestos / materiales", k:"repuestos",     t:"txt", max:200 },
+  { h:"Cantidad",               k:"cantidad",      t:"num" },
+  { h:"Costo (USD)",            k:"costo",         t:"num" },
+  { h:"Técnico",                k:"tecnico",       t:"txt", max:80 },
+  { h:"Hora inicio",            k:"horaInicio",    t:"hora" },
+  { h:"Hora fin",               k:"horaFin",       t:"hora" },
+  { h:"Parada (h)",             k:"parada",        t:"parada" },
+  { h:"Estado",                 k:"estado",        t:"txt", max:20 },
+  { h:"Observaciones",          k:"observaciones", t:"txt", max:500 },
+  { h:"Aceite usado (L)",       k:"aceite",        t:"num" },
+  { h:"ID",                     k:"id",            t:"txt", max:60 }
+];
+const MNT_TRAB_HEADERS = MNT_TRAB_COLUMNS.map(function(c){ return c.h; });
+// Las cuatro lecturas del tablero, en el orden de la hoja.
+const MNT_LECTURAS = [
+  { k:"horometro", h:"Horómetro (h)" }, { k:"corriente", h:"Corriente (A)" },
+  { k:"presion", h:"Presión (psi)" }, { k:"temperatura", h:"Temperatura (°C)" }
+];
+const MNT_LECT_HEADERS = ["Fecha","Hora","Equipo"]
+  .concat(MNT_LECTURAS.map(function(x){ return x.h; }), ["Técnico","Observaciones","ID"]);
+// Lo que se puede anotar de cada número de un trabajo, y si tiene que ser entero.
+const _MNT_NUMEROS_TRABAJO = [
+  { k:"horometro", l:"el horómetro" }, { k:"cantidad", l:"la cantidad", ent:true },
+  { k:"costo", l:"el costo" }, { k:"aceite", l:"el aceite usado" }, { k:"parada", l:"la parada" }
+];
+
+/* ── Las reglas (puras) ─────────────────────────────────── */
+function _mntEsDia(d){ return /^\d{4}-\d{2}-\d{2}$/.test(String(d || "")); }
+function mntEsHora(h){ return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(h || "")); }
+function mntEquipo(codigo){ return MNT_EQUIPOS.find(function(q){ return q.codigo === codigo; }) || null; }
+/** Un número tecleado: «534,51», «534.51», «1,028.42» o «1.028,42» (el ÚLTIMO separador es el decimal). "" si está vacío;
+    NaN si no es un número. */
+function mntNum(v){
+  let s = String(v == null ? "" : v).trim().replace(/\s+/g, "");
+  if(s === "") return "";
+  const c = s.lastIndexOf(","), p = s.lastIndexOf(".");
+  if(c !== -1 && p !== -1) s = c > p ? s.replace(/\./g, "").replace(",", ".") : s.replace(/,/g, "");
+  else s = s.replace(",", ".");
+  const x = Number(s);
+  return isFinite(x) ? x : NaN;
+}
+function _mntNumO(v){ const x = mntNum(v); return (x === "" || !isFinite(x)) ? "" : x; }
+/** Horas entre dos «HH:MM»; si la de fin es menor, cruzó la medianoche. "" si falta alguna. */
+function mntParadaHoras(ini, fin){
+  if(!mntEsHora(ini) || !mntEsHora(fin)) return "";
+  const min = function(h){ return Number(h.slice(0, 2)) * 60 + Number(h.slice(3, 5)); };
+  let d = min(fin) - min(ini);
+  if(d < 0) d += 24 * 60;
+  return Math.round(d / 60 * 100) / 100;
+}
+/** La parada del trabajo: la escrita a mano (una de más de un día) o, si no, la de las dos horas. */
+function mntParada(d){
+  const m = d || {};
+  const a = mntNum(m.parada);
+  return a !== "" ? a : mntParadaHoras(m.horaInicio, m.horaFin);
+}
+/** El ID nace con el registro (prefijo, día y el instante en base 36) y no cambia al corregirlo. */
+function mntNuevoId(prefijo, fecha, ts){
+  return prefijo + "-" + sanitizeStr(fecha, 10) + "-" + Number(ts || 0).toString(36);
+}
+/** Lo que falta o está mal en un trabajo, en palabras; [] si se puede guardar. */
+function mntValidarTrabajo(d){
+  const m = d || {}, err = [], falta = [];
+  if(!_mntEsDia(m.fecha)) falta.push("la fecha");
+  if(!mntEquipo(m.equipo)) falta.push("el equipo");
+  if(MNT_TIPOS.indexOf(m.tipo) === -1) falta.push("el tipo");
+  if(MNT_ACTIVIDADES.indexOf(m.actividad) === -1) falta.push("la actividad");
+  if(mntNum(m.horometro) === "") falta.push("el horómetro");
+  if(MNT_ESTADOS.indexOf(m.estado) === -1) falta.push("el estado");
+  if(falta.length) err.push("falta " + falta.join(", "));
+  _MNT_NUMEROS_TRABAJO.forEach(function(x){
+    const v = mntNum(m[x.k]), r = MNT_RANGOS[x.k];
+    if(v === "") return;
+    if(!isFinite(v)) err.push(x.l + " no es un número");
+    else if(v < r[0] || v > r[1]) err.push(x.l + " está fuera de lo posible (" + r[0] + " a " + r[1] + ")");
+    else if(x.ent && Math.round(v) !== v) err.push(x.l + " tiene que ser un número entero");
+  });
+  if(String(m.horaInicio || "").trim() !== "" && !mntEsHora(m.horaInicio)) err.push("la hora de inicio no es una hora (HH:MM)");
+  if(String(m.horaFin || "").trim() !== "" && !mntEsHora(m.horaFin)) err.push("la hora de fin no es una hora (HH:MM)");
+  if(m.tipo === "Correctivo" && m.estado === "Completado" && mntParada(m) === ""){
+    err.push("un correctivo completado necesita su parada: la hora de inicio y la de fin, o las horas");
+  }
+  return err;
+}
+/** Un equipo de la ronda sin nada anotado. */
+function mntLecturaVacia(e){
+  if(!e) return true;
+  const vacio = function(v){ return String(v == null ? "" : v).trim() === ""; };
+  return MNT_LECTURAS.every(function(x){ return vacio(e[x.k]); }) && vacio(e.obs);
+}
+/** Lo que falta o está mal en una ronda; [] si se puede guardar. */
+function mntValidarRonda(d){
+  const m = d || {}, err = [], eqs = m.equipos || {};
+  if(!_mntEsDia(m.fecha)) err.push("falta la fecha");
+  if(String(m.hora || "").trim() !== "" && !mntEsHora(m.hora)) err.push("la hora no es una hora (HH:MM)");
+  let alguno = false;
+  MNT_EQUIPOS.forEach(function(q){
+    const e = eqs[q.codigo];
+    if(mntLecturaVacia(e)) return;
+    alguno = true;
+    MNT_LECTURAS.forEach(function(x){
+      const v = mntNum(e[x.k]), r = MNT_RANGOS[x.k];
+      if(v === "") return;
+      if(!isFinite(v)) err.push(q.codigo + ": " + x.h + " no es un número");
+      else if(v < r[0] || v > r[1]) err.push(q.codigo + ": " + x.h + " fuera de lo posible (" + r[0] + " a " + r[1] + ")");
+    });
+  });
+  if(!alguno) err.push("anota al menos un equipo");
+  return err;
+}
+/** La fila de un trabajo, en el orden de MNT_TRAB_HEADERS. */
+function mntFilaTrabajo(d){
+  const m = d || {};
+  return MNT_TRAB_COLUMNS.map(function(c){
+    if(c.t === "num") return _mntNumO(m[c.k]);
+    if(c.t === "parada") return _mntNumO(mntParada(m));
+    if(c.t === "hora") return mntEsHora(m[c.k]) ? m[c.k] : "";
+    if(c.t === "dia") return _mntEsDia(m[c.k]) ? m[c.k] : "";
+    return sanitizeStr(m[c.k], c.max);
+  });
+}
+/** Las filas de una ronda: una por equipo anotado, en el orden de MNT_EQUIPOS. Su ID = el de la ronda + el equipo. */
+function mntFilasRonda(d){
+  const m = d || {}, eqs = m.equipos || {}, filas = [];
+  MNT_EQUIPOS.forEach(function(q){
+    const e = eqs[q.codigo];
+    if(mntLecturaVacia(e)) return;
+    filas.push([_mntEsDia(m.fecha) ? m.fecha : "", mntEsHora(m.hora) ? m.hora : "", q.codigo]
+      .concat(MNT_LECTURAS.map(function(x){ return _mntNumO(e[x.k]); }))
+      .concat([sanitizeStr(m.tecnico, 80), sanitizeStr(e.obs, 300), sanitizeStr(m.id, 50) + "-" + q.codigo]));
+  });
+  return filas;
+}
+function buildMntTrabajoPayload(records){
+  const rows = [];
+  (records || []).forEach(function(r){ if(r && r.data) rows.push(mntFilaTrabajo(r.data)); });
+  return { sheetName: MNT_TRAB_SHEET, headers: MNT_TRAB_HEADERS.slice(), rows: rows };
+}
+function buildMntRondaPayload(records){
+  const rows = [];
+  (records || []).forEach(function(r){ if(r && r.data) mntFilasRonda(r.data).forEach(function(f){ rows.push(f); }); });
+  return { sheetName: MNT_LECT_SHEET, headers: MNT_LECT_HEADERS.slice(), rows: rows };
+}
+/** Las lecturas de horómetro que conoce el dispositivo, de rondas y trabajos guardados: [{ equipo, fecha, h, id }]. */
+function mntHorometros(rondas, trabajos){
+  const out = [];
+  (rondas || []).forEach(function(r){
+    const d = r && r.data;
+    if(!d || !_mntEsDia(d.fecha)) return;
+    const eqs = d.equipos || {};
+    Object.keys(eqs).forEach(function(c){
+      const h = _mntNumO(eqs[c] && eqs[c].horometro);
+      if(h !== "") out.push({ equipo: c, fecha: d.fecha, h: h, id: d.id });
+    });
+  });
+  (trabajos || []).forEach(function(r){
+    const d = r && r.data;
+    if(!d || !_mntEsDia(d.fecha)) return;
+    const h = _mntNumO(d.horometro);
+    if(h !== "") out.push({ equipo: d.equipo, fecha: d.fecha, h: h, id: d.id });
+  });
+  return out;
+}
+/** La lectura más alta del equipo hasta ese día —sin contar el registro que se corrige (excluirId)— si SUPERA a la
+    nueva; null si no hay ninguna o no baja. Lo leído DESPUÉS de esa fecha no cuenta. */
+function mntHorometroBaja(lista, equipo, fecha, valor, excluirId){
+  const v = _mntNumO(valor);
+  if(v === "" || !_mntEsDia(fecha)) return null;
+  let previa = null;
+  (lista || []).forEach(function(x){
+    if(!x || x.equipo !== equipo || x.id === excluirId || !(x.fecha <= fecha)) return;
+    if(!previa || x.h > previa.h) previa = x;
+  });
+  return previa && previa.h > v ? { fecha: previa.fecha, h: previa.h } : null;
+}
+function _mntDiaCorto(d){ return d.slice(8, 10) + "/" + d.slice(5, 7); }
+/** Los avisos de horómetro de una ronda, uno por equipo que baja (texto para confirmar antes de guardar). */
+function mntAvisosRonda(lista, d){
+  const m = d || {}, eqs = m.equipos || {}, out = [];
+  MNT_EQUIPOS.forEach(function(q){
+    const e = eqs[q.codigo], b = e ? mntHorometroBaja(lista, q.codigo, m.fecha, e.horometro, m.id) : null;
+    if(b) out.push(q.codigo + ": " + _mntNumO(e.horometro) + " h, y el " + _mntDiaCorto(b.fecha) + " ya marcaba " + b.h + " h");
+  });
+  return out;
+}
+/** El aviso de horómetro de un trabajo ([] o uno). */
+function mntAvisosTrabajo(lista, d){
+  const m = d || {}, b = mntHorometroBaja(lista, m.equipo, m.fecha, m.horometro, m.id);
+  return b ? [m.equipo + ": " + _mntNumO(m.horometro) + " h, y el " + _mntDiaCorto(b.fecha) + " ya marcaba " + b.h + " h"] : [];
+}
+/* ── fin del modelo de Mantenimiento ── */
+
+/* ── Persistencia local ─────────────────────────────────── */
+const MNT_RONDA_KEY       = "larv4_mnt_rondas";
+const MNT_TRAB_KEY        = "larv4_mnt_trabajos";
+const MNT_RONDA_DRAFT_KEY = "larv4_mnt_ronda_borrador";
+const MNT_TRAB_DRAFT_KEY  = "larv4_mnt_trabajo_borrador";
+const MNT_TEC_KEY         = "larv4_mnt_tecnicos";
+const MNT_TTL             = 60 * 24 * 60 * 60 * 1000;   // sólo para lo YA enviado
+function _mntRaw(key){
+  try{
+    const raw = localStorage.getItem(key);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  }catch(x){ _silent("_mntRaw", x); return []; }
+}
+function _mntSave(key, list){
+  const ok = _lsSet(key, JSON.stringify(list || []));
+  if(!ok && !_reclaiming) toast("❌ Este navegador NO está guardando los datos (almacenamiento lleno, en modo privado o bloqueado).","err",7000);
+  return ok;
+}
+function _mntRondaRaw(){ return _mntRaw(MNT_RONDA_KEY); }
+function _mntRondaSave(list){ return _mntSave(MNT_RONDA_KEY, list); }
+function _mntTrabRaw(){ return _mntRaw(MNT_TRAB_KEY); }
+function _mntTrabSave(list){ return _mntSave(MNT_TRAB_KEY, list); }
+// Lo pendiente NO caduca (se perdería trabajo); lo enviado se purga a los 60 días.
+function _mntCargar(key){
+  const now = Date.now(), raw = _mntRaw(key);
+  const list = raw.filter(function(r){ return r && !(r.synced && r.syncedAt && (now - r.syncedAt) > MNT_TTL); });
+  if(list.length !== raw.length) _mntSave(key, list);
+  return list;
+}
+function loadMntRondas(){ return _mntCargar(MNT_RONDA_KEY); }
+function loadMntTrabajos(){ return _mntCargar(MNT_TRAB_KEY); }
+function mntPendientes(){
+  const sin = function(r){ return !r.synced; };
+  return loadMntRondas().filter(sin).length + loadMntTrabajos().filter(sin).length;
+}
+/* Los técnicos que ya se escribieron EN ESTE DISPOSITIVO, el último primero: la sugerencia del campo. Los nombres no van
+   en el código (repo público): la lista del área vive en la hoja «Mantenimiento Equipos». */
+function _mntTecnicos(){
+  try{
+    const l = JSON.parse(localStorage.getItem(MNT_TEC_KEY) || "[]");
+    return Array.isArray(l) ? l.filter(function(x){ return typeof x === "string" && x; }) : [];
+  }catch(_){ return []; }
+}
+function _mntRecordarTecnico(n){
+  const t = sanitizeStr(n, 80);
+  if(!t) return;
+  _lsSet(MNT_TEC_KEY, JSON.stringify([t].concat(_mntTecnicos().filter(function(x){ return x !== t; })).slice(0, 20)));
+}
+
+/* ── Lo que hay en pantalla (se guarda al instante en su borrador) ── */
+let _mntRonda = null, _mntTrab = null;
+function _mntHoraAhora(){
+  const d = new Date();
+  return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+}
+function _mntRondaNueva(){
+  const f = today();
+  return { id: mntNuevoId("MR", f, Date.now()), fecha: f, hora: _mntHoraAhora(), tecnico: _mntTecnicos()[0] || "", equipos: {} };
+}
+function _mntTrabNuevo(){
+  const f = today();
+  return { id: mntNuevoId("MT", f, Date.now()), fecha: f, equipo: "", tipo: "", actividad: "", horometro: "", descripcion: "",
+    repuestos: "", cantidad: "", costo: "", tecnico: _mntTecnicos()[0] || "", horaInicio: "", horaFin: "", parada: "",
+    estado: "Completado", observaciones: "", aceite: "" };
+}
+function _mntBorrador(key, valido, nuevo){
+  try{
+    const d = JSON.parse(localStorage.getItem(key) || "null");
+    return (d && typeof d === "object" && typeof d.id === "string" && d.id && valido(d)) ? d : nuevo();
+  }catch(_){ return nuevo(); }
+}
+function _mntRondaActual(){
+  if(!_mntRonda) _mntRonda = _mntBorrador(MNT_RONDA_DRAFT_KEY, function(d){ return !!d.equipos && typeof d.equipos === "object"; }, _mntRondaNueva);
+  return _mntRonda;
+}
+function _mntTrabActual(){
+  if(!_mntTrab) _mntTrab = _mntBorrador(MNT_TRAB_DRAFT_KEY, function(){ return true; }, _mntTrabNuevo);
+  return _mntTrab;
+}
+function _mntGuardarRonda(){ _lsSet(MNT_RONDA_DRAFT_KEY, JSON.stringify(_mntRondaActual())); }
+function _mntGuardarTrab(){ _lsSet(MNT_TRAB_DRAFT_KEY, JSON.stringify(_mntTrabActual())); }
+// La lectura de horómetro más alta de un equipo en este dispositivo (la pista «últ.»), o null.
+function _mntUltimo(lista, codigo){
+  let u = null;
+  (lista || []).forEach(function(x){ if(x.equipo === codigo && (!u || x.h > u.h)) u = x; });
+  return u;
+}
+function _mntUltimoTxt(lista, codigo, excluirId){
+  const u = _mntUltimo((lista || []).filter(function(x){ return x.id !== excluirId; }), codigo);
+  return u ? "últ. " + u.h + " h (" + _mntDiaCorto(u.fecha) + ")" : "";
+}
+/* Los campos no repintan (perderían el foco): sólo guardan. El campo va en data-mk y el equipo en data-mq; el onclick y
+   el oninput no interpolan nada (verificar-atributos-evento). */
+function mntRondaCampo(el){
+  const k = el && el.getAttribute("data-mk");
+  if(!k) return;
+  _mntRondaActual()[k] = el.value;
+  _mntGuardarRonda();
+}
+function mntRondaCelda(el){
+  const q = el && el.getAttribute("data-mq"), k = el && el.getAttribute("data-mk");
+  if(!q || !k || !mntEquipo(q)) return;
+  const m = _mntRondaActual();
+  const e = m.equipos[q] || (m.equipos[q] = {});
+  e[k] = el.value;
+  _mntGuardarRonda();
+}
+function mntTrabCampo(el){
+  const k = el && el.getAttribute("data-mk");
+  if(!k) return;
+  const m = _mntTrabActual();
+  m[k] = el.value;
+  _mntGuardarTrab();
+  // La parada de inicio a fin se ve en su campo mientras no se escriba otra; la pista del horómetro, con su equipo.
+  if(k === "horaInicio" || k === "horaFin"){
+    const p = document.getElementById("mnt-parada"), c = mntParadaHoras(m.horaInicio, m.horaFin);
+    if(p) p.placeholder = c === "" ? "de inicio a fin" : c + " (de inicio a fin)";
+  }
+  if(k === "equipo"){
+    const u = document.getElementById("mnt-ultimo");
+    if(u) u.textContent = _mntUltimoTxt(mntHorometros(loadMntRondas(), loadMntTrabajos()), m.equipo, m.id);
+  }
+}
+/* Valida, avisa si el horómetro BAJA y guarda en el dispositivo como PENDIENTE (el mismo ID lo sustituye: así se corrige
+   uno abierto con ✏️). Guardado, la ficha EMPIEZA OTRA, como las de formulario de Maduración: si se quedara en pantalla,
+   la ronda o el trabajo siguiente se teclearía encima y, con el MISMO ID, sustituiría al ya guardado (y a su fila de la
+   hoja). */
+function _mntRegistrar(ronda){
+  const m = ronda ? _mntRondaActual() : _mntTrabActual();
+  const err = ronda ? mntValidarRonda(m) : mntValidarTrabajo(m);
+  if(err.length){ toast("⚠ " + err.join(" · "), "warn", 8000); return null; }
+  const lista = mntHorometros(loadMntRondas(), loadMntTrabajos());
+  const avisos = ronda ? mntAvisosRonda(lista, m) : mntAvisosTrabajo(lista, m);
+  if(avisos.length && !confirm("El horómetro BAJA respecto a lo ya anotado en este dispositivo:\n\n" + avisos.join("\n")
+    + "\n\nSi el tablero se cambió o se reinició, dilo en Observaciones.\n¿Guardar igualmente?")) return null;
+  const key = ronda ? MNT_RONDA_KEY : MNT_TRAB_KEY;
+  const list = _mntRaw(key).filter(function(r){ return r && r.id !== m.id; });
+  const rec = { id: m.id, ts: Date.now(), synced: false, data: JSON.parse(JSON.stringify(m)) };
+  list.push(rec);
+  if(!_mntSave(key, list)) return null;
+  _mntRecordarTecnico(m.tecnico);
+  if(ronda){ _mntRonda = _mntRondaNueva(); _mntGuardarRonda(); }
+  else { _mntTrab = _mntTrabNuevo(); _mntGuardarTrab(); }
+  return rec;
+}
+function mntRondaGuardar(){
+  const rec = _mntRegistrar(true);
+  if(!rec) return;
+  toast("💾 Ronda guardada en este dispositivo (" + mntFilasRonda(rec.data).length + " equipo(s)): pendiente de enviar", "ok");
+  renderMntRonda(); updateDots(); updateSyncUI();
+}
+async function mntRondaEnviar(){
+  const rec = _mntRegistrar(true);
+  if(!rec) return;
+  renderMntRonda(); updateDots();
+  await syncAllPendingMnt();
+}
+function mntTrabGuardar(){
+  const rec = _mntRegistrar(false);
+  if(!rec) return;
+  toast("💾 Trabajo guardado en este dispositivo: pendiente de enviar", "ok");
+  renderMntTrabajo(); updateDots(); updateSyncUI();
+}
+async function mntTrabEnviar(){
+  const rec = _mntRegistrar(false);
+  if(!rec) return;
+  renderMntTrabajo(); updateDots();
+  await syncAllPendingMnt();
+}
+// ¿Lo de la pantalla tiene algo que NO coincide con lo guardado con su mismo ID?
+function _mntSinGuardar(key, m){
+  return !_mntRaw(key).some(function(r){ return r && r.id === m.id && JSON.stringify(r.data) === JSON.stringify(m); });
+}
+function mntRondaNueva(){
+  const m = _mntRondaActual();
+  const hay = MNT_EQUIPOS.some(function(q){ return !mntLecturaVacia(m.equipos[q.codigo]); });
+  if(hay && _mntSinGuardar(MNT_RONDA_KEY, m) && !confirm("Lo anotado en esta ronda NO se ha guardado.\n\n¿Empezar otra igualmente?")) return;
+  _mntRonda = _mntRondaNueva();
+  _mntGuardarRonda();
+  renderMntRonda();
+}
+function mntTrabNuevo(){
+  const m = _mntTrabActual();
+  const hay = !!(m.equipo || m.tipo || m.actividad || String(m.horometro || "").trim() || String(m.descripcion || "").trim());
+  if(hay && _mntSinGuardar(MNT_TRAB_KEY, m) && !confirm("Este trabajo NO se ha guardado.\n\n¿Empezar otro igualmente?")) return;
+  _mntTrab = _mntTrabNuevo();
+  _mntGuardarTrab();
+  renderMntTrabajo();
+}
+function _mntAbrir(ronda, id){
+  const r = (ronda ? _mntRondaRaw() : _mntTrabRaw()).find(function(x){ return x && x.id === id; });
+  if(!r) return;
+  if(ronda){ _mntRonda = JSON.parse(JSON.stringify(r.data)); _mntGuardarRonda(); renderMntRonda(); }
+  else { _mntTrab = JSON.parse(JSON.stringify(r.data)); _mntGuardarTrab(); renderMntTrabajo(); }
+}
+function _mntBorrar(ronda, id){
+  const key = ronda ? MNT_RONDA_KEY : MNT_TRAB_KEY;
+  const r = _mntRaw(key).find(function(x){ return x && x.id === id; });
+  if(!r) return;
+  const cual = ronda ? "esta ronda" : "este trabajo";
+  if(!confirm(r.synced ? "¿Quitar " + cual + " del dispositivo? (Lo enviado sigue en la hoja.)"
+    : "Lo de " + cual + " NO se ha enviado: si lo quitas, se pierde.\n\n¿Quitarlo igualmente?")) return;
+  _mntSave(key, _mntRaw(key).filter(function(x){ return x && x.id !== id; }));
+  if(ronda) renderMntRonda(); else renderMntTrabajo();
+  updateDots(); updateSyncUI();
+}
+// Los botones de las listas llevan el id en data-mnt-id: nada interpolado en el onclick.
+function mntRondaAbrirEl(el){ if(el) _mntAbrir(true, el.getAttribute("data-mnt-id")); }
+function mntRondaBorrarEl(el){ if(el) _mntBorrar(true, el.getAttribute("data-mnt-id")); }
+function mntTrabAbrirEl(el){ if(el) _mntAbrir(false, el.getAttribute("data-mnt-id")); }
+function mntTrabBorrarEl(el){ if(el) _mntBorrar(false, el.getAttribute("data-mnt-id")); }
+
+/* ── Envío ──────────────────────────────────────────────── */
+/* Un registro por envío y marcado en el acto, como el Score: si el tercero se cae, los dos primeros ya están en la hoja.
+   La marca de la cola lleva la VERSIÓN (id@ts): uno corregido después de encolarse no se da por enviado. Primero las
+   rondas y luego los trabajos; si algo no sale, no se insiste (es el mismo GAS) y el desenlace (outcome) decide el aviso:
+   lo que quedó EN COLA no es un error. */
+async function syncAllPendingMnt(){
+  const url = gasUrl();
+  if(!url){ toast("Configura la URL de Google Apps Script primero","warn"); openCfg(); return; }
+  if(!isValidGasUrl(url)){ toast("URL de script inválida","err"); return; }
+  if(!syncRateOk()) return;
+  const total = mntPendientes();
+  if(total === 0){
+    setSyncUI("idle","Todo sincronizado");
+    toast("No hay registros de Mantenimiento pendientes","info",2500);
+    return;
+  }
+  setSyncUI("pend","Enviando " + total + " registro(s) de Mantenimiento…");
+  let enviados = 0, fallo = null;
+  for(const ronda of [true, false]){
+    const pending = (ronda ? loadMntRondas() : loadMntTrabajos()).filter(function(r){ return !r.synced; });
+    for(let i = 0; i < pending.length; i++){
+      const rec = pending[i];
+      const opts = { dedupeSalt: rec.id + "@" + rec.ts, mark:{ kind: ronda ? "mntronda" : "mnttrabajo", keys:[rec.id + "@" + rec.ts] } };
+      const entregado = await postPayload(ronda ? buildMntRondaPayload([rec]) : buildMntTrabajoPayload([rec]), url, opts);
+      if(!entregado){ fallo = opts; break; }
+      const l2 = ronda ? _mntRondaRaw() : _mntTrabRaw();
+      const j = l2.findIndex(function(x){ return x && x.id === rec.id && x.ts === rec.ts; });
+      if(j >= 0){
+        l2[j].synced = true; l2[j].syncedAt = Date.now();
+        if(ronda) _mntRondaSave(l2); else _mntTrabSave(l2);
+      }
+      enviados++;
+    }
+    if(fallo) break;   // si las rondas no salen, los trabajos tampoco van a salir
+  }
+  if(!fallo){
+    setSyncUI("ok", enviados + " registro(s) de Mantenimiento enviado(s) ✔");
+    toast(enviados + " registro(s) de Mantenimiento sincronizado(s)","ok",3000);
+    setTimeout(function(){ setSyncUI("idle","Todo sincronizado"); }, 3000);
+  } else if(enviados > 0){
+    setSyncUI("err", enviados + " de " + total + " enviados");
+    toast("⚠️ " + enviados + " de " + total + " registro(s) de Mantenimiento sincronizados; el resto sigue pendiente"
+      + _gasMotivo(fallo.gasMessage),"warn",7000);
+  } else {
+    _syncNotOkUI(fallo.outcome, "No fue posible sincronizar Mantenimiento", null, fallo.gasMessage);
+  }
+  if(curTab === "mntronda") renderMntRonda();
+  if(curTab === "mnttrabajo") renderMntTrabajo();
+  updateDots(); updateSyncUI();
+}
+
+/* ── Las fichas ─────────────────────────────────────────── */
+function _mntOpts(lista, sel){
+  return lista.map(function(o){ return '<option value="'+escapeHtml(o)+'"'+(o === sel ? " selected" : "")+'>'+escapeHtml(o)+'</option>'; }).join("");
+}
+function _mntDatalistTecnicos(){
+  return '<datalist id="mnt-tecnicos">' + _mntTecnicos().map(function(t){ return '<option value="'+escapeHtml(t)+'">'; }).join("") + '</datalist>';
+}
+function _mntGuardados(ronda){
+  const l = (ronda ? loadMntRondas() : loadMntTrabajos()).slice().sort(function(a, b){ return b.ts - a.ts; });
+  if(!l.length) return '<div style="font-size:11px;color:#94a3b8">Nada en este dispositivo.</div>';
+  const abrir = ronda ? ' onclick="mntRondaAbrirEl(this)"' : ' onclick="mntTrabAbrirEl(this)"';
+  const borrar = ronda ? ' onclick="mntRondaBorrarEl(this)"' : ' onclick="mntTrabBorrarEl(this)"';
+  return l.map(function(r){
+    const d = r.data || {};
+    const txt = ronda
+      ? escapeHtml(d.fecha || "") + (d.hora ? " " + escapeHtml(d.hora) : "") + " · " + mntFilasRonda(d).length + " equipo(s)"
+      : escapeHtml(d.fecha || "") + " · " + escapeHtml(d.equipo || "") + " · " + escapeHtml(d.actividad || "") + " · " + escapeHtml(d.estado || "");
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:11px">'
+      + '<span>'+(r.synced ? "✅" : "📶")+' '+txt+(r.synced ? "" : ' <b style="color:#b45309">pendiente</b>')+'</span>'
+      + '<span style="display:flex;gap:6px"><button class="btn" type="button" data-mnt-id="'+escapeHtml(r.id)+'"'+abrir+' style="font-size:11px">✏️ Abrir</button>'
+      + '<button class="btn" type="button" data-mnt-id="'+escapeHtml(r.id)+'"'+borrar+' style="font-size:11px">🗑</button></span></div>';
+  }).join("");
+}
+function _mntCaja(titulo, hoja, cuerpo){
+  return '<div class="fc"><div class="fc-h"><div class="fc-t">'+titulo+'</div><span class="ssp ssp-mt">'+escapeHtml(hoja)+'</span></div>'
+    + '<div class="fc-b"><div class="mad-form">' + cuerpo + '</div></div></div>';
+}
+const _MNT_SUBT = 'font-size:11px;font-weight:700;color:#0f766e;text-transform:uppercase;letter-spacing:.6px;margin:14px 0 6px';
+function renderMntRonda(){
+  const fp = document.getElementById("fp-mntronda");
+  if(!fp) return;
+  const m = _mntRondaActual();
+  const v = function(x){ return escapeHtml(x == null ? "" : String(x)); };
+  const lista = mntHorometros(loadMntRondas(), loadMntTrabajos());
+  const cab = '<div class="meta">'
+    + '<div class="mf"><label>Fecha *</label><input type="date" data-mk="fecha" value="'+v(m.fecha)+'" oninput="mntRondaCampo(this)"></div>'
+    + '<div class="mf"><label>Hora</label><input type="time" data-mk="hora" value="'+v(m.hora)+'" oninput="mntRondaCampo(this)"></div>'
+    + '<div class="mf"><label>Técnico</label><input data-mk="tecnico" maxlength="80" list="mnt-tecnicos" autocomplete="off" value="'+v(m.tecnico)+'" oninput="mntRondaCampo(this)"></div>'
+    + '</div>' + _mntDatalistTecnicos();
+  const celda = function(q, e, k, ph){
+    return '<td><input type="text" data-mq="'+q+'" data-mk="'+k+'" inputmode="decimal" placeholder="'+ph+'" value="'+v(e[k])+'" oninput="mntRondaCelda(this)" style="width:100%;min-width:62px"></td>';
+  };
+  const filas = MNT_EQUIPOS.map(function(q){
+    const e = m.equipos[q.codigo] || {}, ult = _mntUltimoTxt(lista, q.codigo, m.id);
+    return '<tr data-mnt-eq="'+q.codigo+'"><td style="white-space:nowrap"><b>'+q.codigo+'</b><br><span style="font-size:10px;color:#64748b">'
+      + escapeHtml(q.modelo) + (ult ? " · " + escapeHtml(ult) : "") + '</span></td>'
+      + celda(q.codigo, e, "horometro", "h") + celda(q.codigo, e, "corriente", "A") + celda(q.codigo, e, "presion", "psi")
+      + celda(q.codigo, e, "temperatura", "°C")
+      + '<td><input type="text" data-mq="'+q.codigo+'" data-mk="obs" maxlength="300" value="'+v(e.obs)+'" oninput="mntRondaCelda(this)" style="width:100%;min-width:110px"></td></tr>';
+  }).join("");
+  const tabla = '<div style="overflow-x:auto"><table class="ft" style="font-size:12px"><thead><tr><th>Equipo</th><th>Horómetro (h)</th>'
+    + '<th>Corriente (A)</th><th>Presión (psi)</th><th>Temp. (°C)</th><th>Observación</th></tr></thead><tbody>' + filas + '</tbody></table></div>'
+    + '<div style="font-size:11px;color:#64748b;margin-top:4px">Lo que marca el tablero. Sólo se envían los equipos con algo anotado.</div>';
+  fp.innerHTML = _mntCaja("📋 Ronda · lecturas de los blowers", MNT_LECT_SHEET, cab + tabla
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'
+    +   '<button class="btn" type="button" onclick="mntRondaGuardar()">💾 Guardar en el equipo</button>'
+    +   '<button class="btn bp" type="button" onclick="mntRondaEnviar()">☁️ Enviar</button>'
+    +   '<button class="btn" type="button" onclick="mntRondaNueva()">🗑 Nueva ronda</button>'
+    + '</div>'
+    + '<div style="'+_MNT_SUBT+'">Rondas en este dispositivo</div>' + _mntGuardados(true));
+}
+function renderMntTrabajo(){
+  const fp = document.getElementById("fp-mnttrabajo");
+  if(!fp) return;
+  const m = _mntTrabActual();
+  const v = function(x){ return escapeHtml(x == null ? "" : String(x)); };
+  const pc = mntParadaHoras(m.horaInicio, m.horaFin);
+  const sel = function(k, opts){ return '<select data-mk="'+k+'" onchange="mntTrabCampo(this)"><option value="">— Selecciona —</option>'+opts+'</select>'; };
+  const inp = function(k, etq, extra){ return '<div class="mf"><label>'+etq+'</label><input data-mk="'+k+'" value="'+v(m[k])+'" oninput="mntTrabCampo(this)"'+(extra || "")+'></div>'; };
+  const hora = function(k, etq){ return '<div class="mf"><label>'+etq+'</label><input type="time" data-mk="'+k+'" value="'+v(m[k])+'" oninput="mntTrabCampo(this)"></div>'; };
+  const area = function(k, etq, max){ return '<div class="mf" style="grid-column:1/-1"><label>'+etq+'</label><textarea data-mk="'+k+'" rows="2" maxlength="'+max+'" oninput="mntTrabCampo(this)" style="border:1.5px solid var(--bdr);border-radius:6px;padding:7px 10px;font:inherit">'+v(m[k])+'</textarea></div>'; };
+  const eqOpts = MNT_EQUIPOS.map(function(q){
+    return '<option value="'+q.codigo+'"'+(q.codigo === m.equipo ? " selected" : "")+'>'+q.codigo+' · '+escapeHtml(q.modelo)+'</option>';
+  }).join("");
+  const ult = m.equipo ? _mntUltimoTxt(mntHorometros(loadMntRondas(), loadMntTrabajos()), m.equipo, m.id) : "";
+  const form = '<div class="meta">'
+    + '<div class="mf"><label>Fecha *</label><input type="date" data-mk="fecha" value="'+v(m.fecha)+'" oninput="mntTrabCampo(this)"></div>'
+    + '<div class="mf"><label>Equipo *</label>' + sel("equipo", eqOpts) + '</div>'
+    + '<div class="mf"><label>Tipo *</label>' + sel("tipo", _mntOpts(MNT_TIPOS, m.tipo)) + '</div>'
+    + '<div class="mf"><label>Actividad *</label>' + sel("actividad", _mntOpts(MNT_ACTIVIDADES, m.actividad)) + '</div>'
+    + '<div class="mf"><label>Horómetro (h) *</label><input data-mk="horometro" inputmode="decimal" value="'+v(m.horometro)+'" oninput="mntTrabCampo(this)">'
+    +   '<span id="mnt-ultimo" style="font-size:10px;color:#64748b">'+escapeHtml(ult)+'</span></div>'
+    + '<div class="mf"><label>Estado *</label>' + sel("estado", _mntOpts(MNT_ESTADOS, m.estado)) + '</div>'
+    + inp("tecnico", "Técnico", ' maxlength="80" list="mnt-tecnicos" autocomplete="off"')
+    + hora("horaInicio", "Hora inicio") + hora("horaFin", "Hora fin")
+    + '<div class="mf"><label>Parada (h)</label><input id="mnt-parada" data-mk="parada" inputmode="decimal" value="'+v(m.parada)+'"'
+    +   ' placeholder="'+(pc === "" ? "de inicio a fin" : pc + " (de inicio a fin)")+'" oninput="mntTrabCampo(this)"'
+    +   ' title="Sólo si la parada duró más de un día; si no, sale de la hora de inicio y la de fin"></div>'
+    + inp("repuestos", "Repuestos / materiales", ' maxlength="200"')
+    + inp("cantidad", "Cantidad", ' inputmode="numeric"')
+    + inp("costo", "Costo (USD)", ' inputmode="decimal"')
+    + inp("aceite", "Aceite usado (L)", ' inputmode="decimal"')
+    + '</div>'
+    + '<div class="meta">' + area("descripcion", "Descripción del trabajo", 500) + area("observaciones", "Observaciones", 500) + '</div>'
+    + _mntDatalistTecnicos();
+  fp.innerHTML = _mntCaja("🔧 Trabajo · una intervención en un equipo", MNT_TRAB_SHEET, form
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'
+    +   '<button class="btn" type="button" onclick="mntTrabGuardar()">💾 Guardar en el equipo</button>'
+    +   '<button class="btn bp" type="button" onclick="mntTrabEnviar()">☁️ Enviar</button>'
+    +   '<button class="btn" type="button" onclick="mntTrabNuevo()">🗑 Nuevo trabajo</button>'
+    + '</div>'
+    + '<div style="'+_MNT_SUBT+'">Trabajos en este dispositivo</div>' + _mntGuardados(false));
+}
+
+
+/* ══════════════════════════════════════════
    🧾 AUDITORÍA · siembra, transferencia y cosecha de una corrida (AsT, 2026-10-03, usuario)
    ──────────────────────────────────────────
    Las planillas «AUDITORIAS (MES) Cxxx» como ficha. Es OTRO tipo de registro que el Despacho de Datos
@@ -27484,7 +28134,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "372a32cebe97";
+const GAS_VERSION = "b34f45a6187c";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -27550,7 +28200,10 @@ const ALLOWED = [
   "Microbiología",
   "Calidad de Agua",
   "Patología en Fresco",
-  "Marea"
+  "Marea",
+  // 🔧 Mantenimiento (2026-10-28): las rondas de lecturas y los trabajos de los blowers, las dos por su columna "ID".
+  // «Mantenimiento Equipos» (la ficha técnica de cada equipo) NO entra: se edita a mano y la vista la lee por su exportación.
+  "Mantenimiento Trabajos", "Mantenimiento Lecturas"
 ];
 
 const LIMITS = {
@@ -27621,7 +28274,10 @@ const LIMITS = {
   score:   { maxRows: 300, maxCols: 40 },
   // 🧾 Auditoría (2026-10-03): 29 columnas (Tipo, los datos de la siembra, la transferencia y la cosecha, pie e ID) +
   // margen. Una auditoría son sus siembras, transferencias y partidas: 500 cubre una corrida de dos módulos con holgura.
-  aud:     { maxRows: 500, maxCols: 40 }
+  aud:     { maxRows: 500, maxCols: 40 },
+  // 🔧 Mantenimiento (2026-10-28): Trabajos son 17 columnas y Lecturas 10, las dos con el ID al final, + margen. Una ronda
+  // son 11 filas como mucho (los blowers) y un trabajo, una: 300 cubre de sobra un envío.
+  mnt:     { maxRows: 300, maxCols: 30 }
 };
 
 // Rate limit state: persistido en CacheService (60s TTL) para que sobreviva
@@ -27743,6 +28399,7 @@ function doPost(e) {
     var isCal    = payload.sheetName === "Calidad de Agua";
     var isPat    = payload.sheetName === "Patología en Fresco";
     var isMarea  = payload.sheetName === "Marea";
+    var isMnt    = payload.sheetName === "Mantenimiento Trabajos" || payload.sheetName === "Mantenimiento Lecturas";
     // Routing Maduración: clave compuesta por columnas (0-indexed)
     var madKeyCols = null;
     if      (payload.sheetName === "Maduración Sala")     madKeyCols = [0,1];   // Fecha, Sala
@@ -27819,6 +28476,7 @@ function doPost(e) {
                 : isCal    ? LIMITS.cal
                 : isPat    ? LIMITS.pat
                 : isMarea  ? LIMITS.marea
+                : isMnt    ? LIMITS.mnt
                 : (isCtrl  ? LIMITS.control : LIMITS.datos);
 
     if (payload.rows.length > limits.maxRows) {
@@ -28008,6 +28666,16 @@ function doPost(e) {
         if (_cAu >= 0 && ws.getMaxRows() > 1 && ws.getMaxColumns() > _cAu) ws.getRange(2, _cAu + 1, ws.getMaxRows() - 1, 1).setNumberFormat("@");
       });
     }
+    // 🔧 Mantenimiento (2026-10-28): las HORAS como TEXTO («08:00» lo convertiría Sheets en una hora del 30/12/1899), localizadas
+    // por la cabecera del envío, como en la Auditoría.
+    if (isMnt) {
+      var _filasMn = lastRow(ws) + rows.length;
+      if (_filasMn > ws.getMaxRows()) ws.insertRowsAfter(ws.getMaxRows(), _filasMn - ws.getMaxRows());
+      ["Hora", "Hora inicio", "Hora fin"].forEach(function (h) {
+        var _cMn = (payload.headers || []).indexOf(h);
+        if (_cMn >= 0 && ws.getMaxRows() > 1 && ws.getMaxColumns() > _cMn) ws.getRange(2, _cMn + 1, ws.getMaxRows() - 1, 1).setNumberFormat("@");
+      });
+    }
     var result;
     if (isMad) {
       // Las hojas POSICIONALES del registro operativo usan upsert con su clave compuesta (las del reproductivo, en madKeyCols):
@@ -28074,6 +28742,8 @@ function doPost(e) {
     else if (isScore)  result = upsertAstRows(ws, rows);
     // 🧾 Auditoría (2026-10-03): el MISMO upsert por "ID" (el último), sin merge: reenviar una auditoría la corrige.
     else if (isAud)    result = upsertAstRows(ws, rows);
+    // 🔧 Mantenimiento (2026-10-28): el MISMO upsert por "ID" (el último), sin merge: reenviar una ronda o un trabajo lo corrige.
+    else if (isMnt)    result = upsertAstRows(ws, rows);
     // Las tres de Maduración van con MERGE (3.er argumento), al revés que AsT y
     // Traslado: ver la cabecera de upsertAstRows para el porqué.
     else if (isMadId)  result = upsertAstRows(ws, rows, true, payload.headers);
@@ -28546,6 +29216,11 @@ var MAD_ESQUEMA_FIRMA = {
      parte de la llave: si se corre, el upsert casa con la fila que no es— y la 19 —«Oxígeno 00:00», la última de hoy:
      cualquier inserción por delante la mueve, y un añadido al final no la toca—. */
   "Maduración Zonas":          [[3, "Tanque"], [19, "Oxígeno 00:00"]],
+  /* 🔧 Mantenimiento (2026-10-28) · no son de Maduración, pero nacen con su cerrojo por lo mismo que Zonas y Broodstock: quien
+     las cree primero les fija la cabecera. Se firma el Equipo —si se corre, cada lectura sería de otro blower— y el ID, el
+     último: cualquier inserción por delante lo mueve. */
+  "Mantenimiento Trabajos":    [[2, "Equipo"], [17, "ID"]],
+  "Mantenimiento Lecturas":    [[3, "Equipo"], [10, "ID"]],
   /* Control Broodstock (2026-09-17) · nace HOY, así que su cerrojo existe desde el primer envío y no hay
      que esperar a que lo haga falta. Se firma la 2 —«Piscina», la segunda mitad de la llave: si se corre,
      el upsert casa con la fila que no es— y la 8 —«Pl/g», la columna que separa las postlarvas por gramo
@@ -31205,7 +31880,7 @@ function _markFormDirty(){
   // Sólo módulos estándar (M01–M10, CIO): su modelo es collect()+saveE().
   // Lab/Mad/Bio/AsT tienen sus propios flujos y detección de pendientes.
   if(isLabMod(curMod) || isMadMod(curMod) || isBioMod(curMod) ||
-     isAstMod(curMod)) return;
+     isAstMod(curMod) || isMntMod(curMod)) return;
   _formDirty = true;
 }
 
@@ -31225,6 +31900,8 @@ window.addEventListener("beforeunload", function(e){
         || ((typeof loadAud === "function") && loadAud().some(r => !r.synced));     // 🧾 Auditoría (2026-10-03)
     } else if(isMicMod(curMod)){
       hasPending = loadMic().some(r => !r.synced) || (typeof _calRaw==="function" && _calRaw().some(r => !r.synced)) || (typeof _patRaw==="function" && _patRaw().some(r => !r.synced));
+    } else if(isMntMod(curMod)){
+      hasPending = mntPendientes() > 0;   // 🔧 Mantenimiento (2026-10-28)
     } else {
       // R3: advierte tanto por datos guardados-sin-sincronizar (pending) como
       // por datos TECLEADOS pero aún no guardados (_formDirty). Antes esto

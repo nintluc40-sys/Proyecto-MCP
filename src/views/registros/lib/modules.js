@@ -23,6 +23,7 @@ export const MAD_MOD = 12; // Maduración
 export const AST_MOD = 13; // Asistencia Técnica
 export const MIC_MOD = 14; // Microbiología
 export const BIO_MOD = 15; // Biomol
+export const MNT_MOD = 16; // 🔧 Mantenimiento (2026-10-28)
 
 /** ¿Es un índice de módulo válido (especial o M01..M10)? */
 export function isValidMod(m) {
@@ -34,6 +35,7 @@ export function isValidMod(m) {
       m === AST_MOD ||
       m === MIC_MOD ||
       m === BIO_MOD ||
+      m === MNT_MOD ||
       (m >= 1 && m <= MODS))
   );
 }
@@ -43,13 +45,14 @@ export function isBioMod(m) { return m === BIO_MOD; }
 export function isAstMod(m) { return m === AST_MOD; }
 export function isLabMod(m) { return m === LAB_MOD; }
 export function isMadMod(m) { return m === MAD_MOD; }
+export function isMntMod(m) { return m === MNT_MOD; }
 
-/** Larvicultura estándar = ni Lab, ni Maduración, ni Biomol, ni AsT, ni Mic. */
+/** Larvicultura estándar = ni Lab, ni Maduración, ni Biomol, ni AsT, ni Mic, ni Mantenimiento. */
 export function isStdMod(m) {
-  return !isLabMod(m) && !isMadMod(m) && !isBioMod(m) && !isAstMod(m) && !isMicMod(m);
+  return !isLabMod(m) && !isMadMod(m) && !isBioMod(m) && !isAstMod(m) && !isMicMod(m) && !isMntMod(m);
 }
 
-/** Etiqueta corta del módulo: CIO/Lab/MAD/AsT/Mic/Bio o "M01".."M10". */
+/** Etiqueta corta del módulo: CIO/Lab/MAD/AsT/Mic/Bio/Mnt o "M01".."M10". */
 export function mLabel(m) {
   if (m === CIO_MOD) return 'CIO';
   if (m === LAB_MOD) return 'Lab';
@@ -57,5 +60,6 @@ export function mLabel(m) {
   if (m === AST_MOD) return 'AsT';
   if (m === MIC_MOD) return 'Mic';
   if (m === BIO_MOD) return 'Bio';
+  if (m === MNT_MOD) return 'Mnt';
   return 'M' + String(m).padStart(2, '0');
 }
