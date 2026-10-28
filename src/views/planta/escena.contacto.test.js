@@ -69,7 +69,9 @@ globalThis.IntersectionObserver = class { constructor(cb) { this.cb = cb; } obse
 globalThis.ResizeObserver = class { observe() {} disconnect() {} };
 
 const { plantaView } = await import('./index.js');
-await import('./plano.js');
+const { SITE, C0 } = await import('./plano.js');
+/** El predio en las coordenadas de la escena (`P` de escena.js es una traslación por C0): x0, x1, z0, z1. */
+const PREDIO = [SITE[0] - C0[0], SITE[2] - C0[0], SITE[1] - C0[1], SITE[3] - C0[1]];
 
 async function montarCon(otras) {
   plano.otras.splice(0, plano.otras.length, ...otras);
@@ -95,6 +97,13 @@ function anillos(malla) {
   return out;
 }
 const piesDeOtras = (otras) => otras.filter((o) => o[5] === 'bld' || o[5] === 'res').length;
+/** Los bordes de unos vértices, en el orden de PREDIO: oeste (x mín), este (x máx), norte (z mín), sur (z máx). */
+const bordesDe = (l) => [Math.min(...l.map((v) => v.x)), Math.max(...l.map((v) => v.x)), Math.min(...l.map((v) => v.z)), Math.max(...l.map((v) => v.z))];
+/** ¿Ese borde (lado i) está FUERA del predio? */
+const fueraDelPredio = (x, i) => (i % 2 === 0 ? x < PREDIO[i] - 1e-3 : x > PREDIO[i] + 1e-3);
+/** 2026-10-28 · un lado del anillo puede quedar más corto que su margen sólo donde lo recorta el predio: su borde de fuera
+ *  es el del predio o, si el pie ya sale por ese lado (la Sala 5), el del propio pie (ese lado, sin anillo). */
+const recortadoPorElPredio = (bf, bd, i) => Math.abs(bf - PREDIO[i]) < 1e-3 || (Math.abs(bf - bd) < 1e-3 && fueraDelPredio(bd, i));
 
 describe('🏭 Planta · calidad visual (2026-10-27): sombras de contacto, tonos de techo y desgaste del suelo', { timeout: 120000 }, () => {
   it('🔴 dos mallas: la de las otras áreas DENTRO de su grupo, la de cerco, módulos y salas en la escena; un anillo por pie', async () => {
@@ -122,14 +131,41 @@ describe('🏭 Planta · calidad visual (2026-10-27): sombras de contacto, tonos
       fuera.forEach((v) => expect(v.a).toBe(0));
       [...dentro, ...fuera].forEach((v) => expect(v.y).toBeCloseTo(.045, 5));
       const xs = (l) => l.map((v) => v.x), zs = (l) => l.map((v) => v.z);
-      const margen = Math.min(...xs(dentro)) - Math.min(...xs(fuera));
+      // los cuatro lados (oeste, este, norte, sur) y el borde de fuera de cada uno
+      const lados = [Math.min(...xs(dentro)) - Math.min(...xs(fuera)), Math.max(...xs(fuera)) - Math.max(...xs(dentro)),
+        Math.min(...zs(dentro)) - Math.min(...zs(fuera)), Math.max(...zs(fuera)) - Math.max(...zs(dentro))];
+      const bf = bordesDe(fuera), bd = bordesDe(dentro);
+      const margen = Math.max(...lados);
       expect(margen, 'margen entre 0,6 y 2,4 m').toBeGreaterThanOrEqual(.6 - 1e-6);
       expect(margen).toBeLessThanOrEqual(2.4 + 1e-6);
-      // la geometría es de 32 bits: a 100 m del centro, unos micrómetros de redondeo
-      expect(Math.max(...xs(fuera)) - Math.max(...xs(dentro))).toBeCloseTo(margen, 3);
-      expect(Math.min(...zs(dentro)) - Math.min(...zs(fuera))).toBeCloseTo(margen, 3);
-      expect(Math.max(...zs(fuera)) - Math.max(...zs(dentro))).toBeCloseTo(margen, 3);
+      // la geometría es de 32 bits: a 100 m del centro, unos micrómetros de redondeo. Un lado más corto, sólo si lo
+      // recorta el predio (2026-10-28).
+      lados.forEach((l, i) => {
+        expect(l, 'el anillo nunca se pliega por dentro de su pie').toBeGreaterThanOrEqual(-1e-6);
+        if (Math.abs(l - margen) > 1e-3) expect(recortadoPorElPredio(bf[i], bd[i], i), 'un lado más corto sólo donde lo recorta el predio').toBe(true);
+      });
     }
+  });
+
+  /* 2026-10-28 (auditoría de la ronda 9) · sin recortar, el anillo de los edificios junto al cerco asomaba hasta 1,4 m por
+     fuera del muro, encima de la sombra del propio cerco o flotando sobre la arena (más baja). */
+  it('🔴 ningún anillo de lo que está DENTRO del predio sale de él; el del cerco sí (asienta los dos lados)', async () => {
+    const escena = await montarCon(plano.original);
+    const [sitio] = contactos(escena).filter((m) => m.parent === escena);
+    const [otras] = contactos(escena).filter((m) => m.parent !== escena);
+    const todos = anillos(sitio);
+    const cerco = todos.slice(0, 5);   // el cerco se arma antes que módulos y salas
+    // control: los cinco primeros SON los tramos del cerco (0,25 m de grueso) y alguno asoma por fuera del predio
+    cerco.forEach(({ dentro }) => { const b = bordesDe(dentro); expect(Math.min(b[1] - b[0], b[3] - b[2])).toBeCloseTo(.25, 3); });
+    expect(cerco.some(({ fuera }) => bordesDe(fuera).some(fueraDelPredio)), 'el cerco asienta también su cara de fuera').toBe(true);
+    // módulos, salas y edificios: ningún borde de fuera sale del predio, salvo donde el propio pie ya sale (sin anillo)
+    const resto = [...todos.slice(5), ...anillos(otras)];
+    for (const { dentro, fuera } of resto) {
+      const bf = bordesDe(fuera), bd = bordesDe(dentro);
+      bf.forEach((x, i) => { if (fueraDelPredio(x, i)) expect(recortadoPorElPredio(x, bd[i], i), 'un anillo de dentro del predio no asoma fuera').toBe(true); });
+    }
+    // control: el predio RECORTA de verdad algún anillo (uno de los edificios junto al cerco); si no, esto no prueba nada
+    expect(resto.some(({ fuera }) => bordesDe(fuera).some((x, i) => Math.abs(x - PREDIO[i]) < 1e-3)), 'algún anillo toca el borde del predio').toBe(true);
   });
 
   it('🔴 cada techo de edificio, con su tono por NOMBRE: un edificio de más en medio no cambia el de los demás', async () => {

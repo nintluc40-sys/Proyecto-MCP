@@ -315,15 +315,27 @@ function plane(x0, z0, x1, z1, y, mat, parent) { const m = new THREE.Mesh(new TH
    alto—, todo en UNA malla por grupo (`mallaDeContacto`): una llamada de dibujo más por grupo y ningún cálculo por cuadro.
    Bajo el edificio no hay nada que dibujar: lo tapa él mismo. No gasta números de la semilla común. */
 const Y_CONTACTO = .045, ALFA_CONTACTO = .42, piesSitio = [], piesOtras = [];   // con .3 se dibujaban bien pero no se notaban
-const pieDeContacto = (lista, x0, z0, x1, z1, alto) => lista.push([Math.min(x0, x1), Math.min(z0, z1), Math.max(x0, x1), Math.max(z0, z1), Math.min(2.4, Math.max(.6, alto * .4))]);
+/* 🆕 2026-10-28 (auditoría de la ronda 9) · el anillo de lo que está DENTRO del predio no sale de él: sin recortar, el de
+   los edificios junto al cerco (hasta 1,4 m) asomaba por fuera del muro, encima de la sombra del propio cerco (más oscura
+   sólo detrás de ellos) o flotando sobre la arena, que está más baja. El del cerco no se recorta: asienta los dos lados.
+   Lo que tiene el CENTRO en el predio se recorta; si su pie ya sale por un lado (la Sala 5, 0,3 m al oeste), ese lado
+   se queda sin anillo en vez de plegarse. */
+const centroEnSitio = (a, b, c, d) => (a + c) / 2 >= SITE[0] && (a + c) / 2 <= SITE[2] && (b + d) / 2 >= SITE[1] && (b + d) / 2 <= SITE[3];
+const pieDeContacto = (lista, x0, z0, x1, z1, alto, recortar = true) => {
+  const a = Math.min(x0, x1), b = Math.min(z0, z1), c = Math.max(x0, x1), d = Math.max(z0, z1);
+  lista.push([a, b, c, d, Math.min(2.4, Math.max(.6, alto * .4)), recortar && centroEnSitio(a, b, c, d)]);
+};
 const M_CONTACTO = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide,
   polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });   // A4/A5 · el suelo está a 1–3 cm: que no parpadee
 function mallaDeContacto(lista) {
   const pos = [], color = [], idx = [];
-  lista.forEach(([a, b, c, d, m]) => {
+  lista.forEach(([a, b, c, d, m, r]) => {
     const k = pos.length / 3;
+    // el borde de fuera de cada lado: a `m` del pie o, recortado, en el predio (nunca por dentro del propio pie)
+    const o = r ? Math.max(a - m, Math.min(SITE[0], a)) : a - m, e = r ? Math.min(c + m, Math.max(SITE[2], c)) : c + m;
+    const n = r ? Math.max(b - m, Math.min(SITE[1], b)) : b - m, s = r ? Math.min(d + m, Math.max(SITE[3], d)) : d + m;
     [[a, b], [c, b], [c, d], [a, d]].forEach(([x, z]) => { const [px, pz] = P(x, z); pos.push(px, Y_CONTACTO, pz); color.push(0, 0, 0, ALFA_CONTACTO); });
-    [[a - m, b - m], [c + m, b - m], [c + m, d + m], [a - m, d + m]].forEach(([x, z]) => { const [px, pz] = P(x, z); pos.push(px, Y_CONTACTO, pz); color.push(0, 0, 0, 0); });
+    [[o, n], [e, n], [e, s], [o, s]].forEach(([x, z]) => { const [px, pz] = P(x, z); pos.push(px, Y_CONTACTO, pz); color.push(0, 0, 0, 0); });
     for (let i = 0; i < 4; i++) { const j = (i + 1) % 4; idx.push(k + i, k + j, k + 4 + j, k + i, k + 4 + j, k + 4 + i); }
   });
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(color, 4)); g.setIndex(idx);
@@ -384,7 +396,7 @@ const roadM = std({ map: (() => { const t = copiaPropia(TX.asphalt, 12, 1); t.ce
 plane(72, 28.4, 77.6, 89.2, .02, roadM); plane(76, 75.2, 176, 78.6, .02, std({ map: rep(TX.asphalt, 16, 1), roughness: .95 }));
 // cerramiento perimetral con ingreso
 const fenceSegs = [[SITE[0], SITE[1], SITE[2], SITE[1] + .25], [SITE[0], SITE[1], SITE[0] + .25, SITE[3]], [SITE[2] - .25, SITE[1], SITE[2], SITE[3]], [SITE[0], SITE[3] - .25, 71.5, SITE[3]], [78.2, SITE[3] - .25, SITE[2], SITE[3]]];
-fenceSegs.forEach(([a, b, c, d]) => { box(a, b, c, d, 0, 2.4, M.fence, true); pieDeContacto(piesSitio, a, b, c, d, 2.4); });
+fenceSegs.forEach(([a, b, c, d]) => { box(a, b, c, d, 0, 2.4, M.fence, true); pieDeContacto(piesSitio, a, b, c, d, 2.4, false); });
 box(71.5, 88.6, 71.9, 89.4, 0, 2.8, M.wall, true); box(77.8, 88.6, 78.2, 89.4, 0, 2.8, M.wall, true);
 { const bar = box(72, 89, 75.5, 89.15, 1, .1, std({ color: col('#d9473a') }), true); bar.rotation.y = 0; }
 // césped y jardineras junto a oficinas
