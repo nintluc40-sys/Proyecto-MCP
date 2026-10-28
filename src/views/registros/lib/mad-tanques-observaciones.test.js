@@ -27,7 +27,8 @@ const EXPORTAR = ['renderMadTanques', 'madTanquesSalaChange', '_collectTanquesGr
   'MAD_TANQUES_POR_SALA', 'today', '_madGridDiaDeLaApp',
   'saveMadTanquesGrid', 'loadMad', 'saveMadList', '_madParteSiguiente', '_madParteAbierto',   // parte de mortalidad
   // R2 (2026-09-17) · el portón del sello y reabrir el último parte
-  'syncMadTanquesGrid', 'syncAll', 'flushSyncQueue', '_madHojaPideGasNuevo', 'madTanquesReabrirParte', '_gasVersionLocal', 'MAD_MOD'];
+  'syncMadTanquesGrid', 'syncAll', 'flushSyncQueue', '_madHojaPideGasNuevo', 'madTanquesReabrirParte', '_gasVersionLocal', 'MAD_MOD',
+  '_madTanquesPintaVivos'];   // 2026-10-28 · los vivos de cada tanque: las observaciones no bajan a los vacíos
 const H = {};
 /* 2026-09-30 (noche) · el día en que la app ABRE la grilla: hoy, y antes de las 02:00 el que termina (`_madGridDiaDeLaApp`).
    Lo sembrado para «el día de la grilla» va a ESE día: con H.today() la prueba fallaría si corre entre las 00:00 y las 02:00
@@ -160,6 +161,7 @@ describe('Tanques · las observaciones son de catálogo, no texto libre', () => 
 });
 
 describe('Tanques · las observaciones BAJAN por su columna', () => {
+  // Sin referencia de vivos (nadie pulsó 🔄): bajan a todas, como el peso. Con vivos, el bloque del 2026-10-28, abajo.
   const columna = (k) => H.MAD_TANQUES_POR_SALA[SALA].map((t) => marcadas(t, k).join(', '));
 
   it('🔴 lo marcado arriba baja a todas las de abajo', () => {
@@ -232,6 +234,84 @@ describe('Tanques · las observaciones BAJAN por su columna', () => {
     marcar(7, 'obs_sanitarias', 'Animales estresados');
     expect(columna('obs_sanitarias')).toEqual(['Animales estresados', 'Animales estresados', 'Animales estresados',
       'Animales estresados', 'Animales en muda']);
+  });
+});
+
+/* ── 2026-10-28 (usuario) · «que ese desplazamiento no pase a los tanques que no tengan animales, pero en caso que el
+   usuario quiera poner alguna observación sí se pueda (pero manualmente y solo para el tanque seleccionado)». Decisiones:
+   las mismas filas que el peso (_madTqRecibeBajada) y lo marcado a mano en un tanque sin animales no baja.
+   🔑 Vivos DISTINTOS, el 9 a CERO y el 10 «sin ingreso» (el libro no lo conoce): con todos iguales, «baja a los que
+   tienen vivos» y «baja a todos» darían lo mismo, y el verde no probaría nada. */
+describe('Tanques · las observaciones NO bajan a los tanques sin animales (2026-10-28)', () => {
+  const columna = (k) => H.MAD_TANQUES_POR_SALA[SALA].map((t) => marcadas(t, k).join(', '));
+  const vivos = (tq) => document.querySelector('#fp-tanques .tq-vivos[data-tq="' + tq + '"]');
+  const libro = () => ({
+    posiciones: [], lotes: {}, avisos: [], hasta: '2026-10-28', fallos: [], recortadas: [],
+    tanques: {
+      'Sala 5|7': { sala: SALA, tanque: 7, machos: 10, hembras: 20, composicion: [] },
+      'Sala 5|8': { sala: SALA, tanque: 8, machos: 3, hembras: 4, composicion: [] },
+      'Sala 5|9': { sala: SALA, tanque: 9, machos: 0, hembras: 0, composicion: [] },
+      'Sala 5|11': { sala: SALA, tanque: 11, machos: 6, hembras: 6, composicion: [] },
+    },
+  });
+  beforeEach(() => { H._madTanquesPintaVivos(libro()); });
+
+  it('el fixture ejerce algo: 7, 8 y 11 con vivos; el 9 a cero y el 10 sin ingreso', () => {
+    expect(H.MAD_TANQUES_POR_SALA[SALA]).toEqual([7, 8, 9, 10, 11]);
+    expect(vivos(7).getAttribute('data-vivos')).toBe('30');
+    expect(vivos(9).getAttribute('data-vivos')).toBe('0');
+    expect(vivos(10).getAttribute('data-vivos'), 'el 10 debería ser «no se sabe», no cero').toBe('');
+    expect(vivos(10).getAttribute('data-estado')).toBe('vacio');
+  });
+
+  it('🔴 lo marcado arriba baja sólo a los tanques CON animales, en las dos columnas', () => {
+    marcar(7, 'obs_sanitarias', 'Animales estresados');
+    marcar(7, 'obs_operativas', 'Recambio realizado');
+    expect(columna('obs_sanitarias')).toEqual(['Animales estresados', 'Animales estresados', '', '', 'Animales estresados']);
+    expect(columna('obs_operativas')).toEqual(['Recambio realizado', 'Recambio realizado', '', '', 'Recambio realizado']);
+    const aLaHoja = H._collectTanquesGrid().map((r) => r.tanque);
+    expect(aLaHoja, 'los tanques vacío y sin ingreso no deben ir a la hoja por una bajada').toEqual([7, 8, 11]);
+  });
+
+  it('desmarcar arriba vacía sus copias y no toca los vacíos', () => {
+    marcar(7, 'obs_operativas', 'Recambio realizado');
+    marcar(7, 'obs_operativas', 'Recambio realizado', false);
+    expect(columna('obs_operativas')).toEqual(['', '', '', '', '']);
+  });
+
+  it('🔴 a mano, en un tanque SIN animales sí se puede, y se queda en ese tanque', () => {
+    marcar(9, 'obs_sanitarias', 'Presencia de colonia de Pseudomonas');
+    expect(columna('obs_sanitarias')).toEqual(['', '', 'Presencia de colonia de Pseudomonas', '', '']);
+    expect(fila(9).obs_sanitarias, 'lo marcado a mano en el vacío debe llegar a la hoja')
+      .toBe('Presencia de colonia de Pseudomonas');
+    marcar(10, 'obs_operativas', 'Falta de sifoneo');   // «sin ingreso», igual
+    expect(columna('obs_operativas')).toEqual(['', '', '', 'Falta de sifoneo', '']);
+  });
+
+  it('🔴 lo marcado a mano en un vacío no lo pisa la bajada de arriba', () => {
+    marcar(9, 'obs_operativas', 'Falta de sifoneo');
+    marcar(7, 'obs_operativas', 'Recambio realizado');
+    expect(columna('obs_operativas')).toEqual(['Recambio realizado', 'Recambio realizado', 'Falta de sifoneo', '',
+      'Recambio realizado']);
+  });
+
+  it('🔒 el bloqueo de un tanque sin animales deja marcar sus observaciones a mano', () => {
+    /* El bloqueo (sólo en la fecha de hoy) deshabilita las cifras del tanque vacío; las casillas de observación no son
+       cifras y siguen libres, que es lo que permite la «observación manual» del pedido. */
+    const filaTq = (tq) => vivos(tq).closest('tr');
+    expect(filaTq(9).classList.contains('tq-sin-animales'), 'el 9 debería estar bloqueado hoy').toBe(true);
+    expect(filaTq(9).querySelector('input.pinp').disabled).toBe(true);
+    expect(casilla(9, 'obs_sanitarias', 'Animales en muda').disabled).toBe(false);
+  });
+
+  it('sin referencia de vivos vuelven a bajar a todas, como el peso', () => {
+    localStorage.clear();
+    H.renderMadTanques();
+    document.getElementById('mad-tanques-sala').value = SALA;
+    H.madTanquesSalaChange();
+    expect(vivos(9).getAttribute('data-vivos'), 'control: no se sabe nada').toBe('');
+    marcar(7, 'obs_operativas', 'Recambio realizado');
+    expect(columna('obs_operativas')).toEqual(Array(5).fill('Recambio realizado'));
   });
 });
 

@@ -16191,8 +16191,9 @@ function _madTqMsHTML(tank, col, ri, ci, valor){
     + '</details></div>';
 }
 /** Lo marcado BAJA a las celdas de abajo de su columna, con la misma regla que los pesos
- *  (_madBajaTeclea y compañía: una corrección sobre una copia no baja y se marca). Lo que cambia es
- *  que aquí se copia un juego de casillas y no un valor, así que no puede pasar por `_madBajarColumna`. */
+ *  (_madBajaTeclea y compañía: una corrección sobre una copia no baja y se marca) y a las mismas filas
+ *  que ellos, las de tanques con animales vivos (_madTqRecibeBajada). Lo que cambia es que aquí se
+ *  copia un juego de casillas y no un valor, así que no puede pasar por `_madBajarColumna`. */
 function madTqObsBaja(el){
   const celda = (el && el.closest) ? el.closest(".tg-ms") : null;
   if(!celda) return;
@@ -16203,9 +16204,14 @@ function madTqObsBaja(el){
   if(!cuerpo || !isFinite(fila)) return;
   const marcados = _madTqMsValores(celda);
   if(!_madBajaTeclea(celda, !marcados.length)) return;   // una corrección no baja
+  /* 2026-10-28 (usuario) · las observaciones bajaban también a los tanques SIN animales. Ahora sólo a los que
+     tienen vivos, como el peso; y lo marcado a mano en un tanque sin animales es sólo de ESE tanque: no baja. */
+  const recibe = _madTqRecibeBajada(cuerpo);
+  if(!recibe(celda)) return;
   cuerpo.querySelectorAll('.tg-ms[data-k="' + k + '"]').forEach(function(o){
     if(o === celda || Number(o.getAttribute("data-r")) <= fila) return;
     if(!_madBajaRecibe(o, fila, !_madTqMsValores(o).length)) return;
+    if(!recibe(o)) return;
     o.querySelectorAll(".tg-ms-op").forEach(function(c){ c.checked = marcados.indexOf(c.value) !== -1; });
     _madTqMsSync(o);
     _madBajaCopia(o, fila, !marcados.length);
@@ -16689,16 +16695,23 @@ function _madBajaMarca(c, on){
   if(on) c.title = "Corregida a mano: no baja, y la de arriba no la pisa";
   else c.removeAttribute("title");
 }
-/** Peso tecleado: baja por su columna a las filas de ABAJO con animales vivos (usuario). */
-function madTqPesoBaja(el){
-  const cuerpo = (el && el.closest) ? el.closest("tbody") : null;
+/** ¿Qué filas de la grilla de Tanques RECIBEN una bajada? Las de tanques con animales vivos (usuario: el peso el
+ *  2026-09-15, las observaciones el 2026-10-28). Devuelve el filtro `puede(o)`.
+ *  🔑 VIVE UNA VEZ, como _madBajarColumna: la usan las dos bajadas de Tanques, la del peso (madTqPesoBaja) y la de
+ *  las observaciones (madTqObsBaja), que si no saltarían filas distintas. */
+function _madTqRecibeBajada(cuerpo){
   /* Si NINGUNA fila sabe sus vivos, filtrar por ellos dejaría la bajada sin efecto y parecería
      rota. Sin dato con el que discriminar, baja a todas: sobra un número, que se borra; faltar
      no se ve. */
   const alguienSabe = !!cuerpo && Array.prototype.some.call(cuerpo.querySelectorAll(".tq-vivos"), function(c){
     return Number(c.getAttribute("data-vivos") || 0) > 0;
   });
-  _madBajarColumna(el, function(o){ return !alguienSabe || _madTqFilaConVivos(o); });
+  return function(o){ return !alguienSabe || _madTqFilaConVivos(o); };
+}
+/** Peso tecleado: baja por su columna a las filas de ABAJO con animales vivos (usuario). */
+function madTqPesoBaja(el){
+  const cuerpo = (el && el.closest) ? el.closest("tbody") : null;
+  _madBajarColumna(el, _madTqRecibeBajada(cuerpo));
 }
 
 function madTanquesSalaChange(){
