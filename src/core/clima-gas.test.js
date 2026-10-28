@@ -19,6 +19,23 @@ const H = 3600000;
 const utc = (s) => Date.parse(s + 'Z');
 
 /* ── Servicios de Apps Script simulados ──────────────────────────────────────────── */
+/** Utilities.formatDate / parseDate con zonas horarias REALES (Intl), para los patrones que usa Clima.gs. */
+const partes = (ms, tz) => Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+  timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+}).formatToParts(ms).map((x) => [x.type, x.value]));
+const UTIL = {
+  formatDate(d, tz, patron) {
+    const p = partes(d.getTime(), tz);
+    return patron.replace('yyyy', p.year).replace('MM', p.month).replace('dd', p.day).replace('HH', p.hour).replace('mm', p.minute).replace('ss', p.second);
+  },
+  parseDate(s, tz) {
+    const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}):(\d{2}):(\d{2}))?$/);
+    const pared = Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+    let ms = pared;   // el instante cuya hora de pared en `tz` es `pared` (dos vueltas: el desfase puede cambiar)
+    for (let i = 0; i < 2; i++) { const p = partes(ms, tz); ms += pared - Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second); }
+    return new Date(ms);
+  },
+};
 function libroSimulado(zona = 'America/Guayaquil') {
   const hojas = new Map();
   const nueva = (nombre) => {
@@ -65,6 +82,7 @@ function cargar({ libro = libroSimulado(), fuentes = () => ({ codigo: 500, cuerp
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (props.has(k) ? props.get(k) : null), setProperty: (k, v) => props.set(k, v) }) },
     LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
     Session: { getScriptTimeZone: () => 'America/Guayaquil' },
+    Utilities: UTIL,
     ScriptApp: {
       getProjectTriggers: () => triggers.slice(),
       deleteTrigger: (t) => triggers.splice(triggers.indexOf(t), 1),
@@ -390,9 +408,33 @@ describe('Clima.gs · las pasadas sobre el libro', () => {
     expect(ctx.api.CLIMA.agente).toMatch(/^MCP-Omarsa-clima\/\d/);
   });
 
-  it('no escribe en un libro de otra zona horaria ni en una hoja «Clima» con otras columnas', () => {
-    const otro = cargar({ libro: libroSimulado('America/Bogota'), fuentes });
-    expect(() => otro.api.instalar()).toThrow(/zona/);
+  /* El del MCP está en «America/Los_Angeles» (medido el 27-10); Madrid, al ESTE de Ecuador, porque allí la medianoche
+     cae el día ANTERIOR en Ecuador: leer la fecha sin la zona del libro acertaría por casualidad en Los Ángeles. */
+  it.each(['America/Los_Angeles', 'Europe/Madrid'])('en un libro de OTRA zona (%s) escribe el día y la hora de Ecuador, y repetir no escribe', (zona) => {
+    const la = cargar({ libro: libroSimulado(zona), fuentes });
+    la.api.CLIMA.desde = '2026-10-25';
+    la.api.instalar();
+    const { libro, api, log } = la;
+    expect(log.some((l) => l.includes('«' + zona + '»'))).toBe(true);   // lo dice, no se niega
+    // Lo que ENSEÑA el libro (y su CSV, que lee el MCP) es la celda en la zona del LIBRO.
+    const enLibro = (d, patron) => UTIL.formatDate(d, zona, patron);
+    const horas = leer(libro, 'Clima horas').slice(1);
+    expect(enLibro(horas[0][0], 'yyyy-MM-dd') + ' ' + horas[0][1]).toBe('2026-10-25 0');
+    expect(enLibro(horas.at(-1)[0], 'yyyy-MM-dd') + ' ' + horas.at(-1)[1]).toBe('2026-10-27 23');
+    expect(enLibro(horas[0].at(-1), 'yyyy-MM-dd HH:mm')).toBe('2026-10-27 12:10');   // «Actualizado»: las 12:10 de Ecuador
+    expect(leer(libro, 'Clima').slice(1).map((f) => enLibro(f[0], 'yyyy-MM-dd') + ' ' + f[1]))
+      .toEqual(['2026-10-25 Registro', '2026-10-26 Registro', '2026-10-27 Registro', '2026-10-28 Pronóstico', '2026-10-29 Pronóstico']);
+    // y se RELEE igual: las mismas horas que en un libro de Ecuador
+    expect(filaDeHora(api, libro, '2026-10-27', 10)).toMatchObject({ fuente: 'Observado SESA', t: 30 });
+    expect(filaDeHora(api, libro, '2026-10-25', 0)).toMatchObject({ fuente: 'NASA', t: 24 });
+    // Repetir no reescribe nada: escribir y releer son inversas (si no, «Actualizado» se correría en cada pasada).
+    const antes = [libro.hojas.get('Clima horas').escritas, libro.hojas.get('Clima').escritas];
+    la.api.cadaTresHoras();
+    expect([libro.hojas.get('Clima horas').escritas, libro.hojas.get('Clima').escritas]).toEqual(antes);
+    expect(JSON.parse(log.at(-1))).toMatchObject({ horasCambiadas: 0, filasEscritasHoras: 0, filasEscritasDias: 0 });
+  });
+
+  it('no escribe en una hoja «Clima» con otras columnas', () => {
     const ajeno = libroSimulado();
     ajeno.insertSheet('Clima').filas.push(['Fecha', 'Otra cosa']);
     expect(() => cargar({ libro: ajeno, fuentes }).api.cadaTresHoras()).toThrow(/columnas esperadas/);

@@ -442,12 +442,24 @@ function pedirNasaDias_(desde, hasta) {
 
 // ── LAS HOJAS ─────────────────────────────────────────────────────────────────────
 
-function libro_() { return SpreadsheetApp.openById(CLIMA.libro); }
+var TZ_LIBRO = null;   // la zona horaria del libro, la de sus celdas de fecha (la fija libro_)
 
-/** Las fechas se escriben a medianoche de Ecuador: un libro en otra zona las correría un día. */
+function libro_() {
+  var ss = SpreadsheetApp.openById(CLIMA.libro);
+  TZ_LIBRO = ss.getSpreadsheetTimeZone();
+  return ss;
+}
+/** La zona del libro; la de Ecuador mientras no se haya abierto (las pruebas de las conversiones). */
+function zonaLibro_() { return TZ_LIBRO || CLIMA.zona; }
+
+/** 2026-10-27 · el libro del MCP está en «America/Los_Angeles» (medido al instalar). Una celda de fecha guarda una
+ *  hora de PARED en la zona del libro: la medianoche de Ecuador escrita como instante se veía a las 21–22 h del día
+ *  ANTERIOR. Por eso las fechas se escriben como el día de calendario en la zona del libro y «Actualizado» con la hora
+ *  de Ecuador (fechaACelda_, actACelda_), y el libro puede estar en cualquier zona: sólo se dice. La del PROYECTO sí
+ *  importa: es la del activador nocturno. */
 function comprobarZona_(ss) {
   var z = ss.getSpreadsheetTimeZone();
-  if (z !== CLIMA.zona) throw new Error("El libro está en la zona «" + z + "» y el script escribe en hora de Ecuador (" + CLIMA.zona + ").");
+  if (z !== CLIMA.zona) Logger.log("ℹ El libro está en la zona «" + z + "»: las fechas se escriben como el día de Ecuador y «Actualizado» con la hora de Ecuador.");
   if (Session.getScriptTimeZone() !== CLIMA.zona) Logger.log("⚠ El proyecto no está en " + CLIMA.zona + ": el activador nocturno no caerá hacia las 02:30 de Ecuador.");
 }
 
@@ -490,7 +502,7 @@ function deFila_(campos) {
     campos.forEach(function (k, i) {
       var x = fila[i];
       if (k === "dia") o.dia = claveDeCelda_(x);
-      else if (k === "act") o.act = x instanceof Date ? x : null;
+      else if (k === "act") o.act = x instanceof Date ? actDeCelda_(x) : null;
       else if (typeof x === "number") o[k] = x;
       else if (x === "" || x == null) o[k] = /^(fuente|fLluvia|fNube|wx|tipo)$/.test(k) ? "" : null;
       else o[k] = /^(fuente|fLluvia|fNube|wx|tipo)$/.test(k) ? String(x) : num_(Number(String(x).replace(",", ".")), 3);
@@ -503,7 +515,8 @@ function aFilaHoras_(o) { return aFila_(CAMPOS_HORAS, o); }
 function aFilaDias_(o) { return aFila_(CAMPOS_DIAS, o); }
 function aFila_(campos, o) {
   return campos.map(function (k) {
-    if (k === "dia") return new Date(msDeClave_(o.dia, 0));
+    if (k === "dia") return fechaACelda_(o.dia);
+    if (k === "act") return o.act ? actACelda_(o.act) : "";
     var x = o[k];
     return x == null ? "" : x;
   });
@@ -572,9 +585,19 @@ function msDeClave_(clave, hora) {
 function sumarDias_(clave, n) { return claveDia_(msDeClave_(clave, 12) + n * 86400000); }
 function maxClave_(a, b) { return a > b ? a : b; }
 
-/** Celda de fecha → «AAAA-MM-DD»: un Date (lo normal) o un texto «dd/mm/aaaa» tecleado a mano. */
+/** «AAAA-MM-DD» → la celda de «Fecha»: la medianoche de ESE día en la zona del libro, para que el libro (y su CSV, que
+ *  lee el MCP) enseñe el día de Ecuador sea cual sea su zona. Su inversa es claveDeCelda_. */
+function fechaACelda_(clave) { return Utilities.parseDate(clave, zonaLibro_(), "yyyy-MM-dd"); }
+/** El instante de «Actualizado» → su celda: la hora de pared de Ecuador en la zona del libro; actDeCelda_, la inversa
+ *  (si no lo fuera, cada pasada lo correría y reescribiría filas que no cambiaron). */
+var FMT_ACT = "yyyy-MM-dd HH:mm:ss";
+function actACelda_(d) { return Utilities.parseDate(Utilities.formatDate(d, CLIMA.zona, FMT_ACT), zonaLibro_(), FMT_ACT); }
+function actDeCelda_(d) { return Utilities.parseDate(Utilities.formatDate(d, zonaLibro_(), FMT_ACT), CLIMA.zona, FMT_ACT); }
+
+/** Celda de fecha → «AAAA-MM-DD»: un Date (lo normal), leído en la zona del libro, o un texto «dd/mm/aaaa» tecleado a
+ *  mano. */
 function claveDeCelda_(x) {
-  if (x instanceof Date && !isNaN(x)) return claveDia_(x.getTime());
+  if (x instanceof Date && !isNaN(x)) return Utilities.formatDate(x, zonaLibro_(), "yyyy-MM-dd");
   var m = String(x || "").match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   return m ? m[3] + "-" + pad2_(+m[2]) + "-" + pad2_(+m[1]) : "";
 }

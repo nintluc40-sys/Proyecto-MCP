@@ -817,8 +817,11 @@ Dos consecuencias que conviene tener presentes al desplegar:
    siempre en hoy aunque el último registro del laboratorio fuera de ayer. **Instalar**
    (con la cuenta dueña del libro): script.google.com → Nuevo proyecto → pegar `GAS/Clima.gs` → ⚙ Zona horaria
    «(GMT-05:00) Guayaquil» → ejecutar `probar` (pide las tres fuentes sin escribir) y luego `instalar` (crea las hojas,
-   carga el historial y deja los dos activadores; repetirla no duplica nada). La calidad del aire quedó FUERA (decisión
-   del usuario: ninguna fuente gratuita para empresa la da por coordenada a un Apps Script).
+   carga el historial y deja los dos activadores; repetirla no duplica nada). La zona del PROYECTO es la del activador
+   nocturno; la del LIBRO puede ser otra (el del MCP está en «America/Los_Angeles», medido el 27-10): una celda de fecha
+   guarda una hora de pared en la zona del libro, así que «Fecha» se escribe como el día de Ecuador y «Actualizado» con
+   la hora de Ecuador en esa zona, y se releen igual (`fechaACelda_`, `actACelda_` y sus inversas). La calidad del aire
+   quedó FUERA (decisión del usuario: ninguna fuente gratuita para empresa la da por coordenada a un Apps Script).
 
    **Red atascada** (2026-10-07): los tiempos máximos (`FETCH_TIMEOUT_MS`, `XLSX_TIMEOUT_MS`) cubren sólo hasta las
    cabeceras; el CUERPO se corta si pasan `SIN_DATOS_MS` (30 s) sin recibir nada (`sheets.js · cuerpoDe/textoDe`) y entran
