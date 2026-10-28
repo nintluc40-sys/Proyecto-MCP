@@ -733,8 +733,9 @@ export const ETIQUETA_HOJA = {
 };
 /** Las hojas DIARIAS y cuántos días pueden pasar sin registro antes de marcarse atrasadas: las lecturas de la Sala y
  *  los partes de los Tanques se registran cada día, y el de hoy puede no estar aún. Las demás hojas registran
- *  sucesos (un ingreso, un cierre…): que pasen días sin ellos no es un atraso. */
-export const ESPERA_DIAS = { sala: 1, tanques: 1 };
+ *  sucesos (un ingreso, un cierre…): que pasen días sin ellos no es un atraso. Las de las Zonas (2026-10-27, usuario:
+ *  «diaria como Salas»), también: se teclean cada día con el horario de la sala. */
+export const ESPERA_DIAS = { sala: 1, tanques: 1, zonas: 1 };
 
 /** La frescura de cada hoja (`frescura` del modelo, contada hasta HOY) con su rótulo y si va atrasada. */
 export function ultimosRegistros(frescura) {

@@ -73,6 +73,7 @@ import { registerModalEscape } from '../../ui/modalEscape.js';
 import { changeView } from '../../ui/router.js';
 import { INDICADORES } from './operativo.indicadores.js';
 import { FUENTES, umbralVigente, evaluar, UMBRALES_DE_AVISO } from './operativo.umbrales.js';
+import { zonasDelDia, zonasDelPeriodo, diasConZonas, HORAS_TEMP, HORAS_OX, rotuloTanque } from './operativo.zonas.js';   // tarea 2 · ronda 9
 import { periodoAnterior, presenciaDiaria, tendencias, permanencia, PARAMETROS_REPRODUCCION } from './operativo.tendencias.js';
 import { GRUPOS_MAPA, capasDelMapa, contextoDelMapa, colorDeTanque, leyendaDelMapa, resumenDeTanque } from './operativo.mapa.js';
 import { tablaDeLotes, fichaDeLote, DIMENSIONES_COMPARATIVA, comparativa, PAREJAS } from './operativo.lotes.js';
@@ -192,6 +193,8 @@ const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: [], 
   /* 3 (2026-09-29, usuario) · 🏠 Salas → detalle: la temperatura y el oxígeno por hora de UN día ('dia', por defecto) o de
      todo el período ('periodo'); y el día elegido (vacío = el de la foto; uno que ya no está en el período, también). */
   ambModo: 'dia', ambDia: '',
+  /* Tarea 2 · ronda 9 (2026-10-27, usuario) · 🏠 Salas → 🌡️ Zonas: lo mismo para el bloque de las zonas, con su propio día. */
+  zonModo: 'dia', zonDia: '',
   /* Punto 2 · etapa A (2026-10-13, usuario) · `lote` y `codigo` son LISTAS (varios a la vez; vacía = todos). Nunca se
      modifican en su sitio —siempre una lista nueva—: el estado inicial se copia sin clonar. `multiAbierto` es el
      desplegable de casillas que se repinta abierto mientras se marca ('' = ninguno). */
@@ -1734,7 +1737,77 @@ function salasHTML(M, F, d, p) {
   return `<div class="mc-body">
     <div class="mop-salas">${tarjetas.map((t) => tarjetaHTML(t, t.sala === abierta)).join('')}</div>
     ${d ? detalleHTML(d, p, F) : '<p class="mc-note">Pulsa una sala para ver su detalle: la temperatura por hora, el oxígeno, sus tanques y sus tratamientos.</p>'}
+    ${zonasHTML(M, p)}
   </div>`;
+}
+
+/* Tarea 2 de la ronda 9 (2026-10-27, usuario) · 🌡️ las ZONAS de desove y los reservorios («Maduración Zonas»), debajo de
+   las salas y como su grilla de captura. «Día» (◀ día ▶, por defecto el de la foto): una fila por zona y tanque con sus
+   12 tomas de temperatura y sus 4 de O₂, cada una del color de su estado con los umbrales de la SALA (en todas, también
+   los reservorios); «Período»: por zona y tanque, los días con lectura y la mínima–media–máxima, con cuántas tomas
+   quedaron fuera. Los filtros del tablero no aplican: las zonas no son salas de animales. Las cifras, de
+   operativo.zonas.js (puro). */
+function zonasHTML(M, p) {
+  const filas = (M.fuentes && M.fuentes.zonas) || [];
+  const modoDia = vOp.zonModo !== 'periodo';
+  const diasZona = [];
+  for (let d = p.hasta; esIso(d) && d >= p.desde; d = sumarDias(d, -1)) diasZona.push(d);   // el más reciente primero
+  if (!diasZona.includes(vOp.zonDia)) vOp.zonDia = '';
+  const dia = vOp.zonDia || p.hasta;
+  const k = diasZona.indexOf(dia);
+  const navZona = (dir, iso, t, rot) => `<button type="button" class="mc-mini" data-mop-zon-dir="${dir}" data-mop-zon-ir="${esc(iso)}"${iso ? '' : ' disabled'} aria-label="${rot}">${t}</button>`;
+  const ctl = `<div class="mop-amb-ctl">
+      <div class="mc-seg mc-seg-sm" role="group" aria-label="Zonas: día o período">${[['dia', 'Día'], ['periodo', 'Período']].map(([m, t]) => {
+        const on = (m === 'dia') === modoDia;
+        return `<button type="button" class="mc-seg-b ${on ? 'is-on' : ''}" data-mop-zon-modo="${m}" aria-pressed="${on}">${t}</button>`;
+      }).join('')}</div>
+      ${modoDia ? `<span class="mop-amb-dia">${navZona('ant', diasZona[k + 1] || '', '◀', 'Día anterior')}<select class="mc-select" data-mop-zon-dia aria-label="Día de las zonas">${diasZona.map((f) =>
+        `<option value="${esc(f)}"${f === dia ? ' selected' : ''}>${esc(dma(f))}</option>`).join('')}</select>${navZona('sig', k > 0 ? diasZona[k - 1] : '', '▶', 'Día siguiente')}</span>`
+        : `<span class="mop-f-rango">${esc(dm(p.desde))} – ${esc(dm(p.hasta))} · ${nf(diasZona.length)} ${diasZona.length === 1 ? 'día' : 'días'}</span>`}
+    </div>`;
+  // la zona sólo en la primera fila de sus tanques (como en la grilla)
+  const zonaTd = (Z, i) => (i > 0 && Z[i - 1].zona === Z[i].zona ? '<th scope="row"></th>'
+    : `<th scope="row">${esc(Z[i].zona)}</th>`);
+  const celda = (z, v, est, hora, u, dec, extra = '') => {
+    const t = `${z.zona} · ${rotuloTanque(z)} · ${hora} · ${v === null ? 'sin lectura' : nf(v, dec) + ' ' + u}`;
+    const cls = [extra, v === null || !est ? '' : 'is-' + est].filter(Boolean).join(' ');
+    return `<td${cls ? ` class="${esc(cls)}"` : ''} title="${esc(t)}">${v === null ? '' : esc(nf(v, dec))}</td>`;
+  };
+  let cuerpo;
+  if (!filas.length) {
+    cuerpo = '<div class="empty-state" style="padding:16px">Aún no hay lecturas de las zonas en el libro: se teclean en 🏠 Salas del registro, debajo de las salas.</div>';
+  } else if (modoDia) {
+    const Z = zonasDelDia(filas, dia);
+    if (!Z.length) {
+      const ultimaZona = diasConZonas(filas).filter((f) => f < dia).pop() || '';
+      cuerpo = `<div class="empty-state" style="padding:16px">Sin lecturas de las zonas el ${esc(dma(dia))}.${ultimaZona
+        ? ` La última, el ${esc(dma(ultimaZona))}.${diasZona.includes(ultimaZona) ? ` <button type="button" class="mc-mini" data-mop-zon-ir="${esc(ultimaZona)}">Ver ese día</button>` : ''}` : ''}</div>`;
+    } else {
+      cuerpo = `<div class="mop-calor-wrap"><table class="mop-calor mop-zonas-t">
+        <thead><tr><th rowspan="2">Zona</th><th rowspan="2">Tanque</th><th colspan="${HORAS_TEMP.length}">Temperatura (°C)</th><th colspan="${HORAS_OX.length}" class="mop-zonas-ox">Oxígeno (mg/L)</th></tr>
+          <tr>${HORAS_TEMP.map((h) => `<th>${esc(h)}</th>`).join('')}${HORAS_OX.map((h, i) => `<th${i === 0 ? ' class="mop-zonas-ox"' : ''}>${esc(h)}</th>`).join('')}</tr></thead>
+        <tbody>${Z.map((z, i) => `<tr>${zonaTd(Z, i)}<td class="mop-zonas-tq">${z.tanque === '' ? '—' : esc(z.tanque)}</td>${
+          z.temp.map((v, j) => celda(z, v, z.estTemp[j], HORAS_TEMP[j], '°C', 1)).join('')}${
+          z.ox.map((v, j) => celda(z, v, z.estOx[j], HORAS_OX[j], 'mg/L', 2, j === 0 ? 'mop-zonas-ox' : '')).join('')}</tr>`).join('')}</tbody>
+      </table></div>`;
+    }
+  } else {
+    const Z = zonasDelPeriodo(filas, p.desde, p.hasta);
+    const rango = (r, dec) => (r.n ? `${nf(r.min, dec)} – ${nf(r.med, dec)} – ${nf(r.max, dec)}` : '—');
+    const fuera = (r) => (r.n ? `${r.bajo ? `<span class="mop-zonas-bajo">${nf(r.bajo)} ↓</span> ` : ''}${r.alto ? `<span class="mop-zonas-alto">${nf(r.alto)} ↑</span>` : ''}${!r.bajo && !r.alto ? '<span class="muted">0</span>' : ''} <span class="mop-nota">de ${nf(r.n)}</span>` : '');
+    cuerpo = Z.length ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-zonas-p">
+        <thead><tr><th>Zona</th><th>Tanque</th><th class="r">Días</th><th class="r">T° mín – media – máx (°C)</th><th>Fuera</th><th class="r">O₂ mín – media – máx (mg/L)</th><th>Fuera</th></tr></thead>
+        <tbody>${Z.map((z, i) => `<tr>${i > 0 && Z[i - 1].zona === z.zona ? '<td></td>' : `<td><b>${esc(z.zona)}</b></td>`}<td>${z.tanque === '' ? '—' : esc(z.tanque)}</td>
+          <td class="r">${nf(z.dias)}</td><td class="r">${rango(z.temp, 1)}</td><td>${fuera(z.temp)}</td><td class="r">${rango(z.ox, 2)}</td><td>${fuera(z.ox)}</td></tr>`).join('')}</tbody>
+      </table></div>`
+      : '<div class="empty-state" style="padding:16px">Sin lecturas de las zonas en el período.</div>';
+  }
+  return `<section class="mop-zonas" aria-labelledby="mopZonasH">
+    <h3 class="mop-zonas-h" id="mopZonasH">🌡️ Zonas de desove y reservorios</h3>
+    ${ctl}
+    ${cuerpo}
+    <p class="mc-note">Con los umbrales de la sala: verde dentro (T° ${esc(refUmbral('temperatura'))} · O₂ ${esc(refUmbral('oxigeno'))}); azul por debajo; rojo por encima. Los filtros del tablero no aplican a las zonas.</p>
+  </section>`;
 }
 
 function cargaTxt(cargas, campo) {
@@ -3651,6 +3724,19 @@ function bind(root) {
       if (f) f.focus();
       return;
     }
+    // Tarea 2 · ronda 9 · 🌡️ Zonas: Día | Período, y ◀ ▶ o «Ver ese día» (el foco, como en el ambiente de la sala)
+    const zm = t.closest('[data-mop-zon-modo]');
+    if (zm) { vOp.zonModo = zm.dataset.mopZonModo; repintarYEnfocar(`[data-mop-zon-modo="${zm.dataset.mopZonModo}"]`); return; }
+    const zi = t.closest('[data-mop-zon-ir]');
+    if (zi) {
+      if (zi.disabled || !zi.dataset.mopZonIr) return;
+      vOp.zonDia = zi.dataset.mopZonIr;
+      repintar();
+      const b = zi.dataset.mopZonDir && root.querySelector(`[data-mop-zon-dir="${zi.dataset.mopZonDir}"]`);
+      const f = b && !b.disabled ? b : root.querySelector('[data-mop-zon-dia]');
+      if (f) f.focus();
+      return;
+    }
     const rep = t.closest('[data-mop-rep]');
     if (rep) { vOp.rep = rep.dataset.mopRep; repintar(); return; }
     // El selector de lote del cierre es un <select>: su cambio va en el listener de abajo, no aquí.
@@ -3813,6 +3899,11 @@ function bind(root) {
     if (e.target.matches && e.target.matches('[data-mop-amb-dia]')) {   // 3 · el día del ambiente de la sala
       vOp.ambDia = e.target.value || '';
       repintarYEnfocar('[data-mop-amb-dia]');
+      return;
+    }
+    if (e.target.matches && e.target.matches('[data-mop-zon-dia]')) {   // tarea 2 · ronda 9 · el día de las 🌡️ Zonas
+      vOp.zonDia = e.target.value || '';
+      repintarYEnfocar('[data-mop-zon-dia]');
       return;
     }
     // Punto 6 de la tanda · el lote propio de 🔍 Revisiones (repinta y devuelve el foco, como los de 🦠/🧬).

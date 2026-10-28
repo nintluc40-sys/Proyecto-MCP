@@ -174,7 +174,12 @@ volver a abrir esto, esto es lo que ya se midió:
     fecha de ingreso —la de la sala, y la del lote si entró antes en otra—), **🏠 Salas** (tarjeta por sala y su detalle
     —con la hora de su último parte—,
     con la temperatura y el oxígeno por hora de UN día —«Día», por defecto el de la foto, con ◀ ▶— o del período
-    entero —«Período»: el mapa de calor y las líneas por día—),
+    entero —«Período»: el mapa de calor y las líneas por día—; y debajo, desde el 2026-10-27, **🌡️ Zonas de desove y
+    reservorios**, lo de la hoja «Maduración Zonas» como su grilla de captura: «Día», una fila por zona y tanque con
+    sus 12 tomas de temperatura y sus 4 de O₂, cada una del color de su estado con los umbrales de la SALA —también en
+    los reservorios—; «Período», por zona y tanque, los días con lectura, la mínima–media–máxima y cuántas tomas
+    quedaron fuera; los filtros del tablero no le aplican; `operativo.zonas.js`, y en «Últimos registros» la hoja es
+    diaria como la de la Sala),
     **🧬 Lotes** (tabla maestra —con el peso ♀ y ♂ de cada lote, el del ⚖️ Saldo al cierre de la foto, y desde el
     2026-10-14 en la MISMA fila: cada fecha de Ingreso con su piscina, los vivos ♀ y ♂, los muertos acumulados (sin los
     descartes) y la fertilidad, N2 y N5 del CICLO del lote, de su ingreso a la foto o a su cierre—,

@@ -370,3 +370,19 @@
 @media (max-width: 700px) {
   .mop-lab-2 { grid-template-columns: 1fr; }
 }
+
+/* 🌡️ Zonas de desove y reservorios, en 🏠 Salas (tarea 2 · ronda 9, 2026-10-27) */
+.mop-zonas { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--c-border-soft); }
+.mop-zonas-h { margin: 0 0 8px; font-size: 15px; color: var(--c-text); }
+.mop-zonas .mop-amb-ctl { margin-bottom: 8px; }
+.mop-zonas .mop-calor-wrap { max-height: none; }   /* 18 filas a lo sumo: sin desplazamiento (y sin cabeceras pegadas que se pisen) */
+.mop-zonas-t thead th { text-align: center; }
+.mop-zonas-t .mop-zonas-ox { border-left: 2px solid var(--c-border); }
+.mop-zonas-t td.mop-zonas-tq { color: var(--c-text-soft); }
+/* Los colores del umbral de la sala, ACOTADOS a esta tabla: las reglas del mapa de 💀 Bajas (arriba) redefinen
+   `is-bajo` / `is-alto` de toda `.mop-calor` con su escala de intensidad. */
+.mop-calor.mop-zonas-t td.is-ok { background: color-mix(in srgb, var(--c-bueno) 30%, transparent); }
+.mop-calor.mop-zonas-t td.is-bajo { background: color-mix(in srgb, var(--c-excelente) 40%, transparent); }
+.mop-calor.mop-zonas-t td.is-alto { background: color-mix(in srgb, var(--c-grave) 40%, transparent); }
+.mop-zonas-bajo { color: var(--c-excelente); font-weight: 700; }
+.mop-zonas-alto { color: var(--c-grave); font-weight: 700; }

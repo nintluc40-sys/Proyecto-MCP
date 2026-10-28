@@ -329,7 +329,7 @@ const SONDAS = {
 const SIN_SONDA = {
   ingresos: 'sus filas alimentan el LIBRO; el filtro actúa después, sobre las posiciones',
   sala: 'la filtra `tarjetasDeSalas(M, F)`, que necesita el modelo entero, no sus filas',
-  zonas: 'ninguna pieza del tablero la consume todavía (2026-10-27): sólo se reconoce, para que no entre como Sala',
+  zonas: 'la enseña su bloque de 🏠 Salas (`zonasDelDia`, `zonasDelPeriodo`), que no admite filtros: las zonas no son salas de animales (tarea 2 de la ronda 9)',
 };
 
 describe('Maduración · operativo · DIMENSIONES es la conducta, no un comentario', () => {

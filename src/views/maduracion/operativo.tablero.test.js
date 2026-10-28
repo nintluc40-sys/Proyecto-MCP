@@ -322,13 +322,16 @@ describe('Maduración · tablero · alertas', () => {
 describe('Maduración · tablero · últimos registros y fines de cuarentena', () => {
   it('cada hoja con su rótulo de ficha; sólo las DIARIAS se marcan atrasadas, y con más de un día', () => {
     expect(Object.keys(ETIQUETA_HOJA).sort()).toEqual(MAD_OP_HOJAS.map((h) => h.clave).sort());
-    expect(ESPERA_DIAS).toEqual({ sala: 1, tanques: 1 });
+    // las Zonas, diarias como la Sala (tarea 2 de la ronda 9, 2026-10-27, usuario: «diaria como Salas»)
+    expect(ESPERA_DIAS).toEqual({ sala: 1, tanques: 1, zonas: 1 });
     const u = Object.fromEntries(ultimosRegistros([
       { clave: 'sala', hoja: 'Maduración Sala', filas: 3, ultima: '2026-09-17', dias: 2, futuras: 0 },
       { clave: 'tanques', hoja: 'Maduración Tanques', filas: 3, ultima: '2026-09-18', dias: 1, futuras: 0 },
       { clave: 'ingresos', hoja: 'Maduración Ingreso', filas: 3, ultima: '2026-08-01', dias: 49, futuras: 0 },
       { clave: 'alimentacion', hoja: 'Maduración Alimentación', filas: 0, ultima: '', dias: '', futuras: 0 },
+      { clave: 'zonas', hoja: 'Maduración Zonas', filas: 2, ultima: '2026-09-17', dias: 2, futuras: 0 },
     ]).map((x) => [x.clave, x]));
+    expect(u.zonas).toMatchObject({ etiqueta: '🌡️ Zonas (en 🏠 Salas)', atrasada: true });
     expect(u.sala).toMatchObject({ etiqueta: '🏠 Salas', atrasada: true });
     expect(u.tanques.atrasada).toBe(false);
     expect(u.ingresos.atrasada).toBe(false);
