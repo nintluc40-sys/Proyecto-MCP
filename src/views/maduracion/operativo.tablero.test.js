@@ -551,6 +551,11 @@ describe('Maduración · tablero · las salas con lo del Saldo, por lote (0f · 
     // 🏠 Salas: la de sus animales en ESA sala, con los pesos de SUS tanques de la sala
     const enSala = (s) => tarjetasDeSalas(MV, SIN).find((t) => t.sala === s).lotes.find((l) => l.lote === 'QV').saldo.biomasa;
     expect([enSala('Sala 1'), enSala('Sala 4')]).toEqual([2.5, 2.2]);
+    // 2026-10-28 · con un TANQUE elegido, la de sus animales de ESE tanque con SU peso (10 × 30 + 10 × 20 g = 0,5 kg), no
+    // sus vivos de ese tanque por el peso medio de sus tanques de la sala (10 × 50 + 10 × 33,3 g = 0,83 kg)
+    const enT4 = tarjetasDeSalas(MV, normalizarFiltro({ sala: 'Sala 1', tanque: '4' })).find((t) => t.sala === 'Sala 1')
+      .lotes.find((l) => l.lote === 'QV').saldo.biomasa;
+    expect(enT4).toBe(0.5);
     // el KPI, filtrado a QV: la del lote, y cuadra con la suma de las salas
     const k = kpiBiomasa(MV, normalizarFiltro({ lote: 'QV' }), periodoDe('7d', FOTO, MV.fuentes));
     expect([k.totalKg, k.pesoHembras, k.pesoMachos]).toEqual([4.7, 67.5, 50]);

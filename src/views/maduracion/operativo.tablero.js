@@ -858,8 +858,10 @@ function variableDeSala(filasSala, sala, columnas, id, R, hasta) {
  *  en ESA sala (promedio con mínimo y máximo) y la biomasa de sus animales en la sala por sus últimos pesos (la de los
  *  tanques contaría dos veces un tanque que comparte con otro lote). Sin ningún peso, biomasa y cargas vacías.
  *  🆕 2026-10-25 (auditoría de las tareas 7–12, usuario) · esos pesos son los de REFERENCIA de cada tanque donde está
- *  (`pesosDeReferencia`, los de su carga), ponderados por SUS animales en cada uno: antes, el peso medio del lote entero. */
-function saldoDeLoteEnSala(L, sala, l, M) {
+ *  (`pesosDeReferencia`, los de su carga), ponderados por SUS animales en cada uno: antes, el peso medio del lote entero.
+ *  🆕 2026-10-28 · y los de las MISMAS posiciones que sus vivos (`F`, el filtro de la tarjeta): con un tanque elegido, la
+ *  biomasa multiplicaba sus vivos en ese tanque por el peso medio de TODOS sus tanques de la sala. */
+function saldoDeLoteEnSala(L, sala, l, M, F) {
   const r2 = (n) => Math.round(n * 100) / 100;
   const resume = (vals) => {
     const v = vals.filter((x) => x !== '' && x !== null && x !== undefined && isFinite(x));
@@ -872,7 +874,8 @@ function saldoDeLoteEnSala(L, sala, l, M) {
   }
   const tanques = (L.tanques || []).filter((t) => t.sala === sala);
   const refs = pesosDeReferencia(M);
-  const suyas = (((M || {}).libro || {}).posiciones || []).filter((p) => p.lote === l.lote && p.sala === sala && vivo(p));
+  const suyas = (((M || {}).libro || {}).posiciones || [])
+    .filter((p) => p.lote === l.lote && p.sala === sala && vivo(p) && (!F || posicionEnFiltro(p, F)));
   const pesoEnSala = (sexo) => {   // el promedio de los pesos de sus tanques en la sala, ponderado por SUS animales
     let s = 0, n = 0;
     for (const p of suyas) {
@@ -941,7 +944,7 @@ export function tarjetasDeSalas(M, F) {
       desinfeccion: desinf[sala],
       lotes: [...porLote.values()].sort((a, b) => porNombre(a.lote, b.lote))
         .map((l) => ({ ...l, dias: (diasDeLote.get(l.lote) || []).find((d) => d.sala === sala) || null,
-          saldo: saldoDeLoteEnSala(saldoDe.get(l.lote), sala, l, M) })),
+          saldo: saldoDeLoteEnSala(saldoDe.get(l.lote), sala, l, M, F) })),
       tratamientos: R ? R.tratamientos : [],
     };
   });
