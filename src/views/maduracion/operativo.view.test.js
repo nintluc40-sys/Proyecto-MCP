@@ -685,6 +685,8 @@ describe('Maduración · operativo · bordes', () => {
     await montar([{ _SheetOrigin: 'Larvicultura', Fecha: '18/09/2026' }]);
     expect(root.textContent).toContain('Sin datos del registro operativo');
     expect(root.querySelector('.empty-state').textContent).toContain('📋');   // 2026-09-27 · el emoji de Operativo (antes 🐚)
+    // 2026-10-28 · el aviso sale con las 11 hojas vacías, también «Maduración Zonas», que se registra dentro de Salas
+    expect(root.querySelector('.empty-state').textContent).toContain('Salas (con sus zonas de desove y reservorios)');
     await montar([]);
     expect(root.textContent).toContain('Conectando');
   });
