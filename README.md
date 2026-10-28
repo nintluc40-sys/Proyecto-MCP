@@ -214,6 +214,14 @@ volver a abrir esto, esto es lo que ya se midió:
     a los registrados —cada fecha y cada celda abren la ventana de ESE día: cobertura por sala, los partes tanque a
     tanque y los de tanques que el libro tenía vacíos, marcados «no esperado»—, el estado registrado de cada sala frente al propuesto, los avisos del libro y el cruce
     con 🧬 Microchips, que marca sólo lo que no puede ser y se hace con el libro de HOY).
+    📈 **Evolución** (2026-10-27; el cálculo, puro, en `operativo.evolucion.js`): una o dos variables —cada una con su
+    eje— o la misma por lote o por sala (hasta 6 líneas), por día, semana (lunes a domingo) o mes de calendario, con la
+    barra del tablero; variables de Reproducción, Población, Alimentación y Ambiente (sala, zonas de desove y clima).
+    🔑 Cada punto sale de la MISMA función que la tarjeta de su variable: una tasa agrupada es Σ ÷ Σ (no el promedio de
+    sus días), un nivel es el del último día y un flujo, la suma; lo que un filtro no separa se dice. Con el resumen de
+    cada serie, la media móvil de 7 días, las marcas de movimientos y tratamientos (los preventivos de rutina, sólo en la
+    lista: decisión del usuario) y ⬇ Excel de cuatro hojas, la primera la misma tabla que se ve. No se llama
+    «Tendencias»: ése es el bloque de alertas de 📊 Estado actual (D-8).
     ⚠ **Lo que NO se juzga** se enseña tal cual, rotulado «sin criterio»: deformidad, actividad,
     fototropismo y aireación. Sólo llevan veredicto salinidad > 60 ‰, temperatura > 40 °C, hongos
     «Presente» y la alcalinidad — el resto no tiene fuente que lo respalde.

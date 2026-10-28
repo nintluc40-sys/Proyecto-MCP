@@ -8,7 +8,7 @@
    Datos FICTICIOS.
    ============================================================ */
 import { describe, it, expect } from 'vitest';
-import { evolucion, tramosDe, VARIABLES, variableDe, hojasDeEvolucion, MAX_COMPARADOS } from './operativo.evolucion.js';
+import { evolucion, tramosDe, VARIABLES, variableDe, hojasDeEvolucion, MAX_COMPARADOS, rotuloDe } from './operativo.evolucion.js';
 import { kpiCopula, kpiReproduccion, kpiMortalidad, normalizarFiltro, periodoDe } from './operativo.tablero.js';
 import { graficoVivos } from './operativo.kpis.js';
 import { modeloOperativo, serieDiaria, diasDeTanque } from './operativo.data.js';
@@ -33,6 +33,7 @@ const ALIM = (fecha, sala, tanque, lotes, kg) => ({ _SheetOrigin: O, Fecha: fech
   'Krill (kg/día)': '', 'Vitallis (kg/día)': '', 'Total (kg/día)': kg, Tomas: '', ID: fecha + sala + tanque });
 const TRAT = (fecha, sala, tipo, lotes) => ({ _SheetOrigin: O, Fecha: fecha, Sala: sala, 'Estado de la sala': 'Producción', Tipo: tipo,
   'Área': 'Salas y tanques', Lotes: lotes, Productos: 'Formol', 'Productos RAS': '', 'Dosis y observaciones': '', ID: fecha + sala + tipo });
+const ZON = (fecha, zona, tanque, extra) => ({ _SheetOrigin: O, Fecha: fecha, Zona: zona, Tanque: tanque, ...extra });
 const CLI = (fecha, tipo, tMed, hr, lluvia) => ({ _SheetOrigin: CLIMA_DIAS, Fecha: fecha, Tipo: tipo, 'Temp media (°C)': tMed, 'Humedad (%)': hr,
   'Lluvia (mm)': lluvia, 'Horas observadas': 13, 'Horas MET': 11, 'Horas NASA': 0 });
 
@@ -56,6 +57,10 @@ const PLANTA = [
   ALIM('2026-09-17', 'Sala 1', 1, 'QA', 3), ALIM('2026-09-18', 'Sala 1', 1, 'QA', 5), ALIM('2026-09-18', 'Sala 4', 1, 'QB', 2),
   TRAT('2026-09-15', 'Sala 1', 'Preventivo', 'QA'), TRAT('2026-09-18', 'Sala 4', 'Desinfección', 'QB'),
   MOV('2026-09-13', 'Transferencia', 'Sala 1', 1, 'Sala 4', 1, 1, 0),
+  // Zonas: dos el 17/09 (la de los masivos con DOS lecturas de temperatura, la otra con una) y una el 18/09
+  ZON('2026-09-17', 'Sala desove (masivos)', 1, { 'Temperatura 2:00': 28, 'Temperatura 4:00': 30, 'Oxígeno 06:00': 6 }),
+  ZON('2026-09-17', 'Sala desove/eclosión 1', 2, { 'Temperatura 2:00': 26 }),
+  ZON('2026-09-18', 'Sala desove (masivos)', 1, { 'Temperatura 2:00': 31 }),
 ];
 const CLIMA = [CLI('17/09/2026', 'Registro', 25, 80, 2), CLI('18/09/2026', 'Registro', 27, 70, 0.5), CLI('19/09/2026', 'Pronóstico', 35, 10, 40)];
 const M = modeloOperativo(PLANTA, { hoy: FOTO, fecha: FOTO });
@@ -169,6 +174,14 @@ describe('📈 Evolución · cada punto es la tarjeta de su variable en ese tram
     expect(ev({ a: 'climaTemp' }, F({ sala: 'Sala 1' }), SEM).notas.some((n) => /no se separa por sala/.test(n))).toBe(true);
   });
 
+  it('🔴 zonas: la media de TODAS las lecturas del tramo (no la media de las medias de cada zona)', () => {
+    expect(enDia(ev({ a: 'zonasTemp' }, SIN), '2026-09-17')).toBe(28);   // (28 + 30 + 26) ÷ 3; la media de medias daría 27,5
+    expect(ev({ a: 'zonasTemp', agrupar: 'semana' }, SIN, SEM).series[0].datos).toEqual([28.75]);   // + el 31 del 18/09
+    expect(enDia(ev({ a: 'zonasOx' }, SIN), '2026-09-17')).toBe(6);
+    expect(enDia(ev({ a: 'zonasTemp' }, SIN), '2026-09-19')).toBeNull();
+    expect(ev({ a: 'zonasTemp' }, F({ lote: 'QA' })).notas.some((n) => /no se separa por lote/.test(n))).toBe(true);
+  });
+
   it('alimentación: la ración del día es la de 🦐 Alimentación (kg del día ÷ días con registro), con su filtro', () => {
     expect(enDia(ev({ a: 'racion' }, SIN), '2026-09-18')).toBe(7);
     expect(enDia(ev({ a: 'racion' }, F({ lote: 'QA' })), '2026-09-18')).toBe(5);
@@ -244,10 +257,23 @@ describe('📈 Evolución · ver dobles, media móvil, resumen y notas', () => {
     expect(ev({ a: 'nada' }, SIN).notas).toEqual(['Elige una variable.']);
   });
 
+  it('🔴 si el último tramo incluye HOY, lo dice (aún se registra); un período que termina antes, no', () => {
+    expect(ev({ a: 'desoves' }, SIN).notas.some((n) => n.startsWith('El último tramo incluye hoy (19/09)'))).toBe(true);
+    expect(ev({ a: 'desoves' }, SIN, { desde: '2026-09-01', hasta: '2026-09-10' }).notas.some((n) => /incluye hoy/.test(n))).toBe(false);
+  });
+
+  it('el rótulo no repite la unidad cuando el nombre ya la dice', () => {
+    expect(rotuloDe({ etiqueta: 'Tasa de cópula', unidad: '%' })).toBe('Tasa de cópula (%)');
+    expect(rotuloDe({ etiqueta: 'Desoves', unidad: 'desoves' })).toBe('Desoves');
+    expect(rotuloDe({ etiqueta: 'N5 (nauplios)', unidad: 'nauplios' })).toBe('N5 (nauplios)');
+  });
+
   it('🔴 marcas de eventos: tratamientos y movimientos del período, en su tramo y con el filtro de 🔄 Manejo', () => {
     const R = ev({ a: 'desoves', agrupar: 'semana' }, SIN);
     expect(R.eventos.map((e) => [e.fecha, e.tipo])).toEqual([['2026-09-13', 'movimiento'], ['2026-09-15', 'tratamiento'], ['2026-09-18', 'tratamiento']]);
     expect(R.eventos[1].texto).toBe('Sala 1: Preventivo');
+    // decisión del usuario (28-10): el día de una sala con sólo preventivos es RUTINA (no se marca sobre el gráfico)
+    expect(R.eventos.map((e) => e.rutina)).toEqual([false, true, false]);
     expect(R.eventos[0].tramo).toBe(R.tramos.findIndex((t) => t.desde <= '2026-09-13' && t.hasta >= '2026-09-13'));
     const S = ev({ a: 'desoves' }, F({ sala: 'Sala 4' }));
     expect(S.eventos.map((e) => e.fecha)).toEqual(['2026-09-13', '2026-09-18']);   // el movimiento llega a la Sala 4
@@ -262,8 +288,9 @@ describe('📈 Evolución · el Excel', () => {
     const H = hojasDeEvolucion(R, { periodo: '30 d', agrupar: 'Día', filtros: ['Sala 2'] });
     expect(H.map((h) => h.nombre)).toEqual(['Serie', 'Resumen', 'Eventos', 'Filtros y notas']);
     const S = H[0].aoa;
-    expect(S[0]).toEqual(['Desde', 'Hasta', 'Tramo', 'Parcial', 'Tasa de cópula (%)', 'Desoves (desoves)',
-      'Media móvil 7 d · Tasa de cópula (%)', 'Media móvil 7 d · Desoves (desoves)']);
+    // la unidad no se repite cuando el nombre ya la dice («Desoves», no «Desoves (desoves)»)
+    expect(S[0]).toEqual(['Desde', 'Hasta', 'Tramo', 'Parcial', 'Tasa de cópula (%)', 'Desoves',
+      'Media móvil 7 d · Tasa de cópula (%)', 'Media móvil 7 d · Desoves']);
     expect(S.length).toBe(R.tramos.length + 1);
     const fila = S.find((r) => r[0] === '2026-09-16');
     expect(fila[4]).toBe(66.6667);   // 2 cópulas ÷ 3 hembras, a 4 decimales en el Excel

@@ -7,7 +7,7 @@
    vez (D-8, «Revisiones del supervisor»). Módulo PURO: ni DOM ni red; la vista sólo dibuja lo que sale de aquí.
 
    Decisiones del usuario (2026-10-27, no re-preguntar): sub-vista propia con la barra de filtros del tablero; variables de
-   Reproducción, Población, Alimentación y Ambiente (sala y clima; las zonas, cuando existan); «las dos formas» de ver
+   Reproducción, Población, Alimentación y Ambiente (sala, zonas de desove y reservorios, y clima); «las dos formas» de ver
    dobles —dos variables a la vez, cada una con su eje, O la misma variable por lote o por sala, hasta 6 líneas—; agrupar
    por día, semana (lunes a domingo) o mes (de calendario), siempre dentro del período elegido; y como extras el resumen
    de cada serie, la media móvil de 7 días y las marcas de eventos (tratamientos y movimientos). Sin banda de referencia.
@@ -33,6 +33,7 @@ import { RESUMEN_TEMPS, RESUMEN_OXIGENOS } from '../registros/lib/mad-resumen.js
 import { sumarDias } from '../registros/lib/mad-libro.js';
 import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { climaDias } from '../clima/clima.data.js';
+import { zonasDelPeriodo } from './operativo.zonas.js';
 
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
 const esIso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -119,7 +120,12 @@ const _clima = new WeakMap(), SIN_CLIMA = [];
 const diasDeClima = (filas) => { if (!_clima.has(filas)) _clima.set(filas, climaDias(filas)); return _clima.get(filas); };
 const climaEn = (ctx, desde, hasta) => diasDeClima(ctx.clima || SIN_CLIMA).filter((d) => d.tipo !== 'Pronóstico' && enRango(d.key, desde, hasta));
 const deClima = (campo) => (ctx, F, desde, hasta) => media(climaEn(ctx, desde, hasta).map((d) => d[campo]).filter((v) => v !== null));
-const ignoraClima = (F) => filtrosNoAplicados(F, []);
+const ignoraClima = (F) => filtrosNoAplicados(F, []);   // el clima y las zonas: ningún filtro del tablero se les aplica
+const deZonas = (campo) => (ctx, F, desde, hasta) => {
+  let s = 0, n = 0;
+  for (const z of zonasDelPeriodo((ctx.M && ctx.M.fuentes && ctx.M.fuentes.zonas) || [], desde, hasta)) { s += z[campo].med * z[campo].n; n += z[campo].n; }
+  return n ? s / n : null;
+};
 /** El último valor no vacío de una serie de `graficoVivos` en el rango (el nivel al cierre del rango). */
 const vivosAl = (clave) => (ctx, F, desde, hasta) => {
   const g = graficoVivos(ctx.serie, { desde, hasta }, F);
@@ -203,6 +209,13 @@ export const VARIABLES = [
     valor: (ctx, F, desde, hasta) => media(lecturasDeSala(ctx, F, RESUMEN_TEMPS, desde, hasta)), ignora: (F) => filtrosNoAplicados(F, ['sala']) },
   { clave: 'oxigeno', grupo: 'Ambiente', etiqueta: 'O₂ de sala', unidad: 'mg/L', tipo: 'promedio', comparar: ['sala'],
     valor: (ctx, F, desde, hasta) => media(lecturasDeSala(ctx, F, RESUMEN_OXIGENOS, desde, hasta)), ignora: (F) => filtrosNoAplicados(F, ['sala']) },
+  /* Las zonas de desove y los reservorios («Maduración Zonas», Sesión A, ronda 9 · tarea 2): la media de TODAS sus lecturas
+     del tramo, Σ (media × lecturas) ÷ Σ lecturas de `zonasDelPeriodo` (la última de cada día y toma, como allí). Una zona
+     no es una sala ni lleva lote: ningún filtro del tablero se aplica, y se dice. */
+  { clave: 'zonasTemp', grupo: 'Ambiente', etiqueta: 'Temperatura de zonas', unidad: '°C', tipo: 'promedio', comparar: [],
+    valor: deZonas('temp'), ignora: ignoraClima },
+  { clave: 'zonasOx', grupo: 'Ambiente', etiqueta: 'O₂ de zonas', unidad: 'mg/L', tipo: 'promedio', comparar: [],
+    valor: deZonas('ox'), ignora: ignoraClima },
   { clave: 'climaTemp', grupo: 'Ambiente', etiqueta: 'Temperatura exterior (media)', unidad: '°C', tipo: 'promedio', comparar: [],
     valor: deClima('tMed'), ignora: ignoraClima },
   { clave: 'climaHumedad', grupo: 'Ambiente', etiqueta: 'Humedad exterior', unidad: '%', tipo: 'promedio', comparar: [],
@@ -286,6 +299,12 @@ export function evolucion(ctx, op = {}) {
     const ig = l.v.ignora(l.F, ctx) || [];
     if (ig.length) notas.push(`${l.v.etiqueta} no se separa por ${ig.join(', ')}: cuenta entero.`);
   }
+  /* El día de HOY aún se está registrando (lo cazó la revisión con el libro real: los desoves del último día salían 0 y el
+     cambio del resumen, −100 %). Se dice; la cifra es la que hay, como en la tarjeta. */
+  const hoy = ctx.M && ctx.M.hoy;
+  if (tramos.length && esIso(hoy) && hoy >= tramos[tramos.length - 1].desde && hoy <= tramos[tramos.length - 1].hasta) {
+    notas.push(`El último tramo incluye hoy (${dm(hoy)}), que aún se está registrando: su cifra puede cambiar.`);
+  }
   if (tramos.length && (tramos[0].parcial || tramos[tramos.length - 1].parcial)) {
     notas.push(agrupar === 'mes' ? 'El mes del principio o del final no está completo dentro del período: se marca «parcial».'
       : 'La semana del principio o del final no está completa dentro del período: se marca «parcial».');
@@ -333,11 +352,15 @@ export function eventosDe(ctx, tramos) {
     fila.celdas.forEach((c, i) => {
       if (!c) return;
       const tipos = c.tipos.length ? c.tipos.join(', ') : 'tratamiento';
-      out.push({ fecha: T.dias[i], tipo: 'tratamiento', texto: `${fila.sala}: ${tipos}${c.tratamientos > 1 ? ` (${c.tratamientos})` : ''}` });
+      /* `rutina`: el día de esa sala sólo tuvo PREVENTIVOS. Decisión del usuario (2026-10-28, «Sin los preventivos»): con el
+         libro real eran 133 de 182 eventos en 30 d y había marca en 29 de 30 días; no se marcan sobre el gráfico, pero
+         siguen en la lista y en el Excel. */
+      out.push({ fecha: T.dias[i], tipo: 'tratamiento', texto: `${fila.sala}: ${tipos}${c.tratamientos > 1 ? ` (${c.tratamientos})` : ''}`,
+        rutina: c.tipos.length > 0 && c.tipos.every((x) => x === 'Preventivo') });
     });
   }
   for (const m of registroDeMovimientos(fuentes, periodo, F)) {
-    out.push({ fecha: m.fecha, tipo: 'movimiento', texto: `${m.tipo || 'Movimiento'}: ${m.origen.sala} T${m.origen.tanque} → ${m.destino.sala} T${m.destino.tanque} (${m.total})` });
+    out.push({ fecha: m.fecha, tipo: 'movimiento', texto: `${m.tipo || 'Movimiento'}: ${m.origen.sala} T${m.origen.tanque} → ${m.destino.sala} T${m.destino.tanque} (${m.total})`, rutina: false });
   }
   return out.map((e) => ({ ...e, tramo: tramoDe(e.fecha) })).sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : a.tipo < b.tipo ? -1 : a.tipo > b.tipo ? 1 : 0));
 }
@@ -345,6 +368,9 @@ export function eventosDe(ctx, tramos) {
 /* ── EL EXCEL ───────────────────────────────────────────────── */
 
 const r4 = (v) => (v === null || v === undefined ? '' : Math.round(v * 1e4) / 1e4);
+/** El rótulo de una serie con su unidad, sin repetirla cuando el nombre ya la dice: «Tasa de cópula (%)», pero «Desoves» y
+ *  no «Desoves (desoves)», «N5 (nauplios)» y no «N5 (nauplios) (nauplios)» (lo cazó la revisión en Chrome). */
+export const rotuloDe = (s) => (String(s.etiqueta).toLowerCase().includes(String(s.unidad).toLowerCase()) ? s.etiqueta : `${s.etiqueta} (${s.unidad})`);
 /**
  * Las hojas del Excel: «Serie» (un renglón por tramo, una columna por línea y su media móvil), «Resumen», «Eventos» y
  * «Filtros y notas». Números como números; un punto sin dato, celda vacía (no un cero).
@@ -353,7 +379,7 @@ const r4 = (v) => (v === null || v === undefined ? '' : Math.round(v * 1e4) / 1e
  * @returns {Array<{ nombre: string, aoa: Array<Array> }>}
  */
 export function hojasDeEvolucion(R, cab = {}) {
-  const conUnidad = (s) => `${s.etiqueta} (${s.unidad})`;
+  const conUnidad = rotuloDe;
   const movs = R.series.filter((s) => s.movil);
   const serie = [['Desde', 'Hasta', 'Tramo', 'Parcial', ...R.series.map(conUnidad), ...movs.map((s) => `Media móvil 7 d · ${conUnidad(s)}`)]];
   R.tramos.forEach((t, i) => serie.push([t.desde, t.hasta, t.etiqueta, t.parcial ? 'sí' : '', ...R.series.map((s) => r4(s.datos[i])), ...movs.map((s) => r4(s.movil[i]))]));

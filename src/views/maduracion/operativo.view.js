@@ -42,7 +42,7 @@ import { makeChart, destroyAllCharts } from '../../core/charts.js';
 import { esc } from '../../core/format.js';
 import { sumarDias, ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_MIXTO } from '../registros/lib/mad-libro.js';
 import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';   // punto 2 · etapa A
-import { modeloOperativo, serieDiaria, diasDeTanque, libroAlCierre } from './operativo.data.js';
+import { modeloOperativo, serieDiaria, diasDeTanque, libroAlCierre, SALAS_VISIBLES } from './operativo.data.js';
 import {
   PERIODOS, PERIODO_INICIAL, periodoDe, normalizarFiltro, hayFiltro, kpiVivos, kpiLotes, kpiSalas, kpiOcupacion,
   kpiMortalidad, kpiReproduccion, kpiCopula, mapaDePlanta, MODOS_MAPA, ESTADO_VACIO, ESTADO_SIN, alertas, ultimosRegistros,
@@ -102,6 +102,9 @@ import {
 import { printFichaDocs } from '../supervisor/fichaPdf.js';
 import { toast } from '../../ui/toast.js';
 import { buildReproModel, MAD_MATRIZ_ORIGIN, MAD_BITACORA_ORIGIN, MAD_TRANSFER_ORIGIN } from './data.js';
+// Tarea 2 · ronda 9 (2026-10-27, usuario) · 📈 Evolución: el cálculo es puro (operativo.evolucion.js); aquí, controles y dibujo.
+import { VARIABLES, AGRUPACIONES, COMPARACIONES, MAX_COMPARADOS, evolucion, variableDe, hojasDeEvolucion, rotuloDe } from './operativo.evolucion.js';
+import { isClimaDiaRow } from '../clima/clima.data.js';
 
 const SUBS = [
   { clave: 'estado', etiqueta: 'Estado actual', icono: '📊' },
@@ -134,6 +137,11 @@ const SUBS = [
      en UNA sub-vista nueva (decisión del usuario). Broodstock no tiene pastilla: vive en 🧬 Lotes, como el ORIGEN
      de los lotes. */
   { clave: 'calidad', etiqueta: 'Calidad del dato', icono: '🩺' },
+  /* Tarea 2 · ronda 9 (2026-10-27, usuario) · la evolución de una o dos variables, o de una por lote o por sala, por día,
+     semana o mes, con su Excel. No se llama «Tendencias»: ése es el bloque de alertas de 📊 Estado actual (D-8). Va ANTES
+     de 🖨 Reportes —con lo que también analiza y exporta— porque dos decisiones anteriores del usuario fijan el final de la
+     sub-nav: 🦠 y 🧬 justo tras 🖨 Reportes (2 · 2026-09-29) y 🌊 Mareas la última (0r·1). Usa la barra del tablero. */
+  { clave: 'evolucion', etiqueta: 'Evolución', icono: '📈' },
   /* F7 (2026-09-22) · la reportería, con su propia pastilla (decisión del usuario). `.mc-subnav` es `flex-wrap`,
      así que la décima envuelve en el móvil: no repite el problema de sitio que obligó a fusionar F5. */
   { clave: 'reportes', etiqueta: 'Reportes', icono: '🖨' },
@@ -195,6 +203,9 @@ const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: [], 
   ambModo: 'dia', ambDia: '',
   /* Tarea 2 · ronda 9 (2026-10-27, usuario) · 🏠 Salas → 🌡️ Zonas: lo mismo para el bloque de las zonas, con su propio día. */
   zonModo: 'dia', zonDia: '',
+  /* Tarea 2 · ronda 9 (2026-10-27, usuario) · 📈 Evolución: la variable A y la B (la B sólo sin comparar), la agrupación, la
+     comparación, lo elegido para comparar (null = aún sin elegir: entran los 3 primeros; [] = el usuario lo vació) y los extras. */
+  evoA: 'copula', evoB: '', evoAgrupar: 'dia', evoComparar: 'nada', evoElegidos: null, evoMovil: true, evoEventos: true,
   /* Punto 2 · etapa A (2026-10-13, usuario) · `lote` y `codigo` son LISTAS (varios a la vez; vacía = todos). Nunca se
      modifican en su sitio —siempre una lista nueva—: el estado inicial se copia sin clonar. `multiAbierto` es el
      desplegable de casillas que se repinta abierto mientras se marca ('' = ninguno). */
@@ -356,6 +367,8 @@ export function operativoView(root) {
     h += calidadHTML(M, memo, periodo, F);
   } else if (vOp.sub === 'reportes') {
     h += reportesHTML(M, memo, fecha, hoy, F, periodo);
+  } else if (vOp.sub === 'evolucion') {   // tarea 2 · ronda 9
+    h += evolucionHTML(M, memo, periodo, F);
   } else if (LAB[vOp.sub]) {
     _labIngresos = M.fuentes.ingresos || [];   // 0q·5a · de dónde viene cada lote (su piscina)
     h += labPanelHTML();                       // 0f · 8 · 🦠 / 🧬 (2 · sub-vistas, ya no ventanas)
@@ -371,6 +384,7 @@ export function operativoView(root) {
   if (vOp.sub === 'lotes') dibujarPiscina(_fichaPiscina);
   if (vOp.sub === 'tanques') dibujarTanque(_fichaTanque);
   if (vOp.sub === 'reproduccion') dibujarReparto(_reparto);   // 0q·3
+  if (vOp.sub === 'evolucion') dibujarEvolucion(_evo);        // tarea 2 · ronda 9
   dibujarCuarentena(_cuarCurva);   // 0f · 4 · sólo si su lienzo está en pantalla (📊 Estado actual, con un par abierto)
   dibujarKpi(_kpiGraf);            // 0f · 5 · ídem, con una tarjeta de KPI abierta
   trasPintarLab(root);             // 0f · 8 · el gráfico de 🧬 (2 · sub-vista)
@@ -3631,6 +3645,161 @@ function imprimirParte() {
   if (!ok) toast('No se pudo abrir la impresión en este navegador.', 'err');
 }
 
+/* ── 📈 EVOLUCIÓN (tarea 2 · ronda 9, 2026-10-27, usuario) ───────────────────────────────────────────────────────
+   La pantalla de `operativo.evolucion.js`: los controles (variable A y B, agrupar, comparar, lo comparado, media móvil y
+   eventos), el gráfico, las notas, el resumen, los eventos y la tabla —que es la hoja «Serie» del Excel, así lo que se ve
+   y lo que se descarga no pueden divergir—. Con la barra de filtros del tablero, como las demás. */
+let _evo = null;   // la última evolución pintada: su gráfico se dibuja tras pintar y su Excel se descarga sin recalcular
+const COLORES_EVO = ['#00897b', '#e65100', '#5e35b1', '#1e88e5', '#c62828', '#6d4c41'];
+/** Las filas de clima del libro (las del día; el pronóstico lo aparta el cálculo), una vez por datos. */
+const climaDe = (memo) => memo.clima || (memo.clima = store.globalData.filter(isClimaDiaRow));
+/** Lo que se puede comparar: los lotes con animales o desoves en el período (los del filtro, si hay) o las salas del filtro. */
+function candidatosDe(cmp, M, memo, p, F) {
+  if (cmp === 'sala') return SALAS_VISIBLES.filter((s) => salaElegida(s, F));
+  if (F.lotes && F.lotes.length) return [...F.lotes];
+  const lotes = new Set();
+  for (const d of serieDe(memo, p)) {
+    if (d.fecha < p.desde || d.fecha > p.hasta) continue;
+    for (const [l, x] of Object.entries(d.porLote || {})) if (((x && x.machos) || 0) + ((x && x.hembras) || 0) > 0) lotes.add(normLote(l));
+  }
+  for (const r of M.fuentes.desoves || []) { const f = String(r.Fecha || '').slice(0, 10); if (f >= p.desde && f <= p.hasta && normLote(r.Lote)) lotes.add(normLote(r.Lote)); }
+  return [...lotes].sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
+}
+/** Un número de la serie con los decimales de su clase (un flujo se cuenta; una tasa o un promedio, con dos). */
+const nfEvo = (v, tipo) => (v === null || v === undefined ? '—' : nf(v, tipo === 'flujo' || tipo === 'nivel' ? 1 : 2));
+function evolucionHTML(M, memo, p, F) {
+  const A = variableDe(vOp.evoA) || VARIABLES[0];
+  const cmpPedida = COMPARACIONES.some((c) => c.clave === vOp.evoComparar) ? vOp.evoComparar : 'nada';
+  const cmp = cmpPedida === 'nada' || A.comparar.includes(cmpPedida) ? cmpPedida : 'nada';   // la variable nueva no se separa así: sin comparar
+  const cands = cmp === 'nada' ? [] : candidatosDe(cmp, M, memo, p, F);
+  let elegidos = vOp.evoElegidos === null ? cands.slice(0, 3) : vOp.evoElegidos.filter((x) => cands.includes(x));
+  if (cmp !== 'nada' && (vOp.evoElegidos === null || elegidos.length !== vOp.evoElegidos.length)) vOp.evoElegidos = elegidos;   // lista nueva, nunca en su sitio
+  if (cmp === 'nada') elegidos = [];
+  const agrupar = AGRUPACIONES.some((g) => g.clave === vOp.evoAgrupar) ? vOp.evoAgrupar : 'dia';
+  const ctx = { M, serie: serieDe(memo, p), partes: memo.partes, copulas: copulasDe(memo), clima: climaDe(memo), periodo: p, F };
+  const R = evolucion(ctx, { a: A.clave, b: cmp === 'nada' ? vOp.evoB : '', agrupar, comparar: cmp, elegidos, movil: vOp.evoMovil, eventos: vOp.evoEventos });
+  _evo = { R, p, F, agrupar };
+
+  const grupos = [...new Set(VARIABLES.map((v) => v.grupo))];
+  const opciones = (sel, conNinguna) => (conNinguna ? `<option value=""${sel ? '' : ' selected'}>— ninguna —</option>` : '')
+    + grupos.map((g) => `<optgroup label="${esc(g)}">${VARIABLES.filter((v) => v.grupo === g)
+      .map((v) => `<option value="${v.clave}"${v.clave === sel ? ' selected' : ''}>${esc(v.etiqueta)}</option>`).join('')}</optgroup>`).join('');
+  const pills = (lista, attr, actual, deshabilitada) => lista.map((x) => {
+    const no = deshabilitada && deshabilitada(x.clave);
+    return `<button type="button" class="mc-pill ${actual === x.clave ? 'is-on' : ''}" ${attr}="${x.clave}" aria-pressed="${actual === x.clave}"${no
+      ? ` disabled title="${esc(no)}"` : ''}>${esc(x.etiqueta)}</button>`;
+  }).join('');
+  const sinComparar = (c) => (c === 'nada' || A.comparar.includes(c) ? '' : `${A.etiqueta} no se separa ${c === 'lote' ? 'por lote' : 'por sala'}`);
+  const controles = `<div class="mop-evo-ctl">
+      <label>Variable <select class="mc-select" data-mop-evo="a" aria-label="Variable">${opciones(A.clave, false)}</select></label>
+      <label>y además <select class="mc-select" data-mop-evo="b" aria-label="Segunda variable"${cmp === 'nada' ? '' : ' disabled title="Al comparar por lote o sala se ve una sola variable"'}>${opciones(cmp === 'nada' ? vOp.evoB : '', true)}</select></label>
+      <span class="mop-evo-grupo" role="group" aria-label="Agrupar">Agrupar ${pills(AGRUPACIONES, 'data-mop-evo-agr', agrupar)}</span>
+      <span class="mop-evo-grupo" role="group" aria-label="Comparar">Comparar ${pills(COMPARACIONES, 'data-mop-evo-cmp', cmp, sinComparar)}</span>
+      <label class="mop-evo-op"><input type="checkbox" data-mop-evo-op="movil"${vOp.evoMovil ? ' checked' : ''}${agrupar === 'dia' ? '' : ' disabled title="Sólo por día"'}> Media móvil 7 d</label>
+      <label class="mop-evo-op"><input type="checkbox" data-mop-evo-op="eventos"${vOp.evoEventos ? ' checked' : ''}> Eventos</label>
+      <button type="button" class="mc-mini" data-mop-evo-xlsx${R.series.length ? '' : ' disabled'}>⬇ Excel</button>
+    </div>`;
+  const comparados = cmp === 'nada' ? '' : `<div class="mop-evo-el" role="group" aria-label="${cmp === 'lote' ? 'Lotes' : 'Salas'} que se comparan">
+      <span class="muted">${cmp === 'lote' ? 'Lotes' : 'Salas'} (${nf(elegidos.length)} de ${nf(MAX_COMPARADOS)} como mucho):</span>
+      ${cands.length ? cands.map((x) => { const on = elegidos.includes(x); return `<button type="button" class="mc-pill ${on ? 'is-on' : ''}" data-mop-evo-el="${esc(x)}" aria-pressed="${on}">${esc(x)}</button>`; }).join('')
+    : `<span class="muted">${cmp === 'lote' ? 'ningún lote con animales o desoves' : 'ninguna sala'} en el período y el filtro</span>`}</div>`;
+  const conDato = R.series.some((s) => s.datos.some((v) => v !== null));
+  const grafico = conDato ? '<div class="mc-chart mop-evo-chart"><canvas id="mopEvo" aria-label="Evolución de lo elegido"></canvas></div>'
+    : `<div class="empty-state" style="padding:16px">Sin datos de ${esc(A.etiqueta)} en ${esc(etiquetaPeriodo(p))} con este filtro.</div>`;
+  const notas = R.notas.length ? `<ul class="mop-evo-notas">${R.notas.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : '';
+  const tipoDe = (clave) => (R.series.find((s) => s.clave === clave) || {}).tipo;
+  const tv = (x, t) => (x ? `${nfEvo(x.valor, t)} <span class="muted">(${esc(x.tramo)})</span>` : '—');
+  const resumen = R.resumen.length ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-evo-res">
+      <thead><tr><th>Serie</th><th class="r">Total del período</th><th class="r">Mínimo</th><th class="r">Máximo</th><th class="r">Promedio</th>
+        <th class="r">Primero → último</th><th class="r">Cambio</th></tr></thead>
+      <tbody>${R.resumen.map((x) => { const t = tipoDe(x.clave); return `<tr><th>${esc(rotuloDe(x))}</th>
+        <td class="r">${nfEvo(x.total, t)}</td><td class="r">${tv(x.min, t)}</td><td class="r">${tv(x.max, t)}</td><td class="r">${nfEvo(x.promedio, t)}</td>
+        <td class="r">${x.primero ? `${nfEvo(x.primero.valor, t)} → ${nfEvo(x.ultimo.valor, t)}` : '—'}</td>
+        <td class="r">${x.cambio === null || x.cambio === undefined ? '—' : (x.cambio > 0 ? '+' : x.cambio < 0 ? '−' : '') + nf(Math.abs(x.cambio), 1) + ' %'}</td></tr>`; }).join('')}</tbody></table></div>` : '';
+  const eventos = R.eventos.length ? `<details class="mop-evo-det"><summary>🧪 🔄 Eventos del período (${nf(R.eventos.length)})</summary>
+      <ul class="mop-lista">${R.eventos.map((e) => `<li><b>${esc(dm(e.fecha))}</b> · ${e.tipo === 'tratamiento' ? '🧪' : '🔄'} ${esc(e.texto)}</li>`).join('')}</ul></details>` : '';
+  const serie = hojasDeEvolucion(R)[0].aoa;   // la MISMA tabla que la hoja «Serie» del Excel
+  const tabla = R.series.length ? `<details class="mop-evo-det"><summary>Ver la tabla (${nf(R.tramos.length)} ${agrupar === 'dia' ? 'días' : agrupar === 'semana' ? 'semanas' : 'meses'})</summary>
+      <div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-evo-tabla"><thead><tr>${serie[0].slice(2).map((c, i) => `<th${i > 1 ? ' class="r"' : ''}>${esc(c)}</th>`).join('')}</tr></thead>
+      <tbody>${serie.slice(1).map((r) => `<tr>${r.slice(2).map((c, i) => `<td${i > 1 ? ' class="r"' : ''}>${i > 1 ? (c === '' ? '—' : nf(c, 4)) : esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details>` : '';
+  return `<div class="mc-body"><div class="mc-card mc-card-wide mop-evo">
+    <h4 class="mc-card-h">📈 Evolución <span class="mc-h-note">${esc(dm(p.desde))} – ${esc(dm(p.hasta))} · ${esc(etiquetaPeriodo(p))} · con los filtros del tablero</span></h4>
+    ${controles}${comparados}${grafico}${notas}${resumen}${eventos}${tabla}
+  </div></div>`;
+}
+/** Las marcas de eventos sobre el gráfico: una raya punteada en su tramo, morada si hubo tratamiento, y su icono arriba. */
+const marcasDeEventos = (marcas) => ({
+  id: 'mopEvoMarcas',
+  marcas,   // a la vista de las pruebas: qué se marca
+  afterDatasetsDraw(chart) {
+    const { ctx, chartArea, scales } = chart;
+    const porTramo = new Map();
+    marcas.forEach((m) => porTramo.set(m.tramo, (porTramo.get(m.tramo) || new Set()).add(m.tipo)));
+    ctx.save();
+    ctx.setLineDash([3, 3]);
+    ctx.lineWidth = 1;
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    for (const [i, tipos] of porTramo) {
+      const x = scales.x.getPixelForValue(i);
+      ctx.strokeStyle = ctx.fillStyle = tipos.has('tratamiento') ? 'rgba(142,36,170,.6)' : 'rgba(84,110,122,.6)';
+      ctx.beginPath();
+      ctx.moveTo(x, chartArea.top);
+      ctx.lineTo(x, chartArea.bottom);
+      ctx.stroke();
+      ctx.fillText([...tipos].map((t) => (t === 'tratamiento' ? '🧪' : '🔄')).join(''), x, chartArea.top + 10);
+    }
+    ctx.restore();
+  },
+});
+function dibujarEvolucion(evo) {
+  if (!evo || !document.getElementById('mopEvo')) return;
+  const { R } = evo;
+  const E = ejesOp();
+  const datasets = [];
+  R.series.forEach((s, i) => {
+    const color = COLORES_EVO[i % COLORES_EVO.length];
+    const eje = s.eje === 'b' ? 'y2' : 'y';
+    const label = rotuloDe(s);
+    // un flujo (desoves, N5, muertes, lluvia) se cuenta: barras; lo demás es una cifra de cada tramo: línea recta, sin suavizar
+    datasets.push(s.tipo === 'flujo'
+      ? { type: 'bar', label, data: s.datos, backgroundColor: color, yAxisID: eje, order: 2 }
+      : { type: 'line', label, data: s.datos, borderColor: color, backgroundColor: color, tension: 0, borderWidth: 2, pointRadius: 2.5, yAxisID: eje, order: 1 });
+    if (s.movil) datasets.push({ type: 'line', label: `Media móvil 7 d · ${s.etiqueta}`, data: s.movil, borderColor: color, backgroundColor: color,
+      borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0, tension: 0, spanGaps: true, yAxisID: eje, order: 0 });
+  });
+  const de = (e) => R.series.find((s) => s.eje === e);
+  // la temperatura o el O₂ desde cero aplastarían su variación: un promedio de lecturas no empieza en cero
+  const eje = (s, extra) => ({ beginAtZero: s.tipo !== 'promedio', ticks: E.tick, title: E.titulo(s.unidad), ...extra });
+  const scales = { x: { ticks: { ...E.tick, maxRotation: 0, autoSkip: true }, grid: { display: false } }, y: eje(de('a') || R.series[0], { grid: { color: E.grid } }) };
+  if (de('b')) scales.y2 = eje(de('b'), { position: 'right', grid: { display: false } });
+  // los preventivos de rutina no se marcan (decisión del usuario, 2026-10-28): siguen en la lista y en el Excel
+  const marcas = R.eventos.filter((e) => e.tramo >= 0 && !e.rutina);
+  graficoOp('mopEvo', {
+    type: 'bar',
+    data: { labels: R.tramos.map((t) => t.etiqueta + (t.parcial ? ' *' : '')), datasets },
+    options: { responsive: true, maintainAspectRatio: false, scales, plugins: { legend: { labels: E.leyenda } } },
+    plugins: marcas.length ? [marcasDeEventos(marcas)] : [],
+  });
+}
+/** Descarga la evolución pintada: las cuatro hojas de `hojasDeEvolucion`, con el período y los filtros en la última. */
+function descargarEvolucion() {
+  if (!_evo || !_evo.R.series.length) { toast('Todavía no hay serie que descargar.', 'warn'); return; }
+  const XLSX = window.XLSX;
+  if (!XLSX) { toast('Exportación no disponible: SheetJS (XLSX) no se cargó. Revisa tu conexión y recarga la página.', 'err'); return; }
+  const { R, p, F, agrupar } = _evo;
+  const hojas = hojasDeEvolucion(R, {
+    periodo: `${dma(p.desde)} – ${dma(p.hasta)} (${etiquetaPeriodo(p)})`,
+    agrupar: (AGRUPACIONES.find((g) => g.clave === agrupar) || {}).etiqueta || '',
+    filtros: etiquetasDeFiltro(F).map((e) => `${e.rotulo}: ${e.valor}`),
+    generado: new Date().toLocaleString('es-EC'),
+  });
+  const wb = XLSX.utils.book_new();
+  for (const { nombre, aoa } of hojas) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), nombre);
+  XLSX.writeFile(wb, `Maduracion_Evolucion_${R.series[0].variable}_${p.desde}_${p.hasta}.xlsx`);
+  toast(`📗 Excel de la evolución descargado (${hojas.length} hojas).`, 'ok', 4000);
+}
+
 /** Descarga el reporte en Excel: una hoja por bloque, con las filas COMPLETAS (el papel recorta, el archivo no). */
 function descargarParte() {
   if (!_reporte) { toast('Todavía no hay reporte que descargar.', 'warn'); return; }
@@ -3820,6 +3989,22 @@ function bind(root) {
     if (pj) { vOp.parejas = pj.dataset.mopParejas; repintarYEnfocar(`[data-mop-parejas="${pj.dataset.mopParejas}"]`); return; }
     const agb = t.closest('[data-mop-agrb]');
     if (agb) { vOp.agrupacionBajas = agb.dataset.mopAgrb; repintar(); return; }
+    // Tarea 2 · ronda 9 · 📈 Evolución: agrupar, comparar (vuelve a «sin elegir»: entran los 3 primeros), lo comparado y el Excel
+    const evAgr = t.closest('[data-mop-evo-agr]');
+    if (evAgr) { vOp.evoAgrupar = evAgr.dataset.mopEvoAgr; repintarYEnfocar(`[data-mop-evo-agr="${vOp.evoAgrupar}"]`); return; }
+    const evCmp = t.closest('[data-mop-evo-cmp]');
+    if (evCmp) { vOp.evoComparar = evCmp.dataset.mopEvoCmp; vOp.evoElegidos = null; repintarYEnfocar(`[data-mop-evo-cmp="${vOp.evoComparar}"]`); return; }
+    const evEl = t.closest('[data-mop-evo-el]');
+    if (evEl) {
+      const x = evEl.dataset.mopEvoEl;
+      const antes = vOp.evoElegidos || [];
+      vOp.evoElegidos = antes.includes(x) ? antes.filter((y) => y !== x) : [...antes, x];
+      repintar();
+      const f = [...root.querySelectorAll('[data-mop-evo-el]')].find((b) => b.dataset.mopEvoEl === x);
+      if (f) f.focus();
+      return;
+    }
+    if (t.closest('[data-mop-evo-xlsx]')) { descargarEvolucion(); return; }
     const ftq = t.closest('[data-mop-filtrar-tq]');
     if (ftq) {
       const k = ftq.dataset.mopFiltrarTq;
@@ -3904,6 +4089,18 @@ function bind(root) {
     if (e.target.matches && e.target.matches('[data-mop-zon-dia]')) {   // tarea 2 · ronda 9 · el día de las 🌡️ Zonas
       vOp.zonDia = e.target.value || '';
       repintarYEnfocar('[data-mop-zon-dia]');
+      return;
+    }
+    if (e.target.matches && e.target.matches('[data-mop-evo]')) {   // tarea 2 · ronda 9 (Sesión B) · 📈 Evolución: la variable A o la B
+      const k = e.target.dataset.mopEvo;
+      if (k === 'a') vOp.evoA = e.target.value || INICIAL.evoA; else vOp.evoB = e.target.value || '';
+      repintarYEnfocar(`[data-mop-evo="${k}"]`);
+      return;
+    }
+    if (e.target.matches && e.target.matches('[data-mop-evo-op]')) {   // la media móvil y las marcas de eventos
+      const k = e.target.dataset.mopEvoOp;
+      if (k === 'movil') vOp.evoMovil = e.target.checked; else vOp.evoEventos = e.target.checked;
+      repintarYEnfocar(`[data-mop-evo-op="${k}"]`);
       return;
     }
     // Punto 6 de la tanda · el lote propio de 🔍 Revisiones (repinta y devuelve el foco, como los de 🦠/🧬).

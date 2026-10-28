@@ -385,3 +385,16 @@
 /* (sus tomas usan los colores del mapa de temperatura de la sala, `.mop-calor td.is-*`) */
 .mop-zonas-bajo { color: var(--c-excelente); font-weight: 700; }
 .mop-zonas-alto { color: var(--c-grave); font-weight: 700; }
+
+/* 📈 Evolución (tarea 2 · ronda 9, 2026-10-27): controles en una fila que envuelve, el gráfico alto y las notas suaves */
+.mop-evo-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 4px 0 10px; font-size: 13px; }
+.mop-evo-ctl label { display: inline-flex; align-items: center; gap: 6px; }
+.mop-evo-ctl .mc-select { width: auto; max-width: 240px; }
+.mop-evo-grupo { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.mop-evo .mc-pill[disabled], .mop-evo .mc-mini[disabled] { opacity: .45; cursor: not-allowed; }
+.mop-evo-el { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0 0 10px; font-size: 13px; }
+.mop-evo-chart { height: 320px; }
+.mop-evo-notas { margin: 8px 0 10px; padding-left: 18px; font-size: 12.5px; color: var(--c-text-soft); }
+.mop-evo-det { margin-top: 10px; }
+.mop-evo-det > summary { cursor: pointer; font-size: 13px; color: var(--c-text-soft); }
+@media (max-width: 600px) { .mop-evo-chart { height: 260px; } .mop-evo-ctl .mc-select { max-width: 100%; } }

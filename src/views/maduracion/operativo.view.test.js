@@ -712,9 +712,11 @@ describe('Maduración · operativo · 🧬 Lotes', () => {
          F6 (2026-09-21) · entra 🩺 Calidad del dato; Broodstock NO tiene pastilla, vive en 🧬 Lotes (decisión del usuario).
          F7 (2026-09-22) · entra 🖨 Reportes, la décima (decisión del usuario; `.mc-subnav` envuelve en el móvil).
          2 (2026-09-29) · 🦠, 🧬 y 🌊, que eran ventanas, entran al final como sub-vistas (decisión del usuario).
-         6 (2026-09-29) · 🦐 Alimentación sale de 🔄 Manejo y va tras ella, con su propia pastilla (decisión del usuario). */
+         6 (2026-09-29) · 🦐 Alimentación sale de 🔄 Manejo y va tras ella, con su propia pastilla (decisión del usuario).
+         Tarea 2 · ronda 9 (2026-10-27) · entra 📈 Evolución (decisión del usuario; no «Tendencias», por D-8), ANTES de
+         🖨 Reportes: el final de la sub-nav lo fijan dos decisiones anteriores (🦠 y 🧬 tras Reportes, 🌊 la última). */
       .toEqual(['📊 Estado actual', '🏠 Salas', '🧬 Lotes', '💀 Bajas', '🔍 Revisiones del supervisor',
-        '🛢 Tanques', '🥚 Reproducción', '🔄 Manejo', '🦐 Alimentación', '🩺 Calidad del dato', '🖨 Reportes',
+        '🛢 Tanques', '🥚 Reproducción', '🔄 Manejo', '🦐 Alimentación', '🩺 Calidad del dato', '📈 Evolución', '🖨 Reportes',
         '🦠 Microbiología y agua', '🧬 Biomol', '🌊 Mareas']);
     abrirLotes();
     expect([...root.querySelectorAll('[data-mop-lote]')].map((t) => t.dataset.mopLote)).toEqual(['QA', 'QB', 'QC', 'QD']);
