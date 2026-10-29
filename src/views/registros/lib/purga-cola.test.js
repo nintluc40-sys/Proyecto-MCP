@@ -43,13 +43,17 @@ function fnDelMotor(nombres, extra = {}) {
   return ctx.__api;
 }
 
+/* 2026-10-28 · las dos preguntan ahora a `_colaClaveCubierta` si una llave queda cubierta (en las fichas con VERSIÓN,
+   también por una posterior del mismo registro: cola-versiones.test.js); su lista se lee del motor, no se copia. */
+const COLA_CON_VERSION = JSON.parse(/const _COLA_CON_VERSION = (\[[^\]]*\]);/.exec(engine)[1]);
 /** Caja con una cola en memoria. `escrituras` cuenta las veces que se persistió. */
 function caja(inicial, fn = ['_purgeQueueMark']) {
   const est = { cola: inicial.slice(), escrituras: 0 };
-  const api = fnDelMotor(fn, {
+  const api = fnDelMotor(fn.concat('_colaClaveCubierta'), {
     _loadSyncQueue: () => est.cola.slice(),
     _saveSyncQueue: (x) => { est.cola = x; est.escrituras++; },
     SYNCQ_MAX: 50,
+    _COLA_CON_VERSION: COLA_CON_VERSION, isFinite,
   });
   return { ...api, est };
 }

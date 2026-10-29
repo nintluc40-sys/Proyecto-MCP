@@ -1785,6 +1785,24 @@ function _saveSyncQueue(q){
 function syncQueueLen(){ return _loadSyncQueue().length; }
 // Identidad de un envío de la cola: su huella y el momento en que entró (dos envíos idénticos no conviven: ver _enqueueSync).
 function _claveCola(it){ return (it && it.reqId || "") + "|" + (it && it.ts || 0); }
+/* 2026-10-28 (usuario: «Las 4 fichas con versión») · Las marcas con VERSIÓN —🎯 Score, 🧾 Auditoría y las dos de
+   🔧 Mantenimiento: su clave es «id@ts»— quedan cubiertas también por una versión POSTERIOR del mismo registro, que lleva
+   sus filas enteras (el GAS las cambia por ID, sin merge). Con las claves EXACTAS, una versión vieja encolada sin señal
+   seguía en la cola cuando la corregida salía directa, y al vaciarse la pisaba en la hoja (el dispositivo decía «enviado»). */
+const _COLA_CON_VERSION = ["score", "auditoria", "mntronda", "mnttrabajo"];
+function _colaClaveCubierta(kind, supKeys, k){
+  if(supKeys.has(k)) return true;
+  if(_COLA_CON_VERSION.indexOf(kind) === -1) return false;
+  const s = String(k), i = s.lastIndexOf("@");
+  if(i <= 0) return false;
+  const ts = Number(s.slice(i + 1));
+  if(!isFinite(ts)) return false;
+  for(const n of supKeys){
+    const t = String(n), j = t.lastIndexOf("@");
+    if(j > 0 && t.slice(0, j) === s.slice(0, i) && Number(t.slice(j + 1)) >= ts) return true;
+  }
+  return false;
+}
 
 // F3: `mark` (opcional) = { kind, keys[] } liga el envío a los registros locales
 // que representa (por clave de sesión), para que al entregarse desde la cola se
@@ -1819,7 +1837,7 @@ function _enqueueSync(payload, reqId, url, mark){
   if(mark && mark.kind && Array.isArray(mark.keys) && mark.keys.length){
     const supKeys = new Set(mark.keys);
     q = q.filter(it => !(it && it.mark && it.mark.kind === mark.kind &&
-      Array.isArray(it.mark.keys) && it.mark.keys.length && it.mark.keys.every(k => supKeys.has(k))));
+      Array.isArray(it.mark.keys) && it.mark.keys.length && it.mark.keys.every(k => _colaClaveCubierta(mark.kind, supKeys, k))));
   }
   q.push({ payload, reqId: reqId || "", url: url || "", ts: Date.now(), mark: (mark && mark.kind) ? mark : null });
   let _fuera = [];
@@ -1861,7 +1879,7 @@ function _purgeQueueMark(mark){
     const supKeys = new Set(mark.keys);
     const q  = _loadSyncQueue();
     const q2 = q.filter(it => !(it && it.mark && it.mark.kind === mark.kind &&
-      Array.isArray(it.mark.keys) && it.mark.keys.length && it.mark.keys.every(k => supKeys.has(k))));
+      Array.isArray(it.mark.keys) && it.mark.keys.length && it.mark.keys.every(k => _colaClaveCubierta(mark.kind, supKeys, k))));
     if(q2.length !== q.length) _saveSyncQueue(q2);
   }catch(_){}
 }
