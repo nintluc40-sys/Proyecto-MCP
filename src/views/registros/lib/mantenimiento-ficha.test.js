@@ -316,3 +316,54 @@ describe('Mantenimiento · el envío y la cola', () => {
     expect(H.loadMntRondas()[0].synced).toBe(true);
   });
 });
+
+/* 2026-10-28 (usuario: «Anularla en la hoja») · la hoja cambia las filas de una ronda por su ID y un equipo vacío no se
+   envía: corregir una ronda ENVIADA vaciando un equipo dejaba su fila vieja en la hoja, con su horómetro. */
+describe('Mantenimiento · corregir una ronda: los equipos que se vacían se ANULAN en la hoja', () => {
+  const enviar = async () => {
+    const envios = [];
+    H.setPost(async (payload) => { envios.push(payload); return true; });
+    await H.syncAllPendingMnt();
+    return envios;
+  };
+  const abrir = () => H.mntRondaAbrirEl(document.querySelector('#fp-mntronda button[data-mnt-id][onclick*="Abrir"]'));
+
+  it('🔴 vaciado y reenviado, su fila va con el MISMO ID, sin lecturas y «Anulada en la ficha»', async () => {
+    teclear(celda('BLW-01', 'horometro'), '1000');
+    teclear(celda('BLW-02', 'horometro'), '9000');
+    H.mntRondaGuardar();
+    const id = H.loadMntRondas()[0].id;
+    expect((await enviar())[0].rows.map((r) => r[2])).toEqual(['BLW-01', 'BLW-02']);
+    abrir();
+    teclear(celda('BLW-02', 'horometro'), '');
+    teclear(celda('BLW-03', 'horometro'), '9000');
+    H.mntRondaGuardar();
+    expect(H.ultimoAviso).toContain('(2 equipo(s) · 1 anulado(s))');
+    expect(document.querySelector('#fp-mntronda').textContent).toContain('2 equipo(s) · 1 anulado(s)');
+    const filas = (await enviar())[0].rows;
+    expect(filas.map((r) => r[2])).toEqual(['BLW-01', 'BLW-02', 'BLW-03']);
+    expect(filas[1]).toEqual([filas[0][0], filas[0][1], 'BLW-02', '', '', '', '', filas[0][7], 'Anulada en la ficha', id + '-BLW-02']);
+    expect(H.mntPendientes()).toBe(0);
+  });
+
+  it('una ronda que se vacía ENTERA se puede guardar y enviar: sólo lleva sus filas anuladas', async () => {
+    teclear(celda('BLW-04', 'horometro'), '513,38');
+    H.mntRondaGuardar();
+    await enviar();
+    abrir();
+    teclear(celda('BLW-04', 'horometro'), '');
+    H.mntRondaGuardar();
+    expect(H.ultimoAviso).not.toContain('anota al menos un equipo');
+    const filas = (await enviar())[0].rows;
+    expect(filas).toHaveLength(1);
+    expect(filas[0].slice(2, 9)).toEqual(['BLW-04', '', '', '', '', filas[0][7], 'Anulada en la ficha']);
+  });
+
+  it('lo que sólo se tecleó (nunca guardado) no se anula', async () => {
+    teclear(celda('BLW-01', 'horometro'), '1');
+    teclear(celda('BLW-01', 'horometro'), '');
+    teclear(celda('BLW-02', 'horometro'), '2');
+    H.mntRondaGuardar();
+    expect((await enviar())[0].rows.map((r) => r[2])).toEqual(['BLW-02']);
+  });
+});

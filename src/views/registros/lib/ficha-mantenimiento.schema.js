@@ -160,8 +160,20 @@ export function mntValidarRonda(d) {
       else if (v < r[0] || v > r[1]) err.push(q.codigo + ': ' + x.h + ' fuera de lo posible (' + r[0] + ' a ' + r[1] + ')');
     });
   });
-  if (!alguno) err.push('anota al menos un equipo');
+  // Una ronda corregida que sólo ANULA equipos (los vació todos) también se envía: lleva sus filas anuladas.
+  const anul = Array.isArray(m.anulados) ? m.anulados : [];
+  if (!alguno && !MNT_EQUIPOS.some((q) => anul.indexOf(q.codigo) !== -1)) err.push('anota al menos un equipo');
   return err;
+}
+/* Los equipos ANULADOS de una ronda que se guarda otra vez: los que su versión guardada anotó (o ya había anulado) y ésta
+   deja vacíos, en el orden de MNT_EQUIPOS (decisión del usuario, 2026-10-28: «Anularla en la hoja»). La hoja cambia las
+   filas por su ID y una vacía no se envía, así que sin esto la fila vieja seguía allí con su horómetro, el MAYOR del equipo. */
+export const MNT_ANULADA = 'Anulada en la ficha';
+export function mntAnulados(previa, d) {
+  const p = previa || {}, pe = p.equipos || {}, eqs = (d && d.equipos) || {};
+  const antes = (Array.isArray(p.anulados) ? p.anulados : [])
+    .concat(MNT_EQUIPOS.filter((q) => !mntLecturaVacia(pe[q.codigo])).map((q) => q.codigo));
+  return MNT_EQUIPOS.map((q) => q.codigo).filter((c) => antes.indexOf(c) !== -1 && mntLecturaVacia(eqs[c]));
 }
 
 /* ── Las filas de la hoja ───────────────────────────────── */
@@ -176,12 +188,17 @@ export function mntFilaTrabajo(d) {
     return sanitizeStr(m[c.k], c.max);
   });
 }
-/** Las filas de una ronda: una por equipo anotado, en el orden de MNT_EQUIPOS. Su ID = el de la ronda + el equipo. */
+/** Las filas de una ronda: una por equipo anotado, en el orden de MNT_EQUIPOS. Su ID = el de la ronda + el equipo. Un
+    equipo ANULADO lleva su fila con el mismo ID, sin lecturas y con MNT_ANULADA (la vista no la cuenta). */
 export function mntFilasRonda(d) {
-  const m = d || {}, eqs = m.equipos || {}, filas = [];
+  const m = d || {}, eqs = m.equipos || {}, filas = [], anul = Array.isArray(m.anulados) ? m.anulados : [];
   MNT_EQUIPOS.forEach((q) => {
     const e = eqs[q.codigo];
-    if (mntLecturaVacia(e)) return;
+    if (mntLecturaVacia(e)) {
+      if (anul.indexOf(q.codigo) !== -1) filas.push([esDia(m.fecha) ? m.fecha : '', mntEsHora(m.hora) ? m.hora : '', q.codigo]
+        .concat(MNT_LECTURAS.map(() => ''), [sanitizeStr(m.tecnico, 80), MNT_ANULADA, sanitizeStr(m.id, 50) + '-' + q.codigo]));
+      return;
+    }
     filas.push([esDia(m.fecha) ? m.fecha : '', mntEsHora(m.hora) ? m.hora : '', q.codigo]
       .concat(MNT_LECTURAS.map((x) => num(e[x.k])))
       .concat([sanitizeStr(m.tecnico, 80), sanitizeStr(e.obs, 300), sanitizeStr(m.id, 50) + '-' + q.codigo]));

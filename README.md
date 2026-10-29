@@ -380,7 +380,8 @@ volver a abrir esto, esto es lo que ya se midió:
   «Registro_Blowers_Kaeser» de Proyectos Mantenimiento. La **captura** es el módulo 16 de 📝 Registros («🔧 Mantenim.»,
   con su PIN): 📋 **Ronda** (lo que marca el tablero de cada equipo: horómetro, corriente, presión, temperatura) y 🔧
   **Trabajo** (una intervención: tipo, actividad del plan, horómetro, repuestos, costo, parada, estado), que escriben
-  **`Mantenimiento Lecturas`** y **`Mantenimiento Trabajos`** por su ID (el último, sin merge). La ficha técnica la llena
+  **`Mantenimiento Lecturas`** y **`Mantenimiento Trabajos`** por su ID (el último, sin merge; al corregir una ronda, el
+  equipo que se vacía se ANULA: su fila va con el mismo ID, sin lecturas y «Anulada en la ficha»). La ficha técnica la llena
   el área A MANO en **`Mantenimiento Equipos`** (ubicación, en servicio o stand by, ajuste del horómetro y desde cuándo,
   referencias de lectura, plena carga) y **`Mantenimiento Plan`** (intervalo de cada actividad en horas y en días, y el
   primer cambio): el repo es público, así que series y ubicaciones no viven en el código. La **vista** la ve el rol

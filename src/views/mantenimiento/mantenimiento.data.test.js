@@ -171,6 +171,18 @@ describe('Mantenimiento · 📈 lecturas', () => {
     const s = serie(leerLecturas(LIBRO.concat([L('24/10/2026', 'BLW-09', '210')])), m.equipos, 'BLW-09', 'horometro');
     expect(s.map((x) => x.v)).toEqual([534.51, 543.51]);
   });
+
+  /* 2026-10-28 (usuario: «Anularla en la hoja») · la ficha reenvía la fila de un equipo vaciado al corregir una ronda: mismo
+     ID, sin lecturas y «Anulada en la ficha». Ni el horómetro ni las lecturas la cuentan; el historial la enseña. */
+  it('🔴 una fila ANULADA por la ficha no cuenta para el horómetro ni para las lecturas; el historial la enseña', () => {
+    const anulada = L('23/10/2026', 'BLW-02', '', { Observaciones: 'Anulada en la ficha' });
+    const lec = leerLecturas(LIBRO.concat([anulada]));
+    const lista = horometros(lec, m.trabajos, m.equipos);
+    expect(horometroActual(lista, 'BLW-02').h).toBe(1028.42);
+    expect(lista.filter((x) => x.equipo === 'BLW-02' && x.fecha === '2026-10-23')).toEqual([]);
+    expect(resumenLecturas(lec, m.equipos).find((x) => x.equipo === 'BLW-02')).toMatchObject({ n: 1, estado: 'NORMAL' });
+    expect(historial({ trabajos: [], lecturas: lec, equipo: 'BLW-02' }).lecturas[0].observaciones).toBe('Anulada en la ficha');
+  });
 });
 
 describe('Mantenimiento · 📊 indicadores (la hoja «Estadísticas» del Excel)', () => {

@@ -22,7 +22,7 @@ const NOMBRES = ['MNT_TRAB_SHEET', 'MNT_LECT_SHEET', 'MNT_EQUIPOS', 'MNT_TIPOS',
   'MNT_TRAB_COLUMNS', 'MNT_TRAB_HEADERS', 'MNT_LECTURAS', 'MNT_LECT_HEADERS', 'mntEsHora', 'mntEquipo', 'mntNum',
   'mntParadaHoras', 'mntParada', 'mntNuevoId', 'mntValidarTrabajo', 'mntLecturaVacia', 'mntValidarRonda', 'mntFilaTrabajo',
   'mntFilasRonda', 'buildMntTrabajoPayload', 'buildMntRondaPayload', 'mntHorometros', 'mntHorometroBaja', 'mntAvisosRonda',
-  'mntAvisosTrabajo'];
+  'mntAvisosTrabajo', 'MNT_ANULADA', 'mntAnulados'];
 const ctx = { String, Number, Object, Array, JSON, Math, Date, isNaN, isFinite, sanitizeStr };
 ctx.globalThis = ctx;
 createContext(ctx);
@@ -48,6 +48,12 @@ const RONDAS = [
   ronda({ 'BLW-09': { horometro: '534,51', corriente: '61', obs: 'tablero atrasado' }, 'BLW-02': { horometro: '1028,42', presion: '4' } }),
   ronda({ 'BLW-02': { horometro: '1,028.42', presion: '40', temperatura: '-1' }, 'BLW-03': { corriente: 'x' } }),
   ronda({ 'BLW-11': { horometro: '164' }, 'BLW-99': { horometro: '1' } }, { fecha: '', hora: '7' }),
+  // Anulados (2026-10-28): con otro equipo leído, solos, uno que se volvió a anotar, uno inventado y una lista que no es lista.
+  ronda({ 'BLW-01': { horometro: '1000' } }, { anulados: ['BLW-02', 'BLW-07'] }),
+  ronda({}, { anulados: ['BLW-03'], tecnico: '=x' }),
+  ronda({ 'BLW-02': { horometro: '9000' } }, { anulados: ['BLW-02'] }),
+  ronda({}, { anulados: ['BLW-99'] }),
+  ronda({}, { anulados: 'BLW-02' }),
 ];
 const LISTA = [{ data: ronda({ 'BLW-03': { horometro: '927,30' }, 'BLW-04': { horometro: '513,38' } }) }];
 const TRAB_LISTA = [{ data: trabajo({ id: 'MT-x', fecha: '2026-10-25', horometro: '1000' }) }, { data: trabajo({ fecha: 'x' }) }];
@@ -83,6 +89,15 @@ describe('PARIDAD · Mantenimiento · el bloque de engine.js dice lo mismo que e
     expect(J(E.mntValidarRonda(r))).toBe(J(M.mntValidarRonda(r)));
     expect(J(E.mntFilasRonda(r))).toBe(J(M.mntFilasRonda(r)));
     expect(E.mntLecturaVacia(r && r.equipos && r.equipos['BLW-01'])).toBe(M.mntLecturaVacia(r && r.equipos && r.equipos['BLW-01']));
+  });
+
+  it('mntAnulados: lo que la versión guardada anotó o anuló y la nueva deja vacío', () => {
+    const v1 = ronda({ 'BLW-01': { horometro: '1000' }, 'BLW-02': { horometro: '9000' }, 'BLW-05': { obs: 'ruido' } });
+    [[v1, ronda({ 'BLW-01': { horometro: '1000' } })], [v1, ronda({})], [v1, v1], [null, ronda({})], [undefined, null],
+      [ronda({}, { anulados: ['BLW-04', 'BLW-99'] }), ronda({ 'BLW-01': { horometro: '1' } })],
+      [ronda({}, { anulados: ['BLW-04'] }), ronda({ 'BLW-04': { horometro: '2' } })], [ronda({}, { anulados: 'BLW-04' }), ronda({})]]
+      .forEach(([p, d]) => expect(J(E.mntAnulados(p, d)), J([p, d])).toBe(J(M.mntAnulados(p, d))));
+    expect(E.MNT_ANULADA).toBe(M.MNT_ANULADA);
   });
 
   it('los envíos', () => {

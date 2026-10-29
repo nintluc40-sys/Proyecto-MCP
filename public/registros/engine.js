@@ -20926,8 +20926,21 @@ function mntValidarRonda(d){
       else if(v < r[0] || v > r[1]) err.push(q.codigo + ": " + x.h + " fuera de lo posible (" + r[0] + " a " + r[1] + ")");
     });
   });
-  if(!alguno) err.push("anota al menos un equipo");
+  // Una ronda corregida que sólo ANULA equipos (los vació todos) también se envía: lleva sus filas anuladas.
+  const anul = Array.isArray(m.anulados) ? m.anulados : [];
+  if(!alguno && !MNT_EQUIPOS.some(function(q){ return anul.indexOf(q.codigo) !== -1; })) err.push("anota al menos un equipo");
   return err;
+}
+/* Los equipos ANULADOS de una ronda que se guarda otra vez: los que su versión guardada anotó (o ya había anulado) y ésta
+   deja vacíos, en el orden de MNT_EQUIPOS (decisión del usuario, 2026-10-28: «Anularla en la hoja»). La hoja cambia las
+   filas por su ID y una vacía no se envía, así que sin esto la fila vieja seguía allí con su horómetro, el MAYOR del equipo. */
+const MNT_ANULADA = "Anulada en la ficha";
+function mntAnulados(previa, d){
+  const p = previa || {}, pe = p.equipos || {}, eqs = (d && d.equipos) || {};
+  const antes = (Array.isArray(p.anulados) ? p.anulados : [])
+    .concat(MNT_EQUIPOS.filter(function(q){ return !mntLecturaVacia(pe[q.codigo]); }).map(function(q){ return q.codigo; }));
+  return MNT_EQUIPOS.map(function(q){ return q.codigo; })
+    .filter(function(c){ return antes.indexOf(c) !== -1 && mntLecturaVacia(eqs[c]); });
 }
 /** La fila de un trabajo, en el orden de MNT_TRAB_HEADERS. */
 function mntFilaTrabajo(d){
@@ -20940,12 +20953,17 @@ function mntFilaTrabajo(d){
     return sanitizeStr(m[c.k], c.max);
   });
 }
-/** Las filas de una ronda: una por equipo anotado, en el orden de MNT_EQUIPOS. Su ID = el de la ronda + el equipo. */
+/** Las filas de una ronda: una por equipo anotado, en el orden de MNT_EQUIPOS. Su ID = el de la ronda + el equipo. Un
+    equipo ANULADO lleva su fila con el mismo ID, sin lecturas y con MNT_ANULADA (la vista no la cuenta). */
 function mntFilasRonda(d){
-  const m = d || {}, eqs = m.equipos || {}, filas = [];
+  const m = d || {}, eqs = m.equipos || {}, filas = [], anul = Array.isArray(m.anulados) ? m.anulados : [];
   MNT_EQUIPOS.forEach(function(q){
     const e = eqs[q.codigo];
-    if(mntLecturaVacia(e)) return;
+    if(mntLecturaVacia(e)){
+      if(anul.indexOf(q.codigo) !== -1) filas.push([_mntEsDia(m.fecha) ? m.fecha : "", mntEsHora(m.hora) ? m.hora : "", q.codigo]
+        .concat(MNT_LECTURAS.map(function(){ return ""; }), [sanitizeStr(m.tecnico, 80), MNT_ANULADA, sanitizeStr(m.id, 50) + "-" + q.codigo]));
+      return;
+    }
     filas.push([_mntEsDia(m.fecha) ? m.fecha : "", mntEsHora(m.hora) ? m.hora : "", q.codigo]
       .concat(MNT_LECTURAS.map(function(x){ return _mntNumO(e[x.k]); }))
       .concat([sanitizeStr(m.tecnico, 80), sanitizeStr(e.obs, 300), sanitizeStr(m.id, 50) + "-" + q.codigo]));
@@ -21141,6 +21159,12 @@ function mntTrabCampo(el){
    hoja). */
 function _mntRegistrar(ronda){
   const m = ronda ? _mntRondaActual() : _mntTrabActual();
+  // Lo que la versión guardada de esta ronda anotó y ésta deja vacío se ANULA en la hoja (mntAnulados).
+  if(ronda){
+    const previa = _mntRaw(MNT_RONDA_KEY).find(function(r){ return r && r.id === m.id; });
+    const anul = mntAnulados(previa && previa.data, m);
+    if(anul.length) m.anulados = anul; else delete m.anulados;
+  }
   const err = ronda ? mntValidarRonda(m) : mntValidarTrabajo(m);
   if(err.length){ toast("⚠ " + err.join(" · "), "warn", 8000); return null; }
   const lista = mntHorometros(loadMntRondas(), loadMntTrabajos());
@@ -21157,10 +21181,16 @@ function _mntRegistrar(ronda){
   else { _mntTrab = _mntTrabNuevo(); _mntGuardarTrab(); }
   return rec;
 }
+// «3 equipo(s)», y « · 1 anulado(s)» si los hay: las filas anuladas no son equipos leídos.
+function _mntRondaCuenta(d){
+  const eqs = (d && d.equipos) || {}, n = MNT_EQUIPOS.filter(function(q){ return !mntLecturaVacia(eqs[q.codigo]); }).length;
+  const a = mntFilasRonda(d).length - n;
+  return n + " equipo(s)" + (a > 0 ? " · " + a + " anulado(s)" : "");
+}
 function mntRondaGuardar(){
   const rec = _mntRegistrar(true);
   if(!rec) return;
-  toast("💾 Ronda guardada en este dispositivo (" + mntFilasRonda(rec.data).length + " equipo(s)): pendiente de enviar", "ok");
+  toast("💾 Ronda guardada en este dispositivo (" + _mntRondaCuenta(rec.data) + "): pendiente de enviar", "ok");
   renderMntRonda(); updateDots(); updateSyncUI();
 }
 async function mntRondaEnviar(){
@@ -21290,7 +21320,7 @@ function _mntGuardados(ronda){
   return l.map(function(r){
     const d = r.data || {};
     const txt = ronda
-      ? escapeHtml(d.fecha || "") + (d.hora ? " " + escapeHtml(d.hora) : "") + " · " + mntFilasRonda(d).length + " equipo(s)"
+      ? escapeHtml(d.fecha || "") + (d.hora ? " " + escapeHtml(d.hora) : "") + " · " + _mntRondaCuenta(d)
       : escapeHtml(d.fecha || "") + " · " + escapeHtml(d.equipo || "") + " · " + escapeHtml(d.actividad || "") + " · " + escapeHtml(d.estado || "");
     return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:11px">'
       + '<span>'+(r.synced ? "✅" : "📶")+' '+txt+(r.synced ? "" : ' <b style="color:#b45309">pendiente</b>')+'</span>'
@@ -21327,7 +21357,8 @@ function renderMntRonda(){
   }).join("");
   const tabla = '<div style="overflow-x:auto"><table class="ft" style="font-size:12px"><thead><tr><th>Equipo</th><th>Horómetro (h)</th>'
     + '<th>Corriente (A)</th><th>Presión (psi)</th><th>Temp. (°C)</th><th>Observación</th></tr></thead><tbody>' + filas + '</tbody></table></div>'
-    + '<div style="font-size:11px;color:#64748b;margin-top:4px">Lo que marca el tablero. Sólo se envían los equipos con algo anotado.</div>';
+    + '<div style="font-size:11px;color:#64748b;margin-top:4px">Lo que marca el tablero. Sólo se envían los equipos con algo anotado;'
+    + ' al corregir una ronda guardada, el equipo que vacíes se anula en la hoja.</div>';
   fp.innerHTML = _mntCaja("📋 Ronda · lecturas de los blowers", MNT_LECT_SHEET, cab + tabla
     + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'
     +   '<button class="btn" type="button" onclick="mntRondaGuardar()">💾 Guardar en el equipo</button>'

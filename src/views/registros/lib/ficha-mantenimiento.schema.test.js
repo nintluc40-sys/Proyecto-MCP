@@ -10,7 +10,7 @@ import {
   MNT_TRAB_SHEET, MNT_LECT_SHEET, MNT_EQUIPOS, MNT_TIPOS, MNT_ACTIVIDADES, MNT_ESTADOS, MNT_TRAB_HEADERS, MNT_LECT_HEADERS,
   mntNum, mntParadaHoras, mntParada, mntNuevoId, mntValidarTrabajo, mntValidarRonda, mntLecturaVacia, mntFilaTrabajo,
   mntFilasRonda, buildMntTrabajoPayload, buildMntRondaPayload, mntHorometros, mntHorometroBaja, mntAvisosRonda,
-  mntAvisosTrabajo,
+  mntAvisosTrabajo, MNT_ANULADA, mntAnulados,
 } from './ficha-mantenimiento.schema.js';
 
 const trabajo = (v = {}) => ({ id: 'MT-2026-10-21-abc', fecha: '2026-10-21', equipo: 'BLW-03', tipo: 'Preventivo',
@@ -156,6 +156,44 @@ describe('Mantenimiento · las filas de la hoja', () => {
     const r = buildMntRondaPayload([{ data: ronda({ 'BLW-01': { horometro: '1' }, 'BLW-04': { horometro: '2' } }) }]);
     expect(r.sheetName).toBe(MNT_LECT_SHEET);
     expect(r.rows).toHaveLength(2);
+  });
+});
+
+/* 2026-10-28 (usuario: «Anularla en la hoja») · corregir una ronda ya guardada vaciando un equipo: la hoja cambia las filas
+   por su ID y una vacía no se envía, así que la vieja se quedaba allí con su horómetro (el MAYOR del equipo). */
+describe('Mantenimiento · los equipos ANULADOS de una ronda corregida', () => {
+  const v1 = ronda({ 'BLW-01': { horometro: '1000' }, 'BLW-02': { horometro: '9000' } });
+
+  it('se anula lo que la versión guardada anotó y la nueva deja vacío; lo que sigue anotado, no', () => {
+    expect(mntAnulados(v1, ronda({ 'BLW-01': { horometro: '1000' }, 'BLW-03': { horometro: '9000' } }))).toEqual(['BLW-02']);
+    expect(mntAnulados(v1, ronda({}))).toEqual(['BLW-01', 'BLW-02']);
+    expect(mntAnulados(v1, v1)).toEqual([]);
+    expect(mntAnulados(null, ronda({}))).toEqual([]);   // la primera vez que se guarda no hay nada que anular
+  });
+
+  it('lo ya anulado se arrastra en las versiones siguientes, salvo que se vuelva a anotar', () => {
+    const v2 = ronda({ 'BLW-01': { horometro: '1000' } }, { anulados: ['BLW-02'] });
+    expect(mntAnulados(v2, ronda({ 'BLW-01': { horometro: '1001' } }))).toEqual(['BLW-02']);
+    expect(mntAnulados(v2, ronda({ 'BLW-01': { horometro: '1001' }, 'BLW-02': { horometro: '8000' } }))).toEqual([]);
+  });
+
+  it('su fila lleva el MISMO ID, sin lecturas y con «Anulada en la ficha», en el orden de los equipos', () => {
+    const filas = mntFilasRonda(ronda({ 'BLW-03': { horometro: '9000' } }, { anulados: ['BLW-02'] }));
+    expect(filas.map((r) => r[2])).toEqual(['BLW-02', 'BLW-03']);
+    expect(filas[0]).toEqual(['2026-10-22', '12:04', 'BLW-02', '', '', '', '', 'Técnico A', MNT_ANULADA, 'MR-2026-10-22-xyz-BLW-02']);
+    expect(MNT_ANULADA).toBe('Anulada en la ficha');
+  });
+
+  it('un equipo anulado que se vuelve a anotar sale con sus lecturas, no anulado; uno inventado no sale', () => {
+    const filas = mntFilasRonda(ronda({ 'BLW-02': { horometro: '8000' } }, { anulados: ['BLW-02', 'BLW-99'] }));
+    expect(filas).toHaveLength(1);
+    expect(filas[0][3]).toBe(8000);
+  });
+
+  it('una ronda que sólo anula (se vació entera) se puede guardar; una vacía sin nada que anular, no', () => {
+    expect(mntValidarRonda(ronda({}, { anulados: ['BLW-02'] }))).toEqual([]);
+    expect(mntValidarRonda(ronda({}, { anulados: [] }))).toEqual(['anota al menos un equipo']);
+    expect(mntValidarRonda(ronda({}, { anulados: ['BLW-99'] }))).toEqual(['anota al menos un equipo']);
   });
 });
 
