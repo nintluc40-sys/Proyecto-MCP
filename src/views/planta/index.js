@@ -26,7 +26,7 @@ import { esc } from '../../core/format.js';
 import { store, on, EV } from '../../core/store.js';
 import { asegurarLibro } from '../../core/refresh.js';
 import { estadoPlantaPorPartes, estadoMaduracion, cronogramaPlanta, hoyLocal } from './estado.js';
-import { cifrasGerencia } from './cifras.js';
+import { cifrasGerencia, mesYCierre } from './cifras.js';
 
 /** Cede el turno al navegador (pinta y atiende toques) y sigue enseguida. Por MessageChannel y no por setTimeout: con la
  *  pestaña en segundo plano los temporizadores se espacian a 1 s y el cálculo por partes tardaría segundos de más. */
@@ -107,7 +107,8 @@ const MAQUETA = `
    misma interfaz ({ pintarEstado, aviso, alElegirMes }), y el equipo recuerda la última elección (planta_modo). Cada una
    se carga sólo al elegirla: en Análisis no se descarga three.js.
    M3 (2026-10-27, usuario) · y un tercero, «🦐 Broodstock» (broodstock.js): el mapa 2D de las piscinas de Broodstock, con
-   la misma interfaz y también sin three.js. */
+   la misma interfaz y también sin three.js. Sólo le hace falta el mes de la foto: no espera el cálculo de los otros dos
+   (hallazgo 4, ronda 11; ver `soloElMes` en `pintar`). */
 const MODO_KEY = 'planta_modo';
 const MODOS = ['maqueta', 'analisis', 'broodstock'];
 const leerModo = () => { try { const m = localStorage.getItem(MODO_KEY); return MODOS.includes(m) ? m : 'maqueta'; } catch (_) { return 'maqueta'; } };
@@ -157,6 +158,17 @@ export function plantaView(root) {
     if (larv) try { crono = cronogramaPlanta(larv.modulos, pasado ? pasado.cierre : hoy); } catch (e) { console.error('[planta] cronograma', e); fallos.push('cronograma (' + e.message + ')'); }
     return { cifras, pasado, larv, mad, crono, fallos };
   };
+  // Hallazgo 4 (auditoría de la Sesión A, 28-10; ronda 11, Sesión B): el mapa 🦐 sólo usa el MES de la foto (`E.mes`). Ya
+  // no espera el cálculo entero (3,2–4,1 s con la CPU ×4, medido con el libro real) ni enseña los fallos de lo que no usa:
+  // pide sólo el mes y su cierre (~50 ms) y pinta enseguida. Un cálculo entero que siga en curso (de Maqueta o Análisis)
+  // se guarda en la memoria, pero no repinta el mapa ni le avisa: al volver a esos modos se aprovecha.
+  const soloElMes = () => modo === 'broodstock';
+  const calcularSoloElMes = (hoy, mes) => {
+    const fallos = [];
+    let m = null;
+    try { m = mesYCierre(hoy, mes); } catch (e) { console.error('[planta] mes', e); fallos.push('el mes elegido (' + e.message + ')'); }
+    return { cifras: null, pasado: m && !m.actual ? m : null, larv: null, mad: null, crono: null, fallos };
+  };
   // El cálculo en curso: sólo pinta si sigue siendo el último pedido (llegó otro libro, cambió el día o el mes, o se
   // pintó un mes ya guardado: entonces se descarta). Un mes recién calculado se guarda aunque ya no se pinte.
   let enCurso = null;
@@ -185,6 +197,7 @@ export function plantaView(root) {
     aceptados = store.globalData; aviso.hidden = true;   // pintar es enseñar lo último: el aviso sobra
     const hoy = hoyLocal();
     if (memo.datos !== store.globalData || memo.hoy !== hoy) memo = { datos: store.globalData, hoy, meses: new Map() };
+    if (soloElMes()) { pintarCalculo(calcularSoloElMes(hoy, mesElegido)); return; }   // hallazgo 4: ver soloElMes
     const calc = memo.meses.get(mesElegido);
     if (calc) { enCurso = null; pintarCalculo(calc); return; }
     if (enCurso && enCurso.memo === memo && enCurso.mes === mesElegido) return;   // ya se está calculando ese mismo
@@ -193,13 +206,13 @@ export function plantaView(root) {
       if (!c.fallos.length && yo.memo === memo) yo.memo.meses.set(yo.mes, c);
       if (enCurso !== yo) return;
       enCurso = null;
-      if (vista && marco.isConnected) pintarCalculo(c);
+      if (vista && marco.isConnected && !soloElMes()) pintarCalculo(c);   // el mapa 🦐 ya se pintó con su mes
     }).catch((e) => {
       // Pauta 16 (2026-10-22, usuario) · si algo de aquí falla sin atrapar, se libera el cálculo en curso —si no, ese mes
       // no se volvía a calcular hasta que cambiaran los datos o el día, y el panel se quedaba en «Cargando…»— y se avisa.
       console.error('[planta] calcular', e);
       if (enCurso === yo) enCurso = null;
-      try { if (vista && marco.isConnected) vista.aviso('No se pudieron poner al día los datos: ' + ((e && e.message) || e)); } catch (_) { /* ya se registró */ }
+      try { if (vista && marco.isConnected && !soloElMes()) vista.aviso('No se pudieron poner al día los datos: ' + ((e && e.message) || e)); } catch (_) { /* ya se registró */ }
     });
   };
   const pintarCalculo = (calc) => {

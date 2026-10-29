@@ -10,7 +10,7 @@
    ============================================================ */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { store } from '../../core/store.js';
-import { cifrasGerencia, normalizarMeta, META_POR_DEFECTO, META_N5_DIA, DIAS_PRODUCCION_N5 } from './cifras.js';
+import { cifrasGerencia, mesYCierre, normalizarMeta, META_POR_DEFECTO, META_N5_DIA, DIAS_PRODUCCION_N5 } from './cifras.js';
 
 const larv = (mod, cor, tq, fecha, pob, extra = {}) => ({ _SheetOrigin: 'Larvicultura', Fecha: fecha, Corrida: cor, 'Módulo': mod, Tanque: tq, 'Población': pob, ...extra });
 const DES = (fecha, lote, desoves, n5) => ({ _SheetOrigin: 'Maduracion', Fecha: fecha, Lote: lote, 'Código genético': 'CA',
@@ -103,6 +103,20 @@ describe('cifras de gerencia · selector de mes (como la tabla Producción Omars
   it('un mes que no tiene datos (o ninguno) vuelve al último', () => {
     expect(cifrasGerencia(store.globalData, '2030-09-20', 9999).pos).toBe(1);
     expect(cifrasGerencia(store.globalData, '2030-09-20', undefined).pos).toBe(1);
+  });
+
+  it('hallazgo 4 (ronda 11): mesYCierre es la MISMA regla —mes, posición, actual y cierre— sin calcular la producción', () => {
+    const pick = (x) => ({ mes: x.mes, mIdx: x.mIdx, pos: x.pos, actual: x.actual, cierre: x.cierre });
+    for (const [hoy, m] of [['2030-09-20', C.meses[0].mIdx], ['2030-09-20', C.meses[1].mIdx], ['2030-09-20', 9999], ['2030-09-20', undefined],
+      ['2030-08-15', C.meses[0].mIdx]]) {
+      expect(pick(mesYCierre(hoy, m)), hoy + ' · ' + m).toEqual(pick(cifrasGerencia(store.globalData, hoy, m)));
+    }
+    // un mes pasado cuyo mes de calendario aún no acabó se pinta HOY, no a su cierre (sin pasar de hoy)
+    expect(mesYCierre('2030-08-15', C.meses[0].mIdx)).toMatchObject({ actual: false, cierre: '2030-08-15' });
+    expect(mesYCierre('2030-09-20', C.meses[0].mIdx)).toMatchObject({ actual: false, cierre: '2030-08-31' });
+    const antes = store.globalData;
+    store.globalData = [];
+    try { expect(mesYCierre('2030-09-20')).toBeNull(); } finally { store.globalData = antes; }
   });
 });
 

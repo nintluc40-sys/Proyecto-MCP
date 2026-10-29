@@ -26,7 +26,10 @@ vi.mock('./estado.js', () => ({
   cronogramaPlanta: () => ({ modulos: {} }),
   hoyLocal: () => '2026-10-06',
 }));
-vi.mock('./cifras.js', () => ({ cifrasGerencia: () => null }));
+// hallazgo 4 (ronda 11) · el mes de la foto que pide el mapa 🦐: null = sin meses (la foto es hoy), o el que fije la prueba
+let mesDeLaFoto = null;
+const mesYCierre = vi.fn(() => mesDeLaFoto);
+vi.mock('./cifras.js', () => ({ cifrasGerencia: () => null, mesYCierre: (...a) => mesYCierre(...a) }));
 
 const { plantaView } = await import('./index.js');
 const { store, emit, EV } = await import('../../core/store.js');
@@ -37,6 +40,7 @@ const elegir = (modo) => root.querySelector('[data-modo="' + modo + '"]').click(
 
 beforeEach(() => {
   montarPlanta.mockClear(); montarAnalisis.mockClear(); montarBroodstock.mockClear(); estadoPlantaPorPartes.mockClear(); calculos.length = 0;
+  mesYCierre.mockClear(); mesDeLaFoto = null;
   store.connected = false; store.globalData = [];
   localStorage.removeItem('planta_modo');
   document.body.innerHTML = '<div id="r"></div>';
@@ -141,6 +145,115 @@ describe('🏭 Planta · al llegar datos calcula por partes y pinta al acabar (p
     expect(conDatos(analisis)).toHaveLength(1);
     expect(conDatos(analisis)[0][0].modulos).toEqual({ nuevo: 1 });
     expect(estadoPlantaPorPartes).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('🏭 Planta · el mapa 🦐 sólo pide el mes de su foto (hallazgo 4 de la auditoría de la A; ronda 11, Sesión B)', () => {
+  const conDatos = (v) => v.pintarEstado.mock.calls.filter((c) => c[0]);
+  const ultimoAviso = (v) => v.aviso.mock.calls.at(-1)[0];
+  const tresTurnos = async () => { await espera(); await espera(); await espera(); };
+
+  it('con datos se pinta YA, sin lanzar el cálculo de la Maqueta: la foto de hoy y «puestos al día»', async () => {
+    localStorage.setItem('planta_modo', 'broodstock');
+    mesDeLaFoto = { mes: 'Octubre 2026', cierre: '2026-10-06', actual: true };   // el mes en curso
+    store.connected = true; store.globalData = [{ a: 1 }];
+    plantaView(root);
+    await vi.waitFor(() => expect(montarBroodstock).toHaveBeenCalledTimes(1));
+    const mapa = montarBroodstock.mock.results[0].value;
+    await vi.waitFor(() => expect(conDatos(mapa)).toHaveLength(1));
+    expect(estadoPlantaPorPartes, 'no espera ni lanza el cálculo de larvicultura').not.toHaveBeenCalled();
+    expect(mesYCierre).toHaveBeenCalledWith('2026-10-06', null);
+    expect(conDatos(mapa)[0][0].mes).toBeNull();   // el mes en curso: la foto es hoy
+    expect(ultimoAviso(mapa)).toMatch(/^Datos del MCP · puestos al día a las [^·]+$/);
+  });
+
+  it('si saber el mes falla, lo dice (es lo único que el mapa pide) y pinta la foto de hoy', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      localStorage.setItem('planta_modo', 'broodstock');
+      mesYCierre.mockImplementationOnce(() => { throw new Error('mes raro'); });
+      store.connected = true; store.globalData = [{ a: 1 }];
+      plantaView(root);
+      await vi.waitFor(() => expect(montarBroodstock).toHaveBeenCalledTimes(1));
+      const mapa = montarBroodstock.mock.results[0].value;
+      await vi.waitFor(() => expect(conDatos(mapa)).toHaveLength(1));
+      expect(conDatos(mapa)[0][0].mes).toBeNull();
+      expect(ultimoAviso(mapa)).toBe('No se pudo calcular: el mes elegido (mes raro)');
+      expect(err).toHaveBeenCalledWith('[planta] mes', expect.any(Error));
+    } finally { err.mockRestore(); }
+  });
+
+  it('un mes pasado elegido en la Maqueta llega al mapa con su cierre, y el aviso lo dice', async () => {
+    store.connected = true; store.globalData = [{ a: 1 }];
+    plantaView(root);
+    await vi.waitFor(() => expect(calculos).toHaveLength(1));
+    const maqueta = montarPlanta.mock.results[0].value;
+    mesDeLaFoto = { mes: 'Septiembre 2026', cierre: '2026-09-30', actual: false };
+    maqueta.alElegirMes.mock.calls[0][0](3, false);   // elegir septiembre
+    elegir('broodstock');
+    await vi.waitFor(() => expect(montarBroodstock).toHaveBeenCalledTimes(1));
+    const mapa = montarBroodstock.mock.results[0].value;
+    await vi.waitFor(() => expect(conDatos(mapa)).toHaveLength(1));
+    expect(mesYCierre).toHaveBeenLastCalledWith('2026-10-06', 3);
+    expect(conDatos(mapa)[0][0].mes).toEqual({ mes: 'Septiembre 2026', cierre: '2026-09-30' });
+    expect(ultimoAviso(mapa)).toMatch(/mostrando Septiembre 2026 \(maduración al 30\/09\)$/);
+  });
+
+  it('un cálculo entero en curso no repinta el mapa ni le avisa; al volver a la Maqueta sale de la memoria, sin repetirlo', async () => {
+    store.connected = true; store.globalData = [{ a: 1 }];
+    plantaView(root);
+    await vi.waitFor(() => expect(calculos).toHaveLength(1));   // la Maqueta empezó a calcular…
+    const maqueta = montarPlanta.mock.results[0].value;
+    elegir('broodstock');                                        // …y se pasa al mapa antes de que acabe
+    await vi.waitFor(() => expect(montarBroodstock).toHaveBeenCalledTimes(1));
+    const mapa = montarBroodstock.mock.results[0].value;
+    await vi.waitFor(() => expect(conDatos(mapa)).toHaveLength(1));
+    const avisos = mapa.aviso.mock.calls.length;
+    calculos[0]({ modulos: { m: 1 }, resumen: null });           // acaba el de la Maqueta
+    await tresTurnos();
+    expect(conDatos(mapa), 'no lo repinta').toHaveLength(1);
+    expect(mapa.aviso.mock.calls.length, 'ni le avisa').toBe(avisos);
+    elegir('maqueta'); await espera();
+    expect(conDatos(maqueta)).toHaveLength(1);
+    expect(conDatos(maqueta)[0][0].modulos).toEqual({ m: 1 });
+    expect(estadoPlantaPorPartes).toHaveBeenCalledTimes(1);
+  });
+
+  it('…y si se vuelve a la Maqueta ANTES de que acabe, espera ese mismo cálculo (no lanza otro) y lo pinta', async () => {
+    store.connected = true; store.globalData = [{ a: 1 }];
+    plantaView(root);
+    await vi.waitFor(() => expect(calculos).toHaveLength(1));
+    const maqueta = montarPlanta.mock.results[0].value;
+    elegir('broodstock');
+    await vi.waitFor(() => expect(montarBroodstock).toHaveBeenCalledTimes(1));
+    elegir('maqueta'); await tresTurnos();
+    expect(calculos).toHaveLength(1);
+    calculos[0]({ modulos: { m: 2 }, resumen: null });
+    await vi.waitFor(() => expect(conDatos(maqueta)).toHaveLength(1));
+    expect(conDatos(maqueta)[0][0].modulos).toEqual({ m: 2 });
+    expect(estadoPlantaPorPartes).toHaveBeenCalledTimes(1);
+  });
+
+  it('si ese cálculo en curso se RECHAZA, el fallo no sale en el mapa (no es suyo); la Maqueta lo calcula al volver', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const real = globalThis.MessageChannel;
+    try {
+      store.connected = true; store.globalData = [{ a: 1 }];
+      plantaView(root);
+      await vi.waitFor(() => expect(calculos).toHaveLength(1));
+      elegir('broodstock');
+      await vi.waitFor(() => expect(montarBroodstock).toHaveBeenCalledTimes(1));
+      const mapa = montarBroodstock.mock.results[0].value;
+      await vi.waitFor(() => expect(conDatos(mapa)).toHaveLength(1));
+      // el siguiente `ceder()` del cálculo de la Maqueta falla: su promesa se rechaza
+      globalThis.MessageChannel = function () { globalThis.MessageChannel = real; throw new Error('sin canal'); };
+      calculos[0]({ modulos: { m: 1 }, resumen: null });
+      await vi.waitFor(() => expect(err).toHaveBeenCalledWith('[planta] calcular', expect.any(Error)));
+      await tresTurnos();
+      expect(mapa.aviso.mock.calls.map((c) => c[0]).filter((t) => /No se pudieron poner al día/.test(t))).toEqual([]);
+      elegir('maqueta');
+      await vi.waitFor(() => expect(calculos).toHaveLength(2));   // el mes no quedó bloqueado: se calcula de nuevo
+    } finally { globalThis.MessageChannel = real; err.mockRestore(); }
   });
 });
 

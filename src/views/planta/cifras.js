@@ -39,16 +39,30 @@ export const META_N5_DIA = 65e6;
 export const DIAS_PRODUCCION_N5 = 26;
 
 /**
- * Las cifras de un mes de producción: `mIdx` si es uno de los meses con datos; si no (o sin él), el último.
+ * El mes que se mira y el día de su foto: `mIdx` si es uno de los meses con datos; si no (o sin él), el último. El mes en
+ * curso (el último) es HOY; uno pasado se pinta al cierre de su mes de calendario, sin pasar de hoy. Trae también los meses
+ * con datos, en orden, y la posición del elegido (`pos`). null si no hay ninguna corrida con mes.
+ * Es la regla de `cifrasGerencia`, aparte (hallazgo 4 de la auditoría de la Sesión A, 28-10; ronda 11, Sesión B): el mapa
+ * 🦐 Broodstock sólo necesita esto y ya no espera el cálculo entero de la vista. La regla sigue en un solo sitio.
+ */
+export function mesYCierre(hoy, mIdxElegido) {
+  const meses = presentMonths();
+  if (!meses.length) return null;
+  const pos = meses.includes(mIdxElegido) ? meses.indexOf(mIdxElegido) : meses.length - 1;
+  const mIdx = meses[pos], actual = pos === meses.length - 1, rango = calendarRangeOfMonth(mIdx);
+  return { mIdx, pos, meses, mes: monthLabelAt(mIdx), actual, cierre: actual || !rango ? hoy : (rango.hasta < hoy ? rango.hasta : hoy) };
+}
+
+/**
+ * Las cifras de un mes de producción: el de `mesYCierre` (el elegido o el último), con su foto.
  * `filas`: todas las del store (los desoves salen de ahí). `hoy`: `aaaa-mm-dd`, recorta los nauplios.
  * Trae también los meses con datos, en orden, y la posición del elegido (`pos`), para el selector.
  * null si no hay ninguna corrida con mes.
  */
 export function cifrasGerencia(filas, hoy, mIdxElegido) {
-  const meses = presentMonths();
-  if (!meses.length) return null;
-  const pos = meses.includes(mIdxElegido) ? meses.indexOf(mIdxElegido) : meses.length - 1;
-  const mIdx = meses[pos];
+  const elegido = mesYCierre(hoy, mIdxElegido);
+  if (!elegido) return null;
+  const { mIdx, pos, meses } = elegido;
   const corridas = corridasOfMonth(mIdx);
   let siembra = 0, total = 0, despachado = 0, despachadoCorridas = 0, modulos = 0, modulosDespachados = 0;
   for (const cor of corridas) {
@@ -62,7 +76,6 @@ export function cifrasGerencia(filas, hoy, mIdxElegido) {
     }
     if (modsCor && entera) despachadoCorridas += cosechaCor;   // B1: el criterio del «Subtotal actual» de la tabla
   }
-  const rango = calendarRangeOfMonth(mIdx);
   // 2026-10-18 (usuario, opción A) · el mes de producción arranca ~2 semanas antes que el de calendario de su nombre: mientras
   // éste no haya empezado, los nauplios y desoves son los del mes de calendario EN CURSO, y se dice (`adelantado`). Antes,
   // esas 2 semanas de cada mes, la tarjeta por defecto daba la maduración en cero («01/11 al 30/11»: aún no había llegado).
@@ -70,10 +83,8 @@ export function cifrasGerencia(filas, hoy, mIdxElegido) {
   const { ventana, adelantado } = ventanaDeMaduracion(mIdx, hoy);
   const mad = ventana ? produccionDelMes(filas, ventana, hoy, { porDia: true }) : null;   // porDia: punto 10 (N5 de cada día)
   return {
-    mes: monthLabelAt(mIdx), mIdx, pos, meses: meses.map((m) => ({ mIdx: m, mes: monthLabelAt(m) })), corridas,
-    // el mes en curso (el último) es HOY; uno pasado se pinta al cierre de su mes de calendario, sin pasar de hoy
-    actual: pos === meses.length - 1,
-    cierre: pos === meses.length - 1 || !rango ? hoy : (rango.hasta < hoy ? rango.hasta : hoy),
+    mes: elegido.mes, mIdx, pos, meses: meses.map((m) => ({ mIdx: m, mes: monthLabelAt(m) })), corridas,
+    actual: elegido.actual, cierre: elegido.cierre,   // la foto: hoy, o el cierre del mes pasado (mesYCierre)
     total, despachado, enCultivo: total - despachado, despachadoCorridas, siembra,
     supervivencia: siembra > 0 ? Math.min(total / siembra * 100, 100) : null,
     modulos, modulosDespachados,
