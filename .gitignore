@@ -9,3 +9,7 @@ dist
 # Los dos que había se movieron a Music/_respaldos-engine/ el 2026-08-30.
 *.bak
 *.bak_*
+
+# El temporal que Vite/Vitest escriben al cargar vite.config.js y borran ~10 ms después (2026-10-29): mientras existe,
+# `git status` lo ve, y verificar-guardas / verificar-anclas (utillaje) daban un rojo falso al banco de turno.
+vite.config.js.timestamp-*.mjs
