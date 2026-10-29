@@ -305,10 +305,12 @@ describe('GAS · un cliente con el ESQUEMA VIEJO no puede escribir en Maduració
     expect(hojaVieja.message).not.toContain('si ya está al día');
   });
 
-  it('🔴 las NUEVE hojas vigiladas están firmadas: ninguna se queda sin saber quién es el viejo', () => {
+  // 2026-10-29 · entran las 2 de Mantenimiento: las hojas firmadas se reconocen por su prefijo (el resto de cadenas de
+  // MAD_ESQUEMA_FIRMA son las cabeceras), y el título ya no dice cuántas son.
+  it('🔴 las hojas vigiladas están firmadas: ninguna se queda sin saber quién es el viejo', () => {
     const lista = (re) => [...(re.exec(gasSrc)[1].matchAll(/"([^"]+)"/g))].map((m) => m[1]);
     const vigiladas = lista(/var MAD_ESQUEMA_VIGILADO = \[([\s\S]*?)\];/);
-    const firmadas = new Set(lista(/var MAD_ESQUEMA_FIRMA = \{([\s\S]*?)\n\};/).filter((s) => s.startsWith('Maduración ')));
+    const firmadas = new Set(lista(/var MAD_ESQUEMA_FIRMA = \{([\s\S]*?)\n\};/).filter((s) => /^(Maduración|Mantenimiento) /.test(s)));
     expect(vigiladas.length).toBeGreaterThanOrEqual(9);
     expect(vigiladas.filter((h) => !firmadas.has(h)), 'vigiladas sin firma').toEqual([]);
   });
@@ -2104,6 +2106,24 @@ describe('GAS · 🔧 Mantenimiento · Trabajos y Lecturas (2026-10-28)', () => 
     expect(r.status).toBe('error');
     expect(r.message).toContain('Esquema desactualizado');
     expect(hojas['Mantenimiento Trabajos']).toBeUndefined();
+  });
+
+  /* 2026-10-29 (usuario, ronda 12, Sesión A, tarea 3: «Sí, vigilarlas») · y la HOJA: las dos pueden nacer de pegar a mano
+     los .tsv de la importación. Con una cabecera pegada corrida (aquí, sin «Tipo» / sin «Hora»), un envío al día ya no
+     escribe cada dato en otra columna: se rechaza sin tocar la hoja y el aviso dice que lo viejo es la HOJA. */
+  it('🔴 vigiladas: una HOJA con la cabecera corrida para el envío y no se toca', () => {
+    for (const [p, cab] of [
+      [MN.buildMntTrabajoPayload([{ data: trabajo() }]), MN.MNT_TRAB_HEADERS.filter((h) => h !== 'Tipo')],
+      [MN.buildMntRondaPayload([{ data: ronda({ 'BLW-01': { horometro: '1' } }) }]), MN.MNT_LECT_HEADERS.filter((h) => h !== 'Hora')],
+    ]) {
+      const hoja = hojaFalsa([cab]);
+      const r = gas({ [p.sheetName]: hoja }).post(p);
+      expect(r.status, p.sheetName).toBe('error');
+      expect(r.message).toContain('Esquema desactualizado');
+      expect(r.message).toContain('la cabecera vieja es la de la HOJA');
+      expect(hoja.escrituras, p.sheetName + ': no escribe nada').toEqual([]);
+      expect(hoja.filas, p.sheetName).toEqual([cab]);
+    }
   });
 
   it('«Mantenimiento Equipos» (la ficha técnica, a mano) NO se puede escribir desde fuera', () => {

@@ -22,7 +22,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "b34f45a6187c";
+const GAS_VERSION = "0c019e78e429";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -1012,12 +1012,16 @@ function ensureHeaders(ws, headers) {
 //   · Espacios y la forma Unicode de los acentos no cuentan como diferencia.
 // Sólo las de esta lista (el registro operativo). El reproductivo también es posicional, pero su esquema no ha
 // cambiado, y bloquearlo por un nombre retocado a mano pararía el trabajo de campo.
+// 🔧 Y las dos de Mantenimiento (2026-10-29, usuario: «Sí, vigilarlas»): también se escriben por posición
+// (upsertAstRows) y pueden NACER de pegar a mano los .tsv de la importación, así que una cabecera pegada
+// corrida o retocada escribiría cada dato en otra columna sin aviso. Están firmadas: el aviso culpa a la HOJA.
 // El cliente, ante el rechazo, no marca nada como sincronizado: lo tecleado se queda en
 // el dispositivo hasta que se actualice la app (medido en el cliente de f1d9687).
 var MAD_ESQUEMA_VIGILADO = [
   "Maduración Sala", "Maduración Tanques", "Maduración Lotes",
   "Maduración Ingreso", "Maduración Movimientos", "Maduración Fin de Ciclo",
-  "Maduración Tratamientos", "Maduración Mortalidad Desove", "Maduración Alimentación"
+  "Maduración Tratamientos", "Maduración Mortalidad Desove", "Maduración Alimentación",
+  "Mantenimiento Trabajos", "Mantenimiento Lecturas"
 ];
 function _cabeceraNorm_(v) {
   var s = String(v == null ? "" : v).trim();

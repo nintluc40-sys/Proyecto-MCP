@@ -8,9 +8,10 @@
    laboratorio, y sin esto la movería a hoy aunque lo último de Larvicultura fuera de ayer. Datos ficticios.
    ============================================================ */
 import { describe, it, expect } from 'vitest';
-import { classifyOrigin, applySheets } from './sheets.js';
+import { classifyOrigin, applySheets, detectSheetName } from './sheets.js';
 import { store } from './store.js';
-import { MNT_HOJAS } from '../views/mantenimiento/mantenimiento.data.js';
+import { MNT_HOJAS, MNT_EQUIPOS_HEADERS, MNT_PLAN_HEADERS } from '../views/mantenimiento/mantenimiento.data.js';
+import { MNT_TRAB_HEADERS, MNT_LECT_HEADERS } from '../views/registros/lib/ficha-mantenimiento.schema.js';
 
 const dia = (ms) => { const d = new Date(ms); return [d.getDate(), d.getMonth() + 1, d.getFullYear()]; };
 
@@ -29,5 +30,29 @@ describe('Mantenimiento · sus hojas en la carga', () => {
     applySheets(sheets);
     expect(store.globalData.filter((r) => MNT_HOJAS.includes(r._SheetOrigin)), 'las filas sí entran').toHaveLength(4);
     expect(dia(store.latestDateMs)).toEqual([25, 10, 2026]);
+  });
+});
+
+/* 2026-10-29 (usuario, ronda 12, Sesión A, tarea 3: «Sí, las 4 firmas») · POR SUS COLUMNAS. En la carga de respaldo, una
+   pestaña que llega sin título (y sin su XLSX) se nombra por sus cabeceras (detectSheetName): las cuatro caían en
+   «Hoja<N>» y la vista 🔧 decía «Falta la hoja». Las cabeceras se piden al código que las escribe (la ficha) o que las
+   lee (las dos a mano), no se teclean. Que no le roban nada a las pestañas de producción lo fija detectSheetName.test.js. */
+describe('Mantenimiento · sus hojas por las COLUMNAS (respaldo sin título)', () => {
+  const filaDe = (cab) => Object.fromEntries(cab.map((c) => [c, '']));
+  const CAB = [MNT_TRAB_HEADERS, MNT_LECT_HEADERS, MNT_EQUIPOS_HEADERS, MNT_PLAN_HEADERS];   // el orden de MNT_HOJAS
+
+  it('🔴 cada una se reconoce por sus columnas, igual que por su nombre', () => {
+    MNT_HOJAS.forEach((h, i) => {
+      expect(detectSheetName([filaDe(CAB[i])], 7), h).toBe(h);
+      expect(detectSheetName([filaDe(CAB[i])], 7, h), h + ' con su título').toBe(h);
+    });
+  });
+
+  it('cada una se sostiene por su firma: sin ella cae en «Hoja<N>»', () => {
+    const sin = (cab, re) => cab.filter((c) => !re.test(c));
+    expect(detectSheetName([filaDe(sin(MNT_TRAB_HEADERS, /^Parada/))], 7)).toBe('Hoja8');
+    expect(detectSheetName([filaDe(sin(MNT_LECT_HEADERS, /^Corriente/))], 7)).toBe('Hoja8');
+    expect(detectSheetName([filaDe(sin(MNT_EQUIPOS_HEADERS, /^Ajuste hor/))], 7)).toBe('Hoja8');
+    expect(detectSheetName([filaDe(sin(MNT_PLAN_HEADERS, /^Intervalo/))], 7)).toBe('Hoja8');
   });
 });

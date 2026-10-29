@@ -653,7 +653,8 @@ la cabecera es la del código, los datos no se corrieron y la `Hora` sigue siend
 lo dice `estado-maduracion.mjs`. 🔑 La cifra de esta línea es la del código: `madKeyCols` en `GAS/Code.gs`.
 
 🛡 **Y como se escriben por posición, el GAS comprueba el esquema antes de escribir.** En las
-nueve hojas del registro operativo (`MAD_ESQUEMA_VIGILADO`), si una cabecera del envío no coincide con la de la hoja en
+hojas del registro operativo y en las dos de 🔧 Mantenimiento que escribe la app (`MAD_ESQUEMA_VIGILADO`; éstas, desde el
+2026-10-29, porque pueden nacer de pegar a mano los `.tsv` de la importación), si una cabecera del envío no coincide con la de la hoja en
 su misma posición, `doPost` responde «Esquema desactualizado» y **no toca nada**. Existe porque
 estas hojas cambiaron de columnas y siguen vivos clientes con el esquema anterior: sin la
 guarda, un guardado de Tanques desde uno de ellos corría una columna todo lo que va detrás de
