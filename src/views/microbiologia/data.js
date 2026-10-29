@@ -168,12 +168,13 @@ export const PATHOGEN_COLOR = {
 };
 
 // Agar de cultivo por patógeno (para mostrar el "agar utilizado" en la placa del día).
-// Enterobact. y Bacterias Rojas aún sin agar definido → no se listan.
+// Enterobact. y Bacterias Rojas: los agares del laboratorio (usuario, 2026-10-29); hasta entonces no se listaban.
 export const PATHOGEN_AGAR = {
   amarillos: 'Agar TCBS', verdes: 'Agar TCBS', totales: 'Agar TCBS',
   algino: 'CHROMagar Vibrio', para: 'CHROMagar Vibrio', vulni: 'CHROMagar Vibrio',
   pseudo: 'Agar GSP', aero: 'Agar GSP', pseudoGsp: 'Agar GSP', aeroGsp: 'Agar GSP',
-  bactTot: 'Agar TSA', bactNar: 'Agar Marino',
+  bactTot: 'Agar TSA', bactNar: 'Agar Marino', rojas: 'Agar Marino',
+  entero: 'Agar MacConkey',
   hongos: 'Agar Dextrosa Sabouraud', levaduras: 'Agar Dextrosa Sabouraud',
 };
 

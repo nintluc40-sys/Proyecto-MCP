@@ -2186,7 +2186,7 @@ function petriPlacaHTML(days, dayIdx, day) {
     : '<div class="muted" style="font-size:12px">Sin colonias para este día.</div>';
 
   // Agar(es) utilizado(s): inferido de los patógenos observados ese día (cada patógeno
-  // crece en un agar específico). Entero./Bacterias Rojas no tienen agar definido aún.
+  // crece en un agar específico).
   const agares = [...new Set(colonies.map((c) => PATHOGEN_AGAR[c.key]).filter(Boolean))].sort();
   const agarHTML = `<div class="mic-pe-agar">
       <div class="mic-pe-agar-l">🧪 Agar utilizado</div>

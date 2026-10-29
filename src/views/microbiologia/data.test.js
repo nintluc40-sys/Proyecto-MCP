@@ -3,7 +3,7 @@ import {
   isMicroRow, normNivel, classifyFormato, normTipoMuestra, luminPresence,
   intStr, meltRow, rowContext, pathogenRecords, PATHOGENS, NIVEL_RANK, isAlerta,
   AGGREGATE_KEYS, areaForFormat, deptoOfFormato, FORMATO_LABEL,
-  loadMicThresholds, MIC_FACTORS_KEY, unidadUFC, MIC_FORMATS,
+  loadMicThresholds, MIC_FACTORS_KEY, unidadUFC, MIC_FORMATS, PATHOGEN_AGAR,
 } from './data.js';
 
 // Fila representativa (cabeceras reales de la hoja "Microbiología").
@@ -295,6 +295,23 @@ describe('PATHOGENS catalog', () => {
   it('tiene claves únicas', () => {
     const keys = PATHOGENS.map((p) => p.key);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+/* 2026-10-29 · el «🧪 Agar utilizado» de la placa del día (Microbiología y el modal del Supervisor) sale de esta tabla: un
+   patógeno sin agar no sale ahí aunque tenga colonias. Enterobact. y Bacterias Rojas no lo tenían hasta que el usuario dio
+   el del laboratorio. */
+describe('PATHOGEN_AGAR · el agar de cada patógeno', () => {
+  it('Enterobact. crece en Agar MacConkey y Bacterias Rojas en Agar Marino (usuario, 2026-10-29)', () => {
+    expect(PATHOGEN_AGAR.entero).toBe('Agar MacConkey');
+    expect(PATHOGEN_AGAR.rojas).toBe('Agar Marino');
+    expect(PATHOGEN_AGAR.bactNar).toBe('Agar Marino');
+  });
+
+  it('todo patógeno del catálogo tiene su agar, y la tabla no nombra ninguno que no exista', () => {
+    const keys = PATHOGENS.map((p) => p.key);
+    expect(keys.filter((k) => !PATHOGEN_AGAR[k])).toEqual([]);
+    expect(Object.keys(PATHOGEN_AGAR).filter((k) => keys.indexOf(k) === -1)).toEqual([]);
   });
 });
 
