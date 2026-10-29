@@ -27,6 +27,7 @@ import { store, on, EV } from '../../core/store.js';
 import { asegurarLibro } from '../../core/refresh.js';
 import { estadoPlantaPorPartes, estadoMaduracion, cronogramaPlanta, hoyLocal } from './estado.js';
 import { cifrasGerencia, mesYCierre } from './cifras.js';
+import { blowersPlanta } from './blowers.js';
 
 /** Cede el turno al navegador (pinta y atiende toques) y sigue enseguida. Por MessageChannel y no por setTimeout: con la
  *  pestaña en segundo plano los temporizadores se espacian a 1 s y el cálculo por partes tardaría segundos de más. */
@@ -156,7 +157,14 @@ export function plantaView(root) {
     await ceder();
     // el cronograma del ciclo (T3 de 📊 Análisis): las corridas que pinta larv, hasta hoy o el cierre del mes elegido
     if (larv) try { crono = cronogramaPlanta(larv.modulos, pasado ? pasado.cierre : hoy); } catch (e) { console.error('[planta] cronograma', e); fallos.push('cronograma (' + e.message + ')'); }
-    return { cifras, pasado, larv, mad, crono, fallos };
+    // F3 (2026-10-29, usuario): el blower de cada módulo, de las hojas de 🔧 Mantenimiento; sólo hoy (un mes pasado se ve
+    // como estaba, sin ellos). Sin cronograma no hay aviso de horómetro, pero sí el resto.
+    let blowers = null;
+    if (!pasado) {
+      await ceder();
+      try { blowers = blowersPlanta(store.globalData, crono, hoy); } catch (e) { console.error('[planta] blowers', e); fallos.push('blowers (' + e.message + ')'); }
+    }
+    return { cifras, pasado, larv, mad, crono, blowers, fallos };
   };
   // Hallazgo 4 (auditoría de la Sesión A, 28-10; ronda 11, Sesión B): el mapa 🦐 sólo usa el MES de la foto (`E.mes`). Ya
   // no espera el cálculo entero (3,2–4,1 s con la CPU ×4, medido con el libro real) ni enseña los fallos de lo que no usa:
@@ -167,7 +175,7 @@ export function plantaView(root) {
     const fallos = [];
     let m = null;
     try { m = mesYCierre(hoy, mes); } catch (e) { console.error('[planta] mes', e); fallos.push('el mes elegido (' + e.message + ')'); }
-    return { cifras: null, pasado: m && !m.actual ? m : null, larv: null, mad: null, crono: null, fallos };
+    return { cifras: null, pasado: m && !m.actual ? m : null, larv: null, mad: null, crono: null, blowers: null, fallos };
   };
   // El cálculo en curso: sólo pinta si sigue siendo el último pedido (llegó otro libro, cambió el día o el mes, o se
   // pintó un mes ya guardado: entonces se descarta). Un mes recién calculado se guarda aunque ya no se pinte.
@@ -216,14 +224,14 @@ export function plantaView(root) {
     });
   };
   const pintarCalculo = (calc) => {
-    const { cifras, pasado, larv, mad, crono, fallos } = calc;
+    const { cifras, pasado, larv, mad, crono, blowers, fallos } = calc;
     // C5 (2026-10-18, usuario) · pintar también puede fallar: la vista devuelve los pasos que no pudo pintar (la Maqueta
     // pinta los demás) y, si falla entera, se avisa y NO queda como pintada (el próximo pintado lo reintenta). Antes el
     // error subía sin control y el panel se quedaba en «Cargando datos de producción…».
     let sinPintar;
     try {
       sinPintar = vista.pintarEstado({ modulos: larv ? larv.modulos : {}, resumen: larv ? larv.resumen : null, mad, cifras, crono,
-        mes: pasado ? { mes: pasado.mes, cierre: pasado.cierre } : null }) || [];
+        blowers: blowers || null, mes: pasado ? { mes: pasado.mes, cierre: pasado.cierre } : null }) || [];
     } catch (e) { console.error('[planta] pintar', e); vista.aviso('No se pudieron pintar los datos: ' + e.message); return; }
     yaPintado = true; pintadoCon[modo] = { datos: aceptados, mes: mesElegido, hoy: memo.hoy };
     reponerPosicion();

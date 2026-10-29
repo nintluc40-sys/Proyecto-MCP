@@ -470,3 +470,25 @@ describe('🏭 Planta · si el cálculo se rechaza, lo avisa y lo suelta (pauta 
     expect(maqueta.aviso.mock.calls.at(-1)[0]).toBe('No se pudieron poner al día los datos: aviso roto');
   });
 });
+
+describe('🔧 F3 · el blower de cada módulo llega a la vista con el cálculo de hoy (2026-10-29, usuario)', () => {
+  const conDatos = (v) => v.pintarEstado.mock.calls.filter((c) => c[0]);
+  const ultimoAviso = (v) => v.aviso.mock.calls.at(-1)[0];
+  it('de las hojas de Mantenimiento del libro: el BLW-04 del Módulo 4, con su cambio de aceite vencido', async () => {
+    store.connected = true;
+    store.globalData = [
+      { _SheetOrigin: 'Mantenimiento Equipos', 'Código': 'BLW-04', Modelo: 'FB 441 C', 'Ubicación': 'Módulo 4', Estado: 'En servicio' },
+      { _SheetOrigin: 'Mantenimiento Plan', Actividad: 'Cambio de aceite', 'Intervalo (h)': '3000', 'Primer cambio (h)': '500' },
+      { _SheetOrigin: 'Mantenimiento Lecturas', Fecha: '2026-10-05', Hora: '08:00', Equipo: 'BLW-04', 'Horómetro (h)': '513,38' },
+    ];
+    plantaView(root);
+    await vi.waitFor(() => expect(calculos).toHaveLength(1));
+    const maqueta = montarPlanta.mock.results[0].value;
+    calculos[0]({ modulos: {}, resumen: null });
+    await vi.waitFor(() => expect(conDatos(maqueta)).toHaveLength(1));
+    const E = conDatos(maqueta)[0][0];
+    expect(E.mes, 'hoy').toBe(null);
+    expect(E.blowers.porModulo.M4.map((b) => [b.codigo, b.vencidos.map((p) => p.actividad)])).toEqual([['BLW-04', ['Cambio de aceite']]]);
+    expect(ultimoAviso(maqueta)).toMatch(/^Datos del MCP · puestos al día/);
+  });
+});

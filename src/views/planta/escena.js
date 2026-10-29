@@ -1157,8 +1157,9 @@ function llenarFicha({ kind, name, rows }) {
   $('#card').hidden = false;
 }
 let tanqueFicha = null;
-// lo que los textos necesitan saber de la escena (textos.js, compartido con 📊 Análisis)
-const ctxTextos = () => ({ cargado: estadoCargado, mesPasado });
+// lo que los textos necesitan saber de la escena (textos.js, compartido con 📊 Análisis); `blowers`: F3 (2026-10-29)
+let blowersActual = null;
+const ctxTextos = () => ({ cargado: estadoCargado, mesPasado, blowers: blowersActual });
 /** Ficha del módulo (las cifras de su tarjeta en la Vista Ejecutiva) o de la sala. */
 function fichaModulo(g) { tanqueFicha = null; llenarFicha(fichaGrupo(g, ctxTextos())); }
 /** Ficha de un tanque (al tocarlo con su módulo o sala ya elegido). */
@@ -1496,6 +1497,7 @@ const LEDE_HOY = $('.planta .lede').textContent;
 function pintarEstado(E) {
   estadoCargado = !!E;
   mesPasado = (E && E.mes) || null;
+  blowersActual = (E && E.blowers) || null;
   $('.planta .lede').textContent = mesPasado
     ? mesPasado.mes + ': cada módulo de larvicultura con su corrida de ese mes y cada sala de maduración al ' + dm(mesPasado.cierre) + '.'
     : LEDE_HOY;
@@ -1551,7 +1553,7 @@ function pintarAtender() {
     const li = document.createElement('li'); li.className = 'at';
     const gb = document.createElement('button'); gb.type = 'button'; gb.className = 'at-g';
     const dot = document.createElement('i');
-    if (it.tipo === 'lote') { dot.className = 'reloj'; dot.textContent = '⏳'; } else dot.style.background = it.color;
+    if (it.tipo === 'lote' || it.tipo === 'blower') { dot.className = 'reloj'; dot.textContent = it.tipo === 'lote' ? '⏳' : '🔧'; } else dot.style.background = it.color;
     const nm = document.createElement('b'); nm.textContent = it.nombre;
     const sm = document.createElement('span'); sm.textContent = it.detalle;
     gb.append(dot, nm, sm); if (it.g) gb.addEventListener('click', () => irAGrupo(it.g)); li.append(gb);

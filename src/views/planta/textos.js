@@ -6,11 +6,13 @@
    compartido»): la escena y el análisis sólo deciden dónde y cómo se pinta. Desde la T2 (2026-10-06), también la tabla
    «Detalle por tanque» de 📊 Análisis (tablaDeTanques).
    Un «grupo» es un módulo o una sala: { id, kind: 'larv'|'mat', name, short, st, tanks: [{ num, st, g }], desove: [] };
-   un tanque, { num, st, g, desove? }. `ctx` = { cargado: hay datos pintados, mesPasado: { mes, cierre } | null }.
+   un tanque, { num, st, g, desove? }. `ctx` = { cargado: hay datos pintados, mesPasado: { mes, cierre } | null,
+   blowers: lo de blowers.js (F3, 2026-10-29) | null }.
    ============================================================ */
 import { fmtPop } from '../../core/format.js';
 import { fmtShort } from '../../core/dates.js';
 import { STAGE_ORDER } from '../../config.js';
+import { MNT_ESTADO } from '../mantenimiento/mantenimiento.data.js';
 
 /* ---------- Formatos ---------- */
 export const fmt = (v, d = 2) => v.toLocaleString('es', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -67,10 +69,48 @@ function txtTraslado(tr) {
   return (tr.desde === tr.hasta ? 'el ' + dm(tr.desde) : 'del ' + dm(tr.desde) + ' al ' + dm(tr.hasta))
     + ' · falta registrar el despacho de ' + tr.sinDespacho + (tr.sinDespacho === 1 ? ' tanque' : ' tanques');
 }
+/* ---------- El blower del módulo (F3, el cruce con 🔧 Mantenimiento; 2026-10-29, usuario) ---------- */
+const minus = (s) => s.charAt(0).toLowerCase() + s.slice(1);
+/** Cuánto hace que venció una actividad de `proximos` (por horas o, si no, por días). */
+function vencioHace(p) {
+  if (p.faltanH != null && p.faltanH < 0) return 'venció hace ' + ent(-p.faltanH) + ' h';
+  if (p.faltanD != null && p.faltanD < 0) return 'venció hace ' + -p.faltanD + (p.faltanD === -1 ? ' día' : ' días');
+  return 'vencida';
+}
+function txtCambio(b) {
+  const p = b.proximo;
+  if (!p) return 'Sin intervalos en el plan';
+  if (p.estado === MNT_ESTADO.VENCIDO) {
+    const mas = b.vencidos.length - 1;
+    return p.actividad + ' · ' + vencioHace(p) + (mas > 0 ? ' (y ' + mas + (mas === 1 ? ' actividad vencida más)' : ' actividades vencidas más)') : '');
+  }
+  if (p.estado === MNT_ESTADO.SIN_DATOS) return p.actividad + ' · sin horómetro para calcularlo';
+  const falta = [p.faltanH != null && ent(p.faltanH) + ' h', p.faltanD != null && p.faltanD + (p.faltanD === 1 ? ' día' : ' días')].filter(Boolean);
+  return p.actividad + ' · faltan ' + falta.join(' o ') + (p.estado === MNT_ESTADO.PROXIMO ? ' (próximo)' : '');
+}
+function txtNoAvanza(n) {
+  const dias = Number.isInteger(n.dias) ? String(n.dias) : fmt(n.dias, 1);
+  return 'sumó ' + ent(n.sumo) + ' h en ' + dias + (n.dias === 1 ? ' día' : ' días') + ' con el módulo en cultivo (esperadas ~' + ent(n.esperadas) + ')';
+}
+/** Los blowers de un módulo para su ficha y «Qué atender hoy»: sólo hoy (un mes pasado se ve como estaba, sin ellos). */
+const blowersDe = (g, ctx) => (ctx.cargado && !ctx.mesPasado && ctx.blowers && ctx.blowers.porModulo ? ctx.blowers.porModulo[g.id] || [] : []);
+/** Las filas de la ficha: el blower (su horómetro), su próximo cambio y, si lo hay, el aviso de horómetro que no avanza. */
+function filasDeBlower(g, ctx) {
+  const out = [];
+  blowersDe(g, ctx).forEach((b) => {
+    const h = b.horometro;
+    out.push(['🔧 Blower', b.codigo + (b.modelo ? ' · ' + b.modelo : '') + (h ? ' · ' + ent(h.h) + ' h al ' + dm(h.fecha) : ' · sin horómetro')]);
+    out.push(['Próximo cambio', txtCambio(b)]);
+    if (b.noAvanza) out.push(['⚠ Horómetro', txtNoAvanza(b.noAvanza) + ' · del ' + dm(b.noAvanza.desde) + ' al ' + dm(b.noAvanza.hasta)]);
+  });
+  return out;
+}
+
 /** La ficha de un módulo (las cifras de su tarjeta en la Vista Ejecutiva) o, si es una sala, la de la sala. */
 export function fichaGrupo(g, ctx) {
   if (g.kind !== 'larv') return fichaSala(g, ctx);
-  const st = g.st, kind = 'Módulo de larvicultura', f = (rows) => ({ kind, name: g.name, rows });
+  // F3 (2026-10-29): al final de cada estado, su blower (filasDeBlower; nada mientras carga ni en un mes pasado)
+  const st = g.st, kind = 'Módulo de larvicultura', f = (rows) => ({ kind, name: g.name, rows: rows.concat(filasDeBlower(g, ctx)) });
   if (!ctx.cargado) return f([['Estado', 'Cargando datos de producción…']]);
   if (!st || st.estado === 'sin-datos') return f([['Estado', 'Sin datos de producción']]);
   if (st.estado === 'desinfeccion') {
@@ -287,8 +327,9 @@ export const motivosTxt = (ms) => ms.map((m) => MOTIVO_TXT[m] || m).join(' y ');
 const salasTxt = (ss) => (ss.length > 1 ? 'Salas ' : 'Sala ') + ss.map((x) => x.sala.replace('Sala ', '')).join(', ').replace(/, ([^,]+)$/, ' y $1');
 /**
  * { titulo, total, items, vacio }: un ítem por módulo o sala con alertas —{ tipo: 'grupo', g, color, nombre, detalle,
- * tanques: [{ t, texto, aria }] }— y uno por lote que pasa de los 60 días —{ tipo: 'lote', g (su primera sala), nombre,
- * detalle }—; `vacio` es el texto cuando no hay nada (o mientras carga).
+ * tanques: [{ t, texto, aria }] }—, uno por lote que pasa de los 60 días —{ tipo: 'lote', g (su primera sala), nombre,
+ * detalle }— y uno por blower que atender (F3) —{ tipo: 'blower', g (su módulo), nombre, detalle }—; `vacio` es el texto
+ * cuando no hay nada (o mientras carga).
  */
 export function alertasParaAtender(grupos, reemplazo, ctx) {
   const titulo = ctx.mesPasado ? 'Alertas al cierre de ' + ctx.mesPasado.mes : 'Qué atender hoy';
@@ -317,6 +358,16 @@ export function alertasParaAtender(grupos, reemplazo, ctx) {
     total++;
     items.push({ tipo: 'lote', g: grupos.find((x) => x.id === (v.salas[0] || {}).id) || null, nombre: 'Lote ' + v.lote, detalle: v.dias + ' d en producción · ' + salasTxt(v.salas) });
   });
+  // F3 (2026-10-29, usuario): un renglón 🔧 por blower con algo VENCIDO (sólo los vencidos) o con el horómetro sin avanzar
+  // con su módulo en cultivo; tocarlo abre el módulo. Sólo hoy (blowersDe).
+  grupos.forEach((g) => blowersDe(g, ctx).forEach((b) => {
+    const partes = [];
+    if (b.vencidos.length) partes.push(b.vencidos.map((p) => minus(p.actividad) + ' ' + vencioHace(p)).join(' · '));
+    if (b.noAvanza) partes.push('el horómetro ' + txtNoAvanza(b.noAvanza));
+    if (!partes.length) return;
+    total++;
+    items.push({ tipo: 'blower', g, nombre: b.codigo, detalle: g.name + ' · ' + partes.join(' · ') });
+  }));
   return { titulo, total, items, vacio: total ? '' : (ctx.mesPasado ? 'Sin alertas al cierre de ' + ctx.mesPasado.mes : 'Sin alertas hoy') };
 }
 

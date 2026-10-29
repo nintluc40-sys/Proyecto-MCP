@@ -148,9 +148,10 @@ export function montarAnalisis(host) {
   const $ = (k) => root.querySelector('[data-k="' + k + '"]');
   const grupos = gruposDelPlano();
   let cargado = false, mesPasado = null, meta = leerMeta(), ultimasCifras = null, alMes = null;
+  let blowers = null;           // F3 (2026-10-29): el blower de cada módulo (blowers.js), para fichas y «Qué atender hoy»
   const abiertos = new Set();   // módulos y salas desplegados (sobreviven al refresco y al cambio de mes)
   let tanqueVisto = null;       // { id, num }: el tanque cuya ficha se ve
-  const ctx = () => ({ cargado, mesPasado });
+  const ctx = () => ({ cargado, mesPasado, blowers });
 
   /* ---- Producción del mes ---- */
   const n5 = montarNauplios($('n5'));   // punto 10 (07-10 noche): «Nauplios N5 · maduración», el mismo componente que la maqueta
@@ -265,7 +266,7 @@ export function montarAnalisis(host) {
     A.items.forEach((it) => {
       const li = el('li', 'at'), gb = el('button', 'at-g'); gb.type = 'button';
       const dot = el('i');
-      if (it.tipo === 'lote') { dot.className = 'reloj'; dot.textContent = '⏳'; } else dot.style.background = it.color;
+      if (it.tipo === 'lote' || it.tipo === 'blower') { dot.className = 'reloj'; dot.textContent = it.tipo === 'lote' ? '⏳' : '🔧'; } else dot.style.background = it.color;
       gb.append(dot, el('b', '', it.nombre), el('span', '', it.detalle));
       if (it.g) gb.addEventListener('click', () => irA(it.g));
       li.append(gb);
@@ -561,7 +562,7 @@ export function montarAnalisis(host) {
 
   /** Pinta el estado (lo calcula index.js con estado.js y cifras.js; null mientras no hay libro). */
   function pintarEstado(E) {
-    cargado = !!E; mesPasado = (E && E.mes) || null;
+    cargado = !!E; mesPasado = (E && E.mes) || null; blowers = (E && E.blowers) || null;
     $('lede').textContent = mesPasado ? mesPasado.mes + ': cada módulo de larvicultura con su corrida de ese mes y cada sala de maduración al ' + dm(mesPasado.cierre) + '.' : LEDE_HOY;
     grupos.forEach((g) => {
       g.st = !E ? null : g.kind === 'larv' ? E.modulos[g.id] || null : (E.mad && E.mad.salas[g.id]) || null;
