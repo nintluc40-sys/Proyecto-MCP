@@ -1101,8 +1101,10 @@ El caso que lo hace urgente: `Maduración Mortalidad Desove` pasó de 14 a 21 co
 y noche 17, y el 2026-09-24 Código genético/Piscina Broodstock en la 3-4, que corren todo dos puestos).
 Mientras siga desplegado el GAS anterior, una copia vieja que envíe Inf. Supervisor crea esa hoja con su
 cabecera antigua, y el GAS nuevo rechazará después a TODOS los clientes al día hasta vaciarla **con su
-fila 1**. Por eso, justo antes de publicar, `estado-maduracion.mjs` tiene que decir que esa hoja sigue
-sin existir; si existiera, se vacía con su fila 1 antes de desplegar.
+fila 1**. ⚠ **Hoy esa hoja EXISTE, con la cabecera al día y datos de producción: NO se vacía nunca.**
+Justo antes de publicar, `estado-maduracion.mjs` tiene que dar su cabecera EXACTA (la 22.ª columna,
+«Temperatura tanque desove», se añadió al final, que es inocuo). Si no la diera, se para y se decide; no
+se vacía.
 
 Añadir **al final**, en cambio, es inocuo: `ensureHeaders` alarga la cabecera que falte y «el envío trae
 menos columnas» no cuenta como desfase. Por eso da igual quién cree `Maduración Sala` o `Maduración Tanques`.
