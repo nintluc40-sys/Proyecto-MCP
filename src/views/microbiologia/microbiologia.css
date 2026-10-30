@@ -13,7 +13,7 @@
   background: var(--c-surface); color: var(--c-text-soft); font-size: 13px; font-weight: 700;
   cursor: pointer; transition: all var(--t-fast); font-family: inherit;
 }
-.mic-pill:hover { border-color: var(--c-brand-600); color: var(--c-brand); }
+.mic-pill:hover { border-color: var(--c-brand-600); color: var(--c-brand-txt); }
 .mic-pill.is-active { background: var(--c-brand); border-color: var(--c-brand); color: #fff; box-shadow: var(--sh-1); }
 
 /* ── filtros ── */
@@ -68,7 +68,7 @@
 .mic-collap-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-2); }
 .mic-collap-title { font-size: 14px; font-weight: 700; color: var(--c-text); }
 .mic-toggle {
-  border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-brand);
+  border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-brand-txt);
   border-radius: var(--r-pill); padding: 4px 12px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit;
 }
 .mic-toggle:hover { border-color: var(--c-brand); }
@@ -94,18 +94,18 @@
 /* apartados Conglomerado / Placa Petri */
 .mic-apartados { display: flex; gap: 8px; margin-bottom: var(--sp-3); }
 .mic-ap { padding: 6px 14px; border-radius: var(--r-sm); border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; transition: all var(--t-fast); }
-.mic-ap:hover { border-color: var(--c-brand-600); color: var(--c-brand); }
+.mic-ap:hover { border-color: var(--c-brand-600); color: var(--c-brand-txt); }
 .mic-ap.is-active { background: var(--c-brand-700); border-color: var(--c-brand-700); color: #fff; }
 
 /* barra de pestañas + export */
 .mic-petri-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: var(--sp-3); }
 .mic-petabs { display: inline-flex; gap: 6px; }
 .mic-petab { padding: 5px 14px; border-radius: var(--r-pill); border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; transition: all var(--t-fast); }
-.mic-petab:hover { border-color: var(--c-brand-600); color: var(--c-brand); }
+.mic-petab:hover { border-color: var(--c-brand-600); color: var(--c-brand-txt); }
 .mic-petab.is-active { background: var(--c-brand); border-color: var(--c-brand); color: #fff; }
 .mic-export { display: inline-flex; gap: 6px; }
 .mic-exp { padding: 4px 10px; border-radius: var(--r-sm); border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); font-size: 11.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
-.mic-exp:hover { border-color: var(--c-brand); color: var(--c-brand); }
+.mic-exp:hover { border-color: var(--c-brand); color: var(--c-brand-txt); }
 /* H-003 · «Umbrales modificados en este equipo»: el mismo botón, en color de alerta (también dentro de .mic-scada). */
 .mic-exp.mic-umbral-mod, .mic-scada .mic-exp.mic-umbral-mod { border-color: var(--c-alerta); color: var(--c-alerta); }
 
@@ -136,7 +136,7 @@
 .mic-tr-sort { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
 .mic-tr-sort-l { font-size: 11px; color: var(--c-text-muted); font-weight: 700; }
 .mic-tr-sortb { border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); border-radius: var(--r-sm); padding: 4px 10px; font-size: 11.5px; font-weight: 700; cursor: pointer; }
-.mic-tr-sortb:hover { border-color: var(--c-brand); color: var(--c-brand); }
+.mic-tr-sortb:hover { border-color: var(--c-brand); color: var(--c-brand-txt); }
 .mic-tr-sortb.is-on { background: var(--c-brand); border-color: var(--c-brand); color: #fff; }
 .mic-tr-list { display: flex; flex-direction: column; gap: 4px; }
 .mic-tr-bar-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--r-sm); cursor: pointer; border: 1px solid transparent; }
@@ -182,7 +182,7 @@
 }
 .cal-inst::before { content: ''; position: absolute; top: 0; left: 0; width: 32px; height: 2px; background: var(--sev, var(--c-brand-600)); }
 .cal-inst-h { display: flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--c-text-muted); }
-.cal-inst-ix { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; color: var(--sev, var(--c-brand-600)); opacity: .85; }
+.cal-inst-ix { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; color: var(--sev, var(--c-brand-600-txt)); opacity: .85; }
 .cal-inst-main { display: flex; align-items: center; gap: 10px; min-height: 26px; }
 .cal-inst-v { font-size: 23px; font-weight: 800; color: var(--c-text); font-variant-numeric: tabular-nums; line-height: 1; letter-spacing: -.01em; flex: 0 0 auto; }
 .cal-inst-v small { font-size: 10.5px; font-weight: 700; color: var(--c-text-muted); margin-left: 1px; }
@@ -195,7 +195,7 @@
 .cal-inst[role="button"]:hover { transform: translateY(-1px); filter: brightness(1.02); }
 .cal-inst[role="button"]:focus-visible { outline: 2px solid var(--sev, var(--c-brand-600)); outline-offset: 2px; }
 /* micro-viz: sparkline */
-.cal-spark { flex: 1; min-width: 54px; width: 100%; height: 24px; color: var(--sev, var(--c-brand-600)); display: block; }
+.cal-spark { flex: 1; min-width: 54px; width: 100%; height: 24px; color: var(--sev, var(--c-brand-600-txt)); display: block; }
 /* micro-viz: timeline compacto (barras por día) */
 .cal-inst-tl { flex: 1; display: flex; align-items: flex-end; gap: 2px; height: 26px; min-width: 54px; }
 .cal-inst-tl span { flex: 1; min-width: 2px; background: var(--sev, var(--c-brand-600)); opacity: .5; border-radius: 1px 1px 0 0; }
@@ -262,7 +262,7 @@
 .cal-loc-secsub { font-size: 10.5px; font-weight: 600; color: var(--c-text-muted); margin-left: 4px; }
 .cal-vtoggle { display: inline-flex; gap: 4px; }
 .cal-vt { font-size: 11px; font-weight: 700; padding: 4px 11px; border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); border-radius: var(--r-pill); cursor: pointer; transition: all var(--t-fast); }
-.cal-vt:hover { border-color: var(--c-brand-600); color: var(--c-brand-600); }
+.cal-vt:hover { border-color: var(--c-brand-600); color: var(--c-brand-600-txt); }
 .cal-vt.is-on { background: var(--c-brand-600); border-color: var(--c-brand-600); color: #fff; }
 
 /* ── Comparador · SMALL MULTIPLES (un panel por parámetro; bullet por tanque) ── */
@@ -362,7 +362,7 @@
 .cal-anz-modes { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--r-sm); background: var(--c-surface-2); border: 1px solid var(--c-border-soft); margin: 6px 0 2px; }
 .cal-anz-mode { border: none; background: transparent; color: var(--c-text-soft); font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: calc(var(--r-sm) - 2px); cursor: pointer; }
 .cal-anz-mode:hover { color: var(--c-text); }
-.cal-anz-mode.is-on { background: var(--c-surface); color: var(--c-brand); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.cal-anz-mode.is-on { background: var(--c-surface); color: var(--c-brand-txt); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
 .cal-anz-chart-t { font-size: 11px; font-weight: 700; color: var(--c-text-muted); margin: 4px 0 6px; }
 /* Panel de "display" que enmarca canvas/boxplot como la pantalla de un instrumento */
 .cal-anz-chart, .cal-anz-box { background: color-mix(in srgb, var(--c-surface-2) 55%, var(--c-surface)); border: 1px solid var(--c-border-soft); border-radius: var(--r-sm); box-shadow: inset 0 1px 3px rgba(0,0,0,.05); }
@@ -553,7 +553,7 @@
 .cal-mchips { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .cal-mchips-lbl { font-size: 11.5px; font-weight: 700; color: var(--c-text-soft); }
 .cal-mchip { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; padding: 4px 10px; border-radius: var(--r-pill); border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); transition: border-color .12s, background .12s, color .12s; }
-.cal-mchip:hover { border-color: var(--c-brand-600); color: var(--c-brand); }
+.cal-mchip:hover { border-color: var(--c-brand-600); color: var(--c-brand-txt); }
 .cal-mchip.is-on { background: var(--c-brand); border-color: var(--c-brand); color: #fff; }
 .cal-mchip:focus-visible { outline: 2px solid var(--c-brand-600); outline-offset: 2px; }
 
@@ -573,7 +573,7 @@
 
 /* ── Calidad de Agua · modales de detalle de KPI ── */
 .cal-kpi-lead { font-size: 13px; color: var(--c-text); margin: 0 0 8px; line-height: 1.5; }
-.cal-kpi-lead b, .cal-kpi-note b { color: var(--c-brand); }
+.cal-kpi-lead b, .cal-kpi-note b { color: var(--c-brand-txt); }
 .cal-kpi-note { font-size: 12px; color: var(--c-text-soft); margin: 0 0 10px; line-height: 1.5; }
 .cal-kpi-sec { margin-top: 12px; }
 .cal-kpi-sec h4 { margin: 0 0 6px; font-size: 12px; font-weight: 800; color: var(--c-text-soft); }
@@ -614,7 +614,7 @@
 }
 .gen-sc-row:hover { border-color: var(--c-brand); box-shadow: var(--sh-1); transform: translateY(-1px); }
 .gen-sc-row:focus-visible { outline: 2px solid var(--c-brand-600); outline-offset: 2px; }
-.gen-sc-area { font-size: 14px; font-weight: 800; color: var(--c-brand); }
+.gen-sc-area { font-size: 14px; font-weight: 800; color: var(--c-brand-txt); }
 .gen-sc-n { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--c-text); }
 .gen-sc-alert { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--c-text); }
 .gen-sc-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--sev, var(--c-text-muted)); flex: 0 0 auto; }
@@ -624,7 +624,7 @@
 .gen-cta { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
 .gen-goto {
   font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
-  background: var(--c-surface); border: 1px solid var(--c-border); color: var(--c-brand);
+  background: var(--c-surface); border: 1px solid var(--c-border); color: var(--c-brand-txt);
   border-radius: var(--r-pill); padding: 7px 15px; transition: border-color .15s, background .15s, color .15s;
 }
 .gen-goto:hover { background: var(--c-brand); border-color: var(--c-brand); color: #fff; }
@@ -649,7 +649,7 @@
 .cal-ft-name { font-size: 12.5px; font-weight: 700; color: var(--c-text); }
 .cal-ft-val { font-size: 12.5px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--sev, var(--c-text)); }
 .cal-ft-arr { font-size: 10px; }
-.cal-ft-spark { color: var(--sev, var(--c-brand-600)); display: inline-flex; }
+.cal-ft-spark { color: var(--sev, var(--c-brand-600-txt)); display: inline-flex; }
 .cal-ft-spark .cal-spark { width: 96px; height: 24px; }
 .cal-ft-obj { font-size: 11px; color: var(--c-text-muted); font-weight: 600; text-align: right; }
 .cal-ft-tablewrap { overflow-x: auto; }

@@ -2,7 +2,7 @@
    REVISIONES · estilos (Registro de Supervisión)
    ============================================================ */
 .rv-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
-.rv-title { font-size: 24px; font-weight: 900; color: var(--c-brand); letter-spacing: -.5px; }
+.rv-title { font-size: 24px; font-weight: 900; color: var(--c-brand-txt); letter-spacing: -.5px; }
 .rv-subtitle { font-size: 12px; color: var(--c-text-muted); margin-top: 2px; }
 
 /* Filtros */
@@ -66,10 +66,10 @@
 .rv-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .rv-kpi { background: var(--c-surface); border: 1px solid var(--c-border-soft); border-radius: var(--r-md); box-shadow: var(--sh-1); padding: 12px 16px; }
 .rv-kpi-label { font-size: 10px; color: var(--c-text-soft); font-weight: 700; }
-.rv-kpi-value { font-size: 22px; font-weight: 900; color: var(--c-brand); margin-top: 2px; }
+.rv-kpi-value { font-size: 22px; font-weight: 900; color: var(--c-brand-txt); margin-top: 2px; }
 .rv-kpi-btn { text-align: left; cursor: pointer; transition: transform .15s, box-shadow .15s, border-color .15s; }
 .rv-kpi-btn:hover { transform: translateY(-2px); box-shadow: var(--sh-2); border-color: var(--c-brand); }
-.rv-kpi-btn .rv-kpi-value { color: var(--c-brand-600, var(--c-brand)); }
+.rv-kpi-btn .rv-kpi-value { color: var(--c-brand-600-txt, var(--c-brand-txt)); }
 
 /* Gráficos */
 .rv-chart-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 16px; }
@@ -82,10 +82,10 @@
 .rv-mt { margin-bottom: 16px; }
 
 /* Bitácora / tabla */
-.rv-section-title { font-size: 14px; font-weight: 800; color: var(--c-brand); margin: 8px 0 12px; }
+.rv-section-title { font-size: 14px; font-weight: 800; color: var(--c-brand-txt); margin: 8px 0 12px; }
 .rv-bita-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 8px 0 12px; }
 .rv-bita-toggle { padding: 6px 14px; border-radius: var(--r-pill); border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); font-size: 11.5px; font-weight: 800; transition: all var(--t-fast); }
-.rv-bita-toggle:hover { border-color: var(--c-brand); color: var(--c-brand); }
+.rv-bita-toggle:hover { border-color: var(--c-brand); color: var(--c-brand-txt); }
 .rv-bita-hidden { display: none; }
 .rv-bita-hidden.rv-bita-show { display: table-row; }
 
@@ -101,7 +101,7 @@
 .rv-modal.rv-open { display: flex; animation: fadeInUp .2s ease; }
 .rv-modal-card { background: var(--c-surface); border-radius: var(--r-lg); box-shadow: var(--sh-3); width: min(760px, 100%); max-height: 88vh; display: flex; flex-direction: column; overflow: hidden; }
 .rv-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--c-border); }
-.rv-modal-title { font-size: 16px; font-weight: 900; color: var(--c-brand); }
+.rv-modal-title { font-size: 16px; font-weight: 900; color: var(--c-brand-txt); }
 .rv-modal-x { width: 32px; height: 32px; border-radius: var(--r-sm); border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); font-size: 14px; }
 .rv-modal-x:hover { background: var(--c-surface-2); color: var(--c-text); }
 .rv-modal-body { padding: 18px 20px; overflow: auto; }
@@ -112,7 +112,7 @@
 
 .rv-hist-count { font-size: 11px; font-weight: 800; color: var(--c-text-soft); margin-bottom: 10px; }
 .rv-hist-item { border-left: 3px solid var(--c-brand); background: var(--c-surface-2); border-radius: 0 var(--r-sm) var(--r-sm) 0; padding: 9px 12px; margin-bottom: 9px; }
-.rv-hist-date { font-size: 11px; font-weight: 800; color: var(--c-brand); }
+.rv-hist-date { font-size: 11px; font-weight: 800; color: var(--c-brand-txt); }
 .rv-hist-meta { font-size: 10px; font-weight: 700; color: var(--c-text-muted); margin-top: 1px; }
 .rv-hist-text { margin: 5px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--c-text); }
 
@@ -128,27 +128,27 @@
 
 /* ── Drill-down por módulo (RV2) ── */
 .rv-mod-link { cursor: pointer; transition: color var(--t-fast); white-space: nowrap; }
-.rv-mod-link:hover { color: var(--c-brand); text-decoration: underline; }
+.rv-mod-link:hover { color: var(--c-brand-txt); text-decoration: underline; }
 /* Abre el detalle del módulo también por teclado: sin anillo de foco el usuario que
    tabula no sabría dónde está (misma pauta que .rv-tl-cell.rv-tl-click). */
 .rv-mod-link:focus-visible { outline: 2px solid var(--c-brand, #3F51B5); outline-offset: -2px; }
 .rv-det-kpis { margin-bottom: 14px; }
-.rv-det-sec { font-size: 12.5px; font-weight: 800; color: var(--c-brand); margin: 14px 0 8px; }
+.rv-det-sec { font-size: 12.5px; font-weight: 800; color: var(--c-brand-txt); margin: 14px 0 8px; }
 .rv-det-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .rv-det-chip { font-size: 11.5px; font-weight: 700; color: var(--c-text-soft); background: var(--c-surface-2); border: 1px solid var(--c-border-soft); border-radius: var(--r-pill); padding: 3px 10px; }
-.rv-det-chip b { color: var(--c-brand); margin-left: 3px; }
+.rv-det-chip b { color: var(--c-brand-txt); margin-left: 3px; }
 .rv-det-comments { max-height: 40vh; overflow: auto; }
 
 /* ── Comparativa de periodos (Punto 5) ── */
 .rv-cmp-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .rv-cmp-pills { display: inline-flex; gap: 5px; }
 .rv-cmp-pill { padding: 4px 12px; border-radius: var(--r-pill); border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); font-size: 11px; font-weight: 800; transition: all var(--t-fast); }
-.rv-cmp-pill:hover { border-color: var(--c-brand); color: var(--c-brand); }
+.rv-cmp-pill:hover { border-color: var(--c-brand); color: var(--c-brand-txt); }
 .rv-cmp-pill.is-active { background: var(--c-brand); border-color: var(--c-brand); color: #fff; }
 .rv-cmp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
 .rv-cmp-card { background: var(--c-surface-2); border: 1px solid var(--c-border-soft); border-radius: var(--r-md); padding: 11px 14px; }
 .rv-cmp-lbl { font-size: 10px; font-weight: 800; color: var(--c-text-soft); letter-spacing: .3px; }
-.rv-cmp-val { font-size: 24px; font-weight: 900; color: var(--c-brand); line-height: 1.1; margin: 2px 0 4px; }
+.rv-cmp-val { font-size: 24px; font-weight: 900; color: var(--c-brand-txt); line-height: 1.1; margin: 2px 0 4px; }
 .rv-cmp-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .rv-cmp-delta { font-size: 11px; font-weight: 800; padding: 1px 8px; border-radius: var(--r-pill); }
 .rv-cmp-delta.good { color: #0f9d58; background: rgba(30,200,106,.14); }

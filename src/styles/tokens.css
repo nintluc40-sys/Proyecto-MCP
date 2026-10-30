@@ -8,6 +8,13 @@
   --c-brand:        #006064;
   --c-brand-600:    #00838F;
   --c-brand-700:    #004D40;
+  /* La marca como TEXTO (títulos, cifras, enlaces): en claro, la misma; en oscuro, su tono propio (abajo). 2026-10-30
+     (usuario: «Sólo el texto de marca»): el #006064 daba 2,5:1 sobre el fondo oscuro. Los FONDOS con texto blanco encima
+     (botones, pestañas, píldoras) siguen con --c-brand, que no cambia: aclararla dejaría ese blanco a ~1,8:1.
+     `src/styles/marcaTexto.test.js` mide el contraste y que ningún texto vuelva a usar --c-brand directo. */
+  --c-brand-txt:     var(--c-brand);
+  --c-brand-600-txt: var(--c-brand-600);
+  --c-brand-700-txt: var(--c-brand-700);
   --c-supervisor:   #1565C0;
   --c-larvi:        #00838F;
 
@@ -64,6 +71,11 @@
   --c-text:        #e7edf0;
   --c-text-soft:   #9fb2bc;
   --c-text-muted:  #6b7e88;
+  /* la marca como texto: el menta del título de los modales (`.sv-modal-title`), 12,2 / 10,9 / 9,7:1 sobre bg / surface /
+     surface-2 (usuario, 2026-10-30: «#7fe3d4» y el -600 también) */
+  --c-brand-txt:     #7fe3d4;
+  --c-brand-600-txt: #7fe3d4;
+  --c-brand-700-txt: #7fe3d4;
   --sh-1: 0 2px 10px rgba(0,0,0,.35);
   --sh-2: 0 4px 18px rgba(0,0,0,.45);
   --sh-3: 0 8px 30px rgba(0,0,0,.55);

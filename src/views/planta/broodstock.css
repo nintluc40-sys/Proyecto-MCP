@@ -6,7 +6,7 @@
    ============================================================ */
 .bs { display: flex; flex-direction: column; gap: 12px; color: var(--c-text); }
 .bs-cab { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 10px 20px; }
-.bs-cab h2 { margin: 0; font-size: 18px; color: var(--c-brand); }
+.bs-cab h2 { margin: 0; font-size: 18px; color: var(--c-brand-txt); }
 .bs-sub { margin: 4px 0 0; color: var(--c-text-soft); font-size: 13px; }
 .bs-leyenda { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--c-text-soft); }
 .bs-leyenda li { display: flex; align-items: center; gap: 6px; }

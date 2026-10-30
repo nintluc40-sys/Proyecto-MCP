@@ -249,7 +249,7 @@ export function setupCompareTanks(root) {
       const layoutPill = (l, label) => `<button type="button" class="sv-bm-mode-btn ${ctState.massLayout === l ? 'is-active' : ''}" data-ctlayout="${l}">${label}</button>`;
       seriesHTML = `<div class="ctt-series">
         <div class="ctt-col">
-          <div class="ctt-col-title" style="color:var(--c-brand)">🧩 Comparación masiva</div>
+          <div class="ctt-col-title" style="color:var(--c-brand-txt)">🧩 Comparación masiva</div>
           <label class="ctt-field"><span>MÓDULO</span>
             <select data-ctmodsel class="sv-modal-select"><option value="">Módulo</option>${mods.map((m) => `<option value="${esc(m)}" ${m === ctState.modulo ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>
           </label>

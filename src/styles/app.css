@@ -26,7 +26,7 @@
   gap: 10px;
   font-weight: 900;
   font-size: 17px;
-  color: var(--c-brand);
+  color: var(--c-brand-txt);
   letter-spacing: -.3px;
 }
 .app-brand .logo {
@@ -45,7 +45,7 @@
   z-index: 60; width: 30px; height: 60px;
   border: 1px solid var(--c-border); border-left: none;
   border-radius: 0 var(--r-md) var(--r-md) 0;
-  background: var(--c-surface); color: var(--c-brand);
+  background: var(--c-surface); color: var(--c-brand-txt);
   font-size: 16px; cursor: pointer; box-shadow: var(--sh-2);
   display: grid; place-items: center; transition: all var(--t-fast);
 }
@@ -62,7 +62,7 @@
 .drawer-head {
   display: flex; align-items: center; gap: 10px;
   padding: 16px 18px; border-bottom: 1px solid var(--c-border);
-  font-weight: 900; color: var(--c-brand); font-size: 15px;
+  font-weight: 900; color: var(--c-brand-txt); font-size: 15px;
 }
 .drawer-head .logo {
   width: 30px; height: 30px; border-radius: var(--r-sm);
@@ -79,7 +79,7 @@
 .drawer-foot { margin-top: auto; border-top: 1px solid var(--c-border); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 .drawer-role { font-size: 11.5px; font-weight: 800; color: var(--c-text-soft); }
 .drawer-logout { padding: 9px 12px; border-radius: var(--r-md); border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); font-size: 12.5px; font-weight: 800; cursor: pointer; transition: all var(--t-fast); }
-.drawer-logout:hover { border-color: var(--c-brand-600); color: var(--c-brand-600); }
+.drawer-logout:hover { border-color: var(--c-brand-600); color: var(--c-brand-600-txt); }
 
 /* ---- Pantalla de ingreso por rol ---- */
 /* Las capas a pantalla completa de la shell (entrada, fondo del menú, loader) usan
@@ -170,7 +170,7 @@
   display: grid; place-items: center;
   transition: all var(--t-fast);
 }
-.icon-btn:hover { border-color: var(--c-brand-600); color: var(--c-brand-600); }
+.icon-btn:hover { border-color: var(--c-brand-600); color: var(--c-brand-600-txt); }
 
 /* ---- Contenido ---- */
 .app-main { flex: 1; padding: 20px; max-width: 1500px; width: 100%; margin: 0 auto; }

@@ -2,7 +2,7 @@
    SUPERVISOR · estilos
    ============================================================ */
 .sv-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
-.sv-title { font-size: 24px; font-weight: 900; color: var(--c-brand); letter-spacing: -.5px; }
+.sv-title { font-size: 24px; font-weight: 900; color: var(--c-brand-txt); letter-spacing: -.5px; }
 .sv-subtitle { font-size: 12px; color: var(--c-text-muted); margin-top: 2px; }
 .sv-exec-note { font-size: 11px; color: var(--c-text-muted); margin: -4px 0 14px; }
 
@@ -63,7 +63,7 @@
 .sv-crumb-sep { color: var(--c-border); }
 
 /* Tanques */
-.sv-section-title { font-size: 14px; font-weight: 800; color: var(--c-brand); margin: 8px 0 12px; }
+.sv-section-title { font-size: 14px; font-weight: 800; color: var(--c-brand-txt); margin: 8px 0 12px; }
 .sv-tank-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
 .sv-tank-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md); padding: 14px; cursor: pointer; transition: transform .15s, box-shadow .15s, border-color .15s; }
 .sv-tank-card:hover { transform: translateY(-2px); box-shadow: var(--sh-1); border-color: var(--c-brand-600); }
@@ -88,7 +88,7 @@
 .sv-table thead tr { background: linear-gradient(90deg, #00695C, #004D40); color: #fff; }
 .sv-table th { padding: 9px 12px; text-align: left; font-size: 11px; font-weight: 700; white-space: nowrap; }
 .sv-table td { padding: 7px 12px; border-bottom: 1px solid var(--c-border-soft); white-space: nowrap; }
-.sv-table a { color: var(--c-brand-600); font-weight: 700; font-size: 10px; text-decoration: underline; word-break: break-all; }
+.sv-table a { color: var(--c-brand-600-txt); font-weight: 700; font-size: 10px; text-decoration: underline; word-break: break-all; }
 
 /* Acciones */
 .sv-actions { display: flex; gap: 12px; flex-wrap: wrap; }
@@ -108,12 +108,12 @@
 .sv-hist-filters label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; font-weight: 700; color: var(--c-text-soft); }
 /* Modal de Desinfección */
 .sv-desinf-summary { font-size: 13px; font-weight: 600; background: var(--c-surface-2, #f1f5f9); border: 1px solid var(--c-border-soft); border-radius: var(--r-sm); padding: 9px 12px; margin-bottom: 6px; }
-.sv-desinf-cat { font-size: 12px; font-weight: 800; color: var(--c-brand-600); margin: 10px 0 4px; }
+.sv-desinf-cat { font-size: 12px; font-weight: 800; color: var(--c-brand-600-txt); margin: 10px 0 4px; }
 .sv-desinf-si { color: #2E7D32; font-weight: 800; }
 .sv-desinf-no { color: #C62828; font-weight: 800; }
 .sv-hist-count { font-size: 12px; font-weight: 800; color: var(--c-text-soft); }
 .sv-hist-item { border: 1px solid var(--c-border-soft); border-left: 3px solid var(--c-brand); border-radius: var(--r-sm); padding: 8px 12px; background: var(--c-surface-2); }
-.sv-hist-date { font-size: 11.5px; font-weight: 900; color: var(--c-brand); }
+.sv-hist-date { font-size: 11.5px; font-weight: 900; color: var(--c-brand-txt); }
 .sv-hist-meta { font-size: 11px; color: var(--c-text-muted); font-weight: 700; margin-top: 1px; }
 .sv-hist-text { font-size: 12.5px; color: var(--c-text); margin: 5px 0 0; line-height: 1.45; white-space: pre-wrap; }
 /* Comentarios por turno (matutino ☀️ / vespertino 🌙) en el Historial As. Téc. */
@@ -178,7 +178,7 @@
 .ctt-col { flex: 1; min-width: 200px; border: 1px solid var(--c-border-soft); border-radius: var(--r-sm); padding: 10px 12px; background: var(--c-surface-2); }
 .ctt-col-title { font-size: 13px; font-weight: 900; margin-bottom: 8px; }
 .ctt-gen { margin-top: 2px; }
-.ctt-out-title { font-size: 13px; font-weight: 800; color: var(--c-brand); margin: 16px 0 8px; }
+.ctt-out-title { font-size: 13px; font-weight: 800; color: var(--c-brand-txt); margin: 16px 0 8px; }
 .ctt-cmp { display: flex; flex-wrap: wrap; gap: 8px; }
 /* Banner de veredicto de la comparación A vs B (conclusión con dirección). */
 .ctt-verdict { border: 1px solid var(--c-border-soft); border-left: 4px solid var(--c-brand); background: var(--c-surface-2); border-radius: 8px; padding: 10px 13px; margin: 4px 0 10px; font-size: 13px; line-height: 1.5; color: var(--c-text); }
@@ -197,7 +197,7 @@
 /* Tabla Producción Omarsa (Vista Ejecutiva) */
 .prod-card { margin-bottom: 16px; }
 .prod-nav { display: flex; align-items: center; gap: 12px; justify-content: center; }
-.prod-nav-btn { width: 32px; height: 32px; border-radius: var(--r-sm); border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-brand); font-size: 14px; font-weight: 900; cursor: pointer; transition: all var(--t-fast); }
+.prod-nav-btn { width: 32px; height: 32px; border-radius: var(--r-sm); border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-brand-txt); font-size: 14px; font-weight: 900; cursor: pointer; transition: all var(--t-fast); }
 .prod-nav-btn:hover:not(:disabled) { background: var(--c-brand); color: #fff; }
 .prod-nav-btn:disabled { opacity: .35; cursor: default; }
 .prod-title { font-size: 15px; font-weight: 800; color: var(--c-text); }
@@ -260,7 +260,7 @@
 .sv-sie-table td.sv-sie-b { border-left: 2px solid var(--c-border); }
 .sv-sie-tk { font-weight: 800; color: var(--c-text); }
 .sv-sie-sv { font-weight: 800; font-variant-numeric: tabular-nums; }
-.sv-sie-band td { background: color-mix(in srgb, var(--c-brand) 8%, transparent); color: var(--c-brand-600); font-weight: 800; font-size: 11.5px; }
+.sv-sie-band td { background: color-mix(in srgb, var(--c-brand) 8%, transparent); color: var(--c-brand-600-txt); font-weight: 800; font-size: 11.5px; }
 .sv-sie-bmeta { color: var(--c-text-soft); font-weight: 600; }
 .sv-sie-bcount { float: right; color: var(--c-text-muted); font-weight: 700; }
 .sv-sie-proc { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--c-malo); background: color-mix(in srgb, var(--c-malo) 15%, transparent); border-radius: var(--r-pill); padding: 1px 7px; }
@@ -279,7 +279,7 @@ th.sv-sie-proy { white-space: nowrap; }
 .sv-sie-total .sv-sie-stlbl { color: var(--c-supervisor); font-size: 12px; }
 /* Botón «Total de la corrida»: mismo patrón de toggle que el «Ver proyección» de los
    KPIs con gráfico, en formato chip para convivir con el selector de merma. */
-.sv-sie-corrbtn { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; font-size: 11.5px; font-weight: 800; color: var(--c-brand-700); background: var(--c-surface-2); border: 1px solid var(--c-border); border-radius: var(--r-pill); cursor: pointer; transition: background .15s, border-color .15s; }
+.sv-sie-corrbtn { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; font-size: 11.5px; font-weight: 800; color: var(--c-brand-700-txt); background: var(--c-surface-2); border: 1px solid var(--c-border); border-radius: var(--r-pill); cursor: pointer; transition: background .15s, border-color .15s; }
 .sv-sie-corrbtn:hover { background: var(--c-surface-2); border-color: var(--c-brand-600); }
 .sv-sie-corrbtn[aria-pressed="true"] { color: #fff; background: var(--c-brand-600); border-color: var(--c-brand-600); }
 .sv-sie-corrbtn:focus-visible { outline: 2px solid var(--c-brand-600); outline-offset: 2px; }
@@ -290,8 +290,8 @@ th.sv-sie-proy { white-space: nowrap; }
 .sv-sie-cormod .sv-sie-stlbl { text-transform: none; letter-spacing: 0; color: var(--c-text-soft); }
 .sv-sie-cormod .sv-sie-cosecha, .sv-sie-cormod .sv-sie-proy { color: var(--c-text-soft); }
 .sv-sie-cortotal td { background: color-mix(in srgb, var(--c-brand) 14%, var(--c-surface)); border-top: 2px solid var(--c-brand-600); font-weight: 900; color: var(--c-text); }
-.sv-sie-cortotal .sv-sie-stlbl { color: var(--c-brand-700); font-size: 12px; }
-.sv-sie-cortotal .sv-sie-cosecha, .sv-sie-cortotal .sv-sie-proy { color: var(--c-brand-700); }
+.sv-sie-cortotal .sv-sie-stlbl { color: var(--c-brand-700-txt); font-size: 12px; }
+.sv-sie-cortotal .sv-sie-cosecha, .sv-sie-cortotal .sv-sie-proy { color: var(--c-brand-700-txt); }
 
 /* Modal Trazabilidad (descarga de fichas del módulo en PDF) */
 .sv-trace-sec { margin-bottom: 14px; }
@@ -314,7 +314,7 @@ th.sv-sie-proy { white-space: nowrap; }
 .sv-mday-tflags { color: #b26a00; font-weight: 700; font-variant-numeric: tabular-nums; }
 
 /* Botón de proyección en el modal de métricas (Supervivencia / Población). */
-.sv-mmetric-proj { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 8px; padding: 6px 14px; font-size: 12.5px; font-weight: 700; color: var(--c-brand-700); background: var(--c-surface-2); border: 1px solid var(--c-border); border-radius: var(--r-pill); cursor: pointer; transition: background .15s, border-color .15s; }
+.sv-mmetric-proj { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 8px; padding: 6px 14px; font-size: 12.5px; font-weight: 700; color: var(--c-brand-700-txt); background: var(--c-surface-2); border: 1px solid var(--c-border); border-radius: var(--r-pill); cursor: pointer; transition: background .15s, border-color .15s; }
 .sv-mmetric-proj:hover { background: var(--c-surface-2); border-color: var(--c-brand-600); }
 .sv-mmetric-proj[aria-pressed="true"] { color: #fff; background: var(--c-brand-600); border-color: var(--c-brand-600); }
 .sv-mmetric-proj:focus-visible { outline: 2px solid var(--c-brand-600); outline-offset: 2px; }
@@ -490,10 +490,10 @@ th.sv-sie-proy { white-space: nowrap; }
 .sv-marea-tipowrap { background: var(--c-surface); border: 1px solid var(--c-border-soft, var(--c-border)); border-radius: var(--r-md); padding: 9px 12px; }
 .sv-marea-tipo { display: inline-flex; flex-direction: column; margin-top: 4px; font-size: 14px; font-weight: 800; }
 .sv-marea-tipo-sub { font-size: 10.5px; font-weight: 600; color: var(--c-text-muted); text-transform: uppercase; letter-spacing: .5px; }
-.sv-marea-tipo--viva { color: var(--c-brand); }
+.sv-marea-tipo--viva { color: var(--c-brand-txt); }
 .sv-marea-tipo--muerta { color: var(--c-text-muted); }
 .sv-marea-vbar-lbl { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px; }
-.sv-marea-viva-t { color: var(--c-brand); font-weight: 700; }
+.sv-marea-viva-t { color: var(--c-brand-txt); font-weight: 700; }
 .sv-marea-vbar-track { height: 8px; background: color-mix(in srgb, var(--c-text-muted) 22%, transparent); border-radius: 4px; overflow: hidden; }
 .sv-marea-vbar-fill { height: 100%; background: var(--c-brand); border-radius: 4px; }
 .sv-marea-table { width: 100%; }
@@ -507,7 +507,7 @@ th.sv-sie-proy { white-space: nowrap; }
 /* Ampliación (fullscreen) del perfil de marea diario. */
 .sv-marea-ptitle--row { display: flex; align-items: center; gap: 8px; }
 .sv-marea-fsbtn { margin-left: auto; padding: 1px 8px; border-radius: var(--r-sm); border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); font-size: 14px; line-height: 1.3; cursor: pointer; }
-.sv-marea-fsbtn:hover { border-color: var(--c-brand); color: var(--c-brand); }
+.sv-marea-fsbtn:hover { border-color: var(--c-brand); color: var(--c-brand-txt); }
 .sv-marea-fs { position: fixed; inset: 0; z-index: 400; display: none; align-items: center; justify-content: center; padding: 3vh 3vw; background: rgba(15,23,30,.66); backdrop-filter: blur(3px); }
 .sv-marea-fs.is-open { display: flex; }
 .sv-marea-fs-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md); padding: 16px 18px; width: min(96vw, 1400px); box-shadow: 0 20px 60px rgba(0, 0, 0, .4); }
@@ -562,7 +562,7 @@ button.sv-marea-cal-d:focus-visible { outline: 2px solid var(--c-brand); outline
 .sv-marea-caldet-h { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 10px; }
 .sv-marea-caldet-t { font-size: 13.5px; font-weight: 800; color: var(--c-text); }
 .sv-marea-caldet-ir { margin-left: auto; padding: 3px 10px; border-radius: var(--r-sm); border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); font: inherit; font-size: 12px; cursor: pointer; }
-.sv-marea-caldet-ir:hover { border-color: var(--c-brand); color: var(--c-brand); }
+.sv-marea-caldet-ir:hover { border-color: var(--c-brand); color: var(--c-brand-txt); }
 .sv-marea-caldet-g { display: grid; grid-template-columns: 120px minmax(0, 210px) minmax(0, 1fr); gap: 14px; align-items: center; }
 .sv-marea-caldet-luna { display: flex; justify-content: center; }
 .sv-marea-caldet-ev { list-style: none; margin: 0 0 6px; padding: 0; display: grid; gap: 3px; font-size: 12.5px; color: var(--c-text); font-variant-numeric: tabular-nums; }
@@ -621,7 +621,7 @@ button.sv-marea-cal-d:focus-visible { outline: 2px solid var(--c-brand); outline
 .lv-vcard-name { font-size: 12px; font-weight: 800; color: var(--c-text); }
 .lv-vcard-actions { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .lv-fs-btn { width: 21px; height: 21px; border: 1px solid var(--c-border); background: var(--c-surface); border-radius: 5px; font-size: 11px; line-height: 1; color: var(--c-text-soft); cursor: pointer; display: grid; place-items: center; padding: 0; transition: all var(--t-fast); }
-.lv-fs-btn:hover { border-color: var(--c-brand); color: var(--c-brand); background: var(--c-surface-2); }
+.lv-fs-btn:hover { border-color: var(--c-brand); color: var(--c-brand-txt); background: var(--c-surface-2); }
 /* contenedor de acciones de la cabecera del gráfico (Normalizar + ampliar) */
 .sv-chart-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 /* botón Normalizar: variante de píldora con texto (no el cuadrado del ⛶) */

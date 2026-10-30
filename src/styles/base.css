@@ -59,7 +59,7 @@ a { color: inherit; }
   font-weight: 600;
   transition: all var(--t-fast);
 }
-.pill-btn:hover { border-color: var(--c-brand); color: var(--c-brand); }
+.pill-btn:hover { border-color: var(--c-brand); color: var(--c-brand-txt); }
 .pill-btn.is-active { background: var(--c-brand); border-color: var(--c-brand); color: #fff; }
 
 /* ---- Estado vacío ---- */

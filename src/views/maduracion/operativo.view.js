@@ -520,7 +520,7 @@ function avisosDelDatoHTML(M) {
 function vacioHTML() {
   return `<div class="empty-state" style="padding:48px 20px">
     <div style="font-size:40px">📋</div>
-    <h3 style="margin:10px 0 6px;color:var(--c-brand)">Sin datos del registro operativo</h3>
+    <h3 style="margin:10px 0 6px;color:var(--c-brand-txt)">Sin datos del registro operativo</h3>
     <p class="muted">No hay filas en las hojas del operativo de Maduración: Ingreso, Movimientos, Desoves, Inf. Supervisor,
       Fin de Ciclo, Tratamientos, Alimentación, Broodstock, Salas (con sus zonas de desove y reservorios) y Tanques.</p>
     <p class="muted">Se registran en <b>Registros → Maduración</b>. El seguimiento por Trovan está en <b>🧬 Microchips</b>.</p>

@@ -24,7 +24,7 @@
 .mn-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
 .mn-tab { padding: 6px 14px; border-radius: 999px; border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft);
   font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
-.mn-tab:hover { border-color: var(--c-brand-600); color: var(--c-brand-600); }
+.mn-tab:hover { border-color: var(--c-brand-600); color: var(--c-brand-600-txt); }
 .mn-tab.is-on { background: var(--c-brand-600); border-color: var(--c-brand-600); color: #fff; }
 .mn-tab:focus-visible { outline: 2px solid var(--c-brand-600); outline-offset: 2px; }
 .mn-seccion { display: flex; flex-direction: column; gap: 14px; }
@@ -45,7 +45,7 @@
 .mn-filtros { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
 .mn-sel { padding: 6px 10px; border-radius: 8px; border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-text); font: inherit; font-size: 13px; }
 .mn-graf { position: relative; height: 280px; }
-.mn-btn { padding: 6px 14px; border-radius: 8px; border: 1.5px solid var(--c-brand-600); background: var(--c-surface); color: var(--c-brand-600);
+.mn-btn { padding: 6px 14px; border-radius: 8px; border: 1.5px solid var(--c-brand-600); background: var(--c-surface); color: var(--c-brand-600-txt);
   font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
 .mn-btn:hover { background: var(--c-brand-600); color: #fff; }
 .mn-btn:focus-visible { outline: 2px solid var(--c-brand-600); outline-offset: 2px; }

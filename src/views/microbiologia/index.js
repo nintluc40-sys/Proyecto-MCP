@@ -307,7 +307,7 @@ function placeholderHTML(sub) {
     : { icono: '🚧', texto: 'Esta sub-vista llega en una tanda posterior.' };
   return `<div class="empty-state" style="padding:56px 20px">
       <div style="font-size:40px">${sub.icon}</div>
-      <h2 style="margin:10px 0 6px;color:var(--c-brand)">${esc(sub.label)}</h2>
+      <h2 style="margin:10px 0 6px;color:var(--c-brand-txt)">${esc(sub.label)}</h2>
       <p class="muted">${aviso.icono} ${esc(aviso.texto)}</p>
     </div>`;
 }
