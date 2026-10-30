@@ -71,9 +71,12 @@ function txtTraslado(tr) {
 }
 /* ---------- El blower del módulo (F3, el cruce con 🔧 Mantenimiento; 2026-10-29, usuario) ---------- */
 const minus = (s) => s.charAt(0).toLowerCase() + s.slice(1);
+/** Horas como las enseña la vista 🔧 Mantenimiento (hasta dos decimales: «13,38», «2.914,12»). 2026-10-30 (auditoría): se
+ *  redondeaban a enteras, y salía «venció hace 0 h», «faltan 0 h» o el mismo «faltan 100 h» para un PRÓXIMO y un AL DÍA. */
+const horas = (v) => Number(v).toLocaleString('es-EC', { maximumFractionDigits: 2 });
 /** Cuánto hace que venció una actividad de `proximos` (por horas o, si no, por días). */
 function vencioHace(p) {
-  if (p.faltanH != null && p.faltanH < 0) return 'venció hace ' + ent(-p.faltanH) + ' h';
+  if (p.faltanH != null && p.faltanH < 0) return 'venció hace ' + horas(-p.faltanH) + ' h';
   if (p.faltanD != null && p.faltanD < 0) return 'venció hace ' + -p.faltanD + (p.faltanD === -1 ? ' día' : ' días');
   return 'vencida';
 }
@@ -84,13 +87,20 @@ function txtCambio(b) {
     const mas = b.vencidos.length - 1;
     return p.actividad + ' · ' + vencioHace(p) + (mas > 0 ? ' (y ' + mas + (mas === 1 ? ' actividad vencida más)' : ' actividades vencidas más)') : '');
   }
-  if (p.estado === MNT_ESTADO.SIN_DATOS) return p.actividad + ' · sin horómetro para calcularlo';
-  const falta = [p.faltanH != null && ent(p.faltanH) + ' h', p.faltanD != null && p.faltanD + (p.faltanD === 1 ? ' día' : ' días')].filter(Boolean);
+  // SIN DATOS: o falta el horómetro (intervalo en horas) o, con intervalo sólo en días, nunca se registró (no hay fecha desde
+  // la que contar). 2026-10-30 (auditoría): decía «sin horómetro» también en el segundo caso.
+  if (p.estado === MNT_ESTADO.SIN_DATOS) {
+    return p.actividad + (p.intervaloH != null && p.actualH == null ? ' · sin horómetro para calcularlo' : ' · sin un trabajo registrado desde el que contar');
+  }
+  const falta = [p.faltanH != null && horas(p.faltanH) + ' h', p.faltanD != null && p.faltanD + (p.faltanD === 1 ? ' día' : ' días')].filter(Boolean);
   return p.actividad + ' · faltan ' + falta.join(' o ') + (p.estado === MNT_ESTADO.PROXIMO ? ' (próximo)' : '');
 }
 function txtNoAvanza(n) {
+  // el horómetro BAJÓ entre las dos lecturas: una mal anotada (2026-10-30, auditoría: decía «sumó −476 h»)
+  if (n.bajo) return 'bajó de ' + horas(n.de) + ' a ' + horas(n.a) + ' h: revisar la lectura';
   const dias = Number.isInteger(n.dias) ? String(n.dias) : fmt(n.dias, 1);
-  return 'sumó ' + ent(n.sumo) + ' h en ' + dias + (n.dias === 1 ? ' día' : ' días') + ' con el módulo en cultivo (esperadas ~' + ent(n.esperadas) + ')';
+  return 'sumó ' + horas(n.sumo) + ' h en ' + (n.minimo ? 'al menos ' : '') + dias + (n.dias === 1 ? ' día' : ' días')
+    + ' con el módulo en cultivo (esperadas ' + (n.minimo ? 'al menos ' : '') + '~' + ent(n.esperadas) + ')';
 }
 /** Los blowers de un módulo para su ficha y «Qué atender hoy»: sólo hoy (un mes pasado se ve como estaba, sin ellos). */
 const blowersDe = (g, ctx) => (ctx.cargado && !ctx.mesPasado && ctx.blowers && ctx.blowers.porModulo ? ctx.blowers.porModulo[g.id] || [] : []);
@@ -99,7 +109,7 @@ function filasDeBlower(g, ctx) {
   const out = [];
   blowersDe(g, ctx).forEach((b) => {
     const h = b.horometro;
-    out.push(['🔧 Blower', b.codigo + (b.modelo ? ' · ' + b.modelo : '') + (h ? ' · ' + ent(h.h) + ' h al ' + dm(h.fecha) : ' · sin horómetro')]);
+    out.push(['🔧 Blower', b.codigo + (b.modelo ? ' · ' + b.modelo : '') + (h ? ' · ' + horas(h.h) + ' h al ' + dm(h.fecha) : ' · sin horómetro')]);
     out.push(['Próximo cambio', txtCambio(b)]);
     if (b.noAvanza) out.push(['⚠ Horómetro', txtNoAvanza(b.noAvanza) + ' · del ' + dm(b.noAvanza.desde) + ' al ' + dm(b.noAvanza.hasta)]);
   });

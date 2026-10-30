@@ -24,7 +24,7 @@ MISMO cambio** (`CLAUDE.md`, regla 2; lo vigila el pre-push con `verificar-todo 
 | Líneas de `engine.js` | 13 149 | 13 971 | 31 278 | **31 987** — `wc -l public/registros/engine.js` |
 | Pruebas que cargan el motor | 0 | 0 | 132 archivos | **135 archivos** — `grep -rl "registros/engine.js" src --include=*.test.js \| wc -l` |
 | `index (8)` | sin versionar | sin versionar | versionado (repo propio en `Music`) y vigilado función a función y por comportamiento | igual |
-| El GAS desplegado | — | por re-desplegar | el del repo | **por re-desplegar**: desplegado `372a32cebe97`, repo `0c019e78e429` |
+| El GAS desplegado | — | por re-desplegar | el del repo | **el del repo** (`0c019e78e429`, re-desplegado el 29-10, antes del push de `5b9121e`) |
 
 El GAS desplegado no es una cifra del motor sino un estado del día: se comprueba con `?p=ver` (su sello es la huella de
 `Code.gs`) frente a `GAS_VERSION`, o con ⚙ Config → Probar conexión.

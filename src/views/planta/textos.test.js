@@ -404,7 +404,7 @@ describe('🔧 F3 · el blower del módulo en su ficha y en «Qué atender hoy»
 
   it('la ficha del módulo termina con su blower y su próximo cambio, en cualquier estado del módulo', () => {
     const ctx = conBlowers(HOY, blower());
-    const esperadas = [['🔧 Blower', 'BLW-07 · FB 441 C · 513 h al 22/10'], ['Próximo cambio', 'Cambio de aceite · venció hace 13 h']];
+    const esperadas = [['🔧 Blower', 'BLW-07 · FB 441 C · 513,38 h al 22/10'], ['Próximo cambio', 'Cambio de aceite · venció hace 13,38 h']];
     expect(fichaGrupo(modulo(cultivo()), ctx).rows.slice(-2)).toEqual(esperadas);
     expect(fichaGrupo(modulo(null), ctx).rows).toEqual([['Estado', 'Sin datos de producción'], ...esperadas]);
     const desp = modulo({ estado: 'despachado', corrida: '596', siembra: null, resultado: { poblacion: 3e6, superv: 70, plg: null }, ultimo: null });
@@ -413,17 +413,39 @@ describe('🔧 F3 · el blower del módulo en su ficha y en «Qué atender hoy»
   it('el próximo cambio: vencido (por horas o días, y cuántas más), próximo, al día, sin horómetro y sin plan', () => {
     const txt = (b) => Object.fromEntries(filasBlower(modulo(cultivo()), conBlowers(HOY, blower(b))))['Próximo cambio'];
     expect(txt({ vencidos: [VENCIDO, aceite(MNT_ESTADO.VENCIDO, { actividad: 'Limpieza general', faltanD: -3 })] }))
-      .toBe('Cambio de aceite · venció hace 13 h (y 1 actividad vencida más)');
+      .toBe('Cambio de aceite · venció hace 13,38 h (y 1 actividad vencida más)');
     expect(txt({ proximo: aceite(MNT_ESTADO.VENCIDO, { faltanD: -1 }) })).toBe('Cambio de aceite · venció hace 1 día');
-    expect(txt({ proximo: aceite(MNT_ESTADO.PROXIMO, { faltanH: 16.65 }), vencidos: [] })).toBe('Cambio de aceite · faltan 17 h (próximo)');
-    expect(txt({ proximo: aceite(MNT_ESTADO.AL_DIA, { faltanH: 2914.12, faltanD: 40 }), vencidos: [] })).toBe('Cambio de aceite · faltan 2.914 h o 40 días');
-    expect(txt({ proximo: aceite(MNT_ESTADO.SIN_DATOS), vencidos: [] })).toBe('Cambio de aceite · sin horómetro para calcularlo');
+    expect(txt({ proximo: aceite(MNT_ESTADO.PROXIMO, { faltanH: 16.65 }), vencidos: [] })).toBe('Cambio de aceite · faltan 16,65 h (próximo)');
+    expect(txt({ proximo: aceite(MNT_ESTADO.AL_DIA, { faltanH: 2914.12, faltanD: 40 }), vencidos: [] })).toBe('Cambio de aceite · faltan 2.914,12 h o 40 días');
+    expect(txt({ proximo: aceite(MNT_ESTADO.SIN_DATOS, { intervaloH: 3000, actualH: null }), vencidos: [] })).toBe('Cambio de aceite · sin horómetro para calcularlo');
     expect(txt({ proximo: null, vencidos: [] })).toBe('Sin intervalos en el plan');
     expect(Object.fromEntries(filasBlower(modulo(cultivo()), conBlowers(HOY, blower({ horometro: null }))))['🔧 Blower']).toBe('BLW-07 · FB 441 C · sin horómetro');
+  });
+  it('🔴 auditoría 30-10 · las horas con sus decimales, como la vista 🔧 (decía «venció hace 0 h», «faltan 0 h» y el mismo «faltan 100 h» para dos estados)', () => {
+    const txt = (p) => Object.fromEntries(filasBlower(modulo(cultivo()), conBlowers(HOY, blower({ proximo: p, vencidos: p.estado === MNT_ESTADO.VENCIDO ? [p] : [] }))))['Próximo cambio'];
+    expect(txt(aceite(MNT_ESTADO.VENCIDO, { faltanH: -0.3 }))).toBe('Cambio de aceite · venció hace 0,3 h');
+    expect(txt(aceite(MNT_ESTADO.PROXIMO, { faltanH: 0.3 }))).toBe('Cambio de aceite · faltan 0,3 h (próximo)');
+    expect(txt(aceite(MNT_ESTADO.PROXIMO, { faltanH: 99.6 }))).toBe('Cambio de aceite · faltan 99,6 h (próximo)');
+    expect(txt(aceite(MNT_ESTADO.AL_DIA, { faltanH: 100.4 }))).toBe('Cambio de aceite · faltan 100,4 h');
+  });
+  it('🔴 auditoría 30-10 · «sin datos» con intervalo sólo en días y nunca hecha: no es «sin horómetro»', () => {
+    const p = { actividad: 'Limpieza general', estado: MNT_ESTADO.SIN_DATOS, intervaloH: null, intervaloD: 30, actualH: 200, faltanH: null, faltanD: null };
+    expect(Object.fromEntries(filasBlower(modulo(cultivo()), conBlowers(HOY, blower({ proximo: p, vencidos: [] }))))['Próximo cambio'])
+      .toBe('Limpieza general · sin un trabajo registrado desde el que contar');
   });
   it('el horómetro que no avanza sale en la ficha, con el tramo', () => {
     expect(filasBlower(modulo(cultivo()), conBlowers(HOY, blower({ noAvanza: NO_AVANZA }))).at(-1))
       .toEqual(['⚠ Horómetro', 'sumó 50 h en 5 días con el módulo en cultivo (esperadas ~120) · del 17/10 al 22/10']);
+    const minimo = { ...NO_AVANZA, esperadas: 96, dias: 4, minimo: true, sumo: 10 };
+    expect(filasBlower(modulo(cultivo()), conBlowers(HOY, blower({ noAvanza: minimo }))).at(-1))
+      .toEqual(['⚠ Horómetro', 'sumó 10 h en al menos 4 días con el módulo en cultivo (esperadas al menos ~96) · del 17/10 al 22/10']);
+  });
+  it('🔴 auditoría 30-10 · si el horómetro BAJÓ, la ficha y «Qué atender» lo dicen como lectura a revisar (decía «sumó −476 h»)', () => {
+    const bajo = { desde: '2026-10-21', hasta: '2026-10-22', sumo: -476, esperadas: 24, dias: 1, minimo: false, bajo: true, de: 1500, a: 1024 };
+    expect(filasBlower(modulo(cultivo()), conBlowers(HOY, blower({ noAvanza: bajo }))).at(-1))
+      .toEqual(['⚠ Horómetro', 'bajó de 1.500 a 1.024 h: revisar la lectura · del 21/10 al 22/10']);
+    const it1 = alertasParaAtender([modulo(cultivo())], null, conBlowers(HOY, blower({ proximo: null, vencidos: [], noAvanza: bajo }))).items.at(-1);
+    expect(it1.detalle).toBe('Módulo 7 · el horómetro bajó de 1.500 a 1.024 h: revisar la lectura');
   });
   it('mientras carga, en un mes pasado o sin hojas de Mantenimiento, la ficha no dice nada del blower', () => {
     expect(filasBlower(modulo(cultivo()), conBlowers(PASADO, blower()))).toEqual([]);
@@ -435,9 +457,9 @@ describe('🔧 F3 · el blower del módulo en su ficha y en «Qué atender hoy»
     const m = modulo(cultivo());
     const A = alertasParaAtender([m], null, conBlowers(HOY, blower()));
     expect(A.total).toBe(2 + 1);
-    expect(A.items.at(-1)).toEqual({ tipo: 'blower', g: m, nombre: 'BLW-07', detalle: 'Módulo 7 · cambio de aceite venció hace 13 h' });
+    expect(A.items.at(-1)).toEqual({ tipo: 'blower', g: m, nombre: 'BLW-07', detalle: 'Módulo 7 · cambio de aceite venció hace 13,38 h' });
     const ambos = alertasParaAtender([m], null, conBlowers(HOY, blower({ noAvanza: NO_AVANZA }))).items.at(-1);
-    expect(ambos.detalle).toBe('Módulo 7 · cambio de aceite venció hace 13 h · el horómetro sumó 50 h en 5 días con el módulo en cultivo (esperadas ~120)');
+    expect(ambos.detalle).toBe('Módulo 7 · cambio de aceite venció hace 13,38 h · el horómetro sumó 50 h en 5 días con el módulo en cultivo (esperadas ~120)');
     const soloParado = alertasParaAtender([m], null, conBlowers(HOY, blower({ proximo: aceite(MNT_ESTADO.AL_DIA, { faltanH: 900 }), vencidos: [], noAvanza: NO_AVANZA })));
     expect(soloParado.total).toBe(3);
     const proximo = alertasParaAtender([m], null, conBlowers(HOY, blower({ proximo: aceite(MNT_ESTADO.PROXIMO, { faltanH: 16.65 }), vencidos: [] })));

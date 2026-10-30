@@ -394,9 +394,10 @@ volver a abrir esto, esto es lo que ya se midió:
   de producción. Lógica pura en `src/views/mantenimiento/mantenimiento.data.js` y, la de la ficha, en
   `src/views/registros/lib/ficha-mantenimiento.schema.js` (con su gemelo en el motor, atado por paridad).
   **En 🏭 Planta** (F3, 2026-10-29, `src/views/planta/blowers.js`): la ficha de cada módulo dice su blower —el de
-  `Mantenimiento Equipos` cuya «Ubicación» nombra el módulo; los de stand by, no—, su horómetro y su próximo cambio, con
-  el mismo semáforo; «Qué atender hoy» suma los que tienen algo VENCIDO (los próximos, no) y los que, con el módulo en
-  cultivo, sumaron menos del 80 % de 24 h por día entre sus dos últimas lecturas. Sólo hoy: un mes pasado se ve sin ellos.
+  `Mantenimiento Equipos` cuya «Ubicación» nombra el módulo y cuyo Estado es «En servicio»—, su horómetro y su próximo
+  cambio, con el mismo semáforo; «Qué atender hoy» suma los que tienen algo VENCIDO (los próximos, no) y los que, con el
+  módulo en cultivo, sumaron menos del 80 % de 24 h por día entre su última lectura y la más reciente de al menos 24 h
+  antes (sin la hora de alguna, lo mínimo que pudo pasar), o cuyo horómetro bajó. Sólo hoy: un mes pasado se ve sin ellos.
   La próxima parada estimada con las corridas reales queda para cuando haya datos con que medirla.
 - **Registros**: fichas de captura (estrangulamiento gradual del monolito
   `public/registros/engine.js`) que escriben al Sheet vía Google Apps Script.
