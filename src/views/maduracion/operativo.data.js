@@ -55,7 +55,8 @@ export function fuentesAlDia(fuentes, hasta) {
 }
 
 /** Los pesos de REFERENCIA de cada tanque (`alimPesosDeReferencia`: su última biometría de un día en que tenía alguno de
- *  sus lotes de hoy y, si no la hay, el peso de Ingreso), con el corte del resumen (`fuentesAlDia` hasta la foto): los
+ *  sus lotes de hoy; si no la hay, la última de esos lotes en el tanque donde estaban ese día —desde el 2026-10-25—; y si
+ *  tampoco, el peso de Ingreso), con el corte del resumen (`fuentesAlDia` hasta la foto): los
  *  mismos de los que sale su carga y su ración. → { [ubicKey]: { hembras: {valor, fuente, fecha}, machos: {…} } }
  *  Tarea 12 de la ronda 6 (2026-10-24, usuario): la columna de pesos de 🛢 Tanques enseñaba el último peso del período SIN
  *  mirar quién había dentro, y en un tanque que cambió de ocupantes era el del lote ANTERIOR (y no cuadraba con su carga).

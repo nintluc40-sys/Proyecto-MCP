@@ -725,7 +725,7 @@ export function alertas(M, periodo, F) {
 
 /* ── ÚLTIMOS REGISTROS Y CUARENTENAS ─────────────────────────── */
 
-/** Cómo llama el usuario a cada hoja: el rótulo de su ficha en Registros (el monolito, `FICHA_LABEL`). */
+/** Cómo llama el usuario a cada hoja: el rótulo de su ficha en Registros (el monolito, `FICHA_LABELS`). */
 export const ETIQUETA_HOJA = {
   ingresos: '📥 Ingreso', movimientos: '🔄 Movimientos', desoves: '🥚 Desoves', mortDesove: '📋 Inf. Supervisor',
   cierres: '🏁 Fin de Ciclo', tratamientos: '🧪 Tratamientos', alimentacion: '🍤 Alimentación', broodstock: '📈 Broodstock',

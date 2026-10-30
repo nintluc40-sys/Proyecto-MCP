@@ -176,8 +176,9 @@ export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
   const noteBadDate = (hoja, trovan, raw) => { if (raw) invalidDates.push({ hoja, trovan, fecha: String(raw) }); };
   // Eventos cuya ubicación NO venía en la fila y hubo que derivar. Medido el 2026-08-31
   // contra la hoja viva vale 0 (las 1970 filas traen su snapshot), y ése es justamente
-  // el motivo de contarlo: si algún día deja de ser 0 mientras «Maduración
-  // Transferencias» sigue vacía, la ubicación de esos eventos pasa a ser la posición de
+  // el motivo de contarlo: si algún día deja de ser 0 sin una fila de «Maduración
+  // Transferencias» que cubra el evento (la hoja estaba vacía cuando se escribió esto; el
+  // 2026-10-29 tenía 166 filas), la ubicación de esos eventos pasa a ser la posición de
   // HOY de cada hembra. Callarlo es el mismo fallo que este módulo ya evita con las
   // fechas imposibles y los Trovan repetidos.
   let derivedEvents = 0;

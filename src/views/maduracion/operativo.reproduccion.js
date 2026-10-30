@@ -30,8 +30,8 @@
    NO dice cuántos nauplios fue a cada uno. Así que se cuenta el desove en cada destino al que fue y se informa
    de cuántos van a más de uno; inventar un reparto proporcional daría una cifra creíble y falsa.
 
-   ⏳ Sin dato real todavía: `Maduración Lotes` —la hoja de los desoves— tiene CERO filas (medido el 2026-09-21).
-   El módulo se desarrolla con fixtures FICTICIOS y en pantalla saldrá vacío hasta que se estrene.
+   ⏳ Se escribió sin dato real: `Maduración Lotes` —la hoja de los desoves— tenía CERO filas (medido el 2026-09-21),
+   y el módulo se desarrolló con fixtures FICTICIOS. Ya se estrenó: 231 filas el 2026-10-29 (`estado-maduracion`).
    ============================================================ */
 import {
   normLote, normCodigoGenetico, desoveDesdeHoja, desoveCompleto, despachoLista, fechasNauplios, n5DeN2,

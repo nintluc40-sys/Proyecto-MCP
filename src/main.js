@@ -22,7 +22,8 @@ import { startAutoRefresh, asegurarLibro, setLibroGuardado } from './core/refres
 import { cargarLibroGuardado, almacenIDB } from './core/libroGuardado.js';
 import { esc } from './core/format.js';
 import { vigilarVersion } from './ui/versionNueva.js';
-// Las siete vistas de cada día se bajan AL ABRIRLAS (tarea 5, 2026-10-23): ver ui/vistaDiferida.js.
+// Las siete vistas de cada día (tarea 5, 2026-10-23) y la de 🔧 Mantenimiento (2026-10-28) se bajan AL ABRIRLAS: ver
+// ui/vistaDiferida.js.
 import { diferida } from './ui/vistaDiferida.js';
 
 // Biología Molecular: carga DIFERIDA. Es la vista más pesada (D3, ~1.5k líneas) y
@@ -73,7 +74,7 @@ function boot() {
   // Vistas desarrolladas
   // `usaBarraFecha: true` = la vista LEE el rango de la barra de fecha global (store.dateFrom/
   // dateTo). Sólo esas la enseñan (D12, 2026-09-13); lo vigila src/ui/dateBarVisibility.test.js.
-  // Las siete de cada día, DIFERIDAS (tarea 5, ver `diferida` arriba).
+  // Las siete de cada día, DIFERIDAS (tarea 5, ver `diferida` arriba); Mantenimiento también, más abajo.
   registerView('supervisor', diferida({ label: 'Supervisor', icon: '👁️', usaBarraFecha: true }, () => import('./views/supervisor/index.js').then((m) => m.supervisorView)));
   registerView('larvicultura', diferida({ label: 'Larvicultura', icon: '🦐' }, () => import('./views/larvicultura/index.js').then((m) => m.larviculturaView)));
   registerView('revisiones', diferida({ label: 'Revisiones', icon: '🔍', usaBarraFecha: true }, () => import('./views/revisiones/index.js').then((m) => m.revisionesView)));

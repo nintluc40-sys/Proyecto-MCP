@@ -26,7 +26,8 @@
    ⚠ Los catálogos de OBSERVACIONES de tanque viven en el monolito y no se duplican aquí: se cuenta lo que los
    partes traigan, que es lo que de verdad se ha marcado. Dos copias de un catálogo divergen en silencio.
 
-   ⏳ Con los datos del 2026-09-20 esta hoja tiene CERO filas: todo nace vacío, y eso es lo correcto.
+   ⏳ Con los datos del 2026-09-20 esta hoja tenía CERO filas: todo nacía vacío, y eso era lo correcto. Ya tiene datos
+   reales (`Maduración Mortalidad Desove`: 624 filas el 2026-10-29, `estado-maduracion`).
    ============================================================ */
 import {
   MAD_MORT_TIPOS, MAD_NAUP_REVISIONES, MAD_NAUP_DEFORMIDAD, MAD_NAUP_ACTIVIDAD, MAD_NAUP_HONGOS,

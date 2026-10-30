@@ -36,10 +36,10 @@ export function diagSemaforo(last, vars) {
 /** Población: nivel según % de pérdida acumulada (> 40 % rojo · > 20 % ámbar).
  *  ⚠ 2026-09-21 · AQUÍ PONÍA «umbrales estimados, ajustables», que se lee como un pendiente de
  *  nadie. Lo preciso: estas dos cifras NO tienen fuente —ni documento del laboratorio ni
- *  bibliografía—, vienen del sistema original y nunca las ha confirmado nadie. Es el MISMO hueco
- *  que en Maduración, donde 13 de los 14 umbrales esperan el valor del laboratorio
- *  (`views/maduracion/operativo.umbrales.js`); allí, sin fuente, NO se juzga, y aquí la cifra ya
- *  existe y pinta un semáforo. Se quedan —quitarlas dejaría la vista sin criterio— pero cuando el
+ *  bibliografía—, vienen del sistema original y nunca las ha confirmado nadie. En Maduración ese
+ *  hueco ya se cerró: sus 14 umbrales tienen fuente, 8 del laboratorio y 6 bibliográficos
+ *  (`views/maduracion/operativo.umbrales.js`, contado el 2026-10-29; allí, sin fuente, NO se
+ *  juzgaba). Aquí la cifra ya existe y pinta un semáforo. Se quedan —quitarlas dejaría la vista sin criterio— pero cuando el
  *  laboratorio dé los suyos, mandan ellos. Vale igual para los dos comentarios de abajo. */
 export function popSemaforo(pStats) {
   if (!pStats || !pStats.validTanks || !(pStats.totalInit > 0)) return { level: 'verde', detail: 'Sin población válida' };

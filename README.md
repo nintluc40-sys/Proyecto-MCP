@@ -126,8 +126,8 @@ volver a abrir esto, esto es lo que ya se midió:
   Incluye el panorama **General** (tablero-scorecard por área) y **Calidad de
   Agua** (analizador multiparamétrico con WQI, doble lente Por parámetro/Por
   ubicación, y **⚗️ Ensayo** —promedio antes/después, diferencia y % de cambio de S‰, pH, calcio,
-  magnesio y potasio— cuando hay parejas antes/después, p. ej. Maduración). Sub-vista **Patología en fresco** pendiente (a la espera de su
-  hoja en el Google Sheet).
+  magnesio y potasio— cuando hay parejas antes/después, p. ej. Maduración). Sub-vista **Patología en fresco**: cuenta
+  los análisis que lleguen; su pantalla de detalle está en «Pendiente».
   La barra de mes de General, Bacteriología y Calidad de Agua acaba, tras el último mes, en
   **📅 Todo el registro**, y una muestra SIN corrida (Maduración, Algas, Otras) va al mes de su fecha
   de muestreo (`monthIndexOfDate`: aproximado, y la barra lo dice) en vez de repetirse en todos los
@@ -200,7 +200,8 @@ volver a abrir esto, esto es lo que ya se midió:
     maestra de los ocupados —con el día y la HORA de su último parte, y desde el 2026-10-23 el punto de color de su
     ♀:♂, su densidad y su carga, el mismo de 🏠 Salas; la carga es UNA por tanque, la del tanque entero; desde el
     2026-10-24, la carga y su columna de pesos salen de los pesos de REFERENCIA del tanque, los de la ración: su última
-    biometría con sus lotes de hoy o, si no la hay, la de Ingreso, marcada— y, al pulsar
+    biometría con sus lotes de hoy; si no la hay, la última de esos lotes en el tanque donde estaban (desde el
+    2026-10-25); y si tampoco, la de Ingreso, marcada— y, al pulsar
     una fila, su ficha:
     composición, curva de vivos, partes con su hora,
     observaciones y movimientos), **🥚 Reproducción** (totales, los desoves pendientes de N5 arriba, la tabla
@@ -521,8 +522,9 @@ reloj va desfasado **5 min o más**, un aviso —una vez por sesión— pide cor
 sin él, el HEAD se bloquea (happy-dom no aplica la CSP, las pruebas no lo ven).
 
 En **🛢️ Tanques**, los pesos ♂ y ♀ **bajan por su columna**: al teclear uno se copia a las filas
-de abajo que tengan animales vivos. Las observaciones sanitarias y operativas bajan igual (a todas
-las filas), y la salinidad y la temperatura de la Revisión de nauplios de Inf. Supervisor también.
+de abajo que tengan animales vivos. Las observaciones sanitarias y operativas bajan igual (desde el
+2026-10-28, también sólo a las filas con vivos; antes bajaban a todas). En Inf. Supervisor bajan la salinidad y la
+temperatura de la Revisión de nauplios (allí, a todas las filas de abajo).
 **Cambiar una fila que tenía el valor copiado sólo cambia ESA fila**: se marca en amarillo, no baja,
 y las de abajo conservan el primer valor; corregir la primera arrastra sus copias, no las marcadas
 (usuario, 2026-09-24). Lo que ya estaba —guardado, pegado o de antes de repintar— no se pisa nunca:
@@ -577,7 +579,8 @@ suben**. Decisiones del usuario del 2026-09-18:
   los libros de julio traen a la derecha bloques auxiliares de cálculo que no son notas.
 - El origen de julio con la camaronera pegada («902 ch», «903ch») se separa en **piscina de origen** y
   **camaronera** (`MAD_BS_SUFIJO_CAMARONERA`: «ch» = Chongón). No pisa una camaronera que venga en su
-  columna, y un sufijo que no esté en la tabla no se adivina. El área pedirá las dos columnas por separado.
+  columna, y un sufijo que no esté en la tabla no se adivina. El área ya trae las dos columnas por separado
+  (comprobado en la hoja el 2026-10-28: ningún origen con «ch»); el puente se conserva como red (usuario, `6fa1eff`).
 - Una última columna de pesos distinta del corte **se avisa**, no bloquea.
 - Sube el Excel **cualquiera que entre al módulo de Maduración**.
 
@@ -646,7 +649,7 @@ aparte; 🖨 PDF con la misma tabla.
 ⚠ **Las llaves del GAS mandan sobre el diseño de estas hojas.** `Maduración Sala`,
 `Tanques` y `Lotes` se identifican por POSICIÓN (`[0,1]`, `[0,1,2,13,14]` —Fecha, Sala, Tanque,
 Hora y Parte— y `[0,1,2]`), igual que `Broodstock` (`[0,1]`, Fecha de corte · Piscina, que además
-REEMPLAZA en vez de fundir), así que mover una columna de las primeras destruye datos en cada
+REEMPLAZA en vez de fundir) y `Zonas` (`[0,1,2]`, Fecha · Zona · Tanque, desde el 2026-10-27), así que mover una columna de las primeras destruye datos en cada
 sincronización; `Ingreso`, `Movimientos` y `Fin de Ciclo` van por la columna `ID`, que el GAS
 localiza por su cabecera.
 ✅ **P12 (2026-09-20): `Maduración Tanques` YA NO conserva las tres columnas vacías.** Durante meses
@@ -724,6 +727,8 @@ src/
                            prueba de paridad contra el gemelo inline del monolito
     clima/                 🌦 La pastilla «Hoy» y su modal Día/Mes (clima.js), de las hojas del script de
                            clima (clima.data.js, puro); la pintan Supervisor, Larvicultura, Algas y Maduración
+    mantenimiento/         🔧 Los blowers: semáforo, lecturas, indicadores e historial (mantenimiento.data.js,
+                           puro); su ficha de captura está en engine.js (módulo 16 de 📝 Registros)
   sw.test.js               Ejerce las reglas de enrutado de public/sw.js en un ámbito falso
 public/
   registros/engine.js      Monolito heredado de las fichas (se estrangula gradualmente)
@@ -753,7 +758,7 @@ Dos consecuencias que conviene tener presentes al desplegar:
   Gracias a eso la app arranca sin conexión **a la primera carga, no a la segunda**.
 - Los bloques **diferidos** (Registros, Biología Molecular, el tablero de Maduración, el Worker
   de lectura del libro y, desde el 2026-10-23, las siete vistas de cada día —`ui/vistaDiferida.js`: la
-  pantalla de roles bajaba 1 053,7 kB de JavaScript y ahora 255,6—) no salen en `index.html`: el build escribe la lista de TODO `assets/`
+  pantalla de roles bajaba 1 053,7 kB de JavaScript y ahora 255,6—, más 🔧 Mantenimiento desde el 2026-10-28) no salen en `index.html`: el build escribe la lista de TODO `assets/`
   en `precache-assets.json` (`vite.config.js · listaDePrecache`) y el worker los guarda también
   al instalarse (`assetsDelBuild`, 2026-10-01). Sin eso, tras un despliegue, un equipo que no
   abriera Registros con red no podía abrirlo sin señal. La lista sale del bundle DEFINITIVO (`generateBundle` con
@@ -1408,7 +1413,7 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
 
 **Bloquea producción**
 
-1. 🔴 **El token compartido.** `SHARED_TOKEN` está vacío: la escritura sobre las hojas de producción
+1. 🔴 **El token compartido** (la S1 del documento de seguridad). `SHARED_TOKEN` está vacío: la escritura sobre las hojas de producción
    sigue siendo anónima. Se activa desde el panel de Apps Script (Propiedades del script), sin tocar
    código: el código que lo lee ya está desplegado. ⚠ El orden importa: primero el token en ⚙ Config
    de TODOS los dispositivos y después la propiedad; al revés, nadie puede escribir. «Bloquea» dice lo GRAVE
@@ -1421,10 +1426,8 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
    día tampoco —esta línea citó dos sellos que caducaron el mismo día—: lo dicen `?p=ver` y
    `estado-maduracion.mjs`. Falta que lo desplegado se use de verdad:
    - Las hojas que aún no existen nacen con su primer envío y tienen que nacer con la cabecera actual.
-     Cuáles existen ya, y con cuántas columnas, lo dice `estado-maduracion.mjs`, no esta lista.
-   - ✅ Un parte de Tanques REENVIADO corrige su fila, no añade otra: es la llave nueva de P12
-     (`[0,1,2,13,14]`: Fecha, Sala, Tanque, Hora y Parte). **Validado** (re-medido el 2026-10-26 sobre la hoja entera):
-     ninguna llave repetida; las 9 sin «Parte» del 29-09 que se contaron el 15-10 ya no están.
+     Cuáles existen ya, y con cuántas columnas, lo dice `estado-maduracion.mjs` para las de Maduración, no esta
+     lista; las de 🔧 Mantenimiento, `Registro_Score` y `Patología en Fresco` no las mira: se ven con `?p=rows` del GAS.
    - En cada dispositivo, recargar la app y pasar ⚙ Config → «🔗 Probar conexión»: tiene que mostrar
      ese sello. Una copia de `index (8)` con OTRO sello no envía las fichas selladas —calcula, guarda
      en el dispositivo y lo dice— y se sustituye por la actual.
@@ -1452,6 +1455,9 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
    puede romper, la decisión sobre el gemelo `index (8)` (generarlo desde el repo o seguir a mano) y las tajadas en orden
    de riesgo; el de `04-refactor-plan.md` y el del artifact del 2026-08-11 caducaron. De la misma familia, los módulos más
    grandes: `maduracion/operativo.view.js`, `microbiologia/index.js`, `biomolecular/index.js` y `supervisor/module.js`.
+5. **🔧 Mantenimiento × 🏭 Planta: la próxima parada.** El cruce (F3, 2026-10-29) ya pone el blower en la ficha de cada
+   módulo y sus vencidos en «Qué atender hoy»; falta estimar la próxima parada de cada módulo con sus corridas reales y
+   decir si el próximo cambio cae antes o después. Espera a tener datos de Mantenimiento en el libro con que medirla.
 
 ## Hecho y vigilado
 
@@ -1469,6 +1475,9 @@ aquí porque explica POR QUÉ las cosas son como son.
    ser una hora de Sheets, la llave dejaría de casar y cada reenvío duplicaría el parte—.
    🔑 Cuántas filas tiene hoy, y si la cabecera sigue siendo la del código, **no se lee de aquí**: lo dice
    `estado-maduracion.mjs`, que mira también `Tanques` y `Sala`.
+- ✅ **Un parte de Tanques REENVIADO corrige su fila, no añade otra** (la llave de P12, `[0,1,2,13,14]`: Fecha, Sala,
+   Tanque, Hora y Parte). **Validado** (re-medido el 2026-10-26 sobre la hoja entera): ninguna llave repetida; las 9
+   sin «Parte» del 29-09 que se contaron el 15-10 ya no están. (Estuvo en «Pendiente» con su ✅ hasta el 2026-10-29.)
 
 **Salvaguardas que siguen en pie**
 
@@ -1483,7 +1492,8 @@ aquí porque explica POR QUÉ las cosas son como son.
   corre en la batería completa y, desde el 2026-10-26, en el pre-push. Las contrapartes EN LÍNEA de la librería del
   reproductivo no las compara él: las ejecuta `paridad-repro-reciclaje`, sobre los mismos casos que el módulo.
 - **El tablero de Maduración: COMPLETO (Fase 0 y F1–F7).** Están sus sub-vistas —de
-   📊 Estado actual a 🖨 Reportes; la lista viva es `SUBS`—, con los filtros, el período «ciclo del lote»,
+   📊 Estado actual a 🖨 Reportes, y detrás Microbiología y agua, Biomol y Mareas: 15 el 2026-10-29; la lista viva
+   es `SUBS`—, con los filtros, el período «ciclo del lote»,
    las etiquetas de filtros activos y el KPI de biomasa, y el Broodstock dentro de 🧬 Lotes.
    🖨 **Reportes** (F7, 2026-09-22) trae los CUATRO del plan. **F7.1**, el **parte diario de UNA página**, en pantalla, en PDF y en Excel
    (`operativo.reportes.js`). 🔑 No calcula cifras propias: llama a las mismas funciones puras del tablero con

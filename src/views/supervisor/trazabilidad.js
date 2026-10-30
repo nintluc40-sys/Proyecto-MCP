@@ -2,8 +2,9 @@
    TRAZABILIDAD · Adaptadores store→ficha + orquestación de descarga.
    Toma los datos del Google Sheet (store) de un módulo y arma las páginas de
    cada ficha en PDF (una por día). Usa el núcleo nativo fichaPdf.js.
-   Las 6 fichas estándar (registro FICHA_PAGES). Fuentes: "Datos Larvicultura"
-   (poblacion/calidad/plg/despacho/calagua) y "Control_Tanque" (params).
+   Las 7 fichas estándar (registro FICHA_PAGES). Fuentes: "Datos Larvicultura"
+   (poblacion/calidad/plg/despacho/calagua), "Control_Tanque" (params) y "Registro_Desinfección"
+   (desinfeccion).
    Cada PDF = la hoja (tabla), sin gráficos.
    ============================================================ */
 import { store } from '../../core/store.js';

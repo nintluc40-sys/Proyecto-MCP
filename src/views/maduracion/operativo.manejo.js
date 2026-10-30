@@ -33,8 +33,9 @@
      · Alimentación sí tiene sala y tanque, pero sus «Lotes» son un texto con varios: el filtro de lote mira si
        ese lote aparece, no si es el único.
 
-   ⏳ Sin dato real: las TRES hojas tienen CERO filas (medido el 2026-09-21). Fixtures ficticios, y en pantalla
-   vacío hasta que se estrenen; el censo de `medir-tablero-mad-real` lo dirá en crudo.
+   ⏳ Se escribió sin dato real: las TRES hojas tenían CERO filas (medido el 2026-09-21), y las pruebas usan fixtures
+   ficticios. Ya se estrenaron: el 2026-10-29 Movimientos tiene 166 filas, Alimentación 834 y Tratamientos 158
+   (`estado-maduracion`; el censo de `medir-tablero-mad-real` lo dice en crudo).
    ============================================================ */
 import { MAD_MOV_MOTIVOS, MAD_MOV_TIPOS } from '../registros/lib/ficha-maduracion-movimientos.schema.js';
 import {

@@ -25,7 +25,8 @@ import * as regReproductivo from './lib/reproductivo.data.js';
 // Lectura de hojas para el motor (Registro reproductivo · Tanda 5): el dashboard ya
 // carga TODAS las hojas al store con `_SheetOrigin`. Devuelve las filas (objetos con
 // cabeceras) de la hoja pedida. Si aún no existe/no se cargó → []. El monolito no tiene
-// store: allí la lectura queda en stub (estado vacío) hasta conectar una lectura GAS.
+// store: allí lee la hoja por su cuenta (`_reproFetchSheet` en engine.js: la exportación del
+// libro y, si no cuadra o falla, el GAS con `?p=rows`). (Aquí decía que allí quedaba «en stub».)
 function reproReadSheet(sheetName) {
   try { return (store.globalData || []).filter((r) => r && r._SheetOrigin === sheetName); }
   catch (_e) { return []; }

@@ -25,8 +25,8 @@
    lote y ya la da `kpiMortalidad` con la regla del ⚖️ Saldo: mezclar las dos cosas en una columna las haría
    indistinguibles.
 
-   ⏳ Con los datos del 2026-09-20 la hoja de cierres tiene CERO filas: los motivos y los lotes cerrados nacen
-   vacíos, y eso es lo correcto, no un fallo.
+   ⏳ Con los datos del 2026-09-20 la hoja de cierres tenía CERO filas: los motivos y los lotes cerrados nacían
+   vacíos, y eso era lo correcto, no un fallo. Ya tiene datos reales (193 filas el 2026-10-29, `estado-maduracion`).
    ============================================================ */
 import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { MAD_FIN_MOTIVOS } from '../registros/lib/ficha-maduracion-fin-ciclo.schema.js';

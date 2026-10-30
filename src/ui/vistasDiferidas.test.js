@@ -8,6 +8,7 @@
    · `diferida` conserva las opciones de la vista (`usaBarraFecha`…), enseña «Cargando…», pinta al llegar, dice si el
      bloque no llegó (y si es por la señal), dice si la vista falló al pintar, no pinta en una vista ya abandonada y
      devuelve la promesa de la vista.
+   2026-10-29 (ronda 12) · 🔧 Mantenimiento (2026-10-28) también es diferida y esta prueba no la miraba: va en la lista.
    ============================================================ */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -15,20 +16,21 @@ import { join } from 'node:path';
 import { diferida } from './vistaDiferida.js';
 
 const main = readFileSync(join(process.cwd(), 'src/main.js'), 'utf8').replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
-const SIETE = {
+const DIFERIDAS = {
   supervisor: './views/supervisor/index.js', larvicultura: './views/larvicultura/index.js',
   revisiones: './views/revisiones/index.js', visitante: './views/visitante/index.js', algas: './views/algas/index.js',
   microbiologia: './views/microbiologia/index.js', maduracion: './views/maduracion/entrada.js',
+  mantenimiento: './views/mantenimiento/index.js',
 };
 
-describe('main.js · las siete vistas de cada día son DIFERIDAS', () => {
+describe('main.js · las siete vistas de cada día y la de Mantenimiento son DIFERIDAS', () => {
   it('🔴 ninguna se importa de forma estática: ninguna vista entra por un `import … from` en el bloque principal', () => {
     const estaticas = [...main.matchAll(/^import\s[^;]*?from\s+'(\.\/views\/[^']+)'/gm)].map((m) => m[1]);
     expect(estaticas).toEqual([]);
   });
 
   it('🔴 cada una se registra con `diferida` y el import() de su módulo', () => {
-    for (const [id, ruta] of Object.entries(SIETE)) {
+    for (const [id, ruta] of Object.entries(DIFERIDAS)) {
       const linea = main.split('\n').find((l) => l.includes(`registerView('${id}'`));
       expect(linea, id).toBeTruthy();
       expect(linea, id).toContain('diferida(');

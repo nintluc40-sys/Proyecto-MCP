@@ -6,7 +6,8 @@ import { join, relative, resolve } from 'node:path';
 /* Lista de TODO lo que el build emite bajo assets/ (P3 del plan de carga y refresco, 2026-10-01),
    en `precache-assets.json`, para que el service worker lo guarde al INSTALARSE. Los bloques
    diferidos —Registros, Biología Molecular, el tablero de Maduración, el Worker de lectura del
-   libro y, desde el 2026-10-23, las siete vistas de cada día (`ui/vistaDiferida.js`)— no salen en
+   libro y, desde el 2026-10-23, las siete vistas de cada día, más 🔧 Mantenimiento desde el 2026-10-28
+   (`ui/vistaDiferida.js`)— no salen en
    index.html: sin esta lista, tras un despliegue, un equipo que no los abriera con red no podía
    abrirlos sin señal. La lee public/sw.js (assetsDelBuild).
    2026-10-03 · `order: 'post'`: el `generateBundle` de un plugin normal corre ANTES que el de `vite:css-post`, que
@@ -58,8 +59,8 @@ function listaDePrecache() {
    2026-10-05— o una exclusión quedara mal escrita, el bloque de esa vista saldría de la lista sin ningún rojo, y tras un
    despliegue un equipo sin señal no podría abrirla. Por eso, con la lista ya hecha, cada `import('./views/…')` de
    src/main.js que no sea de ENTRADAS_FUERA_DE_PRECACHE (Planta y el QR) tiene que estar en un bloque de la lista: si no
-   está en ninguno, o el suyo no entra, la build FALLA. Hoy son nueve: las siete de cada día, Biología Molecular y
-   Registros. */
+   está en ninguno, o el suyo no entra, la build FALLA. Hoy son diez: las siete de cada día, Mantenimiento, Biología
+   Molecular y Registros. */
 /** Las rutas de los `import('./views/…')` de un main.js (sin contar los comentarios), en su orden. */
 export function importsDeVistas(src) {
   const codigo = String(src).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');

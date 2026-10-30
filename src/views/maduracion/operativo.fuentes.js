@@ -17,7 +17,7 @@
    Módulo PURO: ni DOM ni red.
 
    Dos cosas que no se ven desde fuera, medidas el 2026-09-19 sobre el export real:
-   1 · Las DIEZ hojas del operativo llegan con el MISMO `_SheetOrigin` («Maduracion»):
+   1 · Las hojas del operativo (11 en `MAD_OP_HOJAS`; eran diez cuando se midió esto) llegan con el MISMO `_SheetOrigin` («Maduracion»):
        `classifyOrigin` sólo da origen propio a las del reproductivo. Aquí se reconoce cada hoja
        por su columna EXCLUSIVA —la «firma», la misma idea que MAD_ESQUEMA_FIRMA en el GAS—, que
        `defval: ''` (core/sheets.js) garantiza en TODAS sus filas aunque la celda esté vacía. No

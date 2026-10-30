@@ -15,7 +15,8 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
   fecha), `accesoRol` (la entrada directa por enlace `?rol=`), `vistaDiferida` (el registro de una
   vista que se baja al abrirla), `versionNueva` (la franja «versión nueva») y las piezas
   transversales que tocan el DOM: `modal`, `modalEscape`, `toast`.
-- `src/views/<vista>/` — cada vista es un módulo con su `index.js` orquestador y su `.css` propio.
+- `src/views/<vista>/` — cada vista es un módulo con su `index.js` orquestador y su `.css` propio
+  (`clima/` no es una vista: es la pastilla 🌦 que pintan otras, sin `index.js`).
   - `src/views/planta/plano.js` es la **fuente única de la geometría**: la maqueta 3D (`escena.js`) y el
     plano de 📊 Análisis salen de él (módulos, salas y las áreas `OTHERS` del plano ARQ-A3 V4). Cada
     edificio lleva su color en su propia fila, y la semilla aleatoria se repone después de las áreas. Así,
@@ -87,7 +88,8 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
    hablar con código que **no puede importar** (hoy, únicamente el monolito heredado). Todo lo
    demás usa `store` y el bus.
 3. **Navegación por delegación de eventos.** Nada de `onclick="fn()"` inline en strings de HTML.
-   Usa `addEventListener` con `data-*` y `closest()`. (El `engine.js` heredado viola esto; es deuda.)
+   Usa `addEventListener` con `data-*` y `closest()`. (El `engine.js` heredado viola esto, y también su marcado,
+   `src/views/registros/shell.html`; es deuda.)
 4. **Escapa SIEMPRE el contenido dinámico en `innerHTML`** con `esc()` de `core/format.js`,
    incluidos los mensajes de error (`esc(e.message)`).
 5. **Chart.js gestionado.** Crea gráficos con `makeChart()` y destrúyelos con `destroyAllCharts()`
