@@ -2177,8 +2177,8 @@ async function postPayload(payload, url, opts){
     const sid = getSessionId();
     const finalUrl = url + (url.indexOf("?") === -1 ? "?" : "&") + "z=" + encodeURIComponent(sid);
     // ── Token compartido + reqId (idempotencia) ──────────────────────
-    // `token`: autenticación opcional (el GAS sólo lo valida si su propia
-    //   constante SHARED_TOKEN está fijada; si está vacía, se ignora — BC).
+    // `token`: autenticación opcional (el GAS sólo lo valida si tiene token: la propiedad del script
+    //   SHARED_TOKEN o, si falta, su constante, hoy vacía; sin token, se ignora — BC).
     // `reqId`: huella del payload. El GAS la recuerda ~10 min (CacheService);
     //   si llega otra vez el MISMO reqId, responde "ok" sin volver a escribir.
     //   Esto hace que CUALQUIER reintento (en línea o desde la cola offline)
@@ -14324,7 +14324,8 @@ function madBsVaciar(){
 
 // ── Maduración · Registro reproductivo (desoves/mortalidades por lote de Trovan) ──
 // Ficha de ACCIÓN (no grilla): el usuario pega los Trovan, elige fecha+tipo y procesa.
-// La lógica pura vive en __rgLib.reproductivo (esquemas + buildEventBatch); aquí solo
+// La lógica pura vive en registros/lib/reproductivo.data.js (esquemas + buildEventBatch), que el puente
+// expone aplanada en __rgLib (__rgLib.buildEventBatch…; no hay un __rgLib.reproductivo); aquí solo
 // UI + envío por postPayload. Cada código se valida contra la MATRIZ leída (buildEventBatch:
 // no existe, sin ubicación, ya muerta, dos vivas…); sin MATRIZ no se registra nada.
 const _RINP = "padding:6px 8px;font-size:13px;border:1px solid #cbd5e1;border-radius:6px";
