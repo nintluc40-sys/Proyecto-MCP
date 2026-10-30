@@ -309,9 +309,20 @@ function horasDeMetar_(lista) {
   return Object.keys(porHora).map(function (k) { return porHora[k].c; });
 }
 
+/** El grupo de viento del propio METAR («dddffKT», «dddffGggKT», «VRBffKT»; en KT o MPS) → { wdir, wspd en nudos }, o
+ *  null si no lo trae. Se exige la unidad: así un «19999» (una visibilidad mal escrita) no pasa por viento. */
+function vientoDelMetar_(crudo) {
+  var m = /(?:^|\s)(\d{3}|VRB)(\d{2,3})(?:G\d{2,3})?(KT|MPS)(?=\s|$)/.exec(String(crudo || ""));
+  if (!m) return null;
+  return { wdir: m[1] === "VRB" ? null : +m[1], wspd: m[3] === "MPS" ? +m[2] * 1.943844 : +m[2] };
+}
+
 /** El archivo METAR de la IEM (CSV con `tz=UTC`) → la MISMA forma que el JSON de AWC, para que pase por horasDeMetar_.
  *  La presión llega en pulgadas de mercurio («alti», sacada del Q del METAR): redondeada a hPa enteros vuelve a ser el
- *  Q. «M» = sin dato. Sólo se piden los METAR ordinarios (report_type=3). */
+ *  Q. «M» = sin dato. Sólo se piden los METAR ordinarios (report_type=3).
+ *  2026-10-30 · el VIENTO sale del grupo de viento del METAR original (la columna «metar», la última), y sólo si no lo
+ *  trae, del que decodifica la IEM: el 30-09 a las 12:00 y 13:00 UTC, SESA mandó «19014KT 19999» y «20013KT 19999» (la
+ *  visibilidad mal escrita) y la IEM leyó «19999» como viento de 199° a 99 m/s (sknt 192,44): 356,4 km/h en el libro. */
 function metarDeArchivo_(texto) {
   var lineas = String(texto || "").trim().split(/\r?\n/);
   if (lineas.length < 2) return [];
@@ -323,8 +334,11 @@ function metarDeArchivo_(texto) {
     var f = lineas[i].split(","), ms = Date.parse(String(dato(f, "valid") || "").replace(" ", "T") + ":00Z");
     if (isNaN(ms)) continue;
     var alti = numero(f, "alti");
+    // «metar» va la última: su texto entero, aunque traiga alguna coma
+    var viento = cab.indexOf("metar") >= 0 ? vientoDelMetar_(f.slice(cab.indexOf("metar")).join(",")) : null;
     out.push({ obsTime: ms / 1000, metarType: "METAR", temp: numero(f, "tmpc"), dewp: numero(f, "dwpc"),
-      wdir: numero(f, "drct"), wspd: numero(f, "sknt"), altim: alti != null ? Math.round(alti * 33.8639) : null,
+      wdir: viento ? viento.wdir : numero(f, "drct"), wspd: viento ? viento.wspd : numero(f, "sknt"),
+      altim: alti != null ? Math.round(alti * 33.8639) : null,
       clouds: ["skyc1", "skyc2", "skyc3", "skyc4"].map(function (n) { return dato(f, n); })
         .filter(function (c) { return c; }).map(function (c) { return { cover: c }; }),
       wxString: dato(f, "wxcodes") });
@@ -459,7 +473,7 @@ function pedirMetarArchivo_(desde, hasta) {
   if (!desde || !hasta || desde > hasta) return null;
   var h = "T" + pad2_(-CLIMA.offsetH) + ":00Z";
   var r = pedir_("https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py?station=" + CLIMA.estacion +
-    "&data=tmpc&data=dwpc&data=sknt&data=drct&data=alti&data=skyc1&data=skyc2&data=skyc3&data=skyc4&data=wxcodes" +
+    "&data=tmpc&data=dwpc&data=sknt&data=drct&data=alti&data=skyc1&data=skyc2&data=skyc3&data=skyc4&data=wxcodes&data=metar" +
     "&sts=" + desde + h + "&ets=" + sumarDias_(hasta, 1) + h + "&tz=UTC&format=onlycomma&latlon=no&missing=M&direct=no&report_type=3");
   if (r.codigo !== 200) throw new Error("METAR (archivo IEM): HTTP " + r.codigo);
   return metarDeArchivo_(r.texto);

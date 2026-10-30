@@ -230,6 +230,29 @@ describe('Clima.gs · las fuentes → candidatos por hora', () => {
     expect(api.metarDeArchivo_('station,valid,tmpc\n')).toEqual([]);
   });
 
+  /* 2026-10-30 · el 30-09, SESA mandó «19014KT 19999» y «20013KT 19999» (la visibilidad mal escrita) y el archivo de la IEM
+     decodificó «19999» como viento de 199° a 99 m/s (sknt 192,44, drct 199): 356,4 km/h en el libro. Las dos primeras filas
+     son las de la IEM tal cual (con su columna «metar»); la tercera, sin METAR, usa lo decodificado. */
+  it('🔴 el viento sale del METAR original: «19014KT 19999» es 190° a 14 nudos, no 199° a 99 m/s', () => {
+    const csv = 'station,valid,tmpc,dwpc,sknt,drct,alti,skyc1,skyc2,skyc3,skyc4,wxcodes,metar\n'
+      + 'SESA,2026-09-30 12:00,27.00,24.00,192.44,199.00,29.85,FEW,SCT,M,M,M,SESA 301200Z 19014KT 19999 FEW007 SCT015 27/24 Q1011 RMK A2986\n'
+      + 'SESA,2026-09-30 13:00,28.00,24.00,192.44,199.00,29.85,FEW,SCT,M,M,M,SESA 301300Z 20013KT 19999 FEW008 SCT016 28/24 Q1011 RMK A2987\n'
+      + 'SESA,2026-09-30 14:00,29.00,24.00,13.00,250.00,29.88,SCT,SCT,M,M,M,M\n';
+    const h = api.horasDeMetar_(api.metarDeArchivo_(csv)).sort((a, b) => a.hora - b.hora);
+    expect(h.map((x) => [x.hora, x.v, x.dir])).toEqual([[7, 25.9, 190], [8, 24.1, 200], [9, 24.1, 250]]);
+  });
+
+  it('vientoDelMetar_: nudos, ráfagas, variable, calma y m/s; sin grupo de viento (o sin unidad), null', () => {
+    expect(api.vientoDelMetar_('SESA 301100Z 19012KT 9999')).toEqual({ wdir: 190, wspd: 12 });
+    expect(api.vientoDelMetar_('SESA 301100Z 25015G28KT 9999')).toEqual({ wdir: 250, wspd: 15 });
+    expect(api.vientoDelMetar_('SESA 301100Z VRB03KT CAVOK')).toEqual({ wdir: null, wspd: 3 });
+    expect(api.vientoDelMetar_('SESA 301100Z 00000KT 9999')).toEqual({ wdir: 0, wspd: 0 });
+    expect(api.vientoDelMetar_('UUWW 301100Z 18005MPS 9999').wspd).toBeCloseTo(9.72, 2);
+    expect(api.vientoDelMetar_('SESA 301100Z 19999 FEW007 SCT015')).toBe(null);
+    expect(api.vientoDelMetar_('M')).toBe(null);
+    expect(api.vientoDelMetar_(null)).toBe(null);
+  });
+
   it('MET: sólo los pasos HORARIOS de hoy y de antes (los días siguientes van al pronóstico), m/s → km/h', () => {
     const j = met([...horarios('2026-10-27T21:00', 4, () => ({ ws: 5, mm: 0.4 })), { time: '2026-10-28T01:00', g: 6 }]);
     const c = api.horasDeMet_(j, '2026-10-27');
