@@ -56,6 +56,12 @@
 .bs-svg:not(.general) .bs-zona.elegida .bs-pisc { cursor: pointer; }
 .bs-svg:not(.general) .bs-zona.elegida .bs-pisc:hover .bs-agua, .bs-pisc:focus-visible .bs-agua { stroke: #fff; stroke-width: 2.5; }
 .bs-pisc.on .bs-agua { stroke: #ffd84a; stroke-width: 3.5; }
+/* 2026-10-30 (auditoría de la ronda 12; usuario: «Sí, contorno doble») · sobre una piscina SECA (#b8a486) el borde blanco
+   del foco quedaba a ~2,4:1 y el amarillo de la elegida, más tenue aún (y su filtro de textura recorta la mitad de fuera
+   del borde). Un halo OSCURO alrededor del grupo —no del polígono: la seca conserva su textura— hace el contorno doble
+   (oscuro por fuera, claro por dentro), que se ve sobre el agua, sobre la tierra seca y sobre el bordo. */
+.bs-svg:not(.general) .bs-zona.elegida .bs-pisc:hover, .bs-pisc:focus-visible, .bs-pisc.on {
+  filter: drop-shadow(0 0 .8px #05090c) drop-shadow(0 0 1.6px rgba(5, 9, 12, .85)); }
 .bs-pisc:focus, .bs-zona:focus { outline: none; }
 
 /* Las fases: agua teñida en el mapa, el mismo color en la leyenda y en la ficha. Sin datos: tierra seca (con su textura). */

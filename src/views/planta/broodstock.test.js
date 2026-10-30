@@ -225,3 +225,22 @@ describe('🦐 Broodstock · 🛰 el aspecto de satélite y el teclado (2026-10-
     expect($('.bs-leyenda').textContent).toContain('(seca)');
   });
 });
+
+/* 2026-10-30 (auditoría de la ronda 12; usuario: «Sí, contorno doble») · sobre una piscina SECA el borde blanco del foco y el
+   amarillo de la elegida apenas se distinguían. happy-dom no pinta estilos: se exige la REGLA. Medido en Chrome sobre la
+   772 (seca), el mayor contraste al cruzar su borde: con el foco, de 1,7:1 a 5,8:1; elegida, de 1,6:1 a 4,6:1. */
+describe('🦐 el foco y la elegida se ven también sobre una piscina SECA', () => {
+  it('🔴 un halo OSCURO en el GRUPO de la piscina con foco, elegida o bajo el ratón; la seca conserva su textura', async () => {
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync('src/views/planta/broodstock.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const reglas = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].map(([, sel, cuerpo]) => ({ sel: sel.split(',').map((s) => s.trim()), cuerpo }));
+    const de = (sel) => reglas.filter((r) => r.sel.includes(sel)).map((r) => r.cuerpo).join(';');
+    for (const sel of ['.bs-pisc:focus-visible', '.bs-pisc.on', '.bs-svg:not(.general) .bs-zona.elegida .bs-pisc:hover']) {
+      expect(de(sel), sel + ': el halo oscuro, en el grupo').toMatch(/filter:\s*drop-shadow\([^)]*#05090c\)/);
+    }
+    // en el polígono no: pisaría el filtro de la seca y se llevaría su textura
+    reglas.filter((r) => r.sel.some((s) => /\.bs-pisc(:focus-visible|\.on|:hover) \.bs-agua$/.test(s)))
+      .forEach((r) => expect(r.cuerpo, r.sel.join(', ')).not.toMatch(/filter/));
+    expect(de('.bs-c-sin .bs-agua'), 'la seca, con su textura').toMatch(/filter:\s*url\(#bs-terreno\)/);
+  });
+});
