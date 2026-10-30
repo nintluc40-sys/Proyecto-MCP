@@ -602,8 +602,10 @@ export function renderTraslado(ctx, mod) {
         if (elMapa) {
           montarMapa(elMapa, vSel.camiones).then((m) => {
             if (!m) return;
-            // Si mientras cargaba ya se repintó, este mapa nace huérfano: se suelta.
-            if (!root.contains(elMapa)) { m.destroy(); return; }
+            // Si mientras cargaba ya se repintó —o se salió a otra vista—, este mapa nace huérfano: se suelta. Se mira si
+            // sigue EN LA PÁGINA y no dentro de `root`: al cambiar de vista, el router saca de la página el `div` de la
+            // vista ENTERO, con el mapa dentro (2026-10-30, auditoría de la ronda 12: quedaba vivo hasta otra navegación).
+            if (!elMapa.isConnected) { m.destroy(); return; }
             _mapasActivos.push(m);
 
             /* El botón se cablea AQUÍ y no antes: sin mapa montado no hay nada que

@@ -236,6 +236,17 @@ describe('🏭 Planta · calidad visual (2026-10-27): sombras de contacto, tonos
       expect(f.renderOrder, 'el anillo no puede dibujarse encima del resplandor').toBeGreaterThan(anillo);
       expect(f.renderOrder, 'antes de las láminas, como hasta ahora').toBeLessThan(2);
     });
+    /* 2026-10-30 (auditoría de la ronda 12; usuario: «Sí, reforzar la prueba») · three (r128, `painterSortStable` y
+       `reversePainterSortStable`) ordena PRIMERO por el `renderOrder` del GRUPO más cercano (`groupOrder`) y sólo después
+       por el del objeto: los resplandores viven en un `THREE.Group` y, con `glows.renderOrder = -1`, se dibujarían antes
+       del anillo aunque su `renderOrder` propio siguiera en 1,5. Se compara la clave entera. */
+    const orden = (o) => { let g = 0; for (let p = o.parent; p; p = p.parent) if (p.isGroup) { g = p.renderOrder; break; } return [g, o.renderOrder]; };
+    const antes = (a, b) => a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]);
+    const anillos = contactos(escena).map(orden);
+    faroles.map(orden).forEach((f) => {
+      anillos.forEach((a) => expect(antes(a, f), `el anillo [${a}] no puede dibujarse después del resplandor [${f}]`).toBe(true));
+      laminas.map(orden).forEach((l) => expect(antes(f, l), `el resplandor [${f}] va antes de las láminas [${l}]`).toBe(true));
+    });
   });
 
   it('el material no escribe profundidad ni parpadea con el suelo', async () => {

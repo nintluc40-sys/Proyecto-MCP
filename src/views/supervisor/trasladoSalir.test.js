@@ -19,6 +19,8 @@ vi.mock('../../core/charts.js', () => ({
 
 const montados = [];
 const destruidos = [];
+/** Mientras sea una promesa, el montaje se queda «cargando» hasta que se cumpla (la primera descarga de Leaflet). */
+let retener = null;
 vi.mock('./trasladoMapa.js', async (original) => ({
   ...(await original()),
   COLORES_CAMION: ['#0f766e', '#b45309'],
@@ -26,6 +28,7 @@ vi.mock('./trasladoMapa.js', async (original) => ({
   montarMapa: async () => {
     const id = montados.length + 1;
     montados.push(id);
+    if (retener) await retener;
     return { invalidar() {}, filtrar() {}, paradas() {}, destroy() { destruidos.push(id); } };
   },
 }));
@@ -90,6 +93,7 @@ function elegirCamion(root, placa) {
 
 let root;
 beforeEach(async () => {
+  retener = null;
   resetTrasladoFiltro();
   document.body.innerHTML = '';
   store.globalData = datos();
@@ -122,6 +126,28 @@ describe('Traslado · salir suelta el mapa', () => {
   it('🔴 ir a otra vista de la app lo suelta', () => {
     emit(EV.VIEW, 'larvicultura');
     expect(destruidos, 'el mapa siguió vivo tras cambiar de vista').toEqual([1]);
+  });
+
+  it('🔴 ir a otra vista MIENTRAS el mapa aún carga también lo suelta, en cuanto termina de cargar', async () => {
+    /* 2026-10-30 (auditoría de la ronda 12; usuario: «Sí, una línea + prueba»). Como el router (`router.js`): la vista vive
+       en un `div` propio DENTRO del contenedor, y al cambiar se avisa (EV.VIEW) y DESPUÉS se vacía el contenedor; ese `div`
+       sale de la página con el mapa dentro. Antes se miraba `root.contains(elMapa)` —seguía siendo cierto— y el mapa
+       quedaba vivo hasta la siguiente navegación. */
+    const contenedor = document.createElement('main');
+    document.body.appendChild(contenedor);
+    contenedor.appendChild(root);
+    let soltar;
+    retener = new Promise((r) => { soltar = r; });
+    supervisorView(root);              // un repintado de Traslado: suelta el 1 y lanza el 2, que se queda cargando
+    await esperar();
+    expect(montados).toEqual([1, 2]);
+    expect(destruidos).toEqual([1]);
+    emit(EV.VIEW, 'larvicultura');     // el router: avisa…
+    contenedor.innerHTML = '';         // …y vacía el contenedor
+    soltar();                          // Leaflet termina de cargar
+    await esperar();
+    expect(root.isConnected, 'control: la vista ya no está en la página').toBe(false);
+    expect(destruidos, 'el mapa que terminó de cargar fuera de la página siguió vivo').toEqual([1, 2]);
   });
 
   it('repintar Traslado (datos nuevos, el filtro) NO olvida el camión elegido; salir y volver, sí', async () => {
