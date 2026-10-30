@@ -19,46 +19,58 @@ MISMO cambio** (`CLAUDE.md`, regla 2; lo vigila el pre-push con `verificar-todo 
 
 ## 1. Por qué los dos planes anteriores ya no sirven
 
-| | 04 (2026-06) | artifact (2026-08-11) | hoy (2026-10-28, `977a722`) |
-|---|---|---|---|
-| Líneas de `engine.js` | 13 149 | 13 971 | **31 278** — `wc -l public/registros/engine.js` |
-| Pruebas que cargan el motor | 0 | 0 | **132 archivos** — `grep -rl "registros/engine.js" src --include=*.test.js \| wc -l` |
-| `index (8)` | sin versionar | sin versionar | versionado (repo propio en `Music`) y vigilado función a función y por comportamiento |
-| El GAS desplegado | — | por re-desplegar | el del repo (su sello es la huella de `Code.gs`: `?p=ver`) |
+| | 04 (2026-06) | artifact (2026-08-11) | 2026-10-28 (`977a722`) | hoy (2026-10-29, `ec06f65`) |
+|---|---|---|---|---|
+| Líneas de `engine.js` | 13 149 | 13 971 | 31 278 | **31 987** — `wc -l public/registros/engine.js` |
+| Pruebas que cargan el motor | 0 | 0 | 132 archivos | **135 archivos** — `grep -rl "registros/engine.js" src --include=*.test.js \| wc -l` |
+| `index (8)` | sin versionar | sin versionar | versionado (repo propio en `Music`) y vigilado función a función y por comportamiento | igual |
+| El GAS desplegado | — | por re-desplegar | el del repo | **por re-desplegar**: desplegado `372a32cebe97`, repo `0c019e78e429` |
+
+El GAS desplegado no es una cifra del motor sino un estado del día: se comprueba con `?p=ver` (su sello es la huella de
+`Code.gs`) frente a `GAS_VERSION`, o con ⚙ Config → Probar conexión.
 
 **Lo que se cumplió:** la red de seguridad (la «Fase A» de 04 y la «tajada 0» del artifact) existe de sobra: el motor
 se carga entero en happy-dom en las pruebas, y sus gemelos se comparan función a función (`verificar-3copias-v3`), por
 comportamiento (`paridad-fichas-std`, `paridad-repro-reciclaje`, `probar-paridad-mad-*`), en estilos, marcado,
 constantes y GAS. El puente `__rgLib` lleva la seguridad, los módulos, el reproductivo y las 7 fichas estándar (su
 render vive SÓLO en `src/views/registros/fichas/` desde el 2026-06-13).
-**Lo que no:** la plantilla del GAS sigue copiada a mano (3 copias), y siguen en el motor los constructores de los
+**Lo que no:** la plantilla del GAS sigue en 3 copias (desde el 2026-09-17 no se copia a mano: se porta por diff con
+`portar-code-gs-a-plantillas`, del utillaje, y la vigila `comparar-gas-4copias`), y siguen en el motor los constructores de los
 envíos, la persistencia local, el envío y la cola, y los manejadores en línea. Y el motor creció más del doble: casi
 todo lo nuevo de Registros (el registro OPERATIVO de Maduración, Traslado, Score y Auditoría) entró en él.
 
-## 2. Anatomía (medida el 2026-10-28 sobre `977a722`)
+## 2. Anatomía (medida el 2026-10-28 sobre `977a722`; re-medida el 2026-10-29 sobre `ec06f65`, con el código sin uso ya retirado)
 
 Las familias se cuentan por el NOMBRE de cada función de primer nivel (con `acorn`); una función cuenta en la primera
-familia que casa. Es una foto para decidir el orden, no una cifra que mantener.
+familia que casa. Es una foto para decidir el orden, no una cifra que mantener. El guion que la mide es
+`Documents\validacion-2026-10-28-ronda9\3bd8710e\anatomia-engine.mjs` (sólo lectura: `node anatomia-engine.mjs <repo>`).
+Las cifras son las del 2026-10-29; entre paréntesis, las del 28-10.
 
 | Familia | Líneas | Funciones | Nota |
 |---|---:|---:|---|
-| Maduración (`mad*`, desoves, Broodstock, reproductivo) | 9 571 | 735 | La INTERFAZ del registro operativo vive sólo aquí; su LÓGICA tiene gemelo en `registros/lib` (`mad-libro.js`, `mad-resumen.js`, `ficha-maduracion-*.schema.js`), igualado por pruebas de paridad |
-| Resto (fichas estándar, UI, utilidades) | 4 436 | 297 | |
-| Plantilla del GAS (`GAS()`) | 2 146 | 1 | Un template literal de 2 142 líneas: `GAS/Code.gs` copiado |
-| Traslado (`tras*`) | 1 730 | 102 | Idéntico en las tres copias (`verificar-3copias-v3`, bloque de Traslado) |
-| Envío, cola y sincronización | 1 483 | 44 | Escribe en el libro de producción |
+| Maduración (`mad*`, desoves, Broodstock, reproductivo) | 9 579 (9 571) | 736 (735) | La INTERFAZ del registro operativo vive sólo aquí; su LÓGICA tiene gemelo en `registros/lib` (`mad-libro.js`, `mad-resumen.js`, `ficha-maduracion-*.schema.js`), igualado por pruebas de paridad |
+| Resto (fichas estándar, UI, utilidades) | 4 897 (4 436) | 356 (297) | |
+| Plantilla del GAS (`GAS()`) | 2 175 (2 146) | 1 | Un template literal de 2 171 líneas (2 142): `GAS/Code.gs` en otra copia |
+| Traslado (`tras*`) | 1 724 (1 730) | 101 (102) | Idéntico en las tres copias (`verificar-3copias-v3`, bloque de Traslado) |
+| Envío, cola y sincronización | 1 570 (1 483) | 51 (44) | Escribe en el libro de producción |
 | Microbiología y agua | 1 405 | 109 | |
 | Score y Auditoría del AsT | 1 155 | 90 | |
-| Biología molecular (`bio*`) | 1 149 | 76 | |
+| Biología molecular (`bio*`) | 1 145 (1 149) | 75 (76) | |
 | PDF, QR, fotos y evidencias | 1 064 | 30 | |
-| Almacenamiento local | 590 | 58 | |
-| Grilla y celdas | 550 | 32 | |
-| Fuera de funciones (constantes, datos, comentarios) | 5 995 | — | |
+| Almacenamiento local | 574 (590) | 58 | |
+| Grilla y celdas | 568 (550) | 33 (32) | |
+| Supervisión y revisiones (`sup*`, `rev*`) | 5 (5) | 1 (1) | Faltaba en la tabla del 28-10: sin ella no sumaba |
+| Fuera de funciones (constantes, datos, comentarios) | 6 127 (5 995) | — | |
 
-Otras cifras del mismo día: 1 575 funciones de primer nivel; **22 constructores de envíos**
-(`grep -oE "function build[A-Za-z]*Payload" public/registros/engine.js | sort -u`); **67 claves `larv4_`**
-(`grep -oE "larv4_[A-Za-z0-9_]+" public/registros/engine.js | sort -u | wc -l`); 207 accesos a `localStorage`; **268
-`onclick` en línea** (`grep -o 'onclick=' public/registros/engine.js | wc -l`); 10 `fetch(`.
+🔧 **Mantenimiento** (2026-10-28) no tiene fila: se mide con la clasificación del 28-10 para poder comparar, así que sus
+69 funciones (las que llevan «mnt» en el nombre; 510 líneas) caen en la primera familia que casa: 60 en «Resto» (429
+líneas), 6 en «Envío» (71), 2 en «Almacenamiento» y 1 en «Grilla».
+
+Otras cifras del 2026-10-29 (entre paréntesis, las del 28-10): 1 641 funciones de primer nivel (1 575); **24
+constructores de envíos** (22) (`grep -oE "function build[A-Za-z]*Payload" public/registros/engine.js | sort -u`); **71
+claves `larv4_`** (67) (`grep -oE "larv4_[A-Za-z0-9_]+" public/registros/engine.js | sort -u | wc -l`); 210 accesos a
+`localStorage` (207) (`grep -oE "localStorage\.(getItem|setItem|removeItem)" public/registros/engine.js | wc -l`); **279
+`onclick` en línea** (268) (`grep -o 'onclick=' public/registros/engine.js | wc -l`); 10 `fetch(` (10).
 
 ## 3. Lo que no se puede romper
 
@@ -73,7 +85,7 @@ Otras cifras del mismo día: 1 575 funciones de primer nivel; **22 constructores
 ## 4. La decisión que condiciona todo: el gemelo `index (8)` 🙋
 
 Hoy cada cambio del motor se hace DOS veces, y lo que se saca a un módulo ES vuelve a `index (8)` como copia en línea
-(las 29 contrapartes de `__rgLib` que cuenta `verificar-3copias-v3`). Mientras sea así, sacar código del motor no
+(las 29 contrapartes de `__rgLib` que cuenta `verificar-3copias-v3`, las mismas el 28-10 y el 29-10). Mientras sea así, sacar código del motor no
 quita trabajo: lo cambia de sitio. Dos caminos:
 
 - **A · Generar `index (8)` desde el repo.** Un script que junte `shell.html`, el CSS de Registros sin prefijo,
@@ -88,18 +100,20 @@ quita trabajo: lo cambia de sitio. Dos caminos:
 
 Cada una: qué, por qué, cómo se verifica y cuándo está hecha. Ninguna cambia lo que ve ni lo que guarda el usuario.
 
-1. **La plantilla del GAS, generada** (riesgo bajo). `GAS()` es `Code.gs` copiado a mano en dos sitios. Un script la
-   escribe en `engine.js` e `index (8)` desde `Code.gs` (los dos escapes del template literal y los dos valores
-   parametrizados se derivan). *Verificación:* `comparar-gas-4copias` y `gas-version.test.js` en verde sin edición a
-   mano. *Hecha:* tocar `Code.gs` ya no exige copiarlo.
+1. **La plantilla del GAS, generada** (riesgo bajo). `GAS()` es `Code.gs` en dos copias más. Hoy cada cambio se les
+   porta por diff (`portar-code-gs-a-plantillas`, utillaje, desde el 2026-09-17), y una copia editada a mano puede
+   divergir hasta que `comparar-gas-4copias` lo diga. La tajada es GENERARLA entera: un script la escribe en `engine.js`
+   e `index (8)` desde `Code.gs` (los dos escapes del template literal y los dos valores parametrizados se derivan).
+   *Verificación:* `comparar-gas-4copias` y `gas-version.test.js` en verde sin edición a mano. *Hecha:* tocar `Code.gs`
+   ya no exige portarlo.
 2. **Maduración delega en `registros/lib` lo que ya tiene gemelo** (riesgo medio). Hoy la misma regla (el libro, el
    Saldo, los esquemas) vive dos veces, igualada por las paridades `probar-paridad-mad-*`; delegar quita la copia del
    motor. *Verificación:* las paridades pasan a comprobar que el motor DELEGA, más la suite y los humos de
    `index (8)`. *Hecha:* sin gemelo en línea de esas funciones. Con el camino B, `index (8)` conserva sus copias.
-3. **La persistencia local, declarada** (riesgo medio). Las 67 claves en un módulo con su nombre, su caducidad y quién
+3. **La persistencia local, declarada** (riesgo medio). Las 71 claves (2026-10-29) en un módulo con su nombre, su caducidad y quién
    las escribe, **sin renombrar ninguna**: hacerlas visibles y comprobables, no cambiarlas. *Verificación:* una prueba
    de inventario (todas las del motor están declaradas) y la suite. *Hecha:* ninguna clave fuera del módulo.
-4. **Los constructores de los envíos** (riesgo medio-alto). Los 22 deciden qué llega a cada hoja; las cabeceras ya
+4. **Los constructores de los envíos** (riesgo medio-alto). Los 24 (2026-10-29) deciden qué llega a cada hoja; las cabeceras ya
    viven en los esquemas de `registros/lib`. Salen uno a uno, cada uno con su prueba de cabecera contra el GAS (llave y
    firma). *Verificación:* las pruebas de envío existentes, la de cada esquema contra el GAS real (por `doPost`, como
    `mad-zonas.test.js`) y, al publicar, un envío real de cada hoja tocada. *Hecha:* el motor sólo llama.
