@@ -3,7 +3,7 @@
    Estado de navegación local + dispatch a sub-vistas.
    Navegación e interacción por delegación de eventos.
    ============================================================ */
-import { store } from '../../core/store.js';
+import { store, on, EV } from '../../core/store.js';
 import { destroyAllCharts } from '../../core/charts.js';
 import { setDateBarHidden } from '../../ui/shell.js';
 import { buildContext } from './stats.js';
@@ -12,12 +12,18 @@ import { renderModule, cleanupModule } from './module.js';
 import { renderTank } from './tank.js';
 import { renderLarvia } from './larvia.js';
 import { renderDespacho } from './despacho.js';
-import { renderTraslado } from './traslado.js';
+import { renderTraslado, resetTrasladoFiltro } from './traslado.js';
 import { renderOmTex } from './omtex.js';
 import { renderAuditoria } from './auditoria.view.js';
 
 // Estado de navegación persistente entre renders de la vista.
 const vState = { view: 'modules', mod: null, tank: null, corrida: null };
+
+// Salir de 🚚 Traslado suelta su mapa de Leaflet y las escuchas que cuelgan de `document` (2026-10-29, usuario: «Cerrarlo
+// al salir»). Sólo lo hacía su propio repintado, así que el último mapa seguía vivo hasta volver a entrar. También olvida
+// el camión y el viaje elegidos: al volver se ven todos y el más reciente. Al pasar a otra vista de la app (EV.VIEW sólo
+// salta al CAMBIAR de vista, router.js: si la que se deja no es ésta, no hay nada que soltar):
+on(EV.VIEW, () => resetTrasladoFiltro());
 
 function dispatch(ctx) {
   switch (vState.view) {
@@ -56,6 +62,8 @@ export function supervisorView(root) {
   cleanupModule(); // suelta el tooltip que el heatmap Biomol cuelga de <body>
   const ctx = buildContext(vState);
   const result = dispatch(ctx);
+  // Y al pasar a otra sub-vista del Supervisor (Despacho, Módulos…). Después de `dispatch`: es quien dice qué se pinta.
+  if (vState.view !== 'traslado') resetTrasladoFiltro();
   // La barra de fecha global se oculta donde sus presets NO aplican: la landing ejecutiva
   // (vState.view queda en 'modules' tras dispatch), que define su periodo con el navegador
   // de meses, y la vista Despacho, que lee `ctx.larvCM` —la corrida completa— porque un
