@@ -102,7 +102,8 @@ const bordesDe = (l) => [Math.min(...l.map((v) => v.x)), Math.max(...l.map((v) =
 /** ¿Ese borde (lado i) está FUERA del predio? */
 const fueraDelPredio = (x, i) => (i % 2 === 0 ? x < PREDIO[i] - 1e-3 : x > PREDIO[i] + 1e-3);
 /** 2026-10-28 · un lado del anillo puede quedar más corto que su margen sólo donde lo recorta el predio: su borde de fuera
- *  es el del predio o, si el pie ya sale por ese lado (la Sala 5), el del propio pie (ese lado, sin anillo). */
+ *  es el del predio o, si el pie ya sale por ese lado (hoy, sólo el edificio de ensayo de abajo), el del propio pie (ese
+ *  lado, sin anillo). */
 const recortadoPorElPredio = (bf, bd, i) => Math.abs(bf - PREDIO[i]) < 1e-3 || (Math.abs(bf - bd) < 1e-3 && fueraDelPredio(bd, i));
 
 describe('🏭 Planta · calidad visual (2026-10-27): sombras de contacto, tonos de techo y desgaste del suelo', { timeout: 120000 }, () => {
@@ -166,6 +167,24 @@ describe('🏭 Planta · calidad visual (2026-10-27): sombras de contacto, tonos
     }
     // control: el predio RECORTA de verdad algún anillo (uno de los edificios junto al cerco); si no, esto no prueba nada
     expect(resto.some(({ fuera }) => bordesDe(fuera).some((x, i) => Math.abs(x - PREDIO[i]) < 1e-3)), 'algún anillo toca el borde del predio').toBe(true);
+  });
+
+  /* 2026-10-29 · el lado de un pie que YA sale del predio se queda sin anillo, nunca plegado por dentro del pie. Lo vigilaba
+     la Sala 5 mientras salía 0,3 m al oeste; desde f0829cd ningún pie real sale, y sin uno así esa rama quedaba sin probar
+     (medido: llevar ese borde al predio sin mirar el pie sobrevivía a todo este archivo). */
+  it('🔴 un edificio que cruza el cerco: su lado de fuera, sin anillo (nunca plegado); los otros tres, con su margen', async () => {
+    const cruza = [-2, 40, 6, 46, 6, 'bld', 'Edificio de ensayo · cruza el cerco', null, '#e7eef0'];
+    const escena = await montarCon([...plano.original, cruza]);
+    const [otras] = contactos(escena).filter((m) => m.parent !== escena);
+    const suyo = anillos(otras).at(-1);
+    const bd = bordesDe(suyo.dentro), bf = bordesDe(suyo.fuera);
+    // control: es el suyo (su pie, en coordenadas de la escena) y sale del predio por el oeste con el centro dentro
+    expect(bd[0]).toBeCloseTo(-2 - C0[0], 3); expect(bd[1]).toBeCloseTo(6 - C0[0], 3);
+    expect(fueraDelPredio(bd[0], 0)).toBe(true);
+    expect(bf[0], 'el lado oeste, sin anillo y sin plegarse').toBeCloseTo(bd[0], 3);
+    expect(bf[1] - bd[1], 'este: su margen (alto 6 → 2,4 m)').toBeCloseTo(2.4, 3);
+    expect(bd[2] - bf[2], 'norte').toBeCloseTo(2.4, 3);
+    expect(bf[3] - bd[3], 'sur').toBeCloseTo(2.4, 3);
   });
 
   it('🔴 cada techo de edificio, con su tono por NOMBRE: un edificio de más en medio no cambia el de los demás', async () => {

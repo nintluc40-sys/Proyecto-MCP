@@ -318,8 +318,8 @@ const Y_CONTACTO = .045, ALFA_CONTACTO = .42, piesSitio = [], piesOtras = [];   
 /* 🆕 2026-10-28 (auditoría de la ronda 9) · el anillo de lo que está DENTRO del predio no sale de él: sin recortar, el de
    los edificios junto al cerco (hasta 1,4 m) asomaba por fuera del muro, encima de la sombra del propio cerco (más oscura
    sólo detrás de ellos) o flotando sobre la arena, que está más baja. El del cerco no se recorta: asienta los dos lados.
-   Lo que tiene el CENTRO en el predio se recorta; si su pie ya sale por un lado (la Sala 5, 0,3 m al oeste), ese lado
-   se queda sin anillo en vez de plegarse. */
+   Lo que tiene el CENTRO en el predio se recorta; si su pie ya sale por un lado, ese lado se queda sin anillo en vez de
+   plegarse (hoy ningún pie sale: la Sala 5 salía 0,3 m al oeste hasta f0829cd; lo prueba un edificio de ensayo). */
 const centroEnSitio = (a, b, c, d) => (a + c) / 2 >= SITE[0] && (a + c) / 2 <= SITE[2] && (b + d) / 2 >= SITE[1] && (b + d) / 2 <= SITE[3];
 const pieDeContacto = (lista, x0, z0, x1, z1, alto, recortar = true) => {
   const a = Math.min(x0, x1), b = Math.min(z0, z1), c = Math.max(x0, x1), d = Math.max(z0, z1);
