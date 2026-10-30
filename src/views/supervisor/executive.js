@@ -14,7 +14,7 @@ import { presentMonths, corridasOfMonth, modulesOfCorrida, isDespachoRow, modCor
 import { prodTableHTML } from './prodOmarsa.js';
 import { desinfeccionEnCurso } from './desinfeccion.js';
 // Etapas, alertas y frescura: definición única compartida con la maqueta de 🏭 Planta.
-import { STAGE_CATS, CAT, stageCategory, isAlert, svAlert, freshness } from './etapas.js';
+import { STAGE_CATS, CAT, stageCategory, isAlert, svAlert, enAlerta, freshness } from './etapas.js';
 
 /** Estado de despacho del módulo+corrida: '' · 'Despachando' · 'Despachado'.
  *  El estado 'Despachado' usa el criterio ÚNICO del core (modCorDispatched: todos los
@@ -76,9 +76,9 @@ function cardHTML(ctx, mod, corrida, i) {
   // #8 Tanques en alerta. Los agrupados/descartados quedan fuera del recuento —numerador
   // Y denominador—: su SV cae a 0 porque se unieron a otro tanque o se perdieron, no por
   // un problema sanitario, así que disparaban una alerta falsa y además inflaban el total.
+  // La regla es la de enAlerta (etapas.js); aquí estaba copiada a mano (usuario, 2026-10-29: «usarla»).
   const tanksData = (s.tanksData || []).filter((t) => !t.outOfDispatch);
-  const tanksAlert = finalizado ? 0
-    : tanksData.filter((t) => isAlert(odLevel(t.od)) || isAlert(tmpLevel(t.tmp)) || svAlert(t.sv)).length;
+  const tanksAlert = finalizado ? 0 : tanksData.filter(enAlerta).length;
   // #11 Frescura.
   const fr = freshness(s.lastDate);
   // Responsables del módulo, abreviados ("Juan Murillo" → "J. Murillo"): la tarjeta no

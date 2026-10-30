@@ -74,21 +74,6 @@ export function fichaPunto(camion, parada) {
   };
 }
 
-/** HTML de la ficha. Separado del render para poder probarlo sin Leaflet. */
-export function fichaHtml(f) {
-  const fila = (etq, val) => `<div class="sv-tmap-f"><span>${etq}</span><b>${esc(val)}</b></div>`;
-  return `<div class="sv-tmap-pop">
-    <div class="sv-tmap-pop-h">🚚 ${esc(f.placa)} · Parada ${f.revision}</div>
-    <div class="sv-tmap-pop-s">${esc(f.lugar || '—')}${f.hora ? ' · ' + esc(f.hora) : ''}</div>
-    ${fila('O₂', n1(f.o2) + ' mg/L')}
-    ${fila('Temperatura', n1(f.temp) + ' °C')}
-    ${fila('Actividad', f.actividad || '—')}
-    ${fila('Alimentación', f.alimentacion || '—')}
-    ${fila('Observaciones', f.obs || '—')}
-    <div class="sv-tmap-pop-geo">${Number(f.lat).toFixed(5)}, ${Number(f.lon).toFixed(5)}</div>
-  </div>`;
-}
-
 /* ══════════════════════════════════════════════════════════
    LA RUTA ES DEL VIAJE, NO DEL CAMIÓN (corregido el 2026-08-27)
 

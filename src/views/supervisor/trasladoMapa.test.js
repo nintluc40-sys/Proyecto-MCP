@@ -12,7 +12,7 @@
    ============================================================ */
 import { describe, it, expect } from 'vitest';
 import {
-  limitesDe, paradasSinGps, fichaPunto, fichaHtml, montarMapa, COLORES_CAMION,
+  limitesDe, paradasSinGps, fichaPunto, montarMapa, COLORES_CAMION,
   paradasDelMapa, paradaHtml,
 } from './trasladoMapa.js';
 
@@ -101,13 +101,18 @@ describe('Traslado · la ficha de un punto', () => {
     expect(f.alimentacion).toBe('Artemia, Flake');
   });
 
+  /* 2026-10-29 (Sesión B, ronda 12, tarea 12·10) · estas tres probaban `fichaHtml`, la ficha de UN camión, que el
+     popup por PARADA (`paradaHtml`, 2026-08-27) dejó sin uso en la app. Se retiró y sus pruebas pasan al popup que se
+     pinta de verdad, con lo mismo que exigían. */
+  const popupDe = (c) => paradaHtml(paradasDelMapa([c])[0]);
+
   it('🔴 lo que escribió el usuario no puede crear elementos en el DOM', () => {
     // Las observaciones y las placas son texto libre del chequeador y acaban en el
     // globo del mapa. La prueba de verdad no es que falte la cadena «onerror=»
     // —escapada sigue apareciendo como TEXTO, y es inofensiva— sino que al parsear
     // el HTML no nazca ningún elemento. Se monta y se cuenta.
     const p = parada(1, -2.2, -80.9, { obs: '<img src=x onerror="alert(1)">' });
-    const h = fichaHtml(fichaPunto(camion('A"><script>bad()</script>', [p]), p));
+    const h = popupDe(camion('A"><script>bad()</script>', [p]));
     const box = document.createElement('div');
     box.innerHTML = h;
     expect(box.querySelectorAll('img'), 'la observación creó un <img>').toHaveLength(0);
@@ -119,15 +124,15 @@ describe('Traslado · la ficha de un punto', () => {
 
   it('un punto sin medición muestra rayas, no ceros', () => {
     const p = parada(1, -2.2, -80.9, { o2: null, temp: null });
-    const h = fichaHtml(fichaPunto(camion('A', [p]), p));
+    const h = popupDe(camion('A', [p]));
     expect(h).toContain('— mg/L');
     expect(h).toContain('— °C');
     expect(h).not.toContain('0.0 mg/L');
   });
 
-  it('la ficha dice las coordenadas reales del punto', () => {
+  it('el popup dice las coordenadas reales del punto', () => {
     const p = parada(1, -2.2135, -80.9791);
-    const h = fichaHtml(fichaPunto(camion('A', [p]), p));
+    const h = popupDe(camion('A', [p]));
     expect(h).toContain('-2.21350');
     expect(h).toContain('-80.97910');
   });

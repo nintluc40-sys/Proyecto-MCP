@@ -186,14 +186,6 @@ const BIO_TTL       = 48 * 60 * 60 * 1000;
 const BIO_SHEET     = "BIOMOL";
 // Recuperación de la grilla Biomol (autoguardado de lo NO guardado). TTL 1 h.
 const BIO_RECOV_KEY = RPRE + "biomolgrid";   // "larv4_rec_biomolgrid"
-const BIO_ESTADIO_OPTS = [
-  "Reproductores",
-  "N5","Z1","Z2","Z3","M1","M2","M3",
-  "PL1","PL2","PL3","PL4","PL5","PL6","PL7","PL8","PL9","PL10",
-  "PL11","PL12","PL13","PL14","PL15","PL16","PL17"
-];
-const BIO_SEX_OPTS = ["Macho","Hembra"];
-const BIO_RES_OPTS = ["Positivo","Negativo"];
 
 // ── As Técnico (AsT): constantes globales ──
 // Misma política que Biomol: hasta AST_MAX registros locales, expira en AST_TTL.
@@ -1257,16 +1249,6 @@ function toast(msg, type="info", dur=3500){
     el.style.cssText="opacity:0;transform:translateX(16px);transition:.3s";
     el._rmTimer = setTimeout(()=>{ if(el.isConnected) el.remove(); }, 320);
   }, dur);
-}
-// Limpia todos los toasts visibles cancelando sus timers asociados
-function clearToasts(){
-  const a = document.getElementById("toasts");
-  if(!a) return;
-  Array.from(a.children).forEach(el=>{
-    if(el._fadeTimer) clearTimeout(el._fadeTimer);
-    if(el._rmTimer)   clearTimeout(el._rmTimer);
-    el.remove();
-  });
 }
 
 /* ══════════════════════════════════════════
@@ -17654,10 +17636,6 @@ function pruneBio(){
 function loadBio(){
   return pruneBio().slice().sort((a,b) => (b.ts||0) - (a.ts||0));
 }
-function removeBioById(id){
-  const list = _bioRaw().filter(r => r.id !== id);
-  _bioSave(list);
-}
 
 // ── Biomol: GRILLA para pegar (reemplaza el formulario uno-por-uno) ─────
 // La grilla es de UN día (selector de fecha arriba). Las columnas son los 18
@@ -23187,14 +23165,6 @@ function _trasClonar(o){
   try{ return JSON.parse(JSON.stringify(o || {})); }catch(_){ return {}; }
 }
 
-/** Revisión `i` del modelo, creándola vacía si no existe. */
-function _trasRevDe(model, i){
-  if(!Array.isArray(model.revisiones)) model.revisiones = [];
-  if(!model.revisiones[i]) model.revisiones[i] = { camiones: [] };
-  if(!Array.isArray(model.revisiones[i].camiones)) model.revisiones[i].camiones = [];
-  return model.revisiones[i];
-}
-
 function trasOpts(arr, cur){
   return arr.map(s => '<option value="'+escapeHtml(s)+'"'+(cur===s?" selected":"")+'>'+escapeHtml(s)+'</option>').join("");
 }
@@ -24679,7 +24649,6 @@ function trasBorrarTraslado(){
    auto-suma. Se sincroniza a la hoja ancha "Microbiología" (reemplazo por
    sesión: Fecha muestreo + Corrida + Departamento + Formato → sin duplicados).
 ══════════════════════════════════════════ */
-const MIC_PRE         = "larv4_mic_";
 const MIC_REC_KEY     = "larv4_mic_records";
 const MIC_DRAFT_KEY   = "larv4_mic_draft";
 const MIC_RECOV_KEY   = RPRE + "micdraft";            // recuperación del Nuevo análisis (espejo de Biomol; TTL 1h = RTTL)
@@ -24690,7 +24659,6 @@ const MIC_TABS        = ["micnuevo","michist","micfact","micrep","fotos"];
 
 const MIC_DEFAULT_ROWS = 8, MIC_ROW_STEP = 4, MIC_MAX_ROWS = 50;
 let _micExtra = {};        // { fmtKey: filas extra agregadas }
-let _micEditing = null;    // compat (reservado)
 let _micDraftTm = null;
 
 const MIC_ESTADIOS = ["","AS","N5 (MB)","N5 TEX","Z1","Z2","Z3","M1","M2","M3",
@@ -25419,14 +25387,12 @@ function micFillDown(el){
 }
 function micRowHasData(fmt, d){ return fmt.params.some(pk=> pk !== "vtot" && d[pk] != null && String(d[pk]).trim() !== ""); }
 
-// OBSOLETO desde el modelo de "id de sesión": la identidad de una sesión ya NO
-// depende de la Corrida (cada "Nuevo análisis" tiene su sid). Cambiar la Corrida
-// en el borrador actual solo cambia ese campo de la MISMA sesión; no crea otra.
-// Se deja como no-op para no romper a los llamadores (oninput de los inputs).
-function _sessionCorridaWarn(){ /* no-op */ }
-function micCorridaChange(){ _sessionCorridaWarn(_micRaw, document.getElementById("mic-fm"), document.getElementById("mic-corr")); micDraftTouch(); }
-function calCorridaChange(){ _sessionCorridaWarn(_calRaw, document.getElementById("cal-fm"), document.getElementById("cal-corr")); calDraftTouch(); }
-function patCorridaChange(){ _sessionCorridaWarn(_patRaw, document.getElementById("pat-fm"), document.getElementById("pat-corr")); patDraftTouch(); }
+// Desde el modelo de "id de sesión", la identidad de una sesión ya NO depende de la Corrida (cada "Nuevo análisis"
+// tiene su sid): cambiar la Corrida sólo cambia ese campo de la MISMA sesión y guarda el borrador. (Aquí se llamaba a
+// `_sessionCorridaWarn`, que no hacía nada desde entonces: retirado el 2026-10-29, ronda 12.)
+function micCorridaChange(){ micDraftTouch(); }
+function calCorridaChange(){ calDraftTouch(); }
+function patCorridaChange(){ patDraftTouch(); }
 
 // ── Cálculo en vivo ────────────────────────────────────
 function micRowRkey(tr, fmtKey){
@@ -31125,19 +31091,6 @@ function histDelete(id){
   removeHistEntry(curMod, id);
   renderHistorial();
   toast("Registro eliminado del historial","ok",2500);
-}
-
-// ── Borra TODO el historial local del módulo actual ──
-// Solo afecta al registro local (loadHist); las filas ya escritas en
-// Google Sheets NO se tocan, igual que histDelete individual.
-function clearAllHist(){
-  if(curMod === null || curMod === undefined) return;
-  const list = loadHist(curMod);
-  if(list.length === 0){ toast("El historial ya está vacío","info",2000); return; }
-  if(!confirm("¿Borrar TODOS los "+list.length+" registro(s) del historial local de "+mLabel(curMod)+"?\nEsta acción no se puede deshacer y no afecta a lo ya enviado a Google Sheets.")) return;
-  saveHistList(curMod, []);
-  renderHistorial();
-  toast("🗑 Historial local vaciado ("+list.length+" registro(s))","ok",3000);
 }
 
 /* ── Borrado del historial local por RANGO de fechas (modal #histdel-ov) ──

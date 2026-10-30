@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseAnyDate, fmtShort, yearMonthKey, dayNum, isToday } from './dates.js';
+import { parseAnyDate, fmtShort, yearMonthKey, dayNum } from './dates.js';
 
 // Tests de caracterización: fijan el comportamiento ACTUAL de parseo de fechas.
 describe('parseAnyDate', () => {
@@ -95,9 +95,5 @@ describe('formato de fechas', () => {
 
   it('dayNum extrae el día', () => {
     expect(dayNum('15/03/2024')).toBe('15');
-  });
-
-  it('isToday es false para vacío', () => {
-    expect(isToday('')).toBe(false);
   });
 });

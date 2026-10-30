@@ -92,10 +92,3 @@ export function rangeLabel(list) {
   const a = lab(f), b = lab(l);
   return a && b ? `${a} – ${b}` : (a || b);
 }
-
-export function isToday(raw) {
-  const d = parseAnyDate(raw);
-  if (!d) return false;
-  const t = new Date();
-  return d.getDate() === t.getDate() && d.getMonth() === t.getMonth() && d.getFullYear() === t.getFullYear();
-}
