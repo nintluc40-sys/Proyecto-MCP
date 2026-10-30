@@ -218,6 +218,26 @@ describe('🏭 Planta · calidad visual (2026-10-27): sombras de contacto, tonos
     expect(c.position.y).toBeCloseTo(.016, 5);
   });
 
+  /* 2026-10-30 (auditoría de la ronda 10; usuario: «Arreglarlo») · el resplandor de los faroles es aditivo y no escribe
+     profundidad: si el anillo se dibuja DESPUÉS, lo oscurece (hasta un 42 %) donde se cruzan en pantalla. */
+  it('🔴 de noche, el resplandor de cada farol se dibuja DESPUÉS del anillo y ANTES de las láminas de los invernaderos', async () => {
+    const { AdditiveBlending } = await import('three');
+    const escena = await montarCon(plano.original);
+    const faroles = [], laminas = [];
+    escena.traverse((o) => {
+      if (o.isSprite && o.material.blending === AdditiveBlending) faroles.push(o);
+      if (o.isMesh && o.renderOrder === 2) laminas.push(o);
+    });
+    // control: están los faroles y las láminas, y los anillos son los de siempre
+    expect(faroles.length, 'los resplandores de los faroles').toBeGreaterThan(10);
+    expect(laminas.length, 'las láminas de los invernaderos').toBeGreaterThan(0);
+    const anillo = Math.max(...contactos(escena).map((m) => m.renderOrder));
+    faroles.forEach((f) => {
+      expect(f.renderOrder, 'el anillo no puede dibujarse encima del resplandor').toBeGreaterThan(anillo);
+      expect(f.renderOrder, 'antes de las láminas, como hasta ahora').toBeLessThan(2);
+    });
+  });
+
   it('el material no escribe profundidad ni parpadea con el suelo', async () => {
     const escena = await montarCon(plano.original);
     for (const m of contactos(escena)) {

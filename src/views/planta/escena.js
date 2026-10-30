@@ -945,7 +945,10 @@ lampSpots.forEach(([x, z], i) => { const [px, pz] = P(x, z); m4.compose(v.set(px
 scene.add(poleI, headI);
 const glowTex = canvasTex(64, (g, n) => { const gr = g.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2); gr.addColorStop(0, 'rgba(255,220,160,1)'); gr.addColorStop(.3, 'rgba(255,200,130,.45)'); gr.addColorStop(1, 'rgba(255,190,120,0)'); g.fillStyle = gr; g.fillRect(0, 0, n, n); });
 const glows = new THREE.Group(); glows.visible = false; scene.add(glows);
-lampSpots.forEach(([x, z]) => { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); const [px, pz] = P(x, z); sp.position.set(px + .3, 6.9, pz); sp.scale.set(5, 5, 1); glows.add(sp); });
+/* El resplandor de cada farol va DESPUÉS del anillo de contacto (1) y antes de las láminas de los invernaderos (2), 2026-10-30
+   (auditoría de la ronda 10; usuario: «Arreglarlo»): no escribe profundidad, así que con el orden 0 el anillo, dibujado
+   después, lo oscurecía hasta un 42 % donde se cruzaban en pantalla (girando la cámara; en las vistas fijas no coinciden). */
+lampSpots.forEach(([x, z]) => { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); const [px, pz] = P(x, z); sp.position.set(px + .3, 6.9, pz); sp.scale.set(5, 5, 1); sp.renderOrder = 1.5; glows.add(sp); });
 const nightLights = [[74.8, 40], [74.8, 76], [120, 76.8], [160, 76.8], [36, 87.5], [100, 19.2]].map(([x, z]) => { const l = new THREE.PointLight(0xffc98a, 0, 34, 1.6); const [px, pz] = P(x, z); l.position.set(px, 6.5, pz); scene.add(l); return l; });
 
 /* ---------- Vida: personal, vehículos y aves ---------- */
