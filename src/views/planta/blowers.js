@@ -19,6 +19,9 @@
      (el par caía en el mismo día y no se juzgaba), y dos lecturas a hora y media daban un falso aviso (el tablero marca horas
      enteras); y entraba cualquier Estado salvo «Stand by» escrito así, de modo que «Stand-by» o «En reparación» habrían
      avisado cada día.
+   ⚠ 2026-10-30 (decisión del usuario: «Hasta el último traslado») · un módulo trasladado sin su despacho registrado (el
+     aviso «🚚 trasladada sin despacho» de estado.js) sigue «en cultivo», pero pudo quedar vacío y su blower, apagado con
+     razón: su horómetro se juzga sólo hasta el último día con viajes de traslado de su corrida.
    ============================================================ */
 import { leerTrabajos, leerLecturas, leerEquipos, leerPlan, horometros, horometroActual, proximos, porUrgencia, MNT_ESTADO }
   from '../mantenimiento/mantenimiento.data.js';
@@ -54,11 +57,12 @@ const horasEntre = (a, b) => (a.hora && b.hora ? (msDe(b) - msDe(a)) / 36e5
 
 /** (3) ¿El horómetro del blower avanzó con su módulo en cultivo? null si no se puede juzgar o si avanzó; si no,
  *  { desde, hasta, sumo, esperadas, dias, minimo (las horas son lo mínimo, sin la hora de alguna), bajo (el horómetro bajó),
- *  de, a }. Compara su última lectura con la más reciente de al menos SEPARACION_MIN_H antes, las dos dentro del cultivo.
- *  `cm`: el módulo en `cronogramaPlanta`. */
+ *  de, a }. Compara su última lectura con la más reciente de al menos SEPARACION_MIN_H antes, las dos dentro del cultivo
+ *  (con traslado sin despacho, hasta su último día de viajes). `cm`: el módulo en `cronogramaPlanta`. */
 export function horometroNoAvanza(lista, codigo, cm, hoy) {
   if (!cm || cm.tipo !== 'cultivo' || !cm.inicio) return null;
-  const suyas = (lista || []).filter((x) => x.equipo === codigo && x.h != null && x.fecha && x.fecha >= cm.inicio && x.fecha <= hoy)
+  const fin = cm.traslado && cm.traslado.hasta < hoy ? cm.traslado.hasta : hoy;
+  const suyas = (lista || []).filter((x) => x.equipo === codigo && x.h != null && x.fecha && x.fecha >= cm.inicio && x.fecha <= fin)
     .sort((a, b) => (msDe(a) - msDe(b)) || (a.h - b.h));
   if (suyas.length < 2) return null;
   const b = suyas[suyas.length - 1];

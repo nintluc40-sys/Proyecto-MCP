@@ -199,6 +199,10 @@ describe('estado · traslado sin despacho (punto 4.1, 2026-10-11): sólo avisa, 
       expect(H.modulos.M7.traslado).toBe(null);
       expect(H.modulos.M9.estado).toBe('despachado'); expect(H.modulos.M9.traslado).toBeUndefined();
       expect(estadoPlanta(['902']).modulos.M5.traslado).toBe(null);                // mes pasado: como a su cierre
+      // 30-10 · el cronograma lo lleva, para el horómetro del blower (blowers.js: «Hasta el último traslado»)
+      const C = cronogramaPlanta(H.modulos, '2026-10-06').modulos;
+      expect(C.M5.traslado).toEqual({ desde: '2026-10-04', hasta: '2026-10-06', sinDespacho: 2 });
+      expect(C.M7.traslado).toBe(null);
     } finally { store.globalData = antes; }
   });
 });

@@ -127,6 +127,18 @@ describe('horómetro que no avanza con el módulo en cultivo (umbral del usuario
     expect(aviso(parado, { modulos: {} })).toBe(null);
     expect(aviso(parado, null)).toBe(null);
   });
+  it('🔴 30-10 · trasladado sin despacho: se juzga sólo hasta el último día con viajes (usuario: «Hasta el último traslado»)', () => {
+    const tras = { modulos: { M4: { tipo: 'cultivo', inicio: '2026-10-15', traslado: { desde: '2026-10-18', hasta: '2026-10-19', sinDespacho: 12 } } } };
+    // sumó bien hasta el traslado (17 → 19) y después se apagó (19 → 22): el módulo pudo quedar vacío, no avisa
+    const vaciado = libro(lectura('2026-10-17', '08:00', 'BLW-04', '400'), lectura('2026-10-19', '08:00', 'BLW-04', '448'),
+      lectura('2026-10-22', '08:00', 'BLW-04', '448'));
+    expect(aviso(vaciado), 'control: sin traslado, avisa').not.toBe(null);
+    expect(aviso(vaciado, tras)).toBe(null);
+    // parado ANTES de acabar el traslado: avisa, por el tramo hasta su último día de viajes
+    const parado = libro(lectura('2026-10-17', '08:00', 'BLW-04', '400'), lectura('2026-10-19', '08:00', 'BLW-04', '401'),
+      lectura('2026-10-22', '08:00', 'BLW-04', '401'));
+    expect(aviso(parado, tras)).toMatchObject({ desde: '2026-10-17', hasta: '2026-10-19', sumo: 1, esperadas: 48 });
+  });
   it('horometroNoAvanza: dos lecturas a la misma hora no dan un tramo', () => {
     const lista = [{ equipo: 'X', fecha: '2026-10-22', hora: '08:00', h: 10 }, { equipo: 'X', fecha: '2026-10-22', hora: '08:00', h: 10 }];
     expect(horometroNoAvanza(lista, 'X', { tipo: 'cultivo', inicio: '2026-10-01' }, HOY)).toBe(null);

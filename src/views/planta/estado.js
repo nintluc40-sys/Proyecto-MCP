@@ -314,6 +314,7 @@ export function cronogramaPlanta(modulos, hasta) {
     out[m.id] = {
       tipo: despachado ? 'despachado' : 'cultivo', corrida: mo.corrida, inicio, fin, tramos,
       despacho: despachos.length ? { desde: despachos[0], hasta: despachos[despachos.length - 1] } : null,
+      traslado: mo.traslado || null,   // el aviso de traslado sin despacho (punto 4.1), para el horómetro del blower
       dias: !cortado && mo.dias ? mo.dias : difDias(inicio, ultimo) + 1,
       estadio: !cortado && mo.estadio ? mo.estadio : (idx >= 0 ? STAGE_ORDER[idx] : ''),
     };
