@@ -221,8 +221,10 @@ export function detectSheetName(rows, gid, rawTitle) {
   // 🔧 Mantenimiento (2026-10-29, usuario: «Sí, las 4 firmas»): sus cuatro hojas (las cabeceras, en
   // ficha-mantenimiento.schema.js y mantenimiento.data.js). Ninguna otra pestaña lleva «Equipo», «Parada…»,
   // «Ajuste hor…» ni «Intervalo…». Sin esto caían en «Hoja<N>» y la vista 🔧 decía «Falta la hoja».
-  if (has((k) => k === 'equipo') && has((k) => k.startsWith('parada'))) return 'Mantenimiento Trabajos';
-  if (has((k) => k === 'equipo') && has((k) => k.startsWith('corriente'))) return 'Mantenimiento Lecturas';
+  // «Unidad» (2026-10-30, usuario: «Aceptar "Unidad"»): el lector (mantenimiento.data.js) la acepta en lugar de «Equipo».
+  const equipo = (k) => k === 'equipo' || k === 'unidad';
+  if (has(equipo) && has((k) => k.startsWith('parada'))) return 'Mantenimiento Trabajos';
+  if (has(equipo) && has((k) => k.startsWith('corriente'))) return 'Mantenimiento Lecturas';
   if (has((k) => k.startsWith('ajuste hor'))) return 'Mantenimiento Equipos';
   if (has((k) => k === 'actividad') && has((k) => k.startsWith('intervalo'))) return 'Mantenimiento Plan';
   if (has((k) => k.includes('corrida') || k.includes('módulo') || k.includes('modulo') || k.includes('supervivencia'))) return 'Larvicultura';

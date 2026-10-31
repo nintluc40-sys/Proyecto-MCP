@@ -55,4 +55,13 @@ describe('Mantenimiento · sus hojas por las COLUMNAS (respaldo sin título)', (
     expect(detectSheetName([filaDe(sin(MNT_EQUIPOS_HEADERS, /^Ajuste hor/))], 7)).toBe('Hoja8');
     expect(detectSheetName([filaDe(sin(MNT_PLAN_HEADERS, /^Intervalo/))], 7)).toBe('Hoja8');
   });
+
+  // 2026-10-30 (usuario: «Aceptar "Unidad"») · el lector acepta «Unidad» en lugar de «Equipo»; la firma, también
+  it('🔴 Trabajos y Lecturas con «Unidad» en lugar de «Equipo» se reconocen igual', () => {
+    const conUnidad = (cab) => cab.map((c) => (c === 'Equipo' ? 'Unidad' : c));
+    expect(MNT_TRAB_HEADERS).toContain('Equipo');
+    expect(MNT_LECT_HEADERS).toContain('Equipo');
+    expect(detectSheetName([filaDe(conUnidad(MNT_TRAB_HEADERS))], 7)).toBe('Mantenimiento Trabajos');
+    expect(detectSheetName([filaDe(conUnidad(MNT_LECT_HEADERS))], 7)).toBe('Mantenimiento Lecturas');
+  });
 });
