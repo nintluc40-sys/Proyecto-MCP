@@ -24,6 +24,7 @@ import { presentMonths, corridasOfMonth, monthLabelAt } from '../../core/prodCal
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import { tankColorInfo } from '../../core/aguaColor.js';
 import { diagSemaforo, popSemaforo, aguaSemaforo, cultivoInfo, semMeta } from './status.js';
+import { referenciaPoblacion } from './popReferencia.js';
 import { climaPastillaHTML, climaModalHTML, cablearClima } from '../clima/clima.js';
 
 const state = { stage: 'larv', month: null, modulo: null, corrida: null, tanque: null, histVar: 'estres', range: '15', popMode: 'dumbbell', evoSmooth: false };
@@ -596,7 +597,8 @@ export function larviculturaView(root) {
 
   // Estado por sección (franjas) + edad de cultivo (DOC).
   const semDiag = diagSemaforo(last, vars);
-  const semPop = popSemaforo(pStats);
+  // Lo normal de la planta ese día sale de TODO el historial (store.globalData), no sólo del mes elegido.
+  const semPop = popSemaforo(pStats, ready && state.corrida ? referenciaPoblacion(store.globalData, state.corrida, state.modulo) : null);
   const semAgua = aguaSemaforo(mgmt);
   // Fisicoquímicos del módulo (T°/OD/Sal) — nivel de módulo, estable al cambiar de tanque.
   const env = moduleEnv(state.modulo, state.corrida, monthCorridas);

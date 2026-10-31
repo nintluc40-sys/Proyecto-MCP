@@ -33,23 +33,33 @@ export function diagSemaforo(last, vars) {
   return { level, detail };
 }
 
-/** Población: nivel según % de pérdida acumulada (> 40 % rojo · > 20 % ámbar).
- *  ⚠ 2026-09-21 · AQUÍ PONÍA «umbrales estimados, ajustables», que se lee como un pendiente de
- *  nadie. Lo preciso: estas dos cifras NO tienen fuente —ni documento del laboratorio ni
- *  bibliografía—, vienen del sistema original y nunca las ha confirmado nadie. En Maduración ese
- *  hueco ya se cerró: sus 14 umbrales tienen fuente, 8 del laboratorio y 6 bibliográficos
- *  (`views/maduracion/operativo.umbrales.js`, contado el 2026-10-29; allí, sin fuente, NO se
- *  juzgaba). Aquí la cifra ya existe y pinta un semáforo. Se quedan —quitarlas dejaría la vista sin criterio— pero cuando el
- *  laboratorio dé los suyos, mandan ellos. Vale igual para los dos comentarios de abajo. */
-export function popSemaforo(pStats) {
+/** Población: la pérdida acumulada frente a lo NORMAL de la planta ese mismo día de cultivo (`ref`, de
+ *  `referenciaPoblacion`): rojo si va peor que 9 de cada 10 corridas (p90), ámbar si peor que 3 de
+ *  cada 4 (p75); nunca ámbar por debajo de 5 % ni rojo por debajo de 10 % (`POP_MINIMO`: los primeros
+ *  días casi nadie recuenta y lo normal es 0 %, así que un 1 % sería «peor que 9 de cada 10»).
+ *  2026-10-30 (usuario: «Ajustarlo por etapa», «Sí, con mínimo 5 % y 10 %»). Antes eran 20 % / 40 %
+ *  fijos, del sistema original y SIN fuente (ni laboratorio ni bibliografía): medido en el libro,
+ *  la pérdida crece con los días de cultivo y, con cifras fijas, el color decía cuánto había avanzado
+ *  la corrida, no si iba mal. Se quedan sólo cuando la planta no
+ *  tiene historia suficiente (`ref` null). Cuando el laboratorio dé sus cifras, mandan ellas. */
+export const POP_MINIMO = { ambar: 5, rojo: 10 };
+export function popSemaforo(pStats, ref) {
   if (!pStats || !pStats.validTanks || !(pStats.totalInit > 0)) return { level: 'verde', detail: 'Sin población válida' };
   const loss = (pStats.totalInit - pStats.totalCurr) / pStats.totalInit * 100;
-  const level = loss > 40 ? 'rojo' : loss > 20 ? 'ambar' : 'verde';
-  return { level, detail: `Pérdida acumulada ${loss.toFixed(1)}% · ${pStats.validTanks} tanque(s)` };
+  const tanques = ` · ${pStats.validTanks} tanque(s)`;
+  if (!ref) {
+    const level = loss > 40 ? 'rojo' : loss > 20 ? 'ambar' : 'verde';
+    return { level, detail: `Pérdida acumulada ${loss.toFixed(1)}% · sin historia suficiente: umbral fijo 20% / 40%${tanques}` };
+  }
+  const ambar = Math.max(ref.p75, POP_MINIMO.ambar), rojo = Math.max(ref.p90, POP_MINIMO.rojo);
+  const level = loss > rojo ? 'rojo' : loss > ambar ? 'ambar' : 'verde';
+  const dia = ref.dia === ref.diaCorrida ? `día ${ref.dia}` : `día ${ref.diaCorrida} (referencia del día ${ref.dia})`;
+  const minimo = ref.p75 < POP_MINIMO.ambar || ref.p90 < POP_MINIMO.rojo ? ` (mínimo ${POP_MINIMO.ambar}% / ${POP_MINIMO.rojo}%)` : '';
+  return { level, detail: `Pérdida acumulada ${loss.toFixed(1)}% · ${dia}: de ${ref.n} corridas, 3 de cada 4 perdían hasta ${ref.p75.toFixed(1)}% y 9 de cada 10 hasta ${ref.p90.toFixed(1)}%${minimo}${tanques}` };
 }
 
-/** Manejo de agua: nivel según los últimos % Espuma / % Suciedad (umbral 10; sin fuente, como los
- *  de arriba: heredado del sistema original y sin confirmar por el laboratorio). */
+/** Manejo de agua: nivel según los últimos % Espuma / % Suciedad (umbral 10; sin fuente: heredado
+ *  del sistema original y sin confirmar por el laboratorio). */
 export function aguaSemaforo(mgmt) {
   const lastOf = (arr) => { for (let i = (arr || []).length - 1; i >= 0; i--) { if (arr[i] != null) return arr[i]; } return null; };
   const esp = lastOf(mgmt && mgmt.espuma), suc = lastOf(mgmt && mgmt.suciedad), rec = lastOf(mgmt && mgmt.recambio);

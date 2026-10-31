@@ -18,7 +18,7 @@ describe('diagSemaforo', () => {
   });
 });
 
-describe('popSemaforo', () => {
+describe('popSemaforo · sin historia de la planta (20 % / 40 % fijos)', () => {
   it('pérdida baja → verde', () => {
     expect(popSemaforo({ validTanks: 2, totalInit: 100, totalCurr: 90 }).level).toBe('verde');
   });
@@ -27,6 +27,54 @@ describe('popSemaforo', () => {
   });
   it('pérdida alta → rojo', () => {
     expect(popSemaforo({ validTanks: 2, totalInit: 100, totalCurr: 50 }).level).toBe('rojo');
+  });
+  it('lo dice en el detalle', () => {
+    expect(popSemaforo({ validTanks: 2, totalInit: 100, totalCurr: 50 }).detail)
+      .toBe('Pérdida acumulada 50.0% · sin historia suficiente: umbral fijo 20% / 40% · 2 tanque(s)');
+  });
+});
+
+// 2026-10-30 (usuario: «Ajustarlo por etapa», «Sí, con mínimo 5 % y 10 %»): frente a lo normal de la planta ese día.
+// Las referencias son INVENTADAS (las pruebas no llevan valores reales: el repo es público).
+describe('popSemaforo · frente a lo normal de la planta ese día de cultivo', () => {
+  const ref = { diaCorrida: 18, dia: 18, n: 60, p75: 30, p90: 36 };
+  const pop = (perdida) => ({ validTanks: 10, totalInit: 1000, totalCurr: 1000 - perdida * 10 });
+  it('hasta lo que no superan 3 de cada 4 corridas → verde (con 20/40 fijos, 29 % sería ámbar)', () => {
+    expect(popSemaforo(pop(29), ref).level).toBe('verde');
+    expect(popSemaforo(pop(30), ref).level).toBe('verde');
+  });
+  it('peor que 3 de cada 4 → ámbar; hasta 9 de cada 10 sigue ámbar', () => {
+    expect(popSemaforo(pop(30.5), ref).level).toBe('ambar');
+    expect(popSemaforo(pop(36), ref).level).toBe('ambar');
+  });
+  it('peor que 9 de cada 10 → rojo', () => {
+    expect(popSemaforo(pop(36.5), ref).level).toBe('rojo');
+  });
+  it('un 15 % con una planta que ese día pierde 12 % / 18 % → ámbar (con 20/40 fijos sería verde)', () => {
+    expect(popSemaforo(pop(15), { diaCorrida: 4, dia: 4, n: 70, p75: 12, p90: 18 }).level).toBe('ambar');
+  });
+  it('el detalle: el día, cuántas corridas y lo normal', () => {
+    expect(popSemaforo(pop(37), ref).detail).toBe('Pérdida acumulada 37.0% · día 18: de 60 corridas, 3 de cada 4 perdían hasta 30.0% y 9 de cada 10 hasta 36.0% · 10 tanque(s)');
+    expect(popSemaforo(pop(37), { ...ref, diaCorrida: 26, dia: 22, n: 12 }).detail)
+      .toContain('día 26 (referencia del día 22): de 12 corridas');
+  });
+
+  describe('el mínimo: nunca ámbar por debajo de 5 % ni rojo por debajo de 10 %', () => {
+    const temprano = { diaCorrida: 2, dia: 2, n: 70, p75: 0, p90: 0.5 };   // los primeros días: casi nadie recuenta
+    it('1 % el día 2 → verde, aunque sea «peor que 9 de cada 10»', () => {
+      expect(popSemaforo(pop(1), temprano).level).toBe('verde');
+      expect(popSemaforo(pop(5), temprano).level).toBe('verde');
+    });
+    it('más de 5 % → ámbar; más de 10 % → rojo', () => {
+      expect(popSemaforo(pop(5.1), temprano).level).toBe('ambar');
+      expect(popSemaforo(pop(10), temprano).level).toBe('ambar');
+      expect(popSemaforo(pop(10.1), temprano).level).toBe('rojo');
+    });
+    it('el detalle lo dice sólo cuando se aplica', () => {
+      expect(popSemaforo(pop(1), temprano).detail).toContain('9 de cada 10 hasta 0.5% (mínimo 5% / 10%) · 10 tanque(s)');
+      expect(popSemaforo(pop(37), ref).detail).not.toContain('mínimo');
+      expect(popSemaforo(pop(1), { ...temprano, p75: 6, p90: 9 }).detail).toContain('(mínimo 5% / 10%)');
+    });
   });
 });
 
