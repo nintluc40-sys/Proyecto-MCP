@@ -448,14 +448,19 @@ describe('Clima.gs · las pasadas sobre el libro', () => {
      NASA hasta otro `instalar`. Las pasadas piden 48 h a AWC: esos días ya no vuelven a llegar por él. */
   it('🔴 la pasada nocturna pide al archivo de la IEM los días de hace 3 a 5 y recupera lo observado que AWC no trajo', () => {
     ctx.api.CLIMA.desde = '2026-10-10';
+    metarResp = metarResp.concat([metar('2026-10-23T12:00', { temp: 28, wxString: '-RA' })]);   // las 7:00 del 23-10, por AWC
     ctx.api.instalar();
     ctx.pedidos.length = 0;
-    iemResp = CAB_IEM + 'SESA,2026-10-23 11:00,26.00,24.00,9.00,210.00,29.85,BKN,M,M,M,-RA\n';   // las 6:00 del 23-10 en Ecuador
+    metarResp = null;
+    iemResp = CAB_IEM + 'SESA,2026-10-23 11:00,26.00,24.00,9.00,210.00,29.85,BKN,M,M,M,-RA\n'   // las 6:00: AWC no la trajo
+      + 'SESA,2026-10-23 12:00,27.00,24.00,9.00,210.00,29.85,BKN,M,M,M,M\n';                     // las 7:00: OTRA versión
     ctx.api.nocturno();
     const iem = ctx.pedidos.filter((p) => p.url.includes('mesonet'));
     expect(iem).toHaveLength(1);
     expect(iem[0].url).toMatch(/sts=2026-10-22T05:00Z&ets=2026-10-25T05:00Z/);   // del 22-10 a las 00:00 al 24-10 a las 24:00
     expect(filaDeHora(ctx.api, ctx.libro, '2026-10-23', 6)).toMatchObject({ fuente: 'Observado SESA', t: 26, v: 16.7, dir: 210 });
+    // 30-10 (usuario: «Solo rellenar huecos») · donde AWC trajo su METAR, se queda el de AWC (el 26-10 a las 13:00 perdió su «-RA»)
+    expect(filaDeHora(ctx.api, ctx.libro, '2026-10-23', 7)).toMatchObject({ fuente: 'Observado SESA', t: 28, wx: 'lluvia débil' });
     // nada de antes de «desde»: si esos días quedan antes, no se pide
     ctx.api.CLIMA.desde = '2026-10-25';
     ctx.pedidos.length = 0;

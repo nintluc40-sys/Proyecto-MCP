@@ -29,7 +29,7 @@
 // ACTIVADORES (los crea `instalar`, que se puede repetir sin duplicarlos):
 //  · `cadaTresHoras` — METAR + MET: las horas de hoy y el pronóstico.
 //  · `nocturno` (hacia las 02:30) — NASA: rellena huecos, la nubosidad y la radiación que vaya publicando; y del
-//    archivo METAR de la IEM, los días de hace 3 a 5: lo observado que AWC no trajo (2026-10-30).
+//    archivo METAR de la IEM, los días de hace 3 a 5: lo observado que AWC no trajo, sólo en esos huecos (2026-10-30).
 // Sólo escribe si algo cambió (la consulta ligera del MCP lee la fecha de modificación del libro).
 //
 // Atribución que el MCP muestra: «Datos: METAR SESA (NOAA · IEM) · MET Norway · NASA POWER».
@@ -106,7 +106,10 @@ function cadaTresHoras() {
 
 /** Cada noche: NASA, sólo desde el primer día al que le falte algo que NASA pueda dar; y del archivo METAR de la IEM, los
  *  días de hace 3 a 5 (2026-10-30, usuario: «De hace 3 a 5 días»): lo que AWC no trajo (el 14-10 a las 6:00 siguió con NASA
- *  hasta otro `instalar`). Las pasadas sólo piden 48 h a AWC: esos días ya no los vuelve a traer y no se pisan con él. */
+ *  hasta otro `instalar`). Las pasadas sólo piden 48 h a AWC: esos días ya no los vuelve a traer.
+ *  ⚠ Sólo en los HUECOS (2026-10-30, usuario: «Solo rellenar huecos»): AWC y la IEM pueden guardar dos versiones del MISMO
+ *  METAR (el 26-10 a las 13:00, `261800Z` con y sin «-RA»; el 28-10 a las 9:00, 28 °C y 27 °C); la del archivo pisaba a la
+ *  de AWC. Ahora sólo llena las horas sin lo observado en SESA. */
 function nocturno() {
   var ss = libro_(), errores = [];
   var r = conCandado_(function () {
@@ -118,6 +121,7 @@ function nocturno() {
     return pasada_(ss, {
       metar: intentar_(errores, function () { return pedirMetar_(48); }),
       metarArchivo: intentar_(errores, function () { return pedirMetarArchivo_(maxClave_(CLIMA.desde, sumarDias_(hoy, -5)), sumarDias_(hoy, -3)); }),
+      archivoSoloHuecos: true,
       nasaHoras: desdeH ? intentar_(errores, function () { return pedirNasaHoras_(desdeH, hoy); }) : null,
       nasaDias: desdeD ? intentar_(errores, function () { return pedirNasaDias_(desdeD, hoy); }) : null
     }, ahora);
@@ -170,7 +174,8 @@ function probar() {
 // ── LA PASADA (pura salvo la lectura y escritura de las dos hojas) ──────────────────────
 
 /** Funde lo recibido en las dos hojas y escribe sólo lo que cambió. `datos`: {metar, metarArchivo, met, nasaHoras, nasaDias},
- *  cada uno opcional (null = esa fuente no se pidió o no trajo nada nuevo). */
+ *  cada uno opcional (null = esa fuente no se pidió o no trajo nada nuevo). Con `archivoSoloHuecos` (la pasada nocturna), el
+ *  archivo sólo llena las horas que aún no tienen lo observado en SESA: donde AWC trajo su METAR, se queda el de AWC. */
 function pasada_(ss, datos, ahora) {
   var hoy = claveDia_(ahora), act = new Date(ahora);
   var H = leerHoras_(ss), D = leerDias_(ss);
@@ -178,7 +183,11 @@ function pasada_(ss, datos, ahora) {
   if (datos.nasaHoras) candidatos = candidatos.concat(horasDeNasa_(datos.nasaHoras));
   if (datos.met) candidatos = candidatos.concat(horasDeMet_(datos.met, hoy));
   if (datos.metar) candidatos = candidatos.concat(horasDeMetar_(datos.metar));
-  if (datos.metarArchivo) candidatos = candidatos.concat(horasDeMetar_(datos.metarArchivo));
+  if (datos.metarArchivo) {
+    var observadas = {};
+    if (datos.archivoSoloHuecos) H.filas.forEach(function (f) { if (f.fuente === FUENTE.sesa) observadas[f.dia + "|" + f.hora] = true; });
+    candidatos = candidatos.concat(horasDeMetar_(datos.metarArchivo).filter(function (c) { return !observadas[c.dia + "|" + c.hora]; }));
+  }
   var fusion = fusionarHoras_(H.filas, candidatos.filter(function (c) { return c.dia >= CLIMA.desde && c.dia <= hoy; }), act);
   var rad = datos.nasaDias ? radiacionDiaria_(datos.nasaDias) : {};
   var pron = datos.met ? pronosticoDeMet_(datos.met, hoy, CLIMA.diasPronostico) : null;
