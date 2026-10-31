@@ -99,6 +99,15 @@ describe('Mantenimiento · el horómetro (lo del tablero + el ajuste)', () => {
     expect(horometroActual(modelo().lista, 'BLW-01')).toMatchObject({ h: 918.4, origen: 'Trabajo' });
     expect(horometroActual(modelo().lista, 'BLW-99')).toBeNull();
   });
+  it('🔴 30-10 · si varias lecturas dan el mayor, su fecha es la de la MÁS RECIENTE (usuario: «La más reciente»)', () => {
+    const repe = [L('24/10/2026', 'BLW-09', '210'), L('26/10/2026', 'BLW-09', '210')];
+    expect(horometroActual(modelo(LIBRO.concat(repe)).lista, 'BLW-09')).toMatchObject({ h: 543.51, fecha: '2026-10-26' });
+    expect(horometroActual(modelo(LIBRO.concat(repe.slice().reverse())).lista, 'BLW-09').fecha, 'sin importar el orden de la hoja')
+      .toBe('2026-10-26');
+    // el mismo día, la de hora más tardía
+    const dia = [L('26/10/2026', 'BLW-09', '210', { Hora: '08:00', ID: 'a' }), L('26/10/2026', 'BLW-09', '210', { Hora: '16:00', ID: 'b' })];
+    expect(horometroActual(modelo(LIBRO.concat(dia)).lista, 'BLW-09').hora).toBe('16:00');
+  });
 });
 
 describe('Mantenimiento · 🚦 próximos cambios (lo que decía el Excel al 22/10)', () => {
