@@ -243,4 +243,26 @@ describe('🦐 el foco y la elegida se ven también sobre una piscina SECA', () 
       .forEach((r) => expect(r.cuerpo, r.sel.join(', ')).not.toMatch(/filter/));
     expect(de('.bs-c-sin .bs-agua'), 'la seca, con su textura').toMatch(/filter:\s*url\(#bs-terreno\)/);
   });
+  /* 30-10 (usuario: «Prueba más estricta») · la de arriba lee las reglas sueltas: no vería otra regla POSTERIOR que anulase
+     el halo o la textura (`filter: none`), ni nada dentro de un @media (su lectura se las salta). */
+  it('🔴 en TODO el archivo, también dentro de un @media, sólo el halo y la textura de la seca tocan el filtro de la piscina', async () => {
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync('src/views/planta/broodstock.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const reglas = [];
+    const leer = (txt) => {
+      for (let i = 0, a; (a = txt.indexOf('{', i)) >= 0;) {
+        let j = a + 1;
+        for (let d = 1; j < txt.length && d; j++) d += txt[j] === '{' ? 1 : txt[j] === '}' ? -1 : 0;
+        const pre = txt.slice(i, a).trim(), cuerpo = txt.slice(a + 1, j - 1);
+        if (pre.startsWith('@')) leer(cuerpo); else reglas.push({ sel: pre.split(',').map((s) => s.trim()), cuerpo });
+        i = j;
+      }
+    };
+    leer(css);
+    expect(reglas.filter((r) => r.sel.includes('.bs-cuerpo')).length, 'control: lee también la de dentro del @media').toBe(2);
+    // las que ponen `filter` al grupo de la piscina (.bs-pisc, con o sin estado) o a su polígono (.bs-agua)
+    const filtros = reglas.filter((r) => /(^|;)\s*filter\s*:/.test(r.cuerpo) && r.sel.some((s) => /\.bs-(pisc|agua)(?![\w-])[^\s>+~]*$/.test(s)));
+    expect(filtros.map((r) => r.sel.join(', '))).toEqual([
+      '.bs-svg:not(.general) .bs-zona.elegida .bs-pisc:hover, .bs-pisc:focus-visible, .bs-pisc.on', '.bs-c-sin .bs-agua']);
+  });
 });
