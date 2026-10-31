@@ -3,7 +3,8 @@
 // Es un proyecto APARTE: NO es el GAS del Registro (no toca su sello, su `ALLOWED` ni `index (8)`).
 // script.google.com → Nuevo proyecto (con la cuenta dueña del libro) → pega este código completo →
 // ⚙ Configuración del proyecto → Zona horaria «(GMT-05:00) Guayaquil» → ejecuta `probar` y luego `instalar`.
-// (Instalado ANTES del 2026-10-28: pega el código nuevo y ejecuta UNA vez `rellenarObservado`.)
+// (Instalado ANTES del 2026-10-28: pega el código nuevo y ejecuta UNA vez `rellenarObservado`. Cambios posteriores:
+//  basta con pegar el código; los activadores llaman a las funciones por su nombre.)
 // ════════════════════════════════════════════════════════════════════════════════════
 //
 // QUÉ HACE: escribe en el libro del MCP dos hojas que el tablero lee como lee «Marea»:
@@ -27,7 +28,8 @@
 //
 // ACTIVADORES (los crea `instalar`, que se puede repetir sin duplicarlos):
 //  · `cadaTresHoras` — METAR + MET: las horas de hoy y el pronóstico.
-//  · `nocturno` (hacia las 02:30) — NASA: rellena huecos, la nubosidad y la radiación que vaya publicando.
+//  · `nocturno` (hacia las 02:30) — NASA: rellena huecos, la nubosidad y la radiación que vaya publicando; y del
+//    archivo METAR de la IEM, los días de hace 3 a 5: lo observado que AWC no trajo (2026-10-30).
 // Sólo escribe si algo cambió (la consulta ligera del MCP lee la fecha de modificación del libro).
 //
 // Atribución que el MCP muestra: «Datos: METAR SESA (NOAA · IEM) · MET Norway · NASA POWER».
@@ -102,7 +104,9 @@ function cadaTresHoras() {
   cerrar_("", r, errores);
 }
 
-/** Cada noche: NASA, sólo desde el primer día al que le falte algo que NASA pueda dar. */
+/** Cada noche: NASA, sólo desde el primer día al que le falte algo que NASA pueda dar; y del archivo METAR de la IEM, los
+ *  días de hace 3 a 5 (2026-10-30, usuario: «De hace 3 a 5 días»): lo que AWC no trajo (el 14-10 a las 6:00 siguió con NASA
+ *  hasta otro `instalar`). Las pasadas sólo piden 48 h a AWC: esos días ya no los vuelve a traer y no se pisan con él. */
 function nocturno() {
   var ss = libro_(), errores = [];
   var r = conCandado_(function () {
@@ -113,6 +117,7 @@ function nocturno() {
     var desdeD = primerDiaSinRadiacion_(dias.filas, tope, sumarDias_(hoy, -1));
     return pasada_(ss, {
       metar: intentar_(errores, function () { return pedirMetar_(48); }),
+      metarArchivo: intentar_(errores, function () { return pedirMetarArchivo_(maxClave_(CLIMA.desde, sumarDias_(hoy, -5)), sumarDias_(hoy, -3)); }),
       nasaHoras: desdeH ? intentar_(errores, function () { return pedirNasaHoras_(desdeH, hoy); }) : null,
       nasaDias: desdeD ? intentar_(errores, function () { return pedirNasaDias_(desdeD, hoy); }) : null
     }, ahora);
