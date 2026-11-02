@@ -124,19 +124,24 @@
         4. Autoriza los permisos → copia la URL del Web App<br>
         5. Pégala arriba y haz clic en <strong>Probar</strong>
         <br><br>
-        <strong>Hojas que se crearán/rellenarán automáticamente:</strong><br>
-        • <em>Datos Larvicultura - M01…M10</em> → Calidad + PLG + Población + Despacho + Calidad de Agua (1 fila por TQ)<br>
-        • <em>Control_Tanque M01…M10</em> → Parámetros OD/°C (1 fila por TQ × hora)<br>
-        • <em>Datos Larvicultura - CIO</em> → Igual que M01–M10 (módulo CIO)<br>
-        • <em>Control_Tanque CIO</em> → Parámetros OD/°C del módulo CIO<br>
-        • <em>Lab_Algas</em> → Registro diario de cultivo de algas<br>
-        • <em>Maduración Sala</em> → Salas (upsert por Fecha + Sala)<br>
-        • <em>Maduración Tanques</em> → Tanques (upsert por Fecha + Sala + Tanque)<br>
-        • <em>Maduración Lotes</em> → Lotes (upsert por Fecha + Sala + Fila)<br>
-        • <em>BIOMOL</em> → Diagnóstico molecular (append por muestra)<br>
-        • <em>Registro_Supervisión</em> → Supervisión técnica AsT (upsert por ID)<br>
+        <strong>Hojas que la app crea o rellena (cada una nace con su primer envío):</strong><br>
+        • <em>Datos Larvicultura - M01…M10</em> y <em>- CIO</em> → Calidad + PLG + Población + Despacho + Calidad de Agua (1 fila por TQ)<br>
+        • <em>Control_Tanque M01…M10</em> y <em>CIO</em> → Parámetros OD/°C (1 fila por TQ × hora)<br>
+        • <em>Lab_Algas</em> → Registro de cultivo de algas (reemplazo por sesión)<br>
+        • <em>Maduración Sala</em> → Salas (por Fecha + Sala)<br>
+        • <em>Maduración Zonas</em> → Zonas de desove y reservorios (por Fecha + Zona + Tanque)<br>
+        • <em>Maduración Tanques</em> → Tanques (por Fecha + Sala + Tanque + Hora + Parte)<br>
+        • <em>Maduración Lotes</em> → Desoves (por Fecha + Lote + Código genético)<br>
+        • <em>Maduración Ingreso</em> / <em>Movimientos</em> / <em>Fin de Ciclo</em> / <em>Tratamientos</em> / <em>Mortalidad Desove</em> / <em>Alimentación</em> → sus fichas (por ID)<br>
+        • <em>Maduración Broodstock</em> → Carga semanal de piscinas (reemplazo por Fecha de corte + Piscina)<br>
+        • <em>Maduración MATRIZ</em> / <em>Bitácora</em> / <em>Transferencias</em> → Registro reproductivo (por Trovan + Piscina + Código genético + Lote; por Trovan + Fecha + Tipo; por TR-ID + Trovan)<br>
+        • <em>BIOMOL</em> → Diagnóstico molecular (reemplazo por sesión o por fecha)<br>
+        • <em>Registro_Supervisión</em> / <em>Registro_Traslado</em> / <em>Registro_Score</em> / <em>Registro_Auditoria</em> → módulo AsT (por ID)<br>
+        • <em>Marea</em> → Mareas (reemplazo por fecha)<br>
         • <em>Registro_Desinfección</em> → Desinfección M01–M10 + CIO (upsert por Fecha+Módulo+Tipo+Categoría+Elemento)<br>
-        • <em>Microbiología</em> / <em>Calidad de Agua</em> / <em>Patología en Fresco</em> → módulo Microbiología (reemplazo por sesión)
+        • <em>Microbiología</em> / <em>Calidad de Agua</em> / <em>Patología en Fresco</em> → módulo Microbiología (reemplazo por sesión)<br>
+        • <em>Mantenimiento Trabajos</em> / <em>Mantenimiento Lecturas</em> → módulo Mantenimiento (por ID)<br>
+        <em>Mantenimiento Equipos</em> y <em>Mantenimiento Plan</em> no las escribe la app: se llenan a mano en el libro.
       </div>
       <div class="cf">
         <label for="gas-code">Código Google Apps Script (copia todo esto)</label>
