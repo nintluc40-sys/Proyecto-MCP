@@ -51,10 +51,10 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
    vista). Están documentadas porque la regla lisa y llana llevaba tiempo sin cumplirse, y
    una norma que todos saben que se incumple deja de guiar:
    - `core/charts.js` — envuelve Chart.js, que necesita el `<canvas>`: `getElementById`,
-     `querySelectorAll('canvas')`, `devicePixelRatio`.
+     `querySelectorAll('canvas')`, `devicePixelRatio`, `getComputedStyle`.
    - `core/refresh.js` — detecta interacción del usuario para pausar el auto-refresco:
-     escucha eventos en `document` y consulta `.modal-open`.
-   - `core/sheets.js` — usa `window.XLSX` (SheetJS servido desde `public/vendor/` con su `integrity`, no por CDN) y `localStorage` (caché de gids).
+     escucha eventos en `document` y consulta `.modal-open`, `document.hidden` y `activeElement`.
+   - `core/sheets.js` — usa `fetch`, `window.XLSX` (SheetJS servido desde `public/vendor/` con su `integrity`, no por CDN) y `localStorage` (caché de gids).
    - `core/sheets.lector.js` — crea el Worker (`new Worker`) y busca en `document` el `<script>`
      de SheetJS para pasarle su dirección.
    - `core/sheets.worker.js` — corre DENTRO del Worker: carga SheetJS con `importScripts` y guarda
@@ -83,6 +83,8 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
    `paridad-fichas-std.mjs` (utillaje) arranca los dos motores y compara lo que se ve y lo que se guarda;
    corre en `verificar-todo` y en el pre-push. Romperlo deja las fichas sin render, no da
    error de compilación y la suite no lo ve.
+   - El sentido contrario, también por eso: los módulos de `registros/fichas/` reciben las funciones del motor en un parámetro
+     `engine = globalThis`. Sólo LEEN funciones (y en las pruebas se les pasa otro objeto); no guardan estado.
 
    **Criterio para lo nuevo:** que un módulo ES exponga algo en `window` sólo se acepta para
    hablar con código que **no puede importar** (hoy, únicamente el monolito heredado). Todo lo
@@ -96,10 +98,19 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
    al cambiar de vista. Nunca instancies `new Chart` suelto.
 6. **Acceso tolerante a columnas del Sheet** vía `getField(row, F.x)` / `parseNum(...)`. No leas
    `row['Columna']` directo: las cabeceras varían en mayúsculas/tildes.
+
+   **Excepción vigente** (unas 170 lecturas, y a propósito: la razón está en `maduracion/operativo.fuentes.js`): las hojas cuya
+   cabecera escribe el propio sistema y se vigila, con su esquema o su script, se leen por su nombre EXACTO. Son el tablero y los
+   motores de Maduración (`maduracion/operativo.*`, `maduracion/data.js`, `registros/lib/{mad-libro,mad-resumen,reproductivo.data}.js`) y las de
+   «Clima» (`clima/clima.data.js`). Tolerar variantes ahí haría que el tablero y el Saldo pudieran leer columnas distintas del mismo dato.
 7. **Fechas** siempre por `parseAnyDate()` (soporta serial Excel, dd/mm/yyyy, ISO). No uses
    `new Date(str)` directo.
-8. **Cada archivo abre con una cabecera** de comentario que explica su propósito (y su origen en
-   el monolito si aplica).
+
+   **Excepción vigente:** la regla es para lo que viene del Sheet. Una ISO que ya es del propio código o de un
+   `<input type="date">` (`new Date(iso + 'T00:00:00')`, `new Date(a, m, d)`) sí puede construirse así. Y el tablero de Maduración
+   convierte con `fechaIso`, a propósito: `parseAnyDate` haría fechas de lo que no es una celda de fecha (`operativo.fuentes.js`).
+8. **Cada módulo abre con una cabecera** de comentario que explica su propósito (y su origen en
+   el monolito si aplica). Las pruebas, cuando hay algo que explicar: no se les exige.
 
 ## Skills vendorizadas
 
@@ -128,7 +139,9 @@ que este repo ya vigila a mano en los tres sitios donde no le queda más remedio
 
 ## Estilo
 
-- ESLint plano (`eslint.config.js`) + Prettier. `npm run lint` y `npm run format`.
+- ESLint plano (`eslint.config.js`): `npm run lint`, y es lo que corre la CI. Prettier (`.prettierrc.json`) es una guía para lo
+  nuevo, no una obligación: casi ningún módulo lo pasa. ⚠ **No correr `npm run format` sobre el árbol:** reescribiría miles de
+  líneas, mataría las anclas de los bancos de mutación y no arregla ningún fallo.
 - ES modules, `const`/`let` (nunca `var`), comillas simples, sin punto y coma omitido.
 - **Texto con el color de marca: `var(--c-brand-txt)`** (y `-600-txt`, `-700-txt`), no `--c-brand`
   directo, que en oscuro no se lee (2026-10-30). Lo vigila `src/styles/marcaTexto.test.js`; sus
@@ -148,3 +161,5 @@ que este repo ya vigila a mano en los tres sitios donde no le queda más remedio
   hojas «Clima» y «Clima horas» con sus columnas (`COL_DIAS`, `COL_HORAS`), que lee `src/views/clima/`
   y por las que `detectSheetName` (`core/sheets.js`) reconoce las dos pestañas en la vía de respaldo.
   Cambiarlas es cambiar las tres puntas.
+- Lo demás de fuera —Larvia (otro sistema escribe sus columnas), la predicción de INOCAR (pegada a mano), las teselas de
+  OpenStreetMap y las Evidencias en Drive— está en el README, «Lo demás que viene de fuera (o sale fuera) del libro».
