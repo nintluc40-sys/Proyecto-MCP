@@ -156,8 +156,8 @@ export function normalizeRows(rows) {
       IHHNV: normResult(nr['IHHNV'] || ''), WSSV: normResult(nr['WSSV'] || ''), BP: normResult(nr['BP'] || ''),
       AHPND: normResult(nr['AHPND'] || nr['AHPND/EMS'] || ''), NHPB: normResult(nr['NHPB'] || ''), EHP: normResult(nr['EHP'] || ''),
       // Cuantitativas de qPCR: se leen TAL CUAL (no pasan por normResult, que sólo
-      // entiende Positivo/Negativo). Hoy no alimentan gráficos ni KPIs; existen para
-      // que el Excel de esta vista siga siendo un espejo fiel de la hoja.
+      // entiende Positivo/Negativo). Alimentan la carga viral, y el Excel de esta vista
+      // sigue siendo un espejo fiel de la hoja.
       // Cuantificación POR PATÓGENO. `ciclo`/`copias` se conservan como el primer
       // valor disponible para que la tabla, el Excel y el tooltip de siempre sigan
       // funcionando; `qpcr` trae el detalle completo, que es lo que ahora existe.
@@ -181,8 +181,7 @@ const byDateDesc = (rows) => rows.slice().sort((a, b) => String(b.f).localeCompa
 // ── qPCR: las dos columnas CUANTITATIVAS de la hoja ───────────────────────────
 // Se muestran TAL CUAL las escribe el laboratorio ("3.40E+04", no 34000): así es como las
 // imprime el informe en PDF, y la tabla de esta vista es el espejo en pantalla de la hoja.
-// Aquí NO se convierten a número ni se clasifican por nivel de carga; eso llegaría con los
-// gráficos de carga, y mientras no exista no puede divergir del informe.
+// Aquí NO se convierten a número ni se clasifican por nivel de carga: eso lo hace la tarjeta de carga viral, más abajo.
 /** ¿La muestra trae medición de qPCR? Basta con UNO de los dos valores: un Ct sin
  *  cuantificar copias sigue siendo una corrida en tiempo real. Misma regla que
  *  `_bioEsQpcr` de la ficha de captura, que es quien escribe estas dos columnas. */

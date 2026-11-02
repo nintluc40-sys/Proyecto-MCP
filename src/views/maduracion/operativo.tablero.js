@@ -2,7 +2,7 @@
    MADURACIÓN · OPERATIVO — lo que ENSEÑA el tablero (F1, 2026-09-19)
 
    Convierte el modelo de `operativo.data.js` en lo que pintan «📊 Estado actual» y «🏠 Salas», con el diseño que
-   aprobó el usuario el 2026-09-19: los seis indicadores de la portada, el mapa de planta, las alertas, los últimos
+   aprobó el usuario el 2026-09-19: los indicadores de la portada, el mapa de planta, las alertas, los últimos
    registros, los fines de cuarentena, las tarjetas de sala y el detalle de una sala. Módulo PURO: ni DOM ni red; la
    vista (`operativo.view.js`) sólo pinta lo que sale de aquí.
 

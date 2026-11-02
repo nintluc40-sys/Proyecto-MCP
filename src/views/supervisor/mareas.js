@@ -2,8 +2,8 @@
    SUPERVISOR · Modal de Mareas (referencia de sitio · Anconcito · INOCAR)
    Lee la hoja "Marea" del store (_SheetOrigin='Marea'). Cada fila = 1 día con
    sus pleamares/bajamares, fase lunar, iluminación y tipo (Viva/Muerta).
-   Dos vistas: "Día" (curva de marea + KPIs + luna + tipo + tabla) y
-   "Mes" (tendencia mensual + distribución de fases lunares).
+   Tres vistas: "Día" (curva de marea + KPIs + luna + tipo + tabla), "Mes" (tendencia mensual +
+   distribución de fases lunares) y "Correlación" (sólo en el modal del Supervisor).
    Capa de datos PURA (mareaDays, testeable) + render con SVG (luna/ola) y
    Chart.js gestionado (tendencia/donut). Tema del proyecto (claro/oscuro).
    El modal ENTERO (marcado y cableado, al final) lo abren Supervisor y Maduración · Operativo (0r·1, 2026-09-28).
@@ -735,7 +735,7 @@ export function renderMareas(host, state, extras = {}, { delDia } = {}) {
 }
 
 /* ---------- el MODAL entero: su marcado y su cableado ----------
-   0r·1 (2026-09-28, usuario) · lo comparten Supervisor (Larvicultura) y Maduración · Operativo: vivían en
+   0r·1 (2026-09-28, usuario) · lo comparten Supervisor y Maduración · Operativo: vivían en
    supervisor/module.js y se mudaron aquí sin cambiar nada, para que las dos pantallas no puedan divergir. */
 /** Lo que enseña el modal al ABRIRSE: la vista Día, en el día de hoy (o el último con marea). */
 export const mareasEstadoInicial = () => ({ mode: 'dia', key: null, month: null, corrKind: 'micro', corrPeriod: 'month', corrCell: null });

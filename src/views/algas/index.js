@@ -1,10 +1,8 @@
 /* ============================================================
    ALGAS · Laboratorio de microalgas (hoja Lab_Algas)
-   TANDA 1: capa de datos + barra de mes + barra de filtros (cascada)
-   + KPIs + tabla de validación. Los gráficos por categoría de sistema
-   y la sección de análisis llegan en las siguientes tandas.
+   Capa de datos + barra de mes + barra de filtros (cascada) + KPIs, y los gráficos y el análisis por sistema.
 
-   Datos (19 columnas A–S de Lab_Algas): Fecha · Corrida_Larv · Modulo_Larv ·
+   Datos (las primeras columnas de Lab_Algas; las de la hoja crecieron después): Fecha · Corrida_Larv · Modulo_Larv ·
    Área_Algas · Sistema · Lote · Dia_Proceso · Cel_ml · Protozoarios · Especie ·
    Salinidad_ppt · pH · Temperatura_C · Intensidad_Luz_% · Descartado ·
    Observaciones · Ciliados · Filamentosos · Técnico.

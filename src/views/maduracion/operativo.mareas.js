@@ -1,7 +1,7 @@
 /* ============================================================
    MADURACIÓN · OPERATIVO — 🦐 cópulas × marea × luna (0r·2, 2026-09-28, usuario)
 
-   La pestaña «🦐 Cópulas» del modal 🌊 Mareas del tablero: ¿se copula más con la marea viva, con una fase de la luna o
+   La pestaña «🦐 Cópulas» de la sub-vista 🌊 Mareas del tablero: ¿se copula más con la marea viva, con una fase de la luna o
    con más amplitud? MÓDULO PURO; la vista, en operativo.view.js.
    · La TASA de un día es la del ⚖️ Saldo (H1 de mad-resumen.js; la de `tasaEnPartesDelLote`): Σ cópulas de los partes
      de Tanques del día ÷ Σ hembras que el libro tenía en esos tanques al CIERRE de ese día × 100. El parte de un tanque

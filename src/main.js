@@ -26,7 +26,7 @@ import { vigilarVersion } from './ui/versionNueva.js';
 // ui/vistaDiferida.js.
 import { diferida } from './ui/vistaDiferida.js';
 
-// Biología Molecular: carga DIFERIDA. Es la vista más pesada (D3, ~1.5k líneas) y
+// Biología Molecular: carga DIFERIDA. Es de las vistas más pesadas (D3 y miles de líneas) y
 // no es de uso diario; se descarga solo al abrirla, aligerando el bundle inicial.
 
 /* D3 (sólo lo usa Biología Molecular) se carga AL ABRIRLA, no en el <head>: era un script que

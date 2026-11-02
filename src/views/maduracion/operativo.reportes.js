@@ -2,10 +2,10 @@
    MADURACIÓN · OPERATIVO — F7.1 · REPORTERÍA: el PARTE DIARIO (2026-09-22)
 
    Decisiones del usuario (F7), CERRADAS — no re-preguntar:
-   · La primera tanda es el PARTE DIARIO extremo a extremo (pantalla, PDF y Excel); el semanal por lote,
-     el cierre de lote y el de Broodstock vienen después y reusan esta maquinaria.
-   · Vive en su propia sub-vista, 🖨 Reportes (la décima pastilla: `.mc-subnav` envuelve, así que no repite
-     el problema de sitio que obligó a fusionar F5).
+   · Empezó por el PARTE DIARIO extremo a extremo (pantalla, PDF y Excel); el semanal por lote, el cierre de lote y el de
+     Broodstock reusan esta maquinaria.
+   · Vive en su propia sub-vista, 🖨 Reportes (`.mc-subnav` envuelve, así que no repite el problema de sitio que obligó
+     a fusionar F5).
    · El PDF se imprime con la maquinaria del Supervisor (`printFichaDocs`: iframe oculto, sin pop-ups).
    · El Excel lleva UNA HOJA POR BLOQUE, con las filas COMPLETAS (el papel recorta, el archivo no).
    · El parte es del día de la FOTO y hereda los filtros del tablero, que se IMPRIMEN en la cabecera:

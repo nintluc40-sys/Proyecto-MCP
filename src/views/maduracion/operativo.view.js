@@ -6,14 +6,14 @@
    con etiquetas de lo activo y «limpiar») y sus sub-vistas.
    ⚠ La lista viva es `SUBS`, unas líneas más abajo, y los KPI son el array `kpis`: se leen de ahí, no de aquí.
      Esta cabecera se quedó atrás DOS veces —«dos sub-vistas» con cinco, y luego «cinco» con siete—, así que ya no
-     lleva la cuenta: dice dónde mirar además de qué hay. Hoy:
-     📊 Estado actual — los KPI (Vivos, Lotes, Salas, Ocupación, Mortalidad, Reproducción y Biomasa), el mapa de
+     lleva la cuenta: dice dónde mirar además de qué hay. Las principales:
+     📊 Estado actual — los KPI (Vivos, Lotes, Salas, Ocupación, Mortalidad, Reproducción, Cópula y Biomasa), el mapa de
         planta (los colores, en tres grupos, y el LIENZO del tanque pulsado, 0f · 3: operativo.mapa.js; los modos
         viven en `MODOS_MAPA`), las alertas (con 📉 Tendencias frente al período anterior y
         ⏳ Permanencia, 0f · 2b: operativo.tendencias.js), los últimos registros y los lotes que salen de
         cuarentena en los próximos 7 días;
      🏠 Salas — una tarjeta por sala y, al pulsarla, su detalle: la T° por hora, el O₂, ♀/♂ y densidad por tanque,
-        la tabla de tanques y los tratamientos recientes;
+        la tabla de tanques y los tratamientos recientes; debajo, las 🌡️ Zonas de desove y reservorios (operativo.zonas.js);
      🧬 Lotes (F2) — tabla maestra con los cerrados dentro, ficha del lote con la CASCADA DEL CUADRE, y comparativa
         por lote, código genético o piscina; y debajo (F6) 📈 Piscinas de origen, el Broodstock: el último corte de
         cada piscina con los lotes que entraron de ella y, al pulsarla, su ficha con el peso por semana;
@@ -30,7 +30,8 @@
      🦐 Alimentación (6, 2026-09-29; antes, el 2.º bloque de Manejo) — la alimentación PLANIFICADA por producto
         contra la agenda estándar, con cada toma juzgada con el rango de la ficha;
      🩺 Calidad del dato (F6) — las hojas y su calendario, los partes esperados frente a los registrados, el estado
-        registrado de cada sala frente al propuesto, los avisos del libro y el cruce con 🧬 Microchips.
+        registrado de cada sala frente al propuesto, los avisos del libro y el cruce con 🧬 Microchips;
+     📈 Evolución (operativo.evolucion.js), 🖨 Reportes (operativo.reportes.js), y 🦠 Microbiología y agua, 🧬 Biomol y 🌊 Mareas.
    Esta vista sólo PINTA: las cifras salen de los módulos puros operativo.*.js, que tienen sus pruebas y sus bancos
    de mutación. Se carga DIFERIDA (import() en entrada.js) junto con su CSS.
    ⚠ El período de este tablero es SUYO (termina en la foto): no lee el rango de la barra de fecha global. Si algún día
@@ -143,7 +144,7 @@ const SUBS = [
      sub-nav: 🦠 y 🧬 justo tras 🖨 Reportes (2 · 2026-09-29) y 🌊 Mareas la última (0r·1). Usa la barra del tablero. */
   { clave: 'evolucion', etiqueta: 'Evolución', icono: '📈' },
   /* F7 (2026-09-22) · la reportería, con su propia pastilla (decisión del usuario). `.mc-subnav` es `flex-wrap`,
-     así que la décima envuelve en el móvil: no repite el problema de sitio que obligó a fusionar F5. */
+     así que las que no caben envuelven en el móvil: no repite el problema de sitio que obligó a fusionar F5. */
   { clave: 'reportes', etiqueta: 'Reportes', icono: '🖨' },
   /* 2 (2026-09-29, usuario) · lo del laboratorio y las mareas, que eran ventanas, son sub-vistas como las demás: «que no se
      genere una ventana extra sino que de ahí mismo». Las tres traen SUS filtros y ocultan la barra del tablero (`PROPIOS`). */

@@ -53,7 +53,7 @@ function modelo() {
 function avisosHTML(m) {
   const a = [];
   if (!m.hay.trabajos && !m.hay.lecturas) {
-    a.push(`Aún no hay nada en «${esc(MNT_TRAB_SHEET)}» ni en «${esc(MNT_LECT_SHEET)}». Lo envía la ficha 🔧 de Registros (con el GAS nuevo desplegado), o se pega lo del Excel de Blowers.`);
+    a.push(`Aún no hay nada en «${esc(MNT_TRAB_SHEET)}» ni en «${esc(MNT_LECT_SHEET)}». Lo envía la ficha 🔧 de Registros, o se pega lo del Excel de Blowers.`);
   }
   if (!m.hay.equipos) a.push(`Falta la hoja «${esc(MNT_EQUIPOS_SHEET)}»: sin ella no hay ubicación, ajuste del horómetro ni referencias de lectura.`);
   if (!m.plan.some((p) => p.horas != null || p.dias != null)) {

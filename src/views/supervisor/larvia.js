@@ -66,8 +66,8 @@ export function renderLarvia(ctx, mod, tq) {
 
   // Promedio del módulo (misma corrida) por métrica y fecha, para el overlay del gráfico
   // ampliado — igual que en la Visualización del Tanque. Se calcula PEREZOSAMENTE y por
-  // métrica: su único consumidor es el fullscreen, así que el render normal (los 8 gráficos
-  // de la grilla, que es lo que el usuario ve siempre) pagaba 8 barridos de las filas del
+  // métrica: su único consumidor es el fullscreen, así que el render normal (los gráficos
+  // de la grilla, que es lo que el usuario ve siempre) pagaba un barrido por gráfico de las filas del
   // módulo entero para nada. Cacheado para no rehacerlo al reabrir el mismo modal.
   let _modRows = null;
   const modRowsOf = () => (_modRows ||= ctx.larvWin.filter((r) => gMod(r) === mod && (!corrida || gCor(r) === corrida)));

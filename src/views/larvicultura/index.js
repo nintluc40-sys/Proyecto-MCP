@@ -7,7 +7,7 @@
      4. Biología/alimento → composición (intestino/lípidos) + centro algal
      5. Manejo de agua    → espuma / suciedad / recambio
      6. Detalle           → registros diarios (bitácora desplegable)
-   Modales: Comparar / Historial (observaciones) / Decisión.
+   Modales: Comparar tanques / Comparar corridas / Historial (observaciones) / Decisión.
    ============================================================ */
 import { store } from '../../core/store.js';
 import { STAGES, LARVI_COMBOS } from './stages.js';

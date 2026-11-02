@@ -1,7 +1,7 @@
 /* ============================================================
    MADURACIÓN · OPERATIVO — REVISIONES (F3.2, 2026-09-20)
 
-   Lo que enseña la sub-vista «🔍 Revisiones», con el diseño que aprobó el usuario el 2026-09-20 (semáforo por
+   Lo que enseña la sub-vista «🔍 Revisiones del supervisor», con el diseño que aprobó el usuario el 2026-09-20 (semáforo por
    variable con su último valor, y su historial debajo): la revisión de nauplios en sus cuatro etapas, la
    alcalinidad por área, la mortalidad en tanques de desove y de recuperación, y la frecuencia de las
    observaciones de tanque. Módulo PURO: ni DOM ni red.

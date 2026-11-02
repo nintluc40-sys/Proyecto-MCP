@@ -12,6 +12,8 @@
 >   enlaza 01–04: los análisis 05–09 llegaron después (`ls docs/analisis`).
 > ✅ (2026-10-28) El ÚNICO documento VIGENTE de esta carpeta es [`10-plan-engine.md`](10-plan-engine.md), el plan de
 >   retirada de `engine.js`; sustituye al de 04.
+> ⚠ (2026-11-02) Los análisis 04–09 citan piezas que ya no existen (`parseCSVLine`, `fichas-data.js`, `saveFicha`,
+>   `__rgNativeCalidad`, `_noteTm`, el portal `?p=pdf`…): se leen como historia, no como un mapa del código.
 >
 > *(Aviso puesto el 2026-09-02. **Deliberadamente sin cifras**: el aviso de*
 > *`04-refactor-plan.md` escribió las suyas y ha caducado TRES veces. Se nombra la*

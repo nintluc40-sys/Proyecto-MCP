@@ -8,7 +8,8 @@
        (parámetros fuera de rango e índice de calidad, por componente);
      · 🧬 Biomol · reproductores → positivos ÷ analizados por patógeno, por sala (lo que no es una sala, aparte), por
        piscina de origen y por sexo; la tendencia semanal y la lista de los positivos.
-   Decisiones del usuario (2026-09-26): SIGUEN los filtros del tablero —período, sala, tanque, sexo y lote— en lo que
+   ⚠ Hoy son dos SUB-VISTAS con filtros propios (0q·5a, más abajo): las funciones de aquí siguen recibiendo un filtro, y al
+   entrar parten de la sala, el sexo y el lote del tablero. Decisiones del usuario (2026-09-26): aplican el filtro en lo que
    cada hoja tenga, y dicen el que no pueden aplicar. Una muestra que no dice su sala (o su tanque, su sexo, su lote)
    no entra con ese filtro puesto: no se sabe si es de ahí.
    🔑 Las reglas de NIVEL (umbrales por área), de rango de calidad de agua y de resultado de Biomol NO se repiten aquí:

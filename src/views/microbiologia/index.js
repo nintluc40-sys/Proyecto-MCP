@@ -1,7 +1,7 @@
 /* ============================================================
    MICROBIOLOGÍA · vista con sub-navegación interna
    Sub-vistas: General · Bacteriología · Calidad de Agua · Patología.
-   Bacteriología (Larvicultura) tiene 2 apartados:
+   Bacteriología tiene 2 apartados:
      A · Conglomerado  — KPIs + niveles por patógeno + Agua/Animal + tabla.
      B · Placa Petri   — placa de agar (colonia=patógeno, radio∝log₁₀UFC),
                           con navegador de día · Tendencias · Alertas · Export.
@@ -1925,7 +1925,7 @@ function drawCalEnsayoChart() {
 }
 
 /* ============================================================
-   BACTERIOLOGÍA (Larvicultura)
+   BACTERIOLOGÍA
    ============================================================ */
 function renderBacteriologia() {
   const all = microRows();

@@ -1,6 +1,6 @@
 /* ============================================================
    MADURACIÓN · "Microchips" — Vista de seguimiento reproductivo
-   Panorama + Salas/Tanques + Hembras (individual) sobre el Registro Reproductivo
+   Panorama + Salas/Tanques + Hembras (individual) + Calidad sobre el Registro Reproductivo
    (hojas MATRIZ / Bitácora / Transferencias). Capa de datos pura en data.js.
    ============================================================ */
 import { store } from '../../core/store.js';

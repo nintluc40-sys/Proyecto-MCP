@@ -1,5 +1,5 @@
 /* ============================================================
-   LARVICULTURA · modales Comparar / Historia / Decisión
+   LARVICULTURA · modales Comparar tanques / Comparar corridas / Historia / Decisión
    Portado y refinado de _lqRenderComparator / _lqRenderHistoria /
    _lqRenderDecision del original.
    ============================================================ */
@@ -30,7 +30,7 @@ const TITLES = {
   'lq-modal-dec': '⚡ Decisión rápida',
 };
 
-/** HTML de los 3 overlays (cuerpos vacíos, se rellenan al abrir). */
+/** HTML de los overlays (cuerpos vacíos, se rellenan al abrir). */
 export function modalsShellHTML() {
   return MODAL_IDS.map((id) => `
     <div class="lq-modal" id="${id}" data-modal>

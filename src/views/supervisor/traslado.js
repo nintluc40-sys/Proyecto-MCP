@@ -2,8 +2,8 @@
    SUPERVISOR · Traslado en ruta  (sub-vista de Despacho)
 
    Se llega desde el KPI «Rendimiento cosecha» del modal de Despacho. El contexto
-   es (módulo, corrida): dentro de esa corrida las placas son únicas, así que un
-   camión identifica un viaje sin más.
+   es (módulo, corrida); dentro, los viajes con sus camiones: una misma placa puede
+   salir en varios viajes de la corrida.
 
    Qué contesta esta vista, en el orden en que se pregunta:
      · ¿qué camiones salieron con esta producción?
@@ -15,8 +15,8 @@
    La agregación vive en `traslado.data.js` (módulo puro y probado). Aquí sólo hay
    presentación: si algo hay que calcular, se calcula allí.
 
-   ⚠ Sin datos NO es un error: `Registro_Traslado` sólo existe desde que el GAS se
-   re-despliega y un camión sincroniza. La vista lo dice en vez de fingir ceros.
+   ⚠ Sin datos NO es un error: una corrida puede no tener viajes registrados. La vista
+   lo dice en vez de fingir ceros.
    ============================================================ */
 import { colorFor, breadcrumb, kpiGlass, bindModal } from './ui.js';
 import { esc } from '../../core/format.js';
@@ -35,9 +35,8 @@ const n2 = (v) => (v === null || v === undefined || Number.isNaN(v) ? '—' : Nu
 /* ── El filtro de camiones ───────────────────────────────────
    Guarda la placa SELECCIONADA, no las ocultas. El primer diseño guardaba las
    ocultas y obligaba a apagar los demás uno a uno para quedarse con uno solo:
-   con dos camiones ya era incómodo y con tres, absurdo. Pulsar una placa ahora
-   deja SÓLO esa, que es lo que se quiere el 90 % de las veces; pulsarla otra vez
-   —o pulsar «Todos»— devuelve la vista completa.
+   con dos camiones ya era incómodo y con tres, absurdo. Elegir una placa en el
+   selector deja SÓLO esa, con todos sus viajes; «Todos» devuelve la vista completa.
 
    `null` = todos. Vive fuera del render porque tiene que sobrevivir al repintado. */
 let _placaSola = null;
@@ -52,10 +51,9 @@ let _ambito = '';
  *  de placas lo dejó fuera—, en vez de quedarse con una vista vacía. */
 let _viajeSel = null;
 
-/** Mapas de Leaflet actualmente montados: uno por VIAJE visible. Se destruyen
- *  todos antes de montar los siguientes; ver la nota sobre la fuga en `after()`.
- *  ⚠ Era una sola instancia hasta el 2026-08-26; con una sección por viaje puede
- *  haber varias a la vez y olvidarse de una la deja viva escuchando `resize`. */
+/** Mapas de Leaflet actualmente montados: hoy, el del viaje elegido. Se destruyen
+ *  todos antes de montar los siguientes; ver la nota sobre la fuga en `after()`:
+ *  olvidarse de uno lo deja vivo escuchando `resize`. */
 let _mapasActivos = [];
 
 /** Corta las escuchas del montaje ANTERIOR del mapa.
@@ -365,7 +363,7 @@ export function renderTraslado(ctx, mod) {
     html += `<div class="sv-tras-empty">
       <div class="sv-tras-empty-i">🚚</div>
       <div class="sv-tras-empty-t">Todavía no hay traslados registrados para ${esc(mod)}${corrida ? ' · corrida ' + esc(corrida) : ''}.</div>
-      <div class="sv-tras-empty-s">La hoja <code>Registro_Traslado</code> se crea la primera vez que un camión sincroniza desde la app de captura.</div>
+      <div class="sv-tras-empty-s">Los viajes salen aquí cuando el camión sincroniza desde la app de captura (hoja <code>Registro_Traslado</code>).</div>
     </div>`;
     return { html, after: () => {} };
   }

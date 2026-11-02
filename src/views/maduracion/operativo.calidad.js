@@ -10,7 +10,7 @@
        cada tanque que el libro tiene OCUPADO al cierre de un día debe tener al menos un parte de Tanques ese día, y
        cada sala con animales, su registro de Sala. Por día y por sala;
      · el estado REGISTRADO de cada sala frente al PROPUESTO por el libro (el de «🔄 Proponer estado»);
-     · los avisos del libro, con los 14 tipos que sabe anotar aunque vayan a cero: «ninguno» también es un dato.
+     · los avisos del libro, con todos los tipos que sabe anotar aunque vayan a cero: «ninguno» también es un dato.
 
    🔑 EL DÍA DE HOY NO SE JUZGA: los partes y las lecturas de hoy pueden no estar aún (`ESPERA_DIAS`, la misma
    espera con que «Últimos registros» marca una hoja atrasada). Se enseña «en curso» y no cuenta como falta.
@@ -255,7 +255,7 @@ function lugarDeAviso(a) {
 
 /**
  * Los avisos del libro al cierre de la foto, con la regla de filtro de las alertas de la portada (`avisoEnFiltro`):
- * los 14 tipos que el libro sabe anotar, cada uno con cuántos hay en total y en el período —también los que van a
+ * todos los tipos que el libro sabe anotar, cada uno con cuántos hay en total y en el período —también los que van a
  * cero—, y el detalle de los del período, el más reciente primero. Un tipo que el libro anote y aquí no tenga
  * rótulo sale con su nombre técnico, marcado (`conocido: false`), en vez de perderse.
  * Los avisos no dicen el código genético: con ese filtro no aplican (`aplica: false`), como en la portada.

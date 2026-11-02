@@ -11,8 +11,8 @@
 
    Flacidez, Necrosis y Disparidad se añaden en 2026-08, junto con las columnas
    nuevas del módulo AsT (van tras Disparidad en la hoja; ver el registro del
-   AsT). Hasta que el AsT sincronice quedan vacías, y por eso son `optional`:
-   su KPI no se dibuja mientras no haya ni un valor.
+   AsT). Las filas de antes las traen vacías, y por eso son `optional`: su KPI
+   no se dibuja si en lo filtrado no hay ni un valor.
    ============================================================ */
 import { getField, parseNum, F } from '../../core/fields.js';
 import { avg } from '../../core/util.js';

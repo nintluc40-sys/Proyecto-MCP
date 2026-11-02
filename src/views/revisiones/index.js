@@ -5,7 +5,7 @@
 
    Filtros: Corrida · Módulo · Siembra (la corrida y la siembra son lo
    que cambia; el módulo es un lugar fijo). Acotados por la barra de mes.
-   Gráficos: Composición de hallazgos (dona) · Acciones recomendadas ·
+   Gráficos: Observaciones y Acciones (treemaps) ·
    Distribución cualitativa por corrida (Intestino/Actividad/Condición,
    % por frecuencia) · Eficiencia de supervisores (bullet chart).
    Bitácora desplegable + ventana de Historial de comentarios.
@@ -124,7 +124,7 @@ const CAT3 = ['#3F51B5', '#EC407A', '#26A69A', '#FB8C00'];   // categórica (ser
  *  una negación cae en el nivel opuesto al que le corresponde — "Anormal" contiene "normal"
  *  y "Inactivo" contiene "activ", y ambos se clasifican como BUENO (verificado). Hoy es
  *  inalcanzable porque las columnas cualitativas del Sheet usan vocabulario GRADUADO
- *  (Alta/Media/Baja, Óptima/Regular/Crítica), nunca negaciones.
+ *  (Alta/Media/Baja, Óptima/Alerta/Crítica), nunca negaciones.
  *  Si alguna vez admiten texto libre o pares del tipo Activo/Inactivo, esto vuelve: habrá
  *  que endurecerlo con límites de palabra y comprobar los términos negativos ANTES que los
  *  positivos. Mismo aviso vale para `tier2`. */

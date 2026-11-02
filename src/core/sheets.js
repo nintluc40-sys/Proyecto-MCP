@@ -181,7 +181,7 @@ export function detectSheetName(rows, gid, rawTitle) {
       has((k) => k.includes('tipo_revis') || k.includes('condici') || k.includes('acci'))) return 'Registro_Supervision';
   // Patología en Fresco tiene firma PROPIA: los grupos «Hepatopáncreas» y «Branquias»
   // de su ficha, que ninguna otra hoja del documento lleva. Esta rama sólo se recorre
-  // cuando el gid llegó SIN título (respaldo CSV, sheets.js:320), que es justo cuando
+  // cuando el gid llegó SIN título (respaldo CSV, `respaldoPorHojas`), que es justo cuando
   // no hay nombre del que tirar.
   if (has((k) => k.includes('hepatop') || k.includes('branquias'))) return 'Patología en Fresco';
   /* ❌ NO devolver 'Morfologia' por `intestino|deformidad|lleno`. Esa regla vivió aquí
@@ -510,7 +510,7 @@ export async function discoverGids(ids, recordadas = null) {
   // gids sueltos del HTML sin título. Antes esos caían directos a `detectSheetName`, que
   // los adivina POR COLUMNAS — y adivina mal casi siempre: medido el 2026-08-31 sobre las
   // cabeceras reales, las once hojas «Datos Larvicultura» salían como 'Morfologia', y
-  // `isLarviculturaRow` (core/fields.js:143) compara la cadena EXACTA, así que toda la
+  // `isLarviculturaRow` (core/fields.js) compara la cadena EXACTA, así que toda la
   // producción de Larvicultura habría desaparecido del tablero sin un solo error.
   // El sistema YA sabe cómo se llama esa pestaña —la cacheó en una carga anterior— y no
   // se lo estaba preguntando. Un nombre real recordado gana a cualquier adivinanza.
