@@ -5,7 +5,7 @@
    ============================================================ */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { store } from '../../core/store.js';
-import { estadoPlanta, estadoPlantaPorPartes, cronogramaPlanta } from './estado.js';
+import { estadoPlanta, estadoPlantaPorPartes, cronogramaPlanta, duracionTipica } from './estado.js';
 import { LARV } from './plano.js';
 
 const L = (o) => ({ _SheetOrigin: 'Larvicultura', ...o });
@@ -157,6 +157,48 @@ describe('cronograma del ciclo (T3 de 📊 Análisis)', () => {
     expect(C.M7.tramos.map((t) => [t.key, t.desde, t.hasta])).toEqual([['transferencia', '2026-09-01', '2026-09-03']]);
     expect(C.M3.ultimo).toBe(null);   // desinfectado DESPUÉS del cierre
     expect(cronogramaPlanta(E.modulos, '2026-08-31').modulos.M9).toEqual({ tipo: 'sin', corrida: '890' });
+  });
+  it('sin corridas anteriores despachadas no hay duración típica; despachado, tampoco hace falta', () => {
+    const C = cronogramaPlanta(E.modulos, '2026-10-06').modulos;
+    expect(C.M7.ciclo).toBe(null);
+    expect(C.M9.ciclo).toBe(null);
+  });
+});
+
+describe('duracionTipica: cuánto dura un ciclo en un módulo (F3 pieza 4, 2026-11-02)', () => {
+  const dma = (iso) => iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4);
+  const masDias = (iso, n) => new Date(Date.parse(iso + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  /** Una corrida: su siembra y, el último día, su despacho. */
+  const corrida = (cor, ini, dias, despachada = true) => [
+    larv('M07', cor, 'TQ 1', dma(ini), 1000, 'PL6'),
+    larv('M07', cor, 'TQ 1', dma(masDias(ini, dias - 1)), 900, 'PL12', despachada ? { Destino: 'Piscina 1' } : {}),
+  ];
+  // Las duraciones, de la más vieja a la más nueva: con la primera dentro, la mediana sería 20; la media de las seis, 24.
+  const SEIS = [['801', '2026-01-01', 10], ['802', '2026-02-01', 20], ['803', '2026-03-01', 20], ['804', '2026-04-01', 20],
+    ['805', '2026-05-01', 21], ['806', '2026-06-01', 21], ['807', '2026-07-01', 40]];
+  const FILAS = SEIS.flatMap(([c, i, d]) => corrida(c, i, d));
+
+  it('🔴 la mediana de las ÚLTIMAS seis despachadas, de su primer registro a su último despacho; con pares, redondeada', () => {
+    expect(duracionTipica(FILAS, '900', '2026-10-30')).toEqual({ dias: 21, n: 6 });
+  });
+  it('🔴 no cuentan la corrida en curso ni las que no llegaron a despacharse', () => {
+    // Tres corridas: sin el tope de seis, una de más se vería en `n` (con seis, la mediana de las últimas no se movía).
+    const tres = ['2026-01-01', '2026-02-01', '2026-03-01'].flatMap((ini, i) => corrida(String(801 + i), ini, 5));
+    expect(duracionTipica([...corrida('900', '2026-08-01', 40), ...tres], '900', '2026-10-30'), 'la de 40 días es la en curso').toEqual({ dias: 5, n: 3 });
+    expect(duracionTipica([...corrida('808', '2026-08-01', 40, false), ...tres], '900', '2026-10-30'), 'la de 40 días no se despachó').toEqual({ dias: 5, n: 3 });
+  });
+  it('🔴 lo posterior a la foto no cuenta; con menos de tres, no hay con qué estimar', () => {
+    expect(duracionTipica(FILAS, '900', '2026-05-30'), 'cinco corridas: 10, 20, 20, 20, 21').toEqual({ dias: 20, n: 5 });
+    expect(duracionTipica(FILAS, '900', '2026-02-28'), 'sólo dos').toBe(null);
+    expect(duracionTipica([], '900', '2026-10-30')).toBe(null);
+  });
+  it('🔴 con varios despachos, hasta el último', () => {
+    const parcial = larv('M07', '807', 'TQ 2', dma('2026-07-15'), 500, 'PL12', { Destino: 'Piscina 2' });   // antes de su último, el día 40
+    expect(duracionTipica([parcial, ...FILAS], '900', '2026-10-30').dias).toBe(21);
+    const solo = [...corrida('1', '2026-01-01', 5), ...corrida('2', '2026-02-01', 5), larv('M07', '3', 'TQ 1', dma('2026-03-01'), 9, 'PL6'),
+      larv('M07', '3', 'TQ 1', dma('2026-03-05'), 9, 'PL12', { Destino: 'P' }), larv('M07', '3', 'TQ 2', dma('2026-03-09'), 9, 'PL12', { Destino: 'P' })];
+    expect(duracionTipica(solo, '900', '2026-10-30')).toEqual({ dias: 5, n: 3 });
+    expect(duracionTipica([...solo, ...corrida('4', '2026-04-01', 9)], '900', '2026-10-30'), 'la del día 9 también cuenta 9').toEqual({ dias: 7, n: 4 });
   });
 });
 

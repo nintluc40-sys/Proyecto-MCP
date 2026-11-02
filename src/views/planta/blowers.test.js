@@ -1,7 +1,7 @@
 /* PLANTA · blowers.js (F3, 2026-10-29): el blower de cada módulo, de las hojas de 🔧 Mantenimiento. Filas con la forma
    del libro (las cabeceras de los .tsv de la importación) y los horómetros del Excel del 22-10. */
 import { describe, it, expect } from 'vitest';
-import { blowersPlanta, horometroNoAvanza, moduloDeUbicacion, enServicio, UMBRAL_NO_AVANZA, SEPARACION_MIN_H } from './blowers.js';
+import { blowersPlanta, horometroNoAvanza, proximaParada, moduloDeUbicacion, enServicio, UMBRAL_NO_AVANZA, SEPARACION_MIN_H } from './blowers.js';
 import { MNT_ESTADO } from '../mantenimiento/mantenimiento.data.js';
 
 const HOY = '2026-10-29';
@@ -142,5 +142,55 @@ describe('horómetro que no avanza con el módulo en cultivo (umbral del usuario
   it('horometroNoAvanza: dos lecturas a la misma hora no dan un tramo', () => {
     const lista = [{ equipo: 'X', fecha: '2026-10-22', hora: '08:00', h: 10 }, { equipo: 'X', fecha: '2026-10-22', hora: '08:00', h: 10 }];
     expect(horometroNoAvanza(lista, 'X', { tipo: 'cultivo', inicio: '2026-10-01' }, HOY)).toBe(null);
+  });
+});
+
+describe('(4) la próxima parada del módulo, estimada, y si su próximo cambio cae antes o después (usuario, 2026-11-02)', () => {
+  const CM = { tipo: 'cultivo', inicio: '2026-10-21', ciclo: { dias: 21, n: 6 } };   // parada: 21/10 + 20 días = 10/11
+  const aceite = (over = {}) => ({ actividad: 'Cambio de aceite', estado: MNT_ESTADO.AL_DIA, proxH: 3000, proxF: '', ...over });
+
+  it('en cultivo: su siembra + la duración típica del módulo, con cuántas corridas salió', () => {
+    expect(proximaParada(CM, null, null, HOY)).toEqual({ fecha: '2026-11-10', pasada: false, dias: 21, n: 6, cae: null });
+  });
+  it('🔴 el horómetro se proyecta a 24 h por día de cultivo: según lo que le falte, cae antes o después', () => {
+    const lect = { h: 2700, fecha: '2026-10-25' };   // 16 días hasta el 10/11 = 384 h → 3 084 h
+    expect(proximaParada(CM, aceite(), lect, HOY).cae, '3 000 h llega antes de parar').toBe('antes');
+    expect(proximaParada(CM, aceite({ proxH: 3084 }), lect, HOY).cae, 'justo al parar, cuenta como antes').toBe('antes');
+    expect(proximaParada(CM, aceite({ proxH: 3085 }), lect, HOY).cae).toBe('despues');
+  });
+  it('🔴 una lectura de ANTES de la siembra se proyecta desde la siembra: entre corridas el módulo estuvo vacío', () => {
+    // Desde la siembra: 2 000 + 20 días × 24 = 2 480. Desde la lectura serían 40 días: 2 960, y la de 2 600 h saldría «antes».
+    expect(proximaParada(CM, aceite({ proxH: 2600 }), { h: 2000, fecha: '2026-10-01' }, HOY).cae).toBe('despues');
+  });
+  it('🔴 una actividad con intervalo en días se compara por su fecha; la de horas y días cae antes si llega por cualquiera', () => {
+    expect(proximaParada(CM, aceite({ proxH: null, proxF: '2026-11-10' }), null, HOY).cae).toBe('antes');
+    expect(proximaParada(CM, aceite({ proxH: null, proxF: '2026-11-11' }), null, HOY).cae).toBe('despues');
+    expect(proximaParada(CM, aceite({ proxH: 9000, proxF: '2026-11-01' }), { h: 100, fecha: '2026-10-25' }, HOY).cae).toBe('antes');
+  });
+  it('lo vencido no «cae»: ya pasó; y sin horómetro ni fecha con qué comparar, tampoco se dice', () => {
+    expect(proximaParada(CM, aceite({ estado: MNT_ESTADO.VENCIDO }), { h: 3500, fecha: '2026-10-25' }, HOY).cae).toBe(null);
+    expect(proximaParada(CM, aceite(), null, HOY).cae).toBe(null);
+  });
+  it('🔴 si ya pasó su duración típica, la parada es hoy y se dice', () => {
+    expect(proximaParada({ ...CM, inicio: '2026-10-01' }, null, null, HOY)).toMatchObject({ fecha: HOY, pasada: true });
+    expect(proximaParada({ ...CM, inicio: '2026-10-09' }, null, null, HOY), 'justo hoy aún no ha pasado').toMatchObject({ fecha: HOY, pasada: false });
+  });
+  it('🔴 sin cultivo es «ahora»: despachado, en desinfección o trasladado sin despacho', () => {
+    expect(proximaParada({ tipo: 'despachado' }, null, null, HOY)).toEqual({ ahora: true });
+    expect(proximaParada({ tipo: 'desinfeccion' }, null, null, HOY)).toEqual({ ahora: true });
+    expect(proximaParada({ ...CM, traslado: { hasta: '2026-10-28' } }, null, null, HOY)).toEqual({ ahora: true });
+    expect(proximaParada({ ...CM, traslado: { hasta: HOY } }, null, null, HOY).ahora, 'con viajes hoy sigue en cultivo').toBeUndefined();
+  });
+  it('sin datos del módulo o sin historia con qué estimar, nada', () => {
+    expect(proximaParada(null, null, null, HOY)).toBe(null);
+    expect(proximaParada({ tipo: 'sin' }, null, null, HOY)).toBe(null);
+    expect(proximaParada({ ...CM, ciclo: null }, null, null, HOY)).toBe(null);
+  });
+  it('blowersPlanta la lleva con el próximo cambio y el horómetro de su blower', () => {
+    const crono = { modulos: { M4: { ...CM, inicio: '2026-10-10' }, M1: { tipo: 'despachado' } } };
+    const { porModulo } = blowersPlanta(LIBRO, crono, HOY);
+    expect(porModulo.M4[0].parada, 'BLW-04: su aceite ya venció').toEqual({ fecha: '2026-10-30', pasada: false, dias: 21, n: 6, cae: null });
+    expect(porModulo.M1[0].parada).toEqual({ ahora: true });
+    expect(blowersPlanta(LIBRO, null, HOY).porModulo.M4[0].parada, 'sin cronograma').toBe(null);
   });
 });

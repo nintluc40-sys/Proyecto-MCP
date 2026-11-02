@@ -271,6 +271,32 @@ export function hoyLocal(d = new Date()) {
    cuenta que la ficha (modStats: de la primera a la última fecha con registro, + 1) y `estadio` el de la ficha; con filas
    cortadas, los de esas filas. Despachado = el módulo despachado entero CON su despacho dentro del período. */
 const SIN_ETAPA = { key: 'sin', label: 'Sin estadío', range: '', color: '#b9c7cf' };
+/* F3 pieza 4 (2026-11-02, usuario: «Hacerla ya, como estimación») · cuánto dura un ciclo en ESTE módulo: la mediana de sus últimas
+   CICLOS_MAX corridas ya despachadas, de su primer registro a su último despacho, sin la corrida en curso ni las que no llegaron a
+   despacharse. Con menos de CICLOS_MIN no hay con qué estimar: null. Lo usa blowers.js (la próxima parada). */
+export const CICLOS_MAX = 6;
+export const CICLOS_MIN = 3;
+export function duracionTipica(filas, corridaActual, hasta) {
+  const porCorrida = new Map();
+  for (const r of filas || []) {
+    const c = getField(r, F.corrida);
+    if (!c || c === corridaActual) continue;
+    const f = parseAnyDate(getField(r, F.fecha));
+    if (!f || isNaN(f)) continue;
+    const dia = hoyLocal(f);
+    if (dia > hasta) continue;
+    const e = porCorrida.get(c) || { ini: dia, fin: '' };
+    if (dia < e.ini) e.ini = dia;
+    if (isDespachoRow(r) && dia > e.fin) e.fin = dia;
+    porCorrida.set(c, e);
+  }
+  const hechas = [...porCorrida.values()].filter((e) => e.fin).sort((a, b) => (a.ini < b.ini ? -1 : 1)).slice(-CICLOS_MAX);
+  if (hechas.length < CICLOS_MIN) return null;
+  const d = hechas.map((e) => difDias(e.ini, e.fin) + 1).sort((a, b) => a - b);
+  const mitad = Math.floor(d.length / 2);
+  return { dias: Math.round(d.length % 2 ? d[mitad] : (d[mitad - 1] + d[mitad]) / 2), n: d.length };
+}
+
 export function cronogramaPlanta(modulos, hasta) {
   const grupos = filasPorModulo(contextoCompleto());
   const out = {};
@@ -313,6 +339,7 @@ export function cronogramaPlanta(modulos, hasta) {
     tramos.forEach((t) => { t.dias = difDias(t.desde, t.hasta) + 1; });
     out[m.id] = {
       tipo: despachado ? 'despachado' : 'cultivo', corrida: mo.corrida, inicio, fin, tramos,
+      ciclo: despachado ? null : duracionTipica(grupos.larvCM.get(mo.mod), mo.corrida, hasta),
       despacho: despachos.length ? { desde: despachos[0], hasta: despachos[despachos.length - 1] } : null,
       traslado: mo.traslado || null,   // el aviso de traslado sin despacho (punto 4.1), para el horómetro del blower
       dias: !cortado && mo.dias ? mo.dias : difDias(inicio, ultimo) + 1,

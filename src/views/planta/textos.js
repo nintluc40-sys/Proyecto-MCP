@@ -102,15 +102,27 @@ function txtNoAvanza(n) {
   return 'sumó ' + horas(n.sumo) + ' h en ' + (n.minimo ? 'al menos ' : '') + dias + (n.dias === 1 ? ' día' : ' días')
     + ' con el módulo en cultivo (esperadas ' + (n.minimo ? 'al menos ' : '') + '~' + ent(n.esperadas) + ')';
 }
+/** F3 pieza 4 (2026-11-02): la próxima parada, siempre como estimación, y si su próximo cambio cae antes o después (`proximaParada`). */
+function txtParada(b) {
+  const p = b.parada;
+  if (p.ahora) return 'Ahora: módulo sin cultivo' + (b.vencidos.length ? ' · buen momento para lo vencido' : '');
+  const cuando = p.pasada ? 'Hoy (ya pasó sus ~' + p.dias + ' días típicos, de sus últimas ' + p.n + ' corridas)'
+    : '≈ ' + dm(p.fecha) + ' (estimada: ~' + p.dias + ' días, sus últimas ' + p.n + ' corridas)';
+  if (b.vencidos.length) return cuando + ' · lo vencido puede hacerse en esa parada';
+  if (!p.cae || !b.proximo) return cuando;
+  return cuando + ' · ' + minus(b.proximo.actividad) + (p.cae === 'antes' ? ' cae ANTES de esa parada' : ' cae después de esa parada');
+}
 /** Los blowers de un módulo para su ficha y «Qué atender hoy»: sólo hoy (un mes pasado se ve como estaba, sin ellos). */
 const blowersDe = (g, ctx) => (ctx.cargado && !ctx.mesPasado && ctx.blowers && ctx.blowers.porModulo ? ctx.blowers.porModulo[g.id] || [] : []);
-/** Las filas de la ficha: el blower (su horómetro), su próximo cambio y, si lo hay, el aviso de horómetro que no avanza. */
+/** Las filas de la ficha: el blower (su horómetro), su próximo cambio, la próxima parada si se puede estimar y, si lo hay, el
+ *  aviso de horómetro que no avanza. */
 function filasDeBlower(g, ctx) {
   const out = [];
   blowersDe(g, ctx).forEach((b) => {
     const h = b.horometro;
     out.push(['🔧 Blower', b.codigo + (b.modelo ? ' · ' + b.modelo : '') + (h ? ' · ' + horas(h.h) + ' h al ' + dm(h.fecha) : ' · sin horómetro')]);
     out.push(['Próximo cambio', txtCambio(b)]);
+    if (b.parada) out.push(['Próxima parada', txtParada(b)]);
     if (b.noAvanza) out.push(['⚠ Horómetro', txtNoAvanza(b.noAvanza) + ' · del ' + dm(b.noAvanza.desde) + ' al ' + dm(b.noAvanza.hasta)]);
   });
   return out;

@@ -399,7 +399,10 @@ volver a abrir esto, esto es lo que ya se midió:
   cambio, con el mismo semáforo; «Qué atender hoy» suma los que tienen algo VENCIDO (los próximos, no) y los que, con el
   módulo en cultivo, sumaron menos del 80 % de 24 h por día entre su última lectura y la más reciente de al menos 24 h
   antes (sin la hora de alguna, lo mínimo que pudo pasar), o cuyo horómetro bajó. Sólo hoy: un mes pasado se ve sin ellos.
-  La próxima parada estimada con las corridas reales queda para cuando haya datos con que medirla.
+  🆕 La ficha estima también la **próxima parada** del módulo (2026-11-02; una estimación, y lo dice): su siembra + la mediana de
+  sus últimas 6 corridas despachadas (hacen falta 3), y si su próximo cambio cae antes o después, proyectando el horómetro a 24 h
+  por día de cultivo. Sin cultivo: «Ahora». Hoy sólo el aceite tiene intervalo; las demás actividades entran solas cuando el área
+  las cargue en `Mantenimiento Plan`.
 - **Registros**: fichas de captura (estrangulamiento gradual del monolito
   `public/registros/engine.js`) que escriben al Sheet vía Google Apps Script.
   Incluye el **registro operativo de Maduración**, que tiene su propia sección aquí abajo
@@ -1457,9 +1460,6 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
    puede romper, la decisión sobre el gemelo `index (8)` (generarlo desde el repo o seguir a mano) y las tajadas en orden
    de riesgo; el de `04-refactor-plan.md` y el del artifact del 2026-08-11 caducaron. De la misma familia, los módulos más
    grandes: `maduracion/operativo.view.js`, `microbiologia/index.js`, `biomolecular/index.js` y `supervisor/module.js`.
-5. **🔧 Mantenimiento × 🏭 Planta: la próxima parada.** El cruce (F3, 2026-10-29) ya pone el blower en la ficha de cada
-   módulo y sus vencidos en «Qué atender hoy»; falta estimar la próxima parada de cada módulo con sus corridas reales y
-   decir si el próximo cambio cae antes o después. Espera a tener datos de Mantenimiento en el libro con que medirla.
 
 ## Hecho y vigilado
 

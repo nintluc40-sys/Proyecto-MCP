@@ -3,8 +3,8 @@
    2026-10-29 (Sesión B, ronda 12). Lo que el Excel de mantenimiento no puede: cruzar sus blowers con el estado de los
    módulos. Decisiones del usuario (2026-10-29): las piezas 1–3 de la propuesta —(1) los blowers con algo VENCIDO en «Qué
    atender hoy» (sólo los vencidos: los próximos se ven en la ficha), (2) el blower y su próximo cambio en la ficha del
-   módulo y (3) el aviso de horómetro que no avanza con el módulo en cultivo—; la 4 (la próxima parada estimada) queda
-   aparte, para cuando haya datos reales con que medirla.
+   módulo y (3) el aviso de horómetro que no avanza con el módulo en cultivo—; y (2026-11-02, «Hacerla ya, como estimación»)
+   la 4: la próxima parada del módulo en su ficha y si su próximo cambio cae antes o después (`proximaParada`).
    · Nada se recalcula con otra regla: el semáforo es el de la vista 🔧 Mantenimiento (`proximos`, `porUrgencia`) y las
      horas, las reales (`horometros`: con el ajuste de su «Ajuste desde», como el BLW-09).
    · El blower de un módulo es el equipo de la hoja «Mantenimiento Equipos» cuya «Ubicación» nombra ese módulo («Módulo 4»,
@@ -26,6 +26,7 @@
 import { leerTrabajos, leerLecturas, leerEquipos, leerPlan, horometros, horometroActual, proximos, porUrgencia, enServicio, MNT_ESTADO }
   from '../mantenimiento/mantenimiento.data.js';
 import { LARV } from './plano.js';
+import { difDias, masDias } from './textos.js';
 
 /** (3) La fracción de las horas transcurridas que un blower en cultivo tiene que sumar (usuario, 2026-10-29: el 80 %). */
 export const UMBRAL_NO_AVANZA = 0.8;
@@ -74,13 +75,41 @@ export function horometroNoAvanza(lista, codigo, cm, hoy) {
   return sumo >= UMBRAL_NO_AVANZA * horas ? null : base;
 }
 
+/** (4) La próxima parada del módulo, ESTIMADA, y si el próximo cambio del blower cae antes o después. `cm`: el módulo en
+ *  `cronogramaPlanta` (con `ciclo`, su duración típica); `proximo`: la actividad más urgente con plan; `horometro`: { h, fecha }.
+ *  · Sin cultivo (despachado, en desinfección o trasladado sin despacho): { ahora: true }.
+ *  · En cultivo: su siembra + la duración típica; si ya la pasó, `pasada` y la parada es hoy. Sin historia del módulo: null.
+ *  · El horómetro al llegar a la parada: su última lectura + 24 h por cada día de cultivo desde ella (como en el aviso de
+ *    arriba: un blower airea su módulo las 24 h), contando desde la siembra si la lectura es de antes: entre corridas, el
+ *    módulo estuvo vacío. Una actividad con intervalo en días se compara por su fecha; lo VENCIDO no «cae»: ya pasó. */
+export function proximaParada(cm, proximo, horometro, hoy) {
+  if (!cm || cm.tipo === 'sin') return null;
+  if (cm.tipo !== 'cultivo' || (cm.traslado && cm.traslado.hasta < hoy)) return { ahora: true };
+  if (!cm.inicio || !cm.ciclo) return null;
+  const tipica = masDias(cm.inicio, cm.ciclo.dias - 1);
+  const pasada = tipica < hoy;
+  const fecha = pasada ? hoy : tipica;
+  let cae = null;
+  if (proximo && proximo.estado !== MNT_ESTADO.VENCIDO) {
+    let sabe = false, antes = false;
+    if (proximo.proxH != null && horometro) {
+      const desde = horometro.fecha > cm.inicio ? horometro.fecha : cm.inicio;
+      sabe = true;
+      antes = proximo.proxH <= horometro.h + Math.max(0, difDias(desde, fecha)) * 24;
+    }
+    if (proximo.proxF) { sabe = true; antes = antes || proximo.proxF <= fecha; }
+    if (sabe) cae = antes ? 'antes' : 'despues';
+  }
+  return { fecha, pasada, dias: cm.ciclo.dias, n: cm.ciclo.n, cae };
+}
+
 /**
  * Los blowers de los módulos del plano, de las 4 hojas de 🔧 Mantenimiento.
  * @param {object[]} rows  el libro (store.globalData)
  * @param {object|null} crono  `cronogramaPlanta(...)` (para el cultivo de cada módulo; sin él no hay aviso de horómetro)
  * @param {string} hoy  ISO
  * @returns {{ porModulo: Object<string, object[]> }} por id del módulo ('M4'): [{ codigo, modelo, horometro: { h, fecha } | null,
- *   proximo (la actividad con plan más urgente, de `proximos`, o null), vencidos: [...], noAvanza (o null) }]
+ *   proximo (la actividad con plan más urgente, de `proximos`, o null), vencidos: [...], noAvanza (o null), parada (o null) }]
  */
 export function blowersPlanta(rows, crono, hoy) {
   const equipos = leerEquipos(rows), trabajos = leerTrabajos(rows), lecturas = leerLecturas(rows), plan = leerPlan(rows);
@@ -93,10 +122,13 @@ export function blowersPlanta(rows, crono, hoy) {
     if (!m) return;
     const suyos = porUrgencia(prox.filter((p) => p.equipo === e.codigo && p.estado !== MNT_ESTADO.SIN_PLAN));
     const act = horometroActual(lista, e.codigo);
+    const horometro = act ? { h: act.h, fecha: act.fecha } : null;
+    const cm = crono && crono.modulos ? crono.modulos[m.id] : null;
     (porModulo[m.id] = porModulo[m.id] || []).push({
-      codigo: e.codigo, modelo: e.modelo, horometro: act ? { h: act.h, fecha: act.fecha } : null,
+      codigo: e.codigo, modelo: e.modelo, horometro,
       proximo: suyos[0] || null, vencidos: suyos.filter((p) => p.estado === MNT_ESTADO.VENCIDO),
-      noAvanza: horometroNoAvanza(lista, e.codigo, crono && crono.modulos ? crono.modulos[m.id] : null, hoy),
+      noAvanza: horometroNoAvanza(lista, e.codigo, cm, hoy),
+      parada: proximaParada(cm, suyos[0] || null, horometro, hoy),
     });
   });
   return { porModulo };

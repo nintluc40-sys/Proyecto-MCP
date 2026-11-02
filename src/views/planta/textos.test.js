@@ -433,6 +433,21 @@ describe('🔧 F3 · el blower del módulo en su ficha y en «Qué atender hoy»
     expect(Object.fromEntries(filasBlower(modulo(cultivo()), conBlowers(HOY, blower({ proximo: p, vencidos: [] }))))['Próximo cambio'])
       .toBe('Limpieza general · sin un trabajo registrado desde el que contar');
   });
+  it('🔴 F3 pieza 4 · la próxima parada, siempre como estimación, y si el cambio cae antes o después', () => {
+    const AL_DIA = aceite(MNT_ESTADO.AL_DIA, { faltanH: 300 });
+    const txt = (b) => Object.fromEntries(fichaGrupo(modulo(cultivo()), conBlowers(HOY, blower(b))).rows)['Próxima parada'];
+    const P = { fecha: '2026-11-10', pasada: false, dias: 21, n: 6 };
+    const EST = '≈ 10/11 (estimada: ~21 días, sus últimas 6 corridas)';
+    expect(txt({ proximo: AL_DIA, vencidos: [], parada: { ...P, cae: 'despues' } })).toBe(EST + ' · cambio de aceite cae después de esa parada');
+    expect(txt({ proximo: AL_DIA, vencidos: [], parada: { ...P, cae: 'antes' } })).toBe(EST + ' · cambio de aceite cae ANTES de esa parada');
+    expect(txt({ proximo: null, vencidos: [], parada: { ...P, cae: null } }), 'sin plan, sólo la fecha').toBe(EST);
+    expect(txt({ parada: { ...P, cae: null } }), 'con algo vencido').toBe(EST + ' · lo vencido puede hacerse en esa parada');
+    expect(txt({ proximo: AL_DIA, vencidos: [], parada: { ...P, pasada: true, fecha: '2026-10-29', cae: 'despues' } }))
+      .toBe('Hoy (ya pasó sus ~21 días típicos, de sus últimas 6 corridas) · cambio de aceite cae después de esa parada');
+    expect(txt({ parada: { ahora: true } })).toBe('Ahora: módulo sin cultivo · buen momento para lo vencido');
+    expect(txt({ proximo: AL_DIA, vencidos: [], parada: { ahora: true } })).toBe('Ahora: módulo sin cultivo');
+    expect(txt({ parada: null }), 'sin con qué estimar, no sale la fila').toBeUndefined();
+  });
   it('el horómetro que no avanza sale en la ficha, con el tramo', () => {
     expect(filasBlower(modulo(cultivo()), conBlowers(HOY, blower({ noAvanza: NO_AVANZA }))).at(-1))
       .toEqual(['⚠ Horómetro', 'sumó 50 h en 5 días con el módulo en cultivo (esperadas ~120) · del 17/10 al 22/10']);
