@@ -53,7 +53,6 @@ describe('trazabilidad · adaptador Población (store→ficha)', () => {
     expect(res.generated.map((g) => g.fid)).toEqual(['poblacion']);
     expect(res.generated[0].pages).toBe(2);
     expect(res.empty).toEqual([]);
-    expect(res.pending).toEqual([]);
     expect(res).not.toHaveProperty('blocked');
     // Ficha válida sin datos en el rango → va a "empty".
     const res2 = downloadTrazabilidad({ mod: 'M01', corrida: '573', fids: ['despacho'], from: '', to: '' });

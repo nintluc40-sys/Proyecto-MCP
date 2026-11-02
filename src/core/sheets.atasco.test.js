@@ -47,7 +47,7 @@ describe('descarga del libro · la red se atasca a mitad del cuerpo', () => {
     const pedidas = google({ trozos: [new Uint8Array(600 * KB)], cada: 10, atascar: true });
     const avisos = [];
     let fin = null;
-    fetchXlsxSheets({ type: 'real', realId: 'X' }, () => window.XLSX, (p) => avisos.push(p)).then((r) => { fin = r; });
+    fetchXlsxSheets({ realId: 'X' }, () => window.XLSX, (p) => avisos.push(p)).then((r) => { fin = r; });
     await vi.advanceTimersByTimeAsync(SIN_DATOS_MS - 1000);
     expect(fin).toBe(null);
     expect(pedidas).toHaveLength(1);   // antes de los SIN_DATOS_MS sigue esperando…
@@ -69,7 +69,7 @@ describe('descarga del libro · la red se atasca a mitad del cuerpo', () => {
     const trozos = [libro.slice(0, mitad), libro.slice(mitad, 2 * mitad), libro.slice(2 * mitad)];
     const pedidas = google({ trozos, cada: SIN_DATOS_MS - 5000 });
     let fin = null;
-    fetchXlsxSheets({ type: 'real', realId: 'X' }, () => window.XLSX, () => {}).then((r) => { fin = r; });
+    fetchXlsxSheets({ realId: 'X' }, () => window.XLSX, () => {}).then((r) => { fin = r; });
     await vi.advanceTimersByTimeAsync(3 * SIN_DATOS_MS);
     expect(pedidas).toHaveLength(1);   // ni un reintento: nunca pasaron SIN_DATOS_MS sin datos
     expect(Object.keys(fin)).toEqual(['Larvicultura M01']);

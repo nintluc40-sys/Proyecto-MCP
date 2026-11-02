@@ -61,7 +61,7 @@ export async function atenderLectura(m, entorno) {
     sinXlsx = { id, ok: false, motivo: 'sin-xlsx', error: String((err && err.message) || err) };
   }
   try {
-    const ids = { type: 'real', realId: m.realId };
+    const ids = { realId: m.realId };
     const avisar = m.conProgreso && entorno.avisar ? (p) => entorno.avisar(id, p) : null;
     // 4.2-B: cada hoja por su CSV; completo, vale (y se guarda: el CSV de exportación no recorta por filtros)
     // carga lenta D (2026-10-19): con la lista de pestañas que recuerda la página (aquí no hay localStorage)

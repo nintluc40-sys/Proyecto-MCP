@@ -176,14 +176,4 @@ describe('H3 · el aviso de la sub-vista depende del DATO', () => {
     expect(root.querySelector('.mic-scada')).toBeTruthy();
     expect(root.textContent).not.toContain('Hepatopáncreas');
   });
-
-  it('las otras sub-vistas sin tablero conservan su mensaje genérico', () => {
-    // Blindaje del refactor de placeholderHTML: sólo Patología es condicional.
-    store.globalData = [semilla];
-    microbiologiaView(root);
-    // 'general', 'bacteriologia' y 'calidad' sí tienen tablero; sólo queda Patología,
-    // así que se comprueba que el genérico sigue existiendo en la función.
-    const txt = abrirPatologia([]);
-    expect(txt).not.toContain('Esta sub-vista llega en una tanda posterior.');
-  });
 });

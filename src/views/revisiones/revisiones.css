@@ -7,8 +7,6 @@
 
 /* Filtros */
 .rv-filters { background: var(--c-surface-2); border: 1px solid var(--c-border); border-radius: var(--r-md); padding: 10px 16px; margin-bottom: 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.rv-filter-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.rv-filter-tag { font-size: 10px; font-weight: 800; color: var(--c-text-soft); letter-spacing: .5px; min-width: 74px; }
 .rv-monthbar { display: inline-flex; align-items: center; gap: 4px; border: 1.5px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); padding: 2px; }
 .rv-month-nav { border: none; background: transparent; cursor: pointer; font-size: 13px; font-weight: 900; color: var(--c-accent, #1565C0); padding: 4px 9px; border-radius: var(--r-sm); }
 .rv-month-nav:hover:not(:disabled) { background: rgba(21,101,192,.12); }
@@ -19,7 +17,6 @@
 .rv-phase-1 { color: var(--c-text-soft); border-left-color: #90A4AE; background: linear-gradient(90deg, rgba(144,164,174,.10), transparent); }
 .rv-phase-2 { color: #1565C0; border-left-color: #1565C0; background: linear-gradient(90deg, rgba(21,101,192,.10), transparent); }
 [data-theme="dark"] .rv-phase-2 { color: #64b5f6; }
-.rv-bubble-svg { display: block; min-width: 420px; }
 /* Calidad · mosaico de tiles semáforo */
 .rv-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 14px; }
 .rv-tile { background: var(--c-surface); border: 1px solid var(--c-border); border-left: 4px solid; border-radius: var(--r-md); padding: 12px 14px; box-shadow: var(--sh-1); }
@@ -42,7 +39,7 @@
 .rv-tm-cell:focus-visible { outline: none; }
 .rv-tm-cell:focus-visible rect { stroke: #263238; stroke-width: 2; fill-opacity: 1; }
 /* Tipografía uniforme en los SVG (treemap/sankey/burbujas) = misma que charts/títulos */
-.rv-tm-svg, .rv-sankey-svg, .rv-bubble-svg { font-family: "Segoe UI", system-ui, sans-serif; }
+.rv-tm-svg, .rv-sankey-svg { font-family: "Segoe UI", system-ui, sans-serif; }
 /* Sankey Hallazgo → Acción */
 .rv-sankey-svg { display: block; min-width: 560px; }
 .rv-sk-flow { cursor: pointer; transition: fill-opacity .15s; }
@@ -73,8 +70,6 @@
 
 /* Gráficos */
 .rv-chart-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 16px; }
-.rv-chart-grid-3 { grid-template-columns: repeat(3, 1fr); }
-.rv-chart-wide { grid-column: 1 / -1; }
 .rv-chart-title { font-size: 12px; font-weight: 800; color: var(--c-text-soft); margin-bottom: 10px; }
 .rv-chart-sub { font-size: 10px; font-weight: 600; color: var(--c-text-muted); margin-left: 6px; }
 .rv-chart-host { position: relative; height: 260px; }
@@ -157,10 +152,10 @@
 .rv-cmp-prev { font-size: 10px; font-weight: 700; color: var(--c-text-muted); }
 
 /* ── Timeline de cobertura (Punto 3) ── */
-.rv-tl, .rv-mx { border-collapse: separate; border-spacing: 3px; font-size: 11px; }
-.rv-tl th, .rv-mx th { font-size: 10px; font-weight: 800; color: var(--c-text-soft); padding: 3px 5px; }
-.rv-tl-corner, .rv-mx-corner { text-align: left !important; color: var(--c-text-muted) !important; white-space: nowrap; }
-.rv-tl-row, .rv-mx-rowh { text-align: left !important; font-weight: 800; color: var(--c-text); white-space: nowrap; padding-right: 8px !important; }
+.rv-tl { border-collapse: separate; border-spacing: 3px; font-size: 11px; }
+.rv-tl th { font-size: 10px; font-weight: 800; color: var(--c-text-soft); padding: 3px 5px; }
+.rv-tl-corner { text-align: left !important; color: var(--c-text-muted) !important; white-space: nowrap; }
+.rv-tl-row { text-align: left !important; font-weight: 800; color: var(--c-text); white-space: nowrap; padding-right: 8px !important; }
 .rv-tl-cell { text-align: center; font-weight: 800; padding: 5px 8px; border-radius: 5px; min-width: 30px; }
 .rv-tl-cell.empty { color: var(--c-text-muted); background: var(--c-surface-2); font-weight: 400; }
 .rv-tl-cell.rv-tl-click { cursor: pointer; transition: filter .12s ease, transform .06s ease; }
@@ -181,11 +176,5 @@
 .rv-daycell-note b { color: var(--c-text); }
 
 /* ── Matriz Hallazgo × Acción (Punto 6) ── */
-.rv-mx-colh { vertical-align: bottom; max-width: 70px; }
-.rv-mx-colh span { display: inline-block; line-height: 1.1; font-size: 9.5px; }
-.rv-mx-rowh { max-width: 180px; white-space: normal !important; font-size: 11px; }
-.rv-mx-cell { text-align: center; font-weight: 800; padding: 6px 9px; border-radius: 5px; min-width: 30px; }
-.rv-mx-cell.empty { background: var(--c-surface-2); }
 
-@media (max-width: 980px) { .rv-chart-grid-3 { grid-template-columns: 1fr; } }
 @media (max-width: 860px) { .rv-chart-grid { grid-template-columns: 1fr; } }

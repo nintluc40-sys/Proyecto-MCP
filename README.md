@@ -830,7 +830,7 @@ Dos consecuencias que conviene tener presentes al desplegar:
    Registro: no toca su sello ni `index (8)`), implementado como aplicación web («Ejecutar como: yo», «Cualquier
    usuario») con la cuenta dueña del libro. La marca se lee ANTES de descargar y sólo crece: un retraso de Drive cuesta
    como mucho una descarga de más, nunca un cambio perdido. Sin respuesta en 25 s (Apps Script arranca en frío a veces:
-   medido hasta 19 s), con una respuesta rara o con otro libro activo, se descarga como siempre; ⟳ y la primera carga no
+   medido hasta 19 s) o con una respuesta rara, se descarga como siempre; ⟳ y la primera carga no
    preguntan para saltar la descarga, pero ⟳ (y la píldora) leen la marca antes —esperando como mucho 4 s— y la anotan si
    lo bajado se aplicó, así el ciclo siguiente no repite los ~14 MB sin cambios (2026-10-07). Si hubiera que recrear el
    script, éste es su código completo:

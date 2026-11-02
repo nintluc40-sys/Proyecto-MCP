@@ -3,20 +3,17 @@
    ============================================================ */
 
 // Hoja de cálculo origen (la misma del sistema original).
-// Editable desde la UI (override) sin tocar el código.
 export const SHEETS_URL =
   'https://docs.google.com/spreadsheets/d/1Rrpff6bD1pOQFsi2Lsagan3ttjncxJzXoXLPgtHM0Gs/edit?usp=sharing';
 
 // Consulta LIGERA antes de cada refresco (2026-10-07, usuario, punto 8): un Apps Script APARTE («MCP · consulta ligera»,
 // NO el GAS del Registro: no toca su sello ni index (8)) devuelve la fecha de modificación del libro en Drive
 // ({"ok":true,"mod":ms}, ~1,5 s). Si no cambió desde la última descarga, no se baja el libro (entonces el XLSX, ~14 MB;
-// desde el 2026-10-11, cada hoja por su CSV, ~1,4 MB, y el XLSX sólo si eso no llega: core/sheets.js). `libro` es el
-// que vigila ESE script: con otro libro activo (override) no se pregunta. Ver core/marcaLibro.js. `ms`: 25 s porque
-// Apps Script arranca en frío a veces (medido el 07-10, 8 consultas: mediana ~2,5 s, pero 10,3 y 19,3 s): con 10 s, una
+// desde el 2026-10-11, cada hoja por su CSV, ~1,4 MB, y el XLSX sólo si eso no llega: core/sheets.js). Ver
+// core/marcaLibro.js. `ms`: 25 s porque Apps Script arranca en frío a veces (medido el 07-10, 8 consultas: mediana ~2,5 s, pero 10,3 y 19,3 s): con 10 s, una
 // de cada cuatro se cortaba y se descargaba igual. Esperar no cuesta nada en pantalla (el refresco es de fondo).
 export const CONSULTA_CAMBIOS = {
   url: 'https://script.google.com/macros/s/AKfycbxCMTkRIWfvJWlMY4mWyozpb0QvSS9YZUy_ZTGuKurndfJREQAcMLslTTT4Zv7pn5Bx4w/exec',
-  libro: '1Rrpff6bD1pOQFsi2Lsagan3ttjncxJzXoXLPgtHM0Gs',
   ms: 25000,
 };
 

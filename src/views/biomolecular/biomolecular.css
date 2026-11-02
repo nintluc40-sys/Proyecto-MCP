@@ -86,7 +86,6 @@
 .biomol .fs-btn:hover { border-color: var(--bm-accent); color: var(--bm-accent); background: var(--bm-accent-soft); }
 .biomol .chart-scroll { width: 100%; overflow-x: auto; overflow-y: hidden; }
 .biomol .chart-scroll > svg { display: block; }
-.biomol .chart-ph { display: grid; place-items: center; min-height: 180px; color: var(--bm-muted); font-size: 12px; font-weight: 600; border: 1px dashed var(--bm-border); border-radius: 8px; background: var(--bm-surface2); }
 
 /* KPI cards */
 .biomol .kpi { padding: 14px 16px; }

@@ -23,7 +23,6 @@ export const store = {
   // Conexión
   connected: false,
   refreshing: false,
-  sheetsUrlOverride: '',
 };
 
 /** Suscribe a un evento. Devuelve función para desuscribir. */

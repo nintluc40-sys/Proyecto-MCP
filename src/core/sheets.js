@@ -38,15 +38,8 @@ function fetchWithTimeout(url, opts = {}, ms = FETCH_TIMEOUT_MS) {
 }
 
 export function parseSheetsIds(url) {
-  const pub = url.match(/\/d\/e\/([a-zA-Z0-9_-]+)/);
-  if (pub) return { type: 'pub', pubId: pub[1] };
   const real = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
-  if (real) return { type: 'real', realId: real[1] };
-  return null;
-}
-
-export function activeUrl() {
-  return (store.sheetsUrlOverride && store.sheetsUrlOverride.trim()) || SHEETS_URL;
+  return real ? { realId: real[1] } : null;
 }
 
 // ---------- clasificación ----------
@@ -340,9 +333,7 @@ export function textoProgreso(p) {
 }
 
 async function fetchWorkbook(ids, obtenerXLSX = getXLSX, avisar = null) {
-  const realId = ids.type === 'real' ? ids.realId : null;
-  if (!realId) return null;
-  const url = `https://docs.google.com/spreadsheets/d/${realId}/export?format=xlsx&_cb=${Math.floor(Date.now() / 30000)}`;
+  const url = `https://docs.google.com/spreadsheets/d/${ids.realId}/export?format=xlsx&_cb=${Math.floor(Date.now() / 30000)}`;
   // Timeout propio (más generoso): Google genera el workbook en el servidor antes
   // de transferirlo. Un timeout corto aquí es la causa raíz del "solo carga 1 hoja".
   const resp = await fetchWithTimeout(url, { cache: 'no-store' }, XLSX_TIMEOUT_MS);
@@ -425,10 +416,6 @@ export function parseCSV(text) {
 
 function buildCsvUrl(ids, gid = 0) {
   const bust = '&_cb=' + Math.floor(Date.now() / 60000);
-  if (ids.type === 'pub') {
-    const base = `https://docs.google.com/spreadsheets/d/e/${ids.pubId}/pub?output=csv`;
-    return (gid === 0 ? base : base + '&gid=' + gid) + bust;
-  }
   return `https://docs.google.com/spreadsheets/d/${ids.realId}/gviz/tq?tqx=out:csv&gid=${gid}${bust}`;
 }
 
@@ -508,15 +495,7 @@ async function mapLimit(items, limit, fn) {
  *  `recordadas` (carga lenta D, 2026-10-19): la lista que recuerda la PÁGINA. En el Worker —donde se lee desde el 12-10—
  *  no hay localStorage: sin ella, el rescate de nombres y la caché de abajo no hacían nada (y se bajaba el libro entero). */
 export async function discoverGids(ids, recordadas = null) {
-  let realId = ids.type === 'real' ? ids.realId : null;
-  if (!realId && ids.type === 'pub') {
-    try {
-      const r = await fetchWithTimeout(`https://docs.google.com/spreadsheets/d/e/${ids.pubId}/pub`, { cache: 'no-store' });
-      const mm = (await textoDe(r)).match(/spreadsheets\/d\/([a-zA-Z0-9_-]{20,})/);
-      if (mm) realId = mm[1];
-    } catch (_) {}
-  }
-  const docId = realId || ids.pubId || '';
+  const docId = ids.realId;
   const merge = new Map();
   const scrape = async (url) => {
     try {
@@ -525,13 +504,8 @@ export async function discoverGids(ids, recordadas = null) {
       extractSheetTabs(await textoDe(r)).forEach((t) => { if (!merge.has(t.gid) || (!merge.get(t.gid) && t.title)) merge.set(t.gid, t.title); });
     } catch (_) {}
   };
-  if (realId) await scrape(`https://docs.google.com/spreadsheets/d/${realId}/htmlview`);
-  if (!merge.size) {
-    const pubUrl = ids.type === 'pub'
-      ? `https://docs.google.com/spreadsheets/d/e/${ids.pubId}/pub`
-      : (realId ? `https://docs.google.com/spreadsheets/d/${realId}/pub` : null);
-    if (pubUrl) await scrape(pubUrl);
-  }
+  await scrape(`https://docs.google.com/spreadsheets/d/${docId}/htmlview`);
+  if (!merge.size) await scrape(`https://docs.google.com/spreadsheets/d/${docId}/pub`);
   // ⚠ Un gid puede llegar SIN nombre: `extractSheetTabs` tiene un respaldo que recoge
   // gids sueltos del HTML sin título. Antes esos caían directos a `detectSheetName`, que
   // los adivina POR COLUMNAS — y adivina mal casi siempre: medido el 2026-08-31 sobre las
@@ -559,11 +533,10 @@ export async function discoverGids(ids, recordadas = null) {
  *  por eso lo usa hojasPorCsv; aquí antes decía que también), y ese set recortado pisaba en silencio el bueno
  *  (`isDegraded` sólo cuenta hojas). El XLSX de la hoja las da TODAS (lo mismo que hace Registros desde el 0v·2) y se
  *  lee con las mismas opciones que el libro entero: las filas salen iguales que por el camino principal.
- *  Devuelve { nombre, filas } (`nombre`: el de la pestaña dentro del XLSX), o null si no se puede (documento
- *  publicado, sin SheetJS, red, 401/403 o lo que llega no es un XLSX —una página de acceso, p. ej.—): entonces ESA hoja
+ *  Devuelve { nombre, filas } (`nombre`: el de la pestaña dentro del XLSX), o null si no se puede (sin SheetJS, red,
+ *  401/403 o lo que llega no es un XLSX —una página de acceso, p. ej.—): entonces ESA hoja
  *  va al CSV de siempre. `obtenerXLSX` da SheetJS (window.XLSX aquí; en el Worker, el suyo). */
 async function filasPorXlsxDeHoja(ids, gid, obtenerXLSX = getXLSX) {
-  if (ids.type !== 'real') return null;
   let XLSX;
   try { XLSX = obtenerXLSX(); } catch (_) { return null; }
   if (!XLSX) return null;
@@ -613,19 +586,16 @@ export async function respaldoPorHojas(ids, obtenerXLSX = getXLSX, avisar = null
       // nombre (el Worker no tiene la caché de pestañas) toma el que trae su propio XLSX antes que adivinarlo.
       const x = await filasPorXlsxDeHoja(ids, gid, obtenerXLSX);
       if (x) return x.filas.length ? { name: title || x.nombre || detectSheetName(x.filas, gid), rows: x.filas } : null;
-      if (ids.type === 'real') {
-        let filas = null;
-        try { filas = filasDeCsv(await csvDeHoja(ids, gid), senales); } catch (_) { /* a gviz */ }
-        if (filas) return filas.length ? { name: title || detectSheetName(filas, gid), rows: filas, csv: true, exportacion: true } : null;
-      }
+      let filas = null;
+      try { filas = filasDeCsv(await csvDeHoja(ids, gid), senales); } catch (_) { /* a gviz */ }
+      if (filas) return filas.length ? { name: title || detectSheetName(filas, gid), rows: filas, csv: true, exportacion: true } : null;
       const rows = parseCSV(await fetchCSV(buildCsvUrl(ids, gid), 1));
       if (!rows.length) return null;
       const name = title || detectSheetName(rows, gid);
-      if (ids.type === 'real' && rows.length < filasAplicadas(previas, name)) { perdidas++; return null; }   // B4: gviz recortó
+      if (rows.length < filasAplicadas(previas, name)) { perdidas++; return null; }   // B4: gviz recortó
       // B3 · gviz sale con el formato regional del libro, como el CSV de exportación: se convierte igual y cuenta para la
-      // misma guarda (un libro en otro formato no se convierte a ciegas: la hoja falta). El enlace publicado no se midió.
-      if (ids.type === 'real') return { name, rows: convertirNumeros(rows, valorDeCsv, senales), csv: true, gviz: true };
-      return { name, rows, csv: true };
+      // misma guarda (un libro en otro formato no se convierte a ciegas: la hoja falta).
+      return { name, rows: convertirNumeros(rows, valorDeCsv, senales), csv: true, gviz: true };
     } catch (_) { perdidas++; return null; } finally {
       hechas++;
       if (avisar) avisar({ fase: 'respaldo', hechas, de: targets.length });
@@ -724,7 +694,7 @@ export const CSV_A_LA_VEZ = 16;
  *  el XLSX de una hoja suelta, que sin él no se pide (`filasPorXlsxDeHoja`). Antes, sin SheetJS, este camino se apartaba
  *  entero y en el Worker no llegaba a probarse. */
 export async function hojasPorCsv(ids, obtenerXLSX = getXLSX, avisar = null, previas = {}, recordadas = null) {
-  if (!ids || ids.type !== 'real') return null;
+  if (!ids) return null;
   const adelantadas = new Map();   // gid → la petición de su CSV, hecha antes de saber las pestañas
   for (const p of (Array.isArray(recordadas) ? recordadas : []).slice(0, CSV_A_LA_VEZ)) {
     const gid = Number(p && p.gid);
@@ -878,7 +848,8 @@ function hashRows(rows) {
 
 /** Huella de datos para detectar cambios sin re-render innecesario.
  *  Antes muestreaba solo 3 filas (primera/última/media) y se perdía cambios en
- *  filas intermedias; ahora hashea TODAS las filas (fix D3). Corre 1×/refresco. */
+ *  filas intermedias; ahora hashea TODAS las filas (fix D3). La app ya no la llama (usa `huellaDe`, hoja a hoja, más abajo):
+ *  se queda como la referencia con la que las pruebas y `mutar-refresco` comprueban esas huellas. */
 export function dataFingerprint(sheets) {
   let fp = '';
   for (const name in sheets) {
@@ -950,9 +921,7 @@ let _lector = null;
 export function setLectorLibro(lector) { _lector = lector; }
 /** ¿La próxima lectura irá en segundo plano (sin congelar la pantalla)? */
 export function lecturaEnSegundoPlano() {
-  if (!_lector || !_lector.disponible()) return false;
-  const ids = parseSheetsIds(activeUrl());
-  return !!ids && ids.type === 'real';
+  return !!_lector && _lector.disponible();
 }
 
 /** A1: el aviso cuando no llegó NADA (ni el libro ni ninguna hoja): la culpa es de la conexión, no de las hojas. */
@@ -965,12 +934,12 @@ export const SIN_DATOS_DE_GOOGLE = 'No llegó ningún dato de Google (¿sin cone
  *  vez de leer aquí y congelar (o tumbar) la página. Si no llegó nada o el Worker calló, error SIEMPRE (A1, dentro).
  *  `alAvanzar` (sólo la primera carga, punto 7): recibe cómo va la descarga y cuándo empieza la lectura. */
 export async function descargarLibro({ alAvanzar } = {}) {
-  const ids = parseSheetsIds(activeUrl());
+  const ids = parseSheetsIds(SHEETS_URL);
   if (!ids) throw new Error('URL de Google Sheets inválida.');
   // A4 (2026-10-11, usuario): `completo` = la lista de hojas es la de verdad (el libro entero, o el respaldo con TODAS sus
   // pestañas): entonces una hoja que falta se vació o se borró y se aplica; si no, isDegraded la descarta (ver allí).
   let sheets, completo = false;
-  if (ids.type === 'real' && _lector && _lector.disponible()) {
+  if (_lector && _lector.disponible()) {
     // carga lenta D (2026-10-19): el Worker no tiene localStorage; la página le pasa las pestañas que recuerda y guarda
     // las que él trae (discoverGids · `recordadas`)
     const r = await _lector.leer({ realId: ids.realId, previas: _huellasAplicadas, alAvanzar, pestanas: cachedTabs(ids.realId) });
@@ -1062,9 +1031,9 @@ export async function fetchAllSheets(avisar = null) {
  *  si eso no llega completo. Antes empezaba por el libro: 14,5 MB y 12–16 s de SheetJS seguidos con la pantalla
  *  congelada, en cada refresco mientras el Worker estuviera roto y en la primera carga si se caía. */
 async function leerTodoAqui(avisar = null) {
-  const ids = parseSheetsIds(activeUrl());
+  const ids = parseSheetsIds(SHEETS_URL);
   if (!ids) throw new Error('URL de Google Sheets inválida.');
-  const recordadas = ids.type === 'real' ? cachedTabs(ids.realId) : null;
+  const recordadas = cachedTabs(ids.realId);
   const porCsv = await hojasPorCsv(ids, getXLSX, avisar, _huellasAplicadas, recordadas);
   if (porCsv && porCsv.completo) return { sheets: porCsv.sheets, completo: true };
   const libro = await fetchXlsxSheets(ids, getXLSX, avisar);

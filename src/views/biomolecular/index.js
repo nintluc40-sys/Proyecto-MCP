@@ -17,7 +17,6 @@ import { store } from '../../core/store.js';
 import { esc as escH } from '../../core/format.js'; // output-encoding único (antes había un escH local duplicado)
 import { parseAnyDate } from '../../core/dates.js';
 import { toast } from '../../ui/toast.js';
-import { setDateBarHidden } from '../../ui/shell.js'; // esta vista usa su PROPIA filterbar
 import { matrizTejidos, franjaTejidos } from './tejidos.js'; // 2026-09-26 · el tipo de muestra (tejido)
 
 // ── Constantes (idénticas a BIOMOL.html) ──
@@ -2591,8 +2590,7 @@ function wire(root) {
 export function biomolecularView(root) {
   // Carga DIFERIDA: si el usuario navegó a otra vista mientras el chunk cargaba, este
   // `root` ya fue desmontado por el router. Abortar aquí evita que el render obsoleto
-  // toque estado COMPARTIDO del shell (p. ej. setDateBarHidden) o el DOM de la vista
-  // actual (los $() por id encontrarían/no encontrarían nodos ajenos).
+  // toque el DOM de la vista actual (los $() por id encontrarían/no encontrarían nodos ajenos).
   if (!root.isConnected) return;
   if (!store.globalData.length) { root.innerHTML = '<div class="empty-state">📡 Conectando… cargando datos del sistema.</div>'; return; }
   RAW = normalizeRows(store.globalData.filter((r) => r._SheetOrigin === 'Biomol'));
@@ -2611,9 +2609,7 @@ export function biomolecularView(root) {
   // (el guard de arriba mira window.d3, pero las funciones de dibujo usan `d3`).
   d3 = window.d3;
 
-  // Esta vista filtra por fecha con su PROPIA filterbar → oculta la barra de fecha
-  // global del shell (inerte aquí). El shell la vuelve a mostrar al cambiar de vista.
-  setDateBarHidden(true);
+  // Esta vista filtra por fecha con su PROPIA filterbar: la barra de fecha global ni sale (no declara `usaBarraFecha`, main.js).
 
   const sig = RAW.length + '|' + RAW[0].f + '|' + RAW[RAW.length - 1].f;
   const reset = sig !== lastSig;

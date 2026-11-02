@@ -16,8 +16,9 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { valorDeCsv, filasDeCsv, hojasPorCsv, workbookToSheets, XLSX_LECTURA, textoProgreso, CSV_A_LA_VEZ, descargarLibro, fetchAllSheets, parseSheetsIds, activeUrl } from './sheets.js';
+import { valorDeCsv, filasDeCsv, hojasPorCsv, workbookToSheets, XLSX_LECTURA, textoProgreso, CSV_A_LA_VEZ, descargarLibro, fetchAllSheets, parseSheetsIds } from './sheets.js';
 import { atenderLectura } from './sheets.worker.js';
+import { SHEETS_URL } from '../config.js';
 
 const VENDOR = join(process.cwd(), 'public/vendor/xlsx.full.min.js');
 const H1 = 'Datos Larvicultura - M03';
@@ -62,7 +63,7 @@ beforeEach(() => {
   html = HTML(); csvPorGid = { ...CSV }; libroEntero = null;
   xlsxPorGid = { 1111: xlsxDe(H1, [['Fecha', 'Tanque', 'Supervivencia', 'Población'], ['01/09/2026', 'TQ 1', 85.5, 7400000], ['02/09/2026', 'TQ 2', 80, 1061], ['03/09/2026', 'TQ 3', 70, 1]]) };
 });
-const ids = { type: 'real', realId: 'X' };
+const ids = { realId: 'X' };
 const xlsx = () => window.XLSX;
 
 describe('valorDeCsv · el formato regional del CSV (es) a la forma del XLSX', () => {
@@ -299,7 +300,7 @@ describe('pauta 17 (2026-10-22) · SIN Worker, la página también lee PRIMERO p
   });
 
   it('con las pestañas que recuerda la página, la primera tanda sale antes que /htmlview', async () => {
-    const { realId } = parseSheetsIds(activeUrl());
+    const { realId } = parseSheetsIds(SHEETS_URL);
     localStorage.setItem('larv4_sheet_tabs', JSON.stringify({ [realId]: [{ gid: 1111, title: H1 }, { gid: 2222, title: H2 }] }));
     await fetchAllSheets();
     expect(pedidas.findIndex((u) => /export\?format=csv/.test(u))).toBeLessThan(pedidas.findIndex((u) => /\/htmlview/.test(u)));

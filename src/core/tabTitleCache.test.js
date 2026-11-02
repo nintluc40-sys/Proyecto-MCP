@@ -127,13 +127,13 @@ const titulo = (list, gid) => (list.find((t) => Number(t.gid) === gid) || {}).ti
 describe('discoverGids · el rescate está ENCHUFADO', () => {
   it('el gid sin nombre recupera su título de la caché', async () => {
     seedCache([{ gid: 379049415, title: 'Datos Larvicultura - M03' }]);
-    const list = await discoverGids({ type: 'real', realId: DOC });
+    const list = await discoverGids({ realId: DOC });
     expect(titulo(list, 379049415)).toBe('Datos Larvicultura - M03');
     expect(titulo(list, 667967925)).toBe('Datos Larvicultura - M01');
   });
 
   it('sin caché se queda vacío (y sólo entonces caería en las heurísticas)', async () => {
-    const list = await discoverGids({ type: 'real', realId: DOC });
+    const list = await discoverGids({ realId: DOC });
     expect(titulo(list, 379049415)).toBe('');
   });
 
@@ -141,11 +141,11 @@ describe('discoverGids · el rescate está ENCHUFADO', () => {
   // quedaba machacado por una cadena vacía, así que el rescate sólo funcionaba una vez.
   it('la caché NO se degrada: tras un raspado parcial el nombre sigue guardado', async () => {
     seedCache([{ gid: 379049415, title: 'Datos Larvicultura - M03' }]);
-    await discoverGids({ type: 'real', realId: DOC });
+    await discoverGids({ realId: DOC });
     const guardado = JSON.parse(localStorage.getItem(CACHE_KEY))[DOC];
     expect(titulo(guardado, 379049415)).toBe('Datos Larvicultura - M03');
     // y sigue funcionando en la carga SIGUIENTE
-    const otra = await discoverGids({ type: 'real', realId: DOC });
+    const otra = await discoverGids({ realId: DOC });
     expect(titulo(otra, 379049415)).toBe('Datos Larvicultura - M03');
   });
 });

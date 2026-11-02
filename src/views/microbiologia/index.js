@@ -301,10 +301,9 @@ function patologiaAvisoHTML() {
   };
 }
 
+/** La única sub-vista sin tablero propio: Patología en fresco. */
 function placeholderHTML(sub) {
-  const aviso = sub.key === 'patologia'
-    ? patologiaAvisoHTML()
-    : { icono: '🚧', texto: 'Esta sub-vista llega en una tanda posterior.' };
+  const aviso = patologiaAvisoHTML();
   return `<div class="empty-state" style="padding:56px 20px">
       <div style="font-size:40px">${sub.icon}</div>
       <h2 style="margin:10px 0 6px;color:var(--c-brand-txt)">${esc(sub.label)}</h2>

@@ -2012,7 +2012,6 @@ export function renderModule(ctx, mod) {
           toast(`📄 PDF: ${detail}${multi}`, 'ok', 5500);
         }
         if (res.empty.length) toast(`Sin datos en el rango: ${res.empty.join(', ')}`, 'warn', 5000);
-        if (res.pending.length) toast(`Aún no disponible: ${res.pending.join(', ')}`, 'info', 5000);
       });
     }
 

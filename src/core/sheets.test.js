@@ -5,12 +5,7 @@ import { store } from './store.js';
 describe('parseSheetsIds', () => {
   it('detecta una URL de hoja "real" (/spreadsheets/d/ID)', () => {
     const ids = parseSheetsIds('https://docs.google.com/spreadsheets/d/ABC123/edit?usp=sharing');
-    expect(ids).toEqual({ type: 'real', realId: 'ABC123' });
-  });
-
-  it('detecta una URL publicada (/d/e/ID)', () => {
-    const ids = parseSheetsIds('https://docs.google.com/spreadsheets/d/e/PUB456/pubhtml');
-    expect(ids).toEqual({ type: 'pub', pubId: 'PUB456' });
+    expect(ids).toEqual({ realId: 'ABC123' });
   });
 
   it('null para una URL inválida', () => {

@@ -515,7 +515,7 @@ export function moduleDateRange(mod, corrida) {
   return { from: min ? iso(min) : '', to: max ? iso(max) : '' };
 }
 
-/** Devuelve las páginas de una ficha (o null si aún no está implementada). */
+/** Las páginas de una ficha, o null si `fid` no es una de las siete. La entrada de las pruebas: la app va por `downloadTrazabilidad`. */
 export function buildFichaPages(fid, opts) {
   const fn = FICHA_PAGES[fid];
   return fn ? fn(opts) : null;
@@ -527,15 +527,13 @@ export function buildFichaPages(fid, opts) {
  * SECUENCIA vía iframe oculto (sin pop-ups; un "Guardar como PDF" por tipo).
  * @param {(n:number,total:number,fileName:string)=>void} [onProgress]  progreso de la
  *   secuencia de impresión (un aviso por documento).
- * @returns {{generated:Array<{fid,label,pages}>, empty:string[], pending:string[]}}
+ * @returns {{generated:Array<{fid,label,pages}>, empty:string[]}}
  */
 export function downloadTrazabilidad({ mod, corrida, fids, from, to, onProgress }) {
-  const generated = [], empty = [], pending = [], docs = [];
+  const generated = [], empty = [], docs = [];
   fids.forEach((fid) => {
     if (!isFichaId(fid)) return;
-    const fn = FICHA_PAGES[fid];
-    if (!fn) { pending.push(fichaLabel(fid)); return; }
-    const pages = fn({ mod, corrida, from, to });
+    const pages = FICHA_PAGES[fid]({ mod, corrida, from, to });
     if (!pages.length) { empty.push(fichaLabel(fid)); return; }
     const dates = pages.map((p) => p.d.fecha);
     let fileName = pdfFilename(fid, mod, dates[0], corrida);
@@ -544,5 +542,5 @@ export function downloadTrazabilidad({ mod, corrida, fids, from, to, onProgress 
     generated.push({ fid, label: fichaLabel(fid), pages: pages.length });
   });
   if (docs.length) printFichaDocs(docs, onProgress);
-  return { generated, empty, pending };
+  return { generated, empty };
 }

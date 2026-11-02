@@ -6,16 +6,14 @@
    su tamaño varía sin cambios: medido el 07-10), así que la señal es la fecha de modificación del archivo en Drive, que
    da un Apps Script APARTE («MCP · consulta ligera», sólo un doGet → {"ok":true,"mod":ms}); no es el GAS del Registro.
 
-   Devuelve la marca (ms) o null cuando no se puede saber —otro libro activo, sin red, lento (CONSULTA_CAMBIOS.ms),
-   respuesta rara—: refresh.js entonces descarga como siempre, así que un fallo de la consulta nunca deja datos viejos.
+   Devuelve la marca (ms) o null cuando no se puede saber —sin red, lento (CONSULTA_CAMBIOS.ms), respuesta rara—:
+   refresh.js entonces descarga como siempre, así que un fallo de la consulta nunca deja datos viejos.
    ============================================================ */
 import { CONSULTA_CAMBIOS } from '../config.js';
-import { parseSheetsIds, activeUrl } from './sheets.js';
 
 export async function marcaDelLibro(pedir = globalThis.fetch) {
-  const { url, libro, ms } = CONSULTA_CAMBIOS;
-  const ids = parseSheetsIds(activeUrl());
-  if (!url || !ids || ids.type !== 'real' || ids.realId !== libro || typeof pedir !== 'function') return null;
+  const { url, ms } = CONSULTA_CAMBIOS;
+  if (!url || typeof pedir !== 'function') return null;
   const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const reloj = setTimeout(() => { if (ctrl) ctrl.abort(); }, ms);
   try {
