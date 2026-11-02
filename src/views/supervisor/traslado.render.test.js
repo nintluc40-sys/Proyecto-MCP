@@ -184,6 +184,21 @@ describe('Traslado · el selector de camiones', () => {
     expect(kpi(root, 'o2')).toBe('7.30');
   });
 
+  it('🔴 un camión con dos viajes sale UNA vez en el selector y cuenta una vez, y elegirlo enseña sus dos viajes', () => {
+    const otro = viaje(1);   // el mismo GSA-1147, en otro viaje
+    otro.id = 'tv2';
+    otro.data.fecha = '2026-08-28';
+    const filas = aFilas(buildTrasladoPayload(viaje(2))).concat(aFilas(buildTrasladoPayload(otro)));
+    const root = montar(ctxCon(filas));
+    expect([...root.querySelectorAll('[data-tras-placa-sel] option')].map((o) => o.value)).toEqual(['', 'GSA-1147', 'PBX-0392']);
+    expect(root.querySelector('[data-tras-placa-sel] option').textContent).toBe('Todos (2)');
+    expect(txt(root)).toContain('2 viaje(s) · 2 camión(es)');
+    elegirCamion(root, 'GSA-1147');
+    expect(camionElegido(root)).toBe('GSA-1147');
+    expect(txt(root)).toContain('2 viaje(s) · 1 camión(es)');
+    expect(root.querySelectorAll('[data-tras-viajesel]'), 'sus dos viajes').toHaveLength(2);
+  });
+
   it('🔴 el filtro NO se hereda al cambiar de corrida', () => {
     const filas = aFilas(buildTrasladoPayload(viaje(2)));
     const root = montar(ctxCon(filas));

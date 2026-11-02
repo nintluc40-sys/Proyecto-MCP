@@ -358,7 +358,7 @@ export function renderTraslado(ctx, mod) {
     <div class="sv-card-orb"></div>
     <div class="sv-card-tag">🚚 TRASLADO EN RUTA</div>
     <div class="sv-banner-name">${esc(mod)}</div>
-    <div class="sv-card-sub">🔄 ${corrida ? 'Corrida: ' + esc(corrida) : 'Todas las corridas'} · ${viajes.length} viaje(s) · ${visibles.length} camión(es)</div>
+    <div class="sv-card-sub">🔄 ${corrida ? 'Corrida: ' + esc(corrida) : 'Todas las corridas'} · ${viajes.length} viaje(s) · ${new Set(visibles.map((c) => c.placa)).size} camión(es)</div>
   </div>`;
 
   if (!t.hayDatos) {
@@ -384,8 +384,8 @@ export function renderTraslado(ctx, mod) {
     <select id="sv-tras-placa" class="sv-modal-select" data-tras-placa-sel
       title="Filtra la vista por camión">
       <option value=""${_placaSola ? '' : ' selected'}>Todos (${t.placas.length})</option>
-      ${t.camiones.map((c) => `<option value="${esc(c.placa)}"
-        ${_placaSola === c.placa ? 'selected' : ''}>${esc(c.placa)}</option>`).join('')}
+      ${t.placas.map((placa) => `<option value="${esc(placa)}"
+        ${_placaSola === placa ? 'selected' : ''}>${esc(placa)}</option>`).join('')}
     </select>
     ${_placaSola ? `<span class="sv-tras-filtros-n">viendo sólo ${esc(_placaSola)}</span>` : ''}
     <span data-tras-repaint data-nav="traslado" data-mod="${esc(mod)}" hidden></span>
