@@ -10,8 +10,9 @@ import { describe, it, expect } from 'vitest';
 import {
   MNT_EQUIPOS_SHEET, MNT_PLAN_SHEET, MNT_ESTADO, leerTrabajos, leerLecturas, leerEquipos, leerPlan, horasReales, horometros,
   horometroActual, proximos, porUrgencia, resumenLecturas, serie, indicadores, mensual, porActividad, anios, historial, diaIso,
-  horaHM, numero, hojasExcel,
+  horaHM, numero, hojasExcel, enServicio,
 } from './mantenimiento.data.js';
+import { enServicio as enServicioPlanta } from '../planta/blowers.js';
 
 const T = (fecha, equipo, tipo, actividad, horo, v = {}) => ({ _SheetOrigin: 'Mantenimiento Trabajos', Fecha: fecha, Equipo: equipo,
   Tipo: tipo, Actividad: actividad, 'Horómetro (h)': horo, Estado: 'Completado', ID: 'MT-' + equipo + '-' + fecha, ...v });
@@ -74,7 +75,14 @@ describe('Mantenimiento · leer las hojas', () => {
       'BLW-10', 'BLW-11', 'BLW-12']);
     expect(eq.find((e) => e.codigo === 'BLW-03')).toMatchObject({ sinFicha: false, ref: { corriente: 64, presion: 3.5, temperatura: 70 } });
     expect(eq.find((e) => e.codigo === 'BLW-04').sinFicha).toBe(true);
-    expect(modelo().equipos[0]).toMatchObject({ codigo: 'BLW-01', standBy: true });
+    expect(modelo().equipos[0]).toMatchObject({ codigo: 'BLW-01', fueraDeServicio: 'Stand by' });
+  });
+
+  it('🔴 «fuera de servicio» es todo lo que no sea «En servicio», con la misma regla que 🏭 Planta; sin Estado no se le da por parado', () => {
+    const estado = (e) => leerEquipos([E('BLW-03', 'FB 441 C', { Estado: e })]).find((x) => x.codigo === 'BLW-03').fueraDeServicio;
+    expect(['En reparación', 'Stand-by', 'Fuera de servicio', 'Stand by'].map(estado)).toEqual(['En reparación', 'Stand-by', 'Fuera de servicio', 'Stand by']);
+    expect(['En servicio', ' en  sérvicio ', 'EN SERVICIO', ''].map(estado)).toEqual(['', '', '', '']);
+    expect(enServicioPlanta, 'una sola definición').toBe(enServicio);
   });
 
   it('el plan: las 10 actividades, con lo que diga la hoja', () => {
@@ -122,7 +130,7 @@ describe('Mantenimiento · 🚦 próximos cambios (lo que decía el Excel al 22/
   it('con un cambio hecho, el próximo es ese horómetro + 3000 h', () => {
     expect(uno(l, 'BLW-02')).toMatchObject({ estado: MNT_ESTADO.AL_DIA, ultimoFecha: '2026-10-15', ultimoH: 942.54, proxH: 3942.54,
       actualH: 1028.42, faltanH: 2914.12, base: 'Último registro' });
-    expect(uno(l, 'BLW-01')).toMatchObject({ proxH: 3918.4, faltanH: 3000, standBy: true });
+    expect(uno(l, 'BLW-01')).toMatchObject({ proxH: 3918.4, faltanH: 3000, fueraDeServicio: 'Stand by' });
     expect(uno(l, 'BLW-09')).toMatchObject({ proxH: 3486.01, faltanH: 2951.5 });
   });
 

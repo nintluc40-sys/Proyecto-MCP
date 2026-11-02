@@ -23,7 +23,7 @@
      aviso «🚚 trasladada sin despacho» de estado.js) sigue «en cultivo», pero pudo quedar vacío y su blower, apagado con
      razón: su horómetro se juzga sólo hasta el último día con viajes de traslado de su corrida.
    ============================================================ */
-import { leerTrabajos, leerLecturas, leerEquipos, leerPlan, horometros, horometroActual, proximos, porUrgencia, MNT_ESTADO }
+import { leerTrabajos, leerLecturas, leerEquipos, leerPlan, horometros, horometroActual, proximos, porUrgencia, enServicio, MNT_ESTADO }
   from '../mantenimiento/mantenimiento.data.js';
 import { LARV } from './plano.js';
 
@@ -39,9 +39,8 @@ export function moduloDeUbicacion(ubicacion) {
   const m = String(ubicacion || '').match(/^\s*m(?:[oó]d(?:ulo)?)?\.?\s*#?\s*0*(\d+)\b/i);
   return m ? +m[1] : null;
 }
-const sinTildes = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '');
-/** ¿Está «En servicio»? (sin importar mayúsculas, tildes ni espacios de más). */
-export const enServicio = (e) => /^en\s+servicio$/i.test(sinTildes(e && e.estado).trim());
+/* «En servicio» es la definición ÚNICA de mantenimiento.data.js (2026-11-02): la vista 🔧 usa la misma. */
+export { enServicio };
 
 const r2 = (v) => Math.round(v * 100) / 100;
 /** El instante de una lectura en ms (su hora si la trae, si no el comienzo del día). */

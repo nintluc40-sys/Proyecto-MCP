@@ -6,7 +6,7 @@
        listas de equipos y actividades, es el de registros/lib/ficha-mantenimiento.schema.js, que se importa aquí).
      · «Mantenimiento Equipos» y «Mantenimiento Plan»: la ficha técnica, editada A MANO en el libro (decisión del usuario,
        2026-10-28: el repo es público, así que ni series ni ubicaciones viven en el código). Equipos: una fila por blower
-       (ubicación, en servicio o stand by, ajuste del horómetro y desde cuándo, referencias de lectura). Plan: una fila
+       (ubicación, su Estado, ajuste del horómetro y desde cuándo, referencias de lectura). Plan: una fila
        por actividad (intervalo en horas y en días, primer cambio).
    Decisiones del usuario: el técnico anota lo que marca el TABLERO y aquí se le SUMA el ajuste de su equipo a lo leído
    desde la fecha «Ajuste desde» (incluida); lo importado del Excel, que ya eran horas reales, va con fechas anteriores.
@@ -37,6 +37,14 @@ export const MNT_TOLERANCIAS = { corriente: 0.10, presion: 0.15, temperatura: 10
 /* Del Excel («Semáforo»): PRÓXIMO a 100 h o menos, o a 7 días o menos. */
 export const MNT_PROXIMO = { horas: 100, dias: 7 };
 export const MNT_ESTADO = { VENCIDO: 'VENCIDO', PROXIMO: 'PRÓXIMO', AL_DIA: 'AL DÍA', SIN_DATOS: 'SIN DATOS', SIN_PLAN: '—' };
+
+/* ── «En servicio»: UNA sola definición, la de esta vista y la de 🏭 Planta (blowers.js) ─────────────────── */
+const sinTildes = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '');
+/** ¿Está «En servicio»? (sin importar mayúsculas, tildes ni espacios de más). */
+export const enServicio = (e) => /^en\s+servicio$/i.test(sinTildes(e && e.estado).trim());
+/** El Estado de un equipo que NO está en servicio («Stand by», «En reparación»…), tal como lo dice su ficha; '' si está en
+ *  servicio o si su ficha no dice nada: sin Estado no se le puede dar por parado. */
+const fueraDeServicio = (estado) => (estado && !enServicio({ estado }) ? estado : '');
 
 /* ── Leer las hojas ─────────────────────────────────────── */
 const C = {
@@ -100,13 +108,13 @@ export function leerEquipos(rows) {
     vistos.add(codigo);
     const estado = txt(r, 'estado');
     out.push({ codigo, modelo: txt(r, 'modelo'), serie: txt(r, 'serie'), ubicacion: txt(r, 'ubicacion'), estado,
-      standBy: /stand\s*by/i.test(estado), ajuste: nm(r, 'ajuste'), ajusteDesde: diaIso(getField(r, C.ajusteDesde)),
+      fueraDeServicio: fueraDeServicio(estado), ajuste: nm(r, 'ajuste'), ajusteDesde: diaIso(getField(r, C.ajusteDesde)),
       ref: { corriente: nm(r, 'refCorriente'), presion: nm(r, 'refPresion'), temperatura: nm(r, 'refTemperatura') },
       plenaCarga: nm(r, 'plenaCarga'), fabricacion: txt(r, 'fabricacion'), notas: txt(r, 'notas'), sinFicha: false });
   });
   MNT_EQUIPOS.forEach((q) => {
     if (vistos.has(q.codigo)) return;
-    out.push({ codigo: q.codigo, modelo: q.modelo, serie: '', ubicacion: '', estado: '', standBy: false, ajuste: null,
+    out.push({ codigo: q.codigo, modelo: q.modelo, serie: '', ubicacion: '', estado: '', fueraDeServicio: '', ajuste: null,
       ajusteDesde: '', ref: { corriente: null, presion: null, temperatura: null }, plenaCarga: null, fabricacion: '', notas: '',
       sinFicha: true });
   });
@@ -179,7 +187,7 @@ export function proximos({ equipos, plan, trabajos, lista, hoy }) {
         else if (faltanH == null && faltanD == null) estado = MNT_ESTADO.SIN_DATOS;
         else estado = MNT_ESTADO.AL_DIA;
       }
-      out.push({ equipo: e.codigo, standBy: e.standBy, actividad: p.actividad, intervaloH: p.horas, intervaloD: p.dias,
+      out.push({ equipo: e.codigo, fueraDeServicio: e.fueraDeServicio, actividad: p.actividad, intervaloH: p.horas, intervaloD: p.dias,
         ultimoFecha: ultimo ? ultimo.fecha : '', ultimoH: r2(ultimoH), actualH: actual ? actual.h : null,
         actualFecha: actual ? actual.fecha : '', proxH: r2(proxH), faltanH, proxF, faltanD, base, estado });
     });
@@ -187,9 +195,9 @@ export function proximos({ equipos, plan, trabajos, lista, hoy }) {
   return out;
 }
 const RANGO = { [MNT_ESTADO.VENCIDO]: 0, [MNT_ESTADO.PROXIMO]: 1, [MNT_ESTADO.SIN_DATOS]: 2, [MNT_ESTADO.AL_DIA]: 3, [MNT_ESTADO.SIN_PLAN]: 4 };
-/** Lo que hay que atender primero: vencidos, luego próximos (lo que menos falta, antes); los stand by, al final. */
+/** Lo que hay que atender primero: vencidos, luego próximos (lo que menos falta, antes); los que no están en servicio, al final. */
 export function porUrgencia(lista) {
-  return (lista || []).slice().sort((a, b) => (a.standBy - b.standBy) || (RANGO[a.estado] - RANGO[b.estado])
+  return (lista || []).slice().sort((a, b) => (!!a.fueraDeServicio - !!b.fueraDeServicio) || (RANGO[a.estado] - RANGO[b.estado])
     || ((a.faltanH == null ? 1e9 : a.faltanH) - (b.faltanH == null ? 1e9 : b.faltanH))
     || ((a.faltanD == null ? 1e9 : a.faltanD) - (b.faltanD == null ? 1e9 : b.faltanD)));
 }
@@ -218,7 +226,7 @@ export function resumenLecturas(lecturas, equipos) {
     const max = (k) => { const v = vals(k); return v.length ? Math.max(...v) : null; };
     const lim = umbrales(e);
     const fuera = u ? ['corriente', 'presion', 'temperatura'].filter((k) => lim[k] != null && u[k] != null && pasa(u[k], lim[k])) : [];
-    return { equipo: e.codigo, ubicacion: e.ubicacion, standBy: e.standBy, n: l.length, ultima: u,
+    return { equipo: e.codigo, ubicacion: e.ubicacion, fueraDeServicio: e.fueraDeServicio, n: l.length, ultima: u,
       promedio: { corriente: prom('corriente'), presion: prom('presion'), temperatura: prom('temperatura') },
       maximo: { corriente: max('corriente'), presion: max('presion'), temperatura: max('temperatura') },
       estado: !u ? 'SIN LECTURA' : fuera.length ? 'REVISAR' : 'NORMAL', fuera, umbrales: lim,
@@ -245,7 +253,7 @@ export function indicadores({ equipos, trabajos, lista }) {
     const paradaFallas = suma(corr, 'parada');
     const mtbf = corr.length && horas != null ? r2(horas / corr.length) : null;
     const mttr = corr.length ? r2(paradaFallas / corr.length) : null;
-    return { equipo: e.codigo, ubicacion: e.ubicacion, standBy: e.standBy, horas, preventivos: prev, correctivos: corr.length,
+    return { equipo: e.codigo, ubicacion: e.ubicacion, fueraDeServicio: e.fueraDeServicio, horas, preventivos: prev, correctivos: corr.length,
       total: t.length, pctPreventivo: prev + corr.length ? Math.round(prev / (prev + corr.length) * 100) : null,
       paradaTotal: suma(t, 'parada'), paradaFallas, mtbf, mttr,
       disponibilidad: mtbf != null && mtbf + mttr > 0 ? r2(mtbf / (mtbf + mttr) * 100) : 100, costo: suma(t, 'costo') };

@@ -383,7 +383,8 @@ volver a abrir esto, esto es lo que ya se midió:
   **Trabajo** (una intervención: tipo, actividad del plan, horómetro, repuestos, costo, parada, estado), que escriben
   **`Mantenimiento Lecturas`** y **`Mantenimiento Trabajos`** por su ID (el último, sin merge; al corregir una ronda, el
   equipo que se vacía se ANULA: su fila va con el mismo ID, sin lecturas y «Anulada en la ficha»). La ficha técnica la llena
-  el área A MANO en **`Mantenimiento Equipos`** (ubicación, en servicio o stand by, ajuste del horómetro y desde cuándo,
+  el área A MANO en **`Mantenimiento Equipos`** (ubicación, su Estado —sólo «En servicio» cuenta como activo, aquí y en 🏭
+  Planta; «Stand by», «En reparación» y demás salen con su Estado—, ajuste del horómetro y desde cuándo,
   referencias de lectura, plena carga) y **`Mantenimiento Plan`** (intervalo de cada actividad en horas y en días, y el
   primer cambio): el repo es público, así que series y ubicaciones no viven en el código. La **vista** la ve el rol
   **Mantenimiento** (🛠️, aterriza en ella; ve también Registros) y Administrativo: 🚦 Semáforo y próximos cambios

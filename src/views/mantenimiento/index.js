@@ -62,10 +62,10 @@ function avisosHTML(m) {
   return a.map((t) => `<div class="mn-aviso">${t}</div>`).join('');
 }
 function kpisHTML(m) {
-  const activos = m.prox.filter((p) => !p.standBy);
+  const activos = m.prox.filter((p) => !p.fueraDeServicio);
   const n = (e) => activos.filter((p) => p.estado === e).length;
-  const enServicio = m.equipos.filter((e) => !e.standBy).length;
-  const revisar = m.lec.filter((x) => x.estado === 'REVISAR' && !x.standBy).length;
+  const enServicio = m.equipos.filter((e) => !e.fueraDeServicio).length;
+  const revisar = m.lec.filter((x) => x.estado === 'REVISAR' && !x.fueraDeServicio).length;
   const ultima = m.lista.reduce((u, x) => (!u || x.fecha > u ? x.fecha : u), '');
   const kpi = (v, l, cls = '') => `<div class="mn-kpi ${cls}"><div class="mn-kpi-v">${v}</div><div class="mn-kpi-l">${l}</div></div>`;
   return `<div class="mn-kpis">${kpi(n(MNT_ESTADO.VENCIDO), 'Vencidos', n(MNT_ESTADO.VENCIDO) ? 'mn-kpi--vencido' : '')}`
@@ -86,12 +86,12 @@ function semaforoHTML(m) {
     const tit = `${p.equipo} · ${p.actividad}: ${p.base}`
       + (p.ultimoFecha ? `; último el ${dma(p.ultimoFecha)} a ${fmtH(p.ultimoH)} h` : '')
       + (p.proxH != null ? `; próximo a ${fmtH(p.proxH)} h` : '') + (p.proxF ? `; o el ${dma(p.proxF)}` : '');
-    return `<td class="mn-sem-c${p.standBy ? ' mn-standby' : ''}" title="${esc(tit)}">${estadoHTML(p.estado)}<span class="mn-sem-f">${esc(faltan(p))}</span></td>`;
+    return `<td class="mn-sem-c${p.fueraDeServicio ? ' mn-standby' : ''}" title="${esc(tit)}">${estadoHTML(p.estado)}<span class="mn-sem-f">${esc(faltan(p))}</span></td>`;
   };
   const cabEq = m.equipos.map((e) => {
     const a = horometroActual(m.lista, e.codigo);
-    return `<th class="${e.standBy ? 'mn-standby' : ''}" title="${esc([e.ubicacion, e.estado].filter(Boolean).join(' · '))}">${esc(e.codigo)}`
-      + `<span class="mn-th-sub">${a ? fmtH(a.h) + ' h' : 'sin horómetro'}${e.standBy ? ' · stand by' : ''}</span></th>`;
+    return `<th class="${e.fueraDeServicio ? 'mn-standby' : ''}" title="${esc([e.ubicacion, e.estado].filter(Boolean).join(' · '))}">${esc(e.codigo)}`
+      + `<span class="mn-th-sub">${a ? fmtH(a.h) + ' h' : 'sin horómetro'}${e.fueraDeServicio ? ' · ' + esc(e.fueraDeServicio.toLowerCase()) : ''}</span></th>`;
   }).join('');
   const matriz = conPlan.length
     ? `<div class="mn-scroll"><table class="mn-tabla mn-sem"><thead><tr><th>Actividad \\ Equipo</th>${cabEq}</tr></thead><tbody>`
@@ -103,7 +103,7 @@ function semaforoHTML(m) {
   const tabla = lista.length
     ? `<div class="mn-scroll"><table class="mn-tabla"><thead><tr><th>Equipo</th><th>Actividad</th><th>Último cambio</th><th>Horómetro actual</th>`
       + '<th>Próximo</th><th>Faltan</th><th>Base</th><th>Estado</th></tr></thead><tbody>'
-      + lista.map((p) => `<tr class="${p.standBy ? 'mn-standby' : ''}"><td><b>${esc(p.equipo)}</b>${p.standBy ? ' <span class="mn-chip">stand by</span>' : ''}</td>`
+      + lista.map((p) => `<tr class="${p.fueraDeServicio ? 'mn-standby' : ''}"><td><b>${esc(p.equipo)}</b>${p.fueraDeServicio ? ` <span class="mn-chip">${esc(p.fueraDeServicio.toLowerCase())}</span>` : ''}</td>`
         + `<td>${esc(p.actividad)}</td><td>${p.ultimoFecha ? `${dma(p.ultimoFecha)} · ${fmtH(p.ultimoH)} h` : '—'}</td>`
         + `<td>${p.actualH != null ? `${fmtH(p.actualH)} h <span class="mn-muted">(${dm(p.actualFecha)})</span>` : '—'}</td>`
         + `<td>${[p.proxH != null ? fmtH(p.proxH) + ' h' : '', p.proxF ? dma(p.proxF) : ''].filter(Boolean).join(' · ') || '—'}</td>`
@@ -113,7 +113,7 @@ function semaforoHTML(m) {
   return `<section class="card mn-card"><h3 class="mn-h3">Semáforo por equipo y actividad</h3>`
     + `<p class="mn-nota">Con el horómetro más alto anotado de cada equipo (lo del tablero + su ajuste) y la fecha de hoy. Una actividad que nunca se hizo se cuenta desde 0 h, o desde su primer cambio.</p>`
     + matriz + (sinPlan.length ? `<p class="mn-nota">Sin intervalo en el plan (no se juzgan): ${esc(sinPlan.join(' · '))}.</p>` : '') + '</section>'
-    + (tabla ? `<section class="card mn-card"><h3 class="mn-h3">Próximos cambios</h3><p class="mn-nota">Primero lo vencido y lo que menos falta; los equipos en stand by, al final.</p>${tabla}</section>` : '');
+    + (tabla ? `<section class="card mn-card"><h3 class="mn-h3">Próximos cambios</h3><p class="mn-nota">Primero lo vencido y lo que menos falta; los equipos que no están en servicio, al final.</p>${tabla}</section>` : '');
 }
 
 /* ── 📈 Lecturas ── */
@@ -121,8 +121,8 @@ const ESTADO_LEC = { NORMAL: 'aldia', REVISAR: 'vencido', 'SIN LECTURA': 'sindat
 function lecturasHTML(m) {
   const v = (x, u) => (x == null ? '—' : fmtH(x) + (u ? ' ' + u : ''));
   const c = (r, k, u) => '<td class="mn-num' + (r.fuera.includes(k) ? ' mn-fuera' : '') + '">' + v(r.ultima && r.ultima[k], u) + '</td>';
-  const filas = m.lec.map((r) => '<tr class="' + (r.standBy ? 'mn-standby' : '') + '"><td><b>' + esc(r.equipo) + '</b>'
-    + (r.standBy ? ' <span class="mn-chip">stand by</span>' : '') + '</td><td>' + (esc(r.ubicacion) || '—') + '</td>'
+  const filas = m.lec.map((r) => '<tr class="' + (r.fueraDeServicio ? 'mn-standby' : '') + '"><td><b>' + esc(r.equipo) + '</b>'
+    + (r.fueraDeServicio ? ' <span class="mn-chip">' + esc(r.fueraDeServicio.toLowerCase()) + '</span>' : '') + '</td><td>' + (esc(r.ubicacion) || '—') + '</td>'
     + '<td class="mn-num">' + r.n + '</td><td>' + (r.ultima ? dma(r.ultima.fecha) + (r.ultima.hora ? ' ' + esc(r.ultima.hora) : '') : '—') + '</td>'
     + c(r, 'corriente', 'A') + '<td class="mn-num mn-muted">' + v(r.promedio.corriente) + ' / ' + v(r.maximo.corriente) + '</td>'
     + c(r, 'presion', 'psi') + '<td class="mn-num mn-muted">' + v(r.promedio.presion) + '</td>'
@@ -130,8 +130,8 @@ function lecturasHTML(m) {
     + '<td class="mn-num">' + (r.carga != null ? r.carga + ' %' : '—') + '</td>'
     + '<td><span class="mn-est mn-est--' + ESTADO_LEC[r.estado] + '">' + esc(r.estado) + '</span></td></tr>').join('');
   const conLecturas = m.equipos.filter((e) => m.lecturas.some((l) => l.equipo === e.codigo));
-  // Arranca en el primer equipo EN SERVICIO con lecturas (uno en stand by sólo si no hay otro).
-  if (!conLecturas.some((e) => e.codigo === vState.lecEquipo)) vState.lecEquipo = (conLecturas.find((e) => !e.standBy) || conLecturas[0] || {}).codigo || '';
+  // Arranca en el primer equipo EN SERVICIO con lecturas (uno que no lo está, sólo si no hay otro).
+  if (!conLecturas.some((e) => e.codigo === vState.lecEquipo)) vState.lecEquipo = (conLecturas.find((e) => !e.fueraDeServicio) || conLecturas[0] || {}).codigo || '';
   if (!PARAMS.some((p) => p[0] === vState.lecParam)) vState.lecParam = 'corriente';
   const opt = (val, txt, actual) => '<option value="' + esc(val) + '"' + (val === actual ? ' selected' : '') + '>' + esc(txt) + '</option>';
   const grafico = vState.lecEquipo
@@ -173,7 +173,7 @@ function indicadoresHTML(m) {
     + kpi(f.mtbf != null ? fmtH(f.mtbf) + ' h' : '—', 'MTBF de la flota (entre fallas)') + kpi(f.mttr != null ? fmtH(f.mttr) + ' h' : '—', 'MTTR de la flota (por reparación)')
     + kpi(pctTxt(f.disponibilidad != null ? fmtH(f.disponibilidad) : null), 'Disponibilidad promedio', f.disponibilidad != null && f.disponibilidad < META.disponibilidad ? 'mn-kpi--vencido' : '')
     + kpi(usd(f.costo), 'Costo total') + kpi(esc(f.masFallas) || '—', 'Equipo con más fallas') + '</div>';
-  const filas = ind.porEquipo.map((x) => '<tr class="' + (x.standBy ? 'mn-standby' : '') + '"><td><b>' + esc(x.equipo) + '</b>' + (x.standBy ? ' <span class="mn-chip">stand by</span>' : '') + '</td>'
+  const filas = ind.porEquipo.map((x) => '<tr class="' + (x.fueraDeServicio ? 'mn-standby' : '') + '"><td><b>' + esc(x.equipo) + '</b>' + (x.fueraDeServicio ? ' <span class="mn-chip">' + esc(x.fueraDeServicio.toLowerCase()) + '</span>' : '') + '</td>'
     + '<td>' + (esc(x.ubicacion) || '—') + '</td><td class="mn-num">' + fmtH(x.horas) + '</td><td class="mn-num">' + x.preventivos + '</td>'
     + '<td class="mn-num">' + x.correctivos + '</td><td class="mn-num">' + x.total + '</td><td class="mn-num">' + pctTxt(x.pctPreventivo) + '</td>'
     + '<td class="mn-num">' + fmtH(x.paradaTotal) + '</td><td class="mn-num">' + fmtH(x.paradaFallas) + '</td>'

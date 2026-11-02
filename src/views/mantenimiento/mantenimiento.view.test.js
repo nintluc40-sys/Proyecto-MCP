@@ -57,6 +57,15 @@ describe('Mantenimiento · la vista', () => {
     expect(root.querySelector('.mn-aviso'), 'con las cuatro hojas no hay avisos').toBeNull();
   });
 
+  it('🔴 un equipo «En reparación» tampoco cuenta: sale con su Estado real, como Planta, y su vencido no suma', () => {
+    pintar(LIBRO.map((f) => (f._SheetOrigin === 'Mantenimiento Equipos' && f['Código'] === 'BLW-04' ? { ...f, Estado: 'En reparación' } : f)));
+    const v = texto('.mn-kpi-v');
+    expect(v[0], 'el BLW-04 era el único vencido').toBe('0');
+    expect(v[2]).toBe('9 / 11');
+    expect(texto('.mn-chip')).toContain('en reparación');
+    expect(texto('.mn-th-sub').join(' ')).toContain('· en reparación');
+  });
+
   it('🔴 el semáforo: el BLW-04 VENCIDO a −13,38 h, encabezando los próximos cambios', () => {
     pintar(LIBRO);
     const fila = [...root.querySelectorAll('.mn-sem tbody tr')].find((tr) => tr.textContent.includes('Cambio de aceite'));
