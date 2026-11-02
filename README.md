@@ -26,12 +26,15 @@ npm run lint       # ESLint
 > es dependencia de npm. El gemelo `index (8)` no tiene servidor del que pedirlo: lleva SheetJS
 > **incrustado**, byte a byte el de `public/vendor/` (lo vigila `verificar-xlsx-index8`).
 
-### `npm audit` avisa de 7 (todos de desarrollo), y se quedan · MEDIDO el 2026-09-21, re-medido el 2026-10-15, el 2026-10-23 y el 2026-10-26
+### `npm audit` avisa de 12 (todos de desarrollo) · MEDIDO el 2026-09-21, re-medido el 2026-10-15, el 2026-10-23, el 2026-10-26 y el 2026-11-02
 
 **Exposición en producción: cero** (`npm audit --omit=dev` da 0): ninguno de los paquetes señalados entra en el bundle;
 `dependencies` lleva `chart.js`, `leaflet`, `three` y `qrcode-generator`, y ninguno está entre los avisos. Antes de
 volver a abrir esto, esto es lo que ya se midió:
 
+- 🆕 **2026-11-02 · de 7 a 12** (8 moderate, 2 high, 2 critical): a los de abajo se suman `eslint`, `@eslint/config-array`,
+  `@eslint/eslintrc`, `@eslint-community/eslint-utils` y `minimatch`, que npm sólo cierra con un cambio de versión mayor de
+  eslint. Es la herramienta de lint, no llega al bundle: la decisión D-6 no los nombraba, así que subirla o no sigue por decidir.
 - 🆕 **2026-10-23 · de 11 avisos a 6** con `npm audit fix` SIN `--force` (decisión del usuario): cinco subidas menores
   del lockfile —`postcss` 8.5.15 → 8.5.31, `nanoid` 3.3.12 → 3.3.20, `source-map-js` 1.2.1 → 1.2.2, `js-yaml` 4.3.0 →
   4.3.2 y `brace-expansion` 1.1.16 → 1.1.21—, sin tocar `happy-dom`, vite ni vitest. La build salió **idéntica byte a
@@ -61,10 +64,11 @@ volver a abrir esto, esto es lo que ya se midió:
 - **Supervisor** (👁️): Vista Ejecutiva (tarjetas por módulo/corrida) → Resumen
   Operativo del módulo → Visualización del Tanque → Análisis Biométrico LARVIA.
   Incluye navegación táctil (botón "Volver" + migas), tabla "Producción Omarsa"
-  (con columna **Dens. siembra** = promedio por tanque de siembra ÷ 28 ÷ 1000),
+  (con columna **Dens. siembra** = Σ siembra ÷ (volumen de los tanques sembrados × 1000), con el tonelaje registrado el
+  día de la siembra y 28 t de respaldo),
   estado de despacho ("Despachado"/"Despachando" excluyendo tanques agrupados/
-  descartados) y modales: Comparativa de tanques, OM vs Tex, Desinfección,
-  Biomol, **Microbiología** (Placa de agar + Tabla + Heatmap + Tendencias por corrida+módulo; el
+  descartados), las sub-vistas Despacho, OM vs Tex, Traslado y Auditoría, y modales: Comparativa de tanques, Desinfección,
+  Calidad de Agua, Historial As. Téc., Mareas, Resumen del día, Biomol, **Microbiología** (Placa de agar + Tabla + Heatmap + Tendencias por corrida+módulo; el
   análisis **EM** de Larvicultura —pH, BA y levaduras, columnas que no son de ningún patógeno— no entra
   en ésas: va en su pestaña **🧪 EM**, con el último análisis, su evolución y la tabla, sin semáforo
   porque la ficha no les da rango)
@@ -89,8 +93,11 @@ volver a abrir esto, esto es lo que ya se midió:
   copia de `audResumen` del monolito, con una prueba de paridad que ejecuta los dos) y el cruce con Datos Larvicultura
   —el sembrado del N5 y la última población de 🚛 Despacho—, sólo informativo. Las dos hojas se reconocen por su nombre
   y, sin título, por sus columnas, antes de que las reclamen Patología en Fresco o Larvicultura.
-- **Larvicultura** (🦐): calidad larvaria — radar, evolución diaria, heatmap,
-  ICL, ranking, población por tanque y modales Comparar/Historia/Decisión.
+- **Larvicultura** (🦐): calidad larvaria — radar, evolución diaria, comparativa del módulo (lollipop e histograma por
+  tanque), población por tanque y modales Comparar tanques/Comparar corridas/Historial/Decisión. El semáforo de **Población**
+  compara la pérdida de la corrida con la de las OTRAS corridas el mismo día de cultivo (ámbar > p75, rojo > p90, con mínimos de
+  5 % y 10 %; sin historia, 20 % y 40 %: `popReferencia.js`, decisión del usuario del 2026-10-30); el de Manejo de agua sigue con
+  sus umbrales heredados, sin fuente.
 - **Revisiones** (🔍): hoja `Registro_Supervisión` — calidad, morfología
   cuantitativa (% Atraso / Protusión / Deformidad / No viables), treemap,
   Sankey hallazgo→acción, cobertura por supervisor y mapa de cobertura
@@ -100,19 +107,22 @@ volver a abrir esto, esto es lo que ya se midió:
   deshizo: la de Maduración era nueva y no había costumbre que romper. Ésta se queda así.
 - **Algas** (🌿): `Lab_Algas` por sistema (Masivos/Premasivos/PBR/Fundas/Carboys),
   con filtro de módulo, curva de crecimiento conmutable
-  (Líneas/Normalizado/Mini-curvas/Heatmap), parámetros fisicoquímicos, sanidad,
-  Índices del mes y export Excel por rango de fechas.
+  (Líneas/Normalizado/Mini-curvas/Heatmap), parámetros fisicoquímicos, control sanitario,
+  Índices del mes, biomasa, descartes por clase (`descartes.js`), cobertura, Resumen del día y export Excel por rango de fechas.
 - **Visitante** (🚪): resumen mensual en lenguaje llano (supervivencia, sanidad,
   microalgas) mediante tarjetas que abren ventanas de detalle. Con datos de Maduración, el bloque
   **🥚 Maduración**: los nauplios (N5) producidos por lote y por sala, con las MISMAS funciones del
   tablero —un desove cuenta en las salas donde estaba su lote la víspera o ese día, así que un lote que
   se mudó cuenta en las dos y el detalle avisa de que las salas no suman el total—; el mes es el de
-  calendario del desove, y el módulo (`visitante/maduracion.produccion.js`) se carga diferido. Los dos
+  calendario del desove (mientras ese mes no ha empezado —el de producción arranca unas 2 semanas antes—, el mes de
+  calendario en curso, y se dice), y el módulo (`visitante/maduracion.produccion.js`) se carga diferido. Los dos
   detalles llevan la **fertilidad** (2026-10-02) con la regla del tablero —N2 ÷ huevos, sólo de los desoves
   que traen los dos; «—» si ninguno— y el de lotes dice la del mes y de cuántos desoves sale (casi
   ninguno trae sus huevos contados).
-- **Biología Molecular** (🧬): heatmap/calendario/treemap/swarm/sankey/E.D.T.,
-  reporte comparativo y export Excel por rango de fechas.
+- **Biología Molecular** (🧬): heatmap/calendario/treemap/swarm/sankey, carga viral (qPCR), tipo de muestra,
+  RS (el registro del día), reporte comparativo y export Excel por rango de fechas. El botón **AUD** es un modo de
+  entrenamiento: sustituye los resultados por otros simulados, reversible, y lo que se ve son esas cifras (sin banner, por
+  decisión del usuario; el E.D.T. de los tanques está en 👁️ Supervisor).
   En su REGISTRO, el informe ofrece dos imágenes: el gel de agarosa y las **curvas de los
   ciclos de amplificación**. Las curvas se ofrecen cuando la grilla trae qPCR **o cuando el
   método declarado es de tiempo real** (Kit Comercial IQ REAL, Reacción dúplex, Kit Comercial
@@ -120,7 +130,7 @@ volver a abrir esto, esto es lo que ya se midió:
   rellenan con positivos, y un día limpio también hay que poder demostrarlo. El único método
   convencional del catálogo es la PCR Nested de punto final, que revela en gel y no tiene curva.
 - **Microbiología** (🧫): Bacteriología con **filtros dinámicos por formato**
-  (Larvicultura/Maduración/Otros), Conglomerado (niveles por patógeno, Agua vs
+  (Larvicultura/Maduración/Algas/Otros), Conglomerado (niveles por patógeno, Agua vs
   Animal, carga total por patógeno, distribución por nivel), Placa de agar,
   Matriz patógeno×ubicación, tendencias y export Excel. Restyle tipo SCADA.
   Incluye el panorama **General** (tablero-scorecard por área) y **Calidad de
@@ -165,8 +175,9 @@ volver a abrir esto, esto es lo que ya se midió:
     Reproducción: la tarjeta, su gráfico y la cabecera de la sub-vista suman lo mismo que su tabla (`desoveEnOrigen`;
     antes de la pauta 3.1, 2026-10-15, sumaban todos los desoves).
     Con varios: «Ciclo» pide un solo lote, Ocupación con varios tanques es «tanques con lo filtrado», el detalle de sala
-    sólo se abre solo con UNA sala, y 🦠/🧬/🌊 heredan lote o sala sólo si hay UNO.
-    **📊 Estado actual** (siete indicadores —bajo el gráfico de Vivos, los vivos ♀/♂/total al INICIO del período, los
+    sólo se abre solo con UNA sala, y 🦠/🧬 heredan lote o sala sólo si hay UNO (🌊 no: sus filtros son propios, decisión del
+    usuario de cuando pasó a sub-vista, y empieza en «Día»).
+    **📊 Estado actual** (ocho indicadores —bajo el gráfico de Vivos, los vivos ♀/♂/total al INICIO del período, los
     ACTUALES (la cifra de la tarjeta) y la diferencia; bajo el de Mortalidad, los muertos ♀/♂ del período, con la regla
     de la tarjeta (2026-10-14)—; el mapa de planta, que se colorea por el lote, por el tanque o por
     sus partes —los modos viven en `MODOS_MAPA`— y abre bajo él el LIENZO del tanque pulsado; las alertas, con
@@ -259,8 +270,8 @@ volver a abrir esto, esto es lo que ya se midió:
     con sus muestras analizadas, y Maduración por tipo de muestra —Heces, Branquias, Pleópodo, Agua,
     Hisopado, de la columna «Otros»—). La piscina de una muestra es la que dice o, en Microbiología, la de su
     lote en Ingresos; una combinada («P554/556») cuenta en las dos. Las cuentas, en `operativo.laboratorio.js`.
-    🌊 **Mareas** (0r, 2026-09-28), la sub-vista que sigue a 🦠 y 🧬: lo MISMO que el modal de Larvicultura, en el sitio
-    —Día y Mes (la Correlación se queda en Larvicultura); su marcado y su cableado viven una sola vez en
+    🌊 **Mareas** (0r, 2026-09-28), la sub-vista que sigue a 🦠 y 🧬: lo MISMO que el modal de 👁️ Supervisor, en el sitio
+    —Día y Mes (la Correlación se queda en ese modal); su marcado y su cableado viven una sola vez en
     `supervisor/mareas.js` (el modal, `cablearMareas`; la sub-vista, `cablearPanelMareas`), y leen la hoja
     «Marea»— con una pestaña propia, **🦐 Cópulas**: «Ver» cópulas o desoves, cada día (cópulas ÷ hembras de los
     tanques ESE día, la regla del Saldo; o desoves por 100 ♀) frente a la amplitud de la marea y la luz de la luna,
@@ -299,7 +310,8 @@ volver a abrir esto, esto es lo que ya se midió:
     tanque × día —sustituido el 2026-09-29 por «Hembras por su último desove»: las vivas de cada tanque en
     ≤ 7 · 8–21 · > 21 días desde su último desove, o que nunca desovaron—, línea de vida de cada hembra, familias, supervivencia por familia, alerta de reemplazo por
     tanque, la VENTANA de desove —no una fecha: acertar la fecha salía un 41 %—, la mortalidad tras el desove
-    con su riesgo relativo y una tarjeta honesta sobre la marea, que no muestra efecto. Las reglas, en
+    con su riesgo relativo y una tarjeta honesta sobre la marea, que dice si la relación va más allá del azar con los datos
+    de cada momento. Las reglas, en
     `src/views/maduracion/data.js`.)*
     ♻ **Un Trovan ID es de un CHIP, no de una hembra**, así que la MATRIZ puede tener varias suyas.
     Lo que identifica a un individuo es la **cuaterna** (Trovan · Piscina · Código genético · Lote);
@@ -540,7 +552,7 @@ Sólo el último, sin otro abierto y desde el dispositivo que lo registró: uno 
 hoja (decisión del usuario, 2026-09-18).
 La hora va en la llave del GAS, así que se guarda como TEXTO (Sheets convierte «08:30» en una hora).
 *(2026-09-30, usuarios: «partes duplicados en la hoja».)* El número de parte lo cuenta **cada dispositivo**
-(y la app de Pages y `index (8)` como archivo son dos), así que la misma ronda dada desde dos llega con
+(y la app de Pages e `index (8)` son dos, aunque los dos se abran por HTTPS), así que la misma ronda dada desde dos llega con
 dos partes. Antes de enviar Tanques (☁️ o 🔄), la app lee la hoja fresca y, si el mismo tanque ya tiene
 las mismas bajas —o las mismas cópulas y muda— en **otro** parte de la última hora, **pregunta**;
 «Cancelar» lo deja pendiente sin borrar nada. «↩ Recuperar» ya no reinyecta lo guardado, y una fila
@@ -684,7 +696,7 @@ entero con una hoja de Google simulada.
 
 ```
 src/
-  main.js                  Entry: registra vistas, monta el shell, conecta y arranca refresco
+  main.js                  Entry: registra vistas, monta el shell y arranca el refresco (el libro se pide al elegir rol)
   config.js                URL del Sheet, timeouts, umbrales de semáforo, orden de estadios
   styles/                  tokens.css (diseño + tema oscuro) · base.css · app.css
   core/                    ── Capa de datos (sin DOM, reutilizable y testeable) ──
@@ -707,7 +719,7 @@ src/
     util.js                Helpers puros compartidos (avg, natCmp, fmtPct)
   ui/
     router.js              Registro y conmutación de vistas
-    shell.js               Cabecera, pestañas, filtro de fecha global, loader
+    shell.js               Cabecera, menú lateral (drawer), roles, filtro de fecha global, loader
     modal.js               Diálogos accesibles compartidos (role/aria, foco atrapado)
     modalEscape.js         Cierre con Escape, uniforme para todas las vistas
     toast.js               Aviso efímero no bloqueante (sustituye a window.alert)
@@ -862,7 +874,8 @@ Dos consecuencias que conviene tener presentes al desplegar:
    sólo NASA (la diaria a ~8 días). Cada fila dice de dónde vino cada grupo («Fuente», «Fuente lluvia», «Fuente
    nubosidad»), y una cifra del día sólo existe si las 24 horas tienen esa variable (con las 13 horas diurnas del
    aeropuerto, la «media» salía 2–3 °C alta). Activadores: `cadaTresHoras` (METAR + MET) y `nocturno` hacia las 02:30
-   (NASA, desde el primer día con hueco); una pasada sin cambios no escribe (esta consulta ligera vería un cambio), y una
+   (METAR de 48 h, MET, NASA desde el primer día con hueco y el archivo de la IEM de hace 3 a 5 días, éste sólo para las horas
+   que no tienen observación de SESA); una pasada sin cambios no escribe (esta consulta ligera vería un cambio), y una
    fuente caída no impide guardar las otras, pero la ejecución termina en error para que Apps Script avise. Casi cada
    pasada de 3 h trae algo nuevo (MET rehace su pronóstico), así que esta consulta ligera verá el libro cambiado y cada
    equipo abierto hará una descarga más cada 3 h (aceptado). En el MCP (`core/sheets.js`), las dos hojas tienen su origen
@@ -984,6 +997,22 @@ Dos consecuencias que conviene tener presentes al desplegar:
    Maduración o Biología Molecular con su segundo paso, hasta que se cumple— y el desplazamiento vuelve a su sitio; antes
    la página encogía y saltaba ARRIBA (medido en Maduración: 731 → 0). Igual con el tema 🌙 y con los atajos de fecha
    («Todo», «30 días», «7 días»). Cambiar de vista sí empieza arriba.
+
+### Lo demás que viene de fuera (o sale fuera) del libro
+
+Lo que el libro no explica por sí solo. Sólo lo que ya se puede decir en público.
+
+- **Larvia** (`app.larvia.ai`, otro sistema). Las columnas «ID de Análisis» → «Pigmentación» de `Datos Larvicultura` (AD–AK) las escribe
+  ese sistema, no esta app: las fichas las envían vacías y el GAS las conserva (`buildDatosPayload`). La sub-vista 🔬 LARVIA de 👁️ Supervisor las
+  lee, y sólo enlaza a cada análisis (`larvia.js`): la página es de Larvia, con su acceso; no hay API.
+- **INOCAR.** La predicción de mareas no llega sola: se pega a mano en la ficha 🌊 Mareas del módulo As Técnico, que escribe la hoja `Marea`
+  (con filas futuras, por eso no mueve la «última fecha»).
+- **OpenStreetMap.** Las teselas del mapa de 🚚 Traslado (Leaflet, `trasladoMapa.js`), sin clave. El service worker no las guarda: sin red, el
+  mapa sale sin fondo. `index (8)` no tiene este mapa.
+- **Evidencias** (fotos desde un QR). `?p=ev` es la página para subirlas al Drive, `?p=evlist` su lista para la galería de Registros y la hoja
+  `Evidencias` nace con la primera. ⚠ Aún no se ha subido ninguna (medido el 2026-11-02), y en `index (8)` su `img-src` no incluye
+  `drive.google.com`: las miniaturas de su galería saldrán rotas hasta que se añada.
+- **`?p=verify`.** Tras un envío cortado, la cola pregunta al GAS si ese envío ya entró, para no repetirlo.
 
 ## Testing y calidad
 
@@ -1208,7 +1237,8 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   provocados: un 404, una página de Google y un 404 sin cabecera CORS (que el navegador ve como un corte) se
   reintentan y la lectura llega; cuatro seguidos acaban en «Google respondió HTTP 404». Ese día, además, la
   primera lectura de la MATRIZ tardó más de 30 s en las dos corridas, y fue el reintento el que la trajo.
-  🔑 Importa sobre todo en los equipos: `index (8)` abierto como archivo lee SIEMPRE por
+  🔑 Importa sobre todo sin HTTPS: `index (8)` abierto como archivo (las sondas; los equipos lo abren por HTTPS desde el
+  2026-10-12, y entonces leen por la exportación, como el MCP) lee SIEMPRE por
   aquí (ver el punto siguiente). `?p=ver` y el aviso de ronda repetida de Tanques (`_madTqHojaFresca`) hacen UN
   intento a propósito.
 - **Sólo con el GAS de producción y desde una página https**: el libro que se exporta es el que escribe ese
@@ -1432,7 +1462,8 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
    `estado-maduracion.mjs`. Falta que lo desplegado se use de verdad:
    - Las hojas que aún no existen nacen con su primer envío y tienen que nacer con la cabecera actual.
      Cuáles existen ya, y con cuántas columnas, lo dice `estado-maduracion.mjs` para las de Maduración, no esta
-     lista; las de 🔧 Mantenimiento, `Registro_Score` y `Patología en Fresco` no las mira: se ven con `?p=rows` del GAS.
+     lista; `Mantenimiento Trabajos` y `Lecturas`, `Registro_Score` y `Patología en Fresco` no las mira: se ven con `?p=rows` del
+     GAS (`Mantenimiento Equipos` y `Plan` no: no están en `ALLOWED`, se editan a mano y se leen por la exportación).
    - En cada dispositivo, recargar la app y pasar ⚙ Config → «🔗 Probar conexión»: tiene que mostrar
      ese sello. Una copia de `index (8)` con OTRO sello no envía las fichas selladas —calcula, guarda
      en el dispositivo y lo dice— y se sustituye por la actual.
