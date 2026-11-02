@@ -120,11 +120,19 @@ que este repo ya vigila a mano en los tres sitios donde no le queda más remedio
 - Prioridad: `core/` (es puro y de alto valor). Prueba **comportamiento externo**, no detalles
   de implementación. Los tests de `core/*.test.js` son **caracterización**: fijan el comportamiento
   actual, incluidos quirks documentados (ver comentarios que citan D1–D6 de `docs/analisis`).
+- **Cifras INVENTADAS, nunca las del libro** (regla del usuario, 2026-09-18): el repo es PÚBLICO y
+  lo que se publica de un commit es su árbol Y su mensaje, así que tampoco van en comentarios ni en
+  mensajes. El pre-push local lo comprueba (`verificar-sin-reales.mjs`, en el utillaje).
+- La CI corre con **Node 24** (`deploy.yml`) en un runner en **UTC**: la receta para reproducirla
+  está en el README («La CI corre las pruebas con Node 24»).
 
 ## Estilo
 
 - ESLint plano (`eslint.config.js`) + Prettier. `npm run lint` y `npm run format`.
 - ES modules, `const`/`let` (nunca `var`), comillas simples, sin punto y coma omitido.
+- **Texto con el color de marca: `var(--c-brand-txt)`** (y `-600-txt`, `-700-txt`), no `--c-brand`
+  directo, que en oscuro no se lee (2026-10-30). Lo vigila `src/styles/marcaTexto.test.js`; sus
+  excepciones, contadas y con su porqué, están en la propia prueba.
 
 ## Datos / integraciones (no cambiar sin querer)
 
@@ -136,3 +144,7 @@ que este repo ya vigila a mano en los tres sitios donde no le queda más remedio
   luego el XLSX y el respaldo.
 - La vista Registros persiste en `localStorage` con claves `larv4_` y sincroniza con un Apps
   Script (GAS) desplegado. Es un **contrato externo**: no renombrar claves ni endpoints.
+- `GAS/Clima.gs` es OTRO Apps Script («MCP · clima», instalado aparte, fuera de la build): escribe las
+  hojas «Clima» y «Clima horas» con sus columnas (`COL_DIAS`, `COL_HORAS`), que lee `src/views/clima/`
+  y por las que `detectSheetName` (`core/sheets.js`) reconoce las dos pestañas en la vía de respaldo.
+  Cambiarlas es cambiar las tres puntas.
