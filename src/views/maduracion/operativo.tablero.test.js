@@ -119,7 +119,7 @@ describe('Maduración · tablero · período y filtros', () => {
   });
 });
 
-describe('Maduración · tablero · los seis indicadores de la portada', () => {
+describe('Maduración · tablero · los indicadores de la portada', () => {
   it('vivos por sexo y H:M, con cada filtro; el tanque 1 de la Sala 1 no es el de la Sala 4', () => {
     // H:M con el rango del LABORATORIO (0,72–1,22; 2026-10-22 noche, usuario): 1,36 —dentro del publicado, 1–2— es «alto»
     expect(kpiVivos(M.libro, SIN)).toEqual({ machos: 28, hembras: 38, total: 66, hm: 1.36, hmEstado: 'alto' });

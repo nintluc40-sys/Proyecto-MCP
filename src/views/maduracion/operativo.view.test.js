@@ -3,7 +3,7 @@
    MADURACIÓN · OPERATIVO — la vista del tablero (F1)
 
    Pinta de verdad (happy-dom) con un store de filas ficticias como las del export, y recorre lo que el usuario
-   aprobó: los filtros en cascada, el período y la foto, los seis indicadores, el mapa y sus colores, la ficha de un
+   aprobó: los filtros en cascada, el período y la foto, los indicadores, el mapa y sus colores, la ficha de un
    tanque, las alertas, los últimos registros, las cuarentenas, las tarjetas de sala y su detalle. Las CIFRAS las
    prueban operativo.tablero.test.js y su banco; aquí se exige que lleguen a la pantalla, que los controles hagan lo
    que dicen, y que todo lo que viene del Sheet salga escapado. Cada prueba carga los módulos de nuevo (el estado de
@@ -126,7 +126,7 @@ afterEach(() => {
 });
 
 describe('Maduración · operativo · 📊 Estado actual', () => {
-  it('abre con la barra de filtros, los siete indicadores, el mapa de los 38 tanques, las alertas y los registros', async () => {
+  it('abre con la barra de filtros, los ocho indicadores, el mapa de los 38 tanques, las alertas y los registros', async () => {
     await montar(PLANTA);
     expect(root.querySelector('.mc-title').textContent).toBe('Operativo');
     expect(root.querySelector('.mc-sub').textContent).toContain('19/09/2026');
@@ -980,7 +980,7 @@ describe('Maduración · operativo · F2.3 · filtros, etiquetas, ciclo y biomas
     expect(root.querySelector('.mop-f-rango').textContent).toContain('21/08 – 19/09');
   });
 
-  it('🔴 la BIOMASA es el séptimo indicador, pesa por tanque, y sin pesos se queda vacía', async () => {
+  it('🔴 la BIOMASA es uno de los indicadores, pesa por tanque, y sin pesos se queda vacía', async () => {
     await montar(PLANTA_F3);
     // ♂ (30×20 + 25×10) ÷ 30 = 28,33 g → 850 g; ♀ 30 × 40 = 1 200 g. Total 2,05 kg.
     expect(kpi('Biomasa')).toBe('2,05 kg');
@@ -2937,12 +2937,17 @@ describe('Maduración · operativo · los gráficos se leen', () => {
     expect(makeChart.mock.calls.some(([id]) => id === 'mopReproDest')).toBe(true);
   });
 
-  it('se abren los KPI (cada uno dibuja su gráfico)', async () => {
-    await montar(PLANTA);
+  it('se abren los KPI: cada uno dibuja SU gráfico, y Salas, que no es una curva, su tabla', async () => {
+    await montar([...PLANTA, TQ('19/09/2026', 'Sala 1', 1, { 'Cópulas': '3' })]);   // sin una cópula anotada, Cópula sólo da su nota
     const claves = [...root.querySelectorAll('[data-mop-kpi]')].map((x) => x.dataset.mopKpi);
     expect(claves.length).toBe(8);   // 2026-10-27 · + Cópula
-    for (const k of claves) click(root.querySelector(`[data-mop-kpi="${k}"]`));
-    expect(makeChart.mock.calls.filter(([id]) => id === 'mopKpiCurva').length).toBeGreaterThanOrEqual(7);
+    const curvas = () => makeChart.mock.calls.filter(([id]) => id === 'mopKpiCurva').length;
+    for (const k of claves) {
+      const antes = curvas();
+      click(root.querySelector(`[data-mop-kpi="${k}"]`));
+      if (k === 'salas') expect(curvas(), 'Salas no dibuja una curva').toBe(antes);
+      else expect(curvas(), `${k} dibuja su curva`).toBe(antes + 1);
+    }
   });
 
   it('🔴 los quince gráficos (3 · y los dos del día de una sala), y todos con ejes a 12 px en un color que no es el gris claro; títulos a 11 px; leyenda a 12 px', () => {

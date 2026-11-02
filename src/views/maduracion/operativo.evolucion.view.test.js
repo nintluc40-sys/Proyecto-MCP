@@ -73,6 +73,20 @@ describe('🐚 Operativo → 📈 Evolución', () => {
     expect(card().querySelectorAll('.mop-evo-tabla tbody tr').length).toBe(30);
   });
 
+  it('🔴 se lee como los demás gráficos del tablero: ejes a 12 px y sin el gris claro, títulos a 11 px, leyenda a 12 px', async () => {
+    await montar();
+    cambiar(card().querySelector('[data-mop-evo="b"]'), 'desoves');   // con los dos ejes
+    const [id, cfg] = ultimoGrafico();
+    expect(id).toBe('mopEvo');
+    expect(Object.keys(cfg.options.scales)).toEqual(expect.arrayContaining(['x', 'y', 'y2']));
+    for (const [eje, sc] of Object.entries(cfg.options.scales)) {
+      expect(sc.ticks.font.size, `${eje}`).toBeGreaterThanOrEqual(12);
+      expect(String(sc.ticks.color).toLowerCase(), `${eje}`).not.toBe('#78909c');
+      if (sc.title && sc.title.display) expect(sc.title.font.size, `${eje} título`).toBeGreaterThanOrEqual(11);
+    }
+    expect(cfg.options.plugins.legend.labels.font.size).toBeGreaterThanOrEqual(12);
+  });
+
   it('🔴 la variable B va en su eje (y2); con desoves, en barras', async () => {
     await montar();
     cambiar(card().querySelector('[data-mop-evo="b"]'), 'desoves');

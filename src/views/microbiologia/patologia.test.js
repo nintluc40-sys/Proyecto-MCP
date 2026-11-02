@@ -2,7 +2,7 @@
 /* H3 · Patología en Fresco — el aviso es CONDICIONAL, no una constante.
    Contexto medido el 2026-08-31 contra el despliegue real: el documento tiene 35
    pestañas y ninguna casa /patolog/i, y el GAS crea la hoja en el primer envío
-   (Code.gs:273-275) — luego nunca se ha capturado un análisis y el mensaje de «aún no
+   (`insertSheet` en `doPost`) — luego nunca se ha capturado un análisis y el mensaje de «aún no
    está disponible» es CIERTO hoy. Lo que estas pruebas fijan es que deje de serlo solo
    el día que entren filas, que es cuando el cartel fijo pasaba a mentir.
 
@@ -23,7 +23,7 @@ import { microbiologiaView } from './index.js';
 if (typeof globalThis.requestAnimationFrame !== 'function') globalThis.requestAnimationFrame = (cb) => { cb(); return 0; };
 function click(el) { if (el) el.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); }
 
-// Cabeceras REALES de la hoja, copiadas de PAT_SHEET_HEADERS (engine.js:14140).
+// Cabeceras REALES de la hoja, copiadas de PAT_SHEET_HEADERS (engine.js).
 // 6 de contexto + 15 de hallazgos (3 grupos) + Peso + Observaciones + Sesión + Lote.
 const PAT_HEADERS = [
   'Fecha muestreo', 'Fecha resultados', 'Corrida', 'Responsable', 'Muestra', 'Sexo',
@@ -74,7 +74,7 @@ describe('H3 · classifyOrigin reconoce Patología en Fresco', () => {
 });
 
 describe('H3 · detectSheetName: Patología no se confunde con Morfología', () => {
-  // Esta es la rama del respaldo CSV cuando el gid llegó SIN título (sheets.js:320
+  // Esta es la rama del respaldo CSV cuando el gid llegó SIN título (`respaldoPorHojas`
   // llama detectSheetName con 2 argumentos). La ficha de Patología trae SEIS columnas
   // «Intestino — …», y su firma propia son los OTROS dos grupos: Hepatopáncreas y
   // Branquias, que ninguna otra hoja del documento lleva.
@@ -146,7 +146,7 @@ describe('H3 · el aviso de la sub-vista depende del DATO', () => {
     const txt = abrirPatologia([patRow()]);
     expect(txt).toContain('1 análisis de Patología en Fresco sincronizado');
     expect(txt).not.toContain('sincronizados');
-    expect(txt).toContain('del'.replace('del', '')); // sin rango
+    expect(txt).toContain(`sincronizado (${fmtShort(parseAnyDate('04/09/2026'))}).`);   // la de patRow
     expect(txt).not.toMatch(/del .+ al /);
   });
 

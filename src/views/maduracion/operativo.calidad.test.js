@@ -12,7 +12,7 @@
    · Los huecos del calendario de una hoja diaria se cuentan desde que la hoja empezó (la de Tanques el 15/09: el 13
      y el 14 no son huecos; la de Sala el 13/09: el 14 sí lo es).
    · Las filas sin fecha legible se CUENTAN (el tablero entero las ignora), y las de fecha posterior a hoy, también.
-   · Los avisos del libro: los 14 tipos aunque vayan a cero, y con la MISMA regla de filtro que las alertas de la
+   · Los avisos del libro: todos los tipos aunque vayan a cero, y con la MISMA regla de filtro que las alertas de la
      portada (lo exige la comparación con `alertas`).
    Datos FICTICIOS.
    ============================================================ */
@@ -234,7 +234,7 @@ describe('Maduración · calidad del dato · el estado registrado frente al prop
 });
 
 describe('Maduración · calidad del dato · los avisos del libro', () => {
-  it('🔑 los 14 tipos aunque vayan a cero, con su total y los del período', () => {
+  it('🔑 todos los tipos aunque vayan a cero, con su total y los del período', () => {
     const a = avisosDelLibro(M, P7, SIN);
     expect(a.tipos).toHaveLength(Object.keys(TIPOS_AVISO).length);
     expect(a.tipos.every((t) => t.conocido)).toBe(true);

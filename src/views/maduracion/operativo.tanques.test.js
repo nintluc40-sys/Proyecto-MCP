@@ -312,7 +312,8 @@ describe('Maduración · operativo · 🛢 Tanques (F4.1)', () => {
       const c = curvaDeTanque(SERIE, 'Sala 3', 1);
       const antes = c.find((d) => d.fecha === '2026-08-31');
       const despues = c.find((d) => d.fecha === '2026-09-02');
-      if (antes) expect(antes.total).toBe(0);
+      expect(antes, 'la serie tiene que empezar antes del ingreso, o esto no prueba nada').toBeDefined();
+      expect(antes.total).toBe(0);
       expect(despues.total).toBeGreaterThan(0);
     });
 
