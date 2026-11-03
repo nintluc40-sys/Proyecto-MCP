@@ -161,6 +161,16 @@
           Datos como <b>Cantidad Sembrada</b> y <b>nombres de tanques</b> SOLO existen localmente — exporta periódicamente para no perderlos si el navegador limpia el almacenamiento.
         </span>
       </div>
+      <div class="cf">
+        <label>Espacio de este navegador</label>
+        <div id="cfg-espacio" style="font-size:11px;color:var(--tx3);line-height:1.5;margin-top:3px"></div>
+        <div style="margin-top:6px">
+          <button class="btn bo" type="button" onclick="liberarEspacio()" title="Quita lo ya enviado de más de 7 días de Salas, Tanques, Zonas y el Historial de Maduración, y la copia de la MATRIZ. Nunca lo pendiente">🧹 Liberar espacio</button>
+        </div>
+        <span style="font-size:10.5px;color:var(--tx3);margin-top:3px;line-height:1.5">
+          Lo ya enviado de más de 7 días se quita solo al entrar en Maduración. Lo pendiente nunca se borra.
+        </span>
+      </div>
     </div>
     <div class="mf2">
       <button class="btn bo" type="button" onclick="testConn()">🔗 Probar conexión</button>

@@ -5,7 +5,7 @@
    «En el módulo de registro de las fichas de maduración se debe tener un historial y un blanco similar a
    larvicultura con el objetivo de poder editar, revisar, hacer PDF y demás de las fichas que se llenan.»
 
-   Decidido con el usuario (no re-preguntar): lo enviado desde ESTE equipo, 60 días; las 7 fichas de formulario
+   Decidido con el usuario (no re-preguntar): lo enviado desde ESTE equipo, 7 días (60 hasta el 2026-11-03); las 7 fichas de formulario
    y Salas/Tanques (Broodstock fuera); 📄 PDF y 🗑 Borrar (sólo del equipo) para todo envío; ✏️ Editar abre la
    ficha tal como se envió, en corrección, en los últimos 10 envíos de cada ficha (Alimentación 3); guardar
    reescribe las MISMAS filas (mismo ID) y, si cambió la llave, avisa antes; Desoves usa SU corrección (sólo
@@ -303,18 +303,19 @@ describe('📜 Historial · cuántos se pueden editar, cuánto dura, y el espaci
     expect(ed).toBe(13);
   });
 
-  it('🔴 el tope de 200 es POR FICHA: los desoves (uno por entrada, ~3 al día) no echan a las demás antes de los 60 días', () => {
-    const l = [entrada('fin', 0, { ts: Date.now() - 30 * 86400000, panel: false })];
+  it('🔴 el tope de 200 es POR FICHA: los desoves (uno por entrada, ~3 al día) no echan a las demás antes de tiempo', () => {
+    const l = [entrada('fin', 0, { ts: Date.now() - 6 * 86400000, panel: false })];
     for (let i = 0; i < 205; i++) l.push(entrada('desoves', i, { ts: Date.now() - (205 - i) * 1000, panel: false }));
     H._madHistGuardar(l);
     const h = hist();
     expect(h.filter((e) => e.ficha === 'desoves')).toHaveLength(200);
     expect(h.filter((e) => e.ficha === 'desoves').map((e) => e.id)).not.toContain('desoves0');   // fuera los más viejos
-    expect(h.some((e) => e.id === 'fin0'), 'el cierre de hace 30 días sigue').toBe(true);
+    expect(h.some((e) => e.id === 'fin0'), 'el cierre de hace 6 días sigue').toBe(true);
   });
 
-  it('🔴 60 días: lo más viejo sale (con su copia)', () => {
-    const viejo = entrada('fin', 1, { ts: Date.now() - 61 * 86400000 });
+  /* 2026-11-03 · el plazo pasó de 60 a 7 días (usuario: «Bajarlo también al mismo plazo»). Con 8 días, la regla vieja lo conservaría. */
+  it('🔴 7 días: lo más viejo sale (con su copia)', () => {
+    const viejo = entrada('fin', 1, { ts: Date.now() - 8 * 86400000 });
     localStorage.setItem(H.MAD_HIST_PANEL_PRE + 'fin1', '<div>x</div>');
     H._madHistGuardar([viejo, entrada('fin', 2)]);
     expect(hist().map((e) => e.id)).toEqual(['fin2']);
@@ -322,7 +323,7 @@ describe('📜 Historial · cuántos se pueden editar, cuánto dura, y el espaci
   });
 
   it('y al LEER también: lo caducado no se enseña aunque siga guardado', () => {
-    localStorage.setItem(H.MAD_HIST_KEY, JSON.stringify([entrada('fin', 1, { ts: Date.now() - 61 * 86400000 }), entrada('fin', 2)]));
+    localStorage.setItem(H.MAD_HIST_KEY, JSON.stringify([entrada('fin', 1, { ts: Date.now() - 8 * 86400000 }), entrada('fin', 2)]));
     expect(hist().map((e) => e.id)).toEqual(['fin2']);
   });
 
@@ -539,7 +540,7 @@ describe('📜 Historial · Salas y Tanques, de sus propios registros', () => {
     return d;
   };
 
-  it('🔴 una línea por fecha y sala, sólo lo ENVIADO de los últimos 60 días; con Editar y PDF, sin Borrar', () => {
+  it('🔴 una línea por fecha y sala, sólo lo ENVIADO dentro del plazo; con Editar y PDF, sin Borrar', () => {
     const d = sembrar();
     const tr = filasLista().filter((x) => x.dataset.ficha === 'tanques');
     expect(tr).toHaveLength(1);

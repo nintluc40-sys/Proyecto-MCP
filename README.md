@@ -1397,14 +1397,24 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   los últimos pesos de Tanques y del detalle de sala. **El mismo día, sexo a sexo, manda 🛢 Tanques.** Los partes del
   día no cambian. Pieza común `madPesosDeAlimentacion` (motor) ↔ `pesosDeAlimentacion` (`mad-libro.js`), con
   paridad. Reenviar Alimentación el mismo día tras releer no pierde el peso tecleado.
-- **📜 Historial** (usuario, 2026-10-04): lo enviado desde ESTE equipo en los últimos **60 días** (hasta 200 POR
-  ficha) de las siete fichas de formulario y de Salas/Tanques (de sus propios registros); Broodstock, fuera. Cada
+- **📜 Historial** (usuario, 2026-10-04; 60 días hasta el 2026-11-03): lo enviado desde ESTE equipo en los últimos
+  **7 días** (hasta 200 POR ficha) de las siete fichas de formulario y de Salas/Tanques (de sus propios registros); Broodstock, fuera. Cada
   envío —directo, en cola o desde 💾— guarda sus filas: se revisa, se imprime (📄) y se borra (🗑, sólo del
   equipo). **✏️ Editar** abre la ficha tal como se envió, en corrección (fecha FIJA y aviso), en los últimos
   **10** envíos de cada ficha (Alimentación, 3); guardar reescribe las MISMAS filas (mismo ID) y avisa antes si
   cambió la llave. Desoves usa su propia corrección (sólo viaja lo cambiado). Un reenvío con las mismas filas
   SUSTITUYE a su entrada («🔁 reenviado»). Sin espacio se liberan primero las copias para Editar y después la mitad
   más vieja del Historial; la cola, nunca.
+- **🧹 El espacio del navegador** (usuario, 2026-11-03: 7 días, «Sola, con indicador y botón»). El navegador da a cada SITIO
+  ~5,24 millones de caracteres (medido en Chrome), e `index (8)` y el MCP están en el mismo sitio, así que los comparten; las
+  demás apps publicadas en esa misma dirección también gastan de ahí. Salas, Tanques y Zonas no caducaban, y las tablets
+  dejaron de poder guardar. Ahora un registro de esas tres listas se va del equipo cuando **ya se envió, su fecha es de hace
+  más de 7 días y se envió hace más de 7 días**; lo pendiente no se borra nunca. En el libro sigue: en el equipo se pierde
+  abrirlo con ✏️ y su PDF, y una corrección posterior se hace en la hoja. Corre sola al entrar en Maduración y al faltar
+  espacio. ⚙ Config enseña cuánto se usa y en qué, y **🧹 Liberar espacio** lo hace a mano. Si falta espacio, lo primero que se
+  suelta es la copia de la MATRIZ (`larv4_mad_matriz`, ~16 %), que se vuelve a bajar; guardarla, en cambio, nunca borra nada
+  para hacerse sitio. Si aun así no cabe, 💾 lo dice y **lo tecleado sigue en pantalla**: antes la grilla se repintaba desde
+  lo guardado y lo borraba. La regla la vigilan `mad-espacio.test.js` y su banco `mutar-mad-espacio`.
 - **Los botones lentos leen en PARALELO.** Medido contra el GAS vivo: 13,5 s → 3,4 s.
 
 ### Otras que han costado caras

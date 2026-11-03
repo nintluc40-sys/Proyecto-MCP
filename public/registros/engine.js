@@ -574,6 +574,7 @@ function safeSetItem(key, value, opts){
   }catch(err){
     if(o.purgeOnFail !== false){
       const strategies = [
+        _soltarCopiaMatriz,       // 0a) la copia de la MATRIZ: se vuelve a bajar cuando haga falta (2026-11-03)
         _purgeMadHistPaneles,     // 0) 📜 las copias para Editar del Historial de Maduración (2026-10-04)
         _purgeOldestFoto,         // 1) foto/video antigua
         _purgeOldestRecovery,     // 2) snapshot de auto-guardado vencido
@@ -900,6 +901,8 @@ function _reclaimSpace(){
     try{ if(typeof pruneAst    === "function") pruneAst();    }catch(_){}
     try{ if(typeof pruneAlgLog === "function") pruneAlgLog(); }catch(_){}
     try{ if(typeof pruneHist   === "function") pruneHist();   }catch(_){}
+    // 1 bis) Lo ya enviado y fuera de plazo de Salas, Tanques, Zonas y el 📜 Historial de Maduración (2026-11-03).
+    try{ if(typeof _madLimpiezaDeEspacio === "function") _madLimpiezaDeEspacio(); }catch(_){}
     // 2) Elimina FOTOS caducadas (FTTL) — suelen ser lo más pesado en cuota.
     try{
       const now = Date.now(), rm = [];
@@ -926,6 +929,10 @@ function _lsSet(key, valueStr){
     return true;
   }catch(e){
     if(_reclaiming) return false;            // dentro del reclamo: no re-entrar
+    /* 2026-11-03 · antes que nada, lo que se puede volver a bajar: la copia de la MATRIZ no es de nadie. */
+    if(_soltarCopiaMatriz()){
+      try{ localStorage.setItem(key, valueStr); if(localStorage.getItem(key) === valueStr) return true; }catch(_){}
+    }
     try{ _reclaimSpace(); }catch(_){}
     try{ localStorage.setItem(key, valueStr); if(localStorage.getItem(key) === valueStr) return true; }catch(_){}
     /* 📜 Auditoría (2026-10-04, usuario) · si no bastó, la mitad más vieja del Historial de Maduración, hasta tres veces.
@@ -2879,6 +2886,7 @@ function enter(){
          : isMicMod(curMod) ? "micnuevo"
          : isMntMod(curMod) ? "mntronda"
          : "calidad";
+  if(isMadMod(curMod)){ try{ _madLimpiezaDeEspacio(); }catch(_){} }   // 🧹 2026-11-03 · antes de pintar: las grillas salen de estas listas
   buildTabs();
   renderAll();
   updateSyncUI();
@@ -6139,9 +6147,69 @@ function saveMadList(ficha, list){
   // escritura + reclaim y devuelve false si el navegador NO persistió (cuota /
   // incógnito). Antes era setItem crudo con el retorno descartado → los guardados
   // de Maduración podían reportar "guardado" en falso.
-  const ok = _lsSet(madKey(ficha), JSON.stringify(list||[]));
-  if(!ok && !_reclaiming) toast("❌ Este navegador NO está guardando los datos (almacenamiento lleno, en modo privado o bloqueado). Usa ☁️ Guardar y sincronizar para no perderlos.","err",7000);
+  let ok = _lsSet(madKey(ficha), JSON.stringify(list||[]));
+  /* 2026-11-03 · lo que se está escribiendo lleva en memoria lo caducado de ESTA lista: quitarlo del almacén (_reclaimSpace) no
+     hace sitio, porque esta escritura lo vuelve a poner. Hay que quitarlo también de aquí. */
+  if(!ok){
+    const quedan = _madSinCaducados(list||[]);
+    if(quedan.length !== (list||[]).length) ok = _lsSet(madKey(ficha), JSON.stringify(quedan));
+  }
+  /* 2026-11-03 · aquí decía «Usa ☁️ Guardar y sincronizar para no perderlos»: en estas grillas el ☁️ guarda primero y, si no
+     puede, no envía, así que el consejo no llevaba a ningún sitio. */
+  if(!ok && !_reclaiming) toast("❌ No se pudo guardar: el espacio de este navegador está lleno, aun quitando lo antiguo (o tiene el guardado bloqueado). Lo tecleado sigue en pantalla: no cambies de pestaña ni recargues, y anótalo. Lo que ocupa el espacio, en ⚙ Config.","err",9000);
   return ok;
+}
+
+/* ── 🧹 EL ESPACIO DEL NAVEGADOR (usuario, 2026-11-03: «7 días», «Sola, con indicador y botón», «Bajarlo también al mismo plazo») ──
+   Las tablets dejaron de poder guardar en 🛢 Tanques: el navegador da a cada SITIO ~5,24 millones de caracteres (medido en Chrome;
+   index (8) y el MCP están en el mismo sitio y los comparten), y Salas, Tanques y Zonas no caducaban nunca: ~358 caracteres por
+   tanque y parte, cada día. Lo enviado ya está en el libro: el tablero y el Saldo leen de allí, y en el equipo sólo sirve para
+   abrirlo con ✏️ y su PDF. La regla: un registro se va del equipo cuando YA SE ENVIÓ, su fecha es de hace más de 7 días y se envió
+   hace más de 7 días. Lo pendiente no se toca NUNCA, tenga la edad que tenga. El 📜 Historial de Maduración va al mismo plazo.
+   Corre al entrar en Maduración, al faltar espacio (_reclaimSpace) y con el botón 🧹 de ⚙ Config. */
+const MAD_RETENCION_DIAS = 7;
+const MAD_RETENCION_MS = MAD_RETENCION_DIAS*24*60*60*1000;
+function _madSinCaducados(list){
+  const ahora = Date.now(), lim = new Date(ahora - MAD_RETENCION_MS), limMs = ahora - MAD_RETENCION_MS;
+  const desde = lim.getFullYear() + "-" + pad(lim.getMonth()+1) + "-" + pad(lim.getDate());
+  return list.filter(function(r){
+    if(!r || !r.synced || !r.data) return true;
+    const fecha = sanitizeStr(r.data.fecha, 10);
+    if(!isValidDate(fecha) || fecha >= desde) return true;
+    return (r.syncedAt || 0) >= limMs;
+  });
+}
+function _madPodarEnviados(){
+  let n = 0;
+  MAD_FICHAS.forEach(function(f){
+    const list = loadMad(f);
+    const quedan = _madSinCaducados(list);
+    if(quedan.length === list.length) return;
+    // Una lista más corta siempre cabe, también con el almacenamiento lleno.
+    try{ localStorage.setItem(madKey(f), JSON.stringify(quedan)); n += list.length - quedan.length; }catch(_){}
+  });
+  return n;
+}
+function _madHistPodar(){
+  let crudo = null;
+  try{ crudo = JSON.parse(localStorage.getItem(MAD_HIST_KEY) || "[]"); }catch(_){ return 0; }
+  if(!Array.isArray(crudo)) return 0;
+  const vivos = madHistLeer();
+  if(vivos.length === crudo.length) return 0;
+  _madHistGuardar(vivos);
+  return crudo.length - vivos.length;
+}
+function _madLimpiezaDeEspacio(){
+  return { grillas:_madPodarEnviados(), historial:_madHistPodar() };
+}
+/* La copia de la MATRIZ (`_reproCacheSave`) ocupa ~16 % y se vuelve a bajar sola: es lo primero que se suelta. En try: _REPRO_CACHE_KEY
+   se declara más abajo y aquí se puede llegar mientras el monolito aún se carga. */
+function _soltarCopiaMatriz(){
+  try{
+    if(localStorage.getItem(_REPRO_CACHE_KEY) === null) return null;
+    localStorage.removeItem(_REPRO_CACHE_KEY);
+    return "la copia de la MATRIZ";
+  }catch(_){ return null; }
 }
 
 // ── Maduración · estado "grilla sin guardar" + commit/recuperación ───────
@@ -9629,7 +9697,7 @@ function madIngVaciar(){
    📜 HISTORIAL DE MADURACIÓN (usuario, 2026-10-04) — lo ENVIADO desde este equipo, para revisar, hacer PDF y corregir.
    Decisiones del usuario (no re-preguntar): las fichas de formulario (Ingreso, Movimientos, Desoves, Inf. Supervisor, Fin de
    Ciclo, Tratamientos, Alimentación) y también Salas y Tanques; Broodstock FUERA (se corrige resubiendo el Excel); origen,
-   lo enviado desde ESTE equipo; 60 días (máx. 200 POR FICHA); «✏️ Editar» abre la ficha tal como se envió, en modo corrección, en
+   lo enviado desde ESTE equipo; 7 días desde el 2026-11-03 (60 hasta entonces; MAD_HIST_TTL) y máx. 200 POR FICHA; «✏️ Editar» abre la ficha tal como se envió, en modo corrección, en
    los envíos recientes —los últimos 10 por ficha, Alimentación 3: guardar la ficha entera pesa (6–19 KB; Alimentación
    ~95 KB, medido en Chrome)—; los 🕘 de 36 h de cada ficha siguen igual.
    · Cada envío (directo, en cola o desde 💾) guarda sus FILAS tal cual (ligero): de ahí salen la lista y el 📄 PDF.
@@ -9640,10 +9708,10 @@ function madIngVaciar(){
      avisa antes (_madHistCorrConfirma). La entrada se queda con la versión corregida.
    · Desoves se corrige con SU corrección (sólo viaja lo cambiado: no pisa un N5 que otro equipo completó): una entrada por
      desove; dentro de las 36 h, madDesCorregir de siempre; más viejo, «hist:<id>», que se trata como «ya llegó».
-   · Salas y Tanques salen de sus propios registros del equipo (no caducan): ✏️ abre la grilla en esa fecha (y sala). */
+   · Salas y Tanques salen de sus propios registros del equipo (lo enviado caduca a los 7 días: _madPodarEnviados): ✏️ abre la grilla en esa fecha (y sala). */
 const MAD_HIST_KEY = "larv4_mad_hist";
 const MAD_HIST_PANEL_PRE = "larv4_mad_histpanel_";
-const MAD_HIST_TTL = 60*24*60*60*1000;
+const MAD_HIST_TTL = MAD_RETENCION_MS;   // 2026-11-03 (usuario: «Bajarlo también al mismo plazo»)
 /* POR FICHA (auditoría 2026-10-04): compartido, los desoves —uno por entrada, ~3 al día medidos en la hoja— y el resto
    (~500 envíos en 60 días) dejaban el historial en unas tres semanas, no en los 60 días acordados. */
 const MAD_HIST_MAX = 200;
@@ -9899,7 +9967,7 @@ function madHistPdf(id){
   if(!w){ toast("El navegador bloqueó la ventana emergente. Permite pop-ups para este sitio.","warn",6000); return; }
   w.document.write(_madHistPdfHTML(e)); w.document.close();
 }
-/* Salas y Tanques: de sus propios registros del equipo, los enviados de los últimos 60 días. Salas, una línea por fecha
+/* Salas y Tanques: de sus propios registros del equipo, los enviados dentro del plazo (MAD_HIST_TTL). Salas, una línea por fecha
    (su grilla es la de todas las salas); Tanques, por fecha y sala. */
 function _madHistGrillas(){
   const out=[], lim=new Date(Date.now()-MAD_HIST_TTL), desde=lim.getFullYear()+"-"+pad(lim.getMonth()+1)+"-"+pad(lim.getDate());
@@ -10065,7 +10133,7 @@ function renderMadHistorial(){
   const vacio = dia ? 'No hay envíos de Maduración del '+escapeHtml(dia)+' en este dispositivo'+(_madHistFiltro ? ' para esa ficha' : '')+'. Vacía «Día» para ver todos los días.'
                     : 'Aún no hay envíos de Maduración en este dispositivo'+(_madHistFiltro ? ' para esa ficha' : '')+'.';
   fp.innerHTML='<div class="fc"><div class="fc-h"><div class="fc-t">📜 Historial · Maduración</div><span class="ssp ssp-mt">'+items.length+' envío(s)</span></div><div class="fc-b">'
-    + '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af">ℹ️ Lo enviado desde <b>este dispositivo</b> en los últimos 60 días. '
+    + '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af">ℹ️ Lo enviado desde <b>este dispositivo</b> en los últimos '+MAD_RETENCION_DIAS+' días. '
     + '<b>✏️ Editar</b> abre la ficha tal como se envió para corregirla (los últimos 10 envíos de cada ficha; Alimentación, 3); Salas y Tanques abren su grilla en esa fecha. <b>🗑</b> sólo lo quita de aquí: la hoja no cambia. '
     + '<b>🖨 PDF de lo elegido</b>: marca los registros del día que quieras y salen todos en un solo PDF.</div>'
     + barra
@@ -14605,7 +14673,8 @@ function _reproCacheSave(rows){
       return f;
     });
     if(!slim.length) return;
-    safeSetItem(_REPRO_CACHE_KEY, JSON.stringify({ts:Date.now(), cols:_REPRO_MATRIZ_COLS, rows:slim}), {silent:true});
+    /* 2026-11-03 · `purgeOnFail:false`: es una COPIA. Si no cabe, no se guarda; hacerle sitio borraba el Historial del equipo. */
+    safeSetItem(_REPRO_CACHE_KEY, JSON.stringify({ts:Date.now(), cols:_REPRO_MATRIZ_COLS, rows:slim}), {silent:true, purgeOnFail:false});
   }catch(_){}
 }
 function _reproCacheLoad(){
@@ -15902,7 +15971,8 @@ function saveMadSalasGrid(opts){
     _ok = saveMadList("zonas", zl) && _ok;
   }
   if(_ok) _madGridDirty = false;
-  if(!opts.noRender) renderMadSalas();
+  /* 2026-11-03 · sin guardar NO se repinta: la grilla sale de lo guardado, y borraba de la pantalla lo recién tecleado. */
+  if(_ok && !opts.noRender) renderMadSalas();
   updateDots(); updateSyncUI();
   if(!_ok) return -1;                  // almacenamiento falló (ya avisó); no mentir "guardado"
   if(!silent) toast("💾 "+(saved ? saved+" sala(s)" : "")+(saved && zSaved ? " y " : "")+(zSaved ? zSaved+" fila(s) de zonas" : "")+" guardada(s) localmente","ok",2500);
@@ -17154,8 +17224,9 @@ function saveMadTanquesGrid(opts){
   /* 🔑 La grilla queda LIMPIA sola: al cerrarse el parte, el render ya no encuentra ninguno abierto para
      estos tanques y los pinta vacíos. No hace falta borrar celdas a mano —y hacerlo sería peor, porque el
      render de después las repintaría—. Vaciar no es estética: la grilla se auto-guarda al navegar, así que
-     si la ronda siguiente empezara sobre las cifras de la anterior se escribiría ENCIMA y se perderían. */
-  if(!opts.noRender) renderMadTanques();
+     si la ronda siguiente empezara sobre las cifras de la anterior se escribiría ENCIMA y se perderían.
+     2026-11-03 · sin guardar NO se repinta: la grilla sale de lo guardado, y borraba de la pantalla lo recién tecleado. */
+  if(_ok && !opts.noRender) renderMadTanques();
   updateDots(); updateSyncUI();
   if(!_ok) return -1;
   if(!silent) toast("💾 Parte "+parte+" de las "+hora+" · "+saved+" tanque(s) guardado(s)","ok",3000);
@@ -30318,10 +30389,61 @@ function openCfg(){
   document.getElementById("cfg-token").value   = gcfg("gas-token","");
   document.getElementById("cfg-tec").value     = gcfg("tec","");
   document.getElementById("gas-code").value    = GAS();
+  try{ _espacioPintar(); }catch(_){}   // 🧹 2026-11-03
   document.getElementById("cfg-ov").classList.add("open");
 }
 function closeCfg(){ document.getElementById("cfg-ov").classList.remove("open"); }
 function closeCfgOut(ev){ if(ev.target===document.getElementById("cfg-ov")) closeCfg(); }
+
+/* 🧹 2026-11-03 · cuánto ocupa cada cosa, para verlo desde una tablet, donde no hay consola. Cuenta claves y valores, como el tope del
+   navegador; lo de otras apps publicadas en este mismo sitio también gasta de ese tope, y por eso sale aparte. */
+const ESPACIO_TOPE = 5242880;
+function _espacioMedir(){
+  const grillas = MAD_FICHAS.map(madKey);
+  const g = { grillas:0, matriz:0, historial:0, cola:0, fotos:0, app:0, otras:0 };
+  let total = 0;
+  for(let i = 0; i < localStorage.length; i++){
+    const k = localStorage.key(i);
+    if(!k) continue;
+    const n = k.length + String(localStorage.getItem(k) || "").length;
+    total += n;
+    if(grillas.indexOf(k) !== -1) g.grillas += n;
+    else if(k === _REPRO_CACHE_KEY) g.matriz += n;
+    else if(k === MAD_HIST_KEY || k.indexOf(MAD_HIST_PANEL_PRE) === 0) g.historial += n;
+    else if(k === SYNCQ_KEY) g.cola += n;
+    else if(k.indexOf(FPRE) === 0 || k.indexOf(TRAS_FOTO_PRE) === 0) g.fotos += n;
+    else if(k.indexOf(PRE) === 0) g.app += n;
+    else g.otras += n;
+  }
+  return { total:total, partes:g };
+}
+function _espacioPct(n){ return Math.min(100, Math.round(n / ESPACIO_TOPE * 100)); }
+function _espacioPintar(){
+  const el = document.getElementById("cfg-espacio");
+  if(!el) return;
+  const m = _espacioMedir(), pct = _espacioPct(m.total);
+  const color = pct >= 90 ? "#dc2626" : pct >= 75 ? "#d97706" : "#16a34a";
+  const NOMBRES = { grillas:"Salas, Tanques y Zonas", matriz:"Copia de la MATRIZ", historial:"📜 Historial de Maduración", cola:"Cola de envíos", fotos:"Fotos", app:"Otros datos de la app", otras:"Otras apps de este sitio" };
+  const filas = Object.keys(NOMBRES).filter(function(k){ return m.partes[k] > 0; })
+    .sort(function(a, b){ return m.partes[b] - m.partes[a]; })
+    .map(function(k){ return NOMBRES[k] + ": " + (m.partes[k] && _espacioPct(m.partes[k]) === 0 ? "menos de 1" : _espacioPct(m.partes[k])) + " %"; });
+  el.innerHTML = '<div style="font-weight:700;color:' + color + '">Usado: ' + pct + ' %</div>'
+    + '<div style="height:7px;border-radius:4px;background:#e5e7eb;overflow:hidden;margin:3px 0"><div style="height:100%;width:' + pct + '%;background:' + color + '"></div></div>'
+    + (filas.length ? filas.join(" · ") : "Sin datos guardados en este navegador.");
+}
+function liberarEspacio(){
+  const antes = _espacioMedir().total;
+  const r = _madLimpiezaDeEspacio();
+  const copia = _soltarCopiaMatriz();
+  const hecho = [];
+  if(r.grillas) hecho.push(r.grillas + " registro(s) enviados de Salas, Tanques y Zonas");
+  if(r.historial) hecho.push(r.historial + " envío(s) del Historial");
+  if(copia) hecho.push(copia + " (se vuelve a bajar cuando haga falta)");
+  _espacioPintar();
+  if(!hecho.length){ toast("🧹 No hay nada antiguo que liberar: lo que ocupa el espacio es reciente o aún no se envió.","info",5000); return; }
+  toast("🧹 Liberado el " + Math.max(1, _espacioPct(antes - _espacioMedir().total)) + " % del espacio: " + hecho.join(" · ") + ".","ok",6000);
+  try{ updateDots(); updateSyncUI(); }catch(_){}
+}
 function saveCfg(){
   const url    = document.getElementById("cfg-url").value.trim();
   if(url    && !isValidGasUrl(url))   { toast("URL inválida","warn"); return; }
