@@ -174,7 +174,16 @@ export function origenEnFiltro(o, F) {
  *  (`origenEnFiltro`), la regla de la tabla de 🥚 Reproducción y de todo el tablero; sin índice (pruebas puras), no se
  *  aplica. Lo usan la tarjeta (`kpiReproduccion`) y su gráfico, que antes no lo aplicaban y no cuadraban con la tabla. */
 export const desoveEnOrigen = (r, F) => !(F && F.indice && (hayPiscina(F) || hayCamaronera(F)))
-  || origenEnFiltro(F.indice.origen.get(normLote(r.Lote)), F);
+  || (mixElegido(r, F) ? lotesDeMix(r.Lote).some((l) => origenEnFiltro(F.indice.origen.get(l), F))
+    : origenEnFiltro(F.indice.origen.get(normLote(r.Lote)), F));
+/** 🔀 2026-11-04 (A19) · ¿Eligió el usuario ESTE MIX en el filtro de lote? Entonces manda él: el código y el origen se miran con los
+ *  suyos, porque la cascada Lote → Código ofrece su código y elegirlo dejaba el MIX a cero. */
+const mixElegido = (r, F) => hayLote(F) && esMix(r.Lote) && F.lotes.includes(normLote(r.Lote));
+/** 🔀 El aviso de los MIX elegidos: no son lotes con animales. La vista lo enseña junto a los filtros activos. */
+export function avisoDeMixElegido(F) {
+  const mix = ((F && F.lotes) || []).filter(esMix);
+  return mix.length ? `${mix.join(', ')}: un MIX no tiene animales propios, así que vivos, cópulas y mortalidad no le aplican. Sus desoves, huevos, N2 y N5 sí son suyos.` : '';
+}
 
 /** ¿Está puesta esta dimensión del filtro? El lote, el código, la sala, el tanque, la piscina y la camaronera son
  *  LISTAS: una vacía no cuenta (por eso no vale el `!!F[d]` de las demás, que daría por puesta una lista vacía). */
@@ -284,8 +293,8 @@ export function loteElegido(lote, F) {
 /* 🔀 MIX (usuario, 2026-11-03: «Fila propia, sin repartir»). Sus huevos, N2 y N5 no se pueden separar, así que no es de ningún lote,
    código ni piscina: cuenta en el total de la planta y, con cualquiera de esos filtros puestos, se queda fuera de las cifras y se
    enseña aparte (`mixAparte`). El lote y el origen ya lo dejan fuera solos —su nombre no es el de ningún lote ni tiene Ingreso—;
-   el código no, porque lleva los de sus lotes: de ahí `desoveEnCodigo`. */
-export const desoveEnCodigo = (r, F) => codigoEnFiltro(r['Código genético'], F) && !(hayCodigo(F) && esMix(r.Lote));
+   el código no, porque lleva los de sus lotes: de ahí `desoveEnCodigo`. Si el MIX elegido es él mismo, su código sí cuenta (`mixElegido`). */
+export const desoveEnCodigo = (r, F) => codigoEnFiltro(r['Código genético'], F) && !(hayCodigo(F) && esMix(r.Lote) && !mixElegido(r, F));
 /** ¿Este MIX tiene algo de lo filtrado? Con lote, código, piscina o camaronera puestos, y casando en todos los puestos. */
 export function mixEnFiltro(r, F) {
   const lotes = lotesDeMix(r.Lote);

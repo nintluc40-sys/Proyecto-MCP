@@ -29,7 +29,7 @@ import { estadoDeLote, ESTADO_MIXTO, ubicKey, pesosDeAlimentacion } from '../reg
 import { diasEntre } from '../registros/lib/mad-resumen.js';
 import { fechaDeFila, diasDeTanque } from './operativo.data.js';
 import { cociente, proporcionHM, supervivencia, tasaDescarte, tasaEnPartesDelLote } from './operativo.indicadores.js';
-import { sumaDeMix, posicionEnFiltro, codigoEnFiltro, normalizarFiltro, loteElegido, hayCodigo, haySala, hayTanque, hayPiscina, hayCamaronera, origenEnFiltro, cicloDelLote, piscinaEnFiltro } from './operativo.tablero.js';
+import { sumaDeMix, mixEnFiltro, posicionEnFiltro, codigoEnFiltro, normalizarFiltro, loteElegido, hayLote, hayCodigo, haySala, hayTanque, hayPiscina, hayCamaronera, origenEnFiltro, cicloDelLote, piscinaEnFiltro } from './operativo.tablero.js';
 import { normPiscina } from '../registros/lib/ficha-maduracion-broodstock.schema.js';   // 5 · la piscina canónica
 import { revisionesDeNauplios } from './operativo.revisiones.js';   // 2026-10-26 · las revisiones del lote, en su ficha
 import { tratamientosDeLote } from './operativo.manejo.js';          // 2026-10-26 · sus tratamientos, en su ficha
@@ -154,10 +154,11 @@ function contextoDeLote(libro, clave) {
  *  «los lotes de lo filtrado» son los mismos que enseña la tabla de Lotes. */
 export function loteEnFiltro(libro, clave, F) {
   /* 🔀 2026-11-03 · un MIX no tiene posiciones: su alcance es el de sus lotes, para la sala, el tanque y lo demás de las posiciones.
-     No es de ningún código ni origen, y de un lote sólo si es él mismo el elegido (ver `desoveEnCodigo`, en el tablero). */
+     No es de ningún código ni origen, y de un lote sólo si es él mismo el elegido (ver `desoveEnCodigo`, en el tablero). Elegido él,
+     el código y el origen se miran en las posiciones de sus lotes. */
   const delMix = lotesDeMix(clave);
   if (delMix.length) {
-    if (hayCodigo(F) || hayPiscina(F) || hayCamaronera(F) || !loteElegido(clave, F)) return false;
+    if (!loteElegido(clave, F) || (!hayLote(F) && (hayCodigo(F) || hayPiscina(F) || hayCamaronera(F)))) return false;
     const deSusLotes = ((libro && libro.posiciones) || []).filter((p) => delMix.includes(normLote(p.lote)));
     if (!deSusLotes.length) return sinPosicionEnFiltro(clave, F);
     return deSusLotes.some((p) => posicionEnFiltro(p, { ...F, lotes: [] }));
@@ -503,8 +504,12 @@ export function comparativa(M, F, periodo, dimension, parejas = 'juntas') {
   }
   const conCifra = filas.filter((f) => f.supervivencia !== '' && f.supervivencia !== null);
   const orden = [...conCifra].sort((a, b) => b.supervivencia - a.supervivencia);
+  /* 🔀 2026-11-04 (A19) · ninguna fila lleva un MIX: el libro no lo conoce y sus cifras no se reparten. Se dice, con o sin filtro,
+     y sólo el que tenga algo de lo filtrado (con `loteEnFiltro`, la sala de sus lotes y él mismo elegido). */
+  const mix = sumaDeMix((((M || {}).fuentes || {}).desoves || []).filter((r) => lotesDeMix(r.Lote).length && enPeriodo(fechaDeFila('desoves', r), periodo)
+    && (loteEnFiltro(M.libro, normLote(r.Lote), F) || mixEnFiltro(r, F))));
   return {
-    dimension: dim, parejas: modo, filas,
+    dimension: dim, parejas: modo, filas, mix,
     mejor: orden.length > 1 ? orden[0].origen : '',
     peor: orden.length > 1 ? orden[orden.length - 1].origen : '',
   };

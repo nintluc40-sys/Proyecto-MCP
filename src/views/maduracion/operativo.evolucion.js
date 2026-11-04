@@ -24,7 +24,8 @@
    Lo que un filtro no puede separar se DICE (`notas`, con la regla común `filtrosNoAplicados`), y lo que no aplica no se
    inventa: el punto queda vacío y la nota dice por qué.
    ============================================================ */
-import { kpiCopula, loteElegido, desoveEnOrigen, desoveEnCodigo, salaElegida, ignoraDeDesoves, filtrosNoAplicados, haySala } from './operativo.tablero.js';
+import { kpiCopula, loteElegido, desoveEnOrigen, desoveEnCodigo, mixAparte, salaElegida, ignoraDeDesoves, filtrosNoAplicados, haySala } from './operativo.tablero.js';
+import { esMix, lotesDeMix } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { graficoVivos, graficoMortalidad } from './operativo.kpis.js';
 import { acumularDesoves } from './operativo.tendencias.js';
 import { tasaDeDesove, cociente } from './operativo.indicadores.js';
@@ -86,6 +87,28 @@ export function tramosDe(periodo, agrupar) {
 
 /* ── LAS VARIABLES ──────────────────────────────────────────── */
 
+/** La tasa de desove de un RANGO: Σ desoves ÷ Σ hembras de sus (día, lote) con hembras (`tasaDeDesove`). 🔀 Cada (día, lote) cuenta sus
+ *  hembras UNA vez, aunque ese día el lote tenga fila propia y además esté en un MIX. Sin un MIX, es la suma de `tasaDeDesove`. */
+export function tasaDelRango(filasDesoves, serie) {
+  const vivas = new Map();
+  for (const d of serie || []) {
+    for (const [lote, L] of Object.entries(d.porLote || {})) vivas.set(d.fecha + '|' + normLote(lote), Number((L || {}).hembras) || 0);
+  }
+  const vistas = new Set();
+  let desoves = 0, hembras = 0;
+  for (const x of tasaDeDesove(filasDesoves, serie)) {
+    if (!(x.hembras > 0)) continue;
+    desoves += x.desoves;
+    const delMix = lotesDeMix(x.lote);
+    for (const l of delMix.length ? delMix : [x.lote]) {
+      const k = x.fecha + '|' + l;
+      if (vistas.has(k)) continue;
+      vistas.add(k);
+      hembras += vivas.get(k) || 0;
+    }
+  }
+  return { desoves, hembras, tasa: cociente(desoves, hembras, 100) };
+}
 /** Los desoves que el filtro deja, con el filtro de `kpiReproduccion` (lote, origen y código), en el rango. */
 function desovesEn(ctx, F, desde, hasta) {
   return ((ctx.M && ctx.M.fuentes && ctx.M.fuentes.desoves) || []).filter((r) => enRango(fecha10(r.Fecha), desde, hasta)
@@ -154,10 +177,7 @@ export const VARIABLES = [
     valor: (ctx, F, desde, hasta) => acumularDesoves(desovesEn(ctx, F, desde, hasta)).desoves, ignora: (F) => ignoraDeDesoves(F) },
   { clave: 'tasaDesove', grupo: 'Reproducción', etiqueta: 'Tasa de desove', unidad: '% de hembras', tipo: 'tasa', comparar: ['lote'],
     // la del catálogo (`tasaDeDesove`): desoves del día ÷ hembras vivas del lote al cierre; un rango, Σ ÷ Σ de sus (día, lote)
-    valor: (ctx, F, desde, hasta) => {
-      const t = tasaDeDesove(desovesEn(ctx, F, desde, hasta), ctx.serie).filter((x) => x.hembras > 0);
-      return vac(cociente(t.reduce((a, x) => a + x.desoves, 0), t.reduce((a, x) => a + x.hembras, 0), 100));
-    },
+    valor: (ctx, F, desde, hasta) => vac(tasaDelRango(desovesEn(ctx, F, desde, hasta), ctx.serie).tasa),
     ignora: (F) => ignoraDeDesoves(F) },
   { clave: 'huevosPorDesove', grupo: 'Reproducción', etiqueta: 'Huevos por desove', unidad: 'huevos', tipo: 'tasa', comparar: ['lote'],
     valor: (ctx, F, desde, hasta) => vac(acumularDesoves(desovesEn(ctx, F, desde, hasta)).huevosPorDesove), ignora: (F) => ignoraDeDesoves(F) },
@@ -303,6 +323,7 @@ export function evolucion(ctx, op = {}) {
     const ig = l.v.ignora(l.F, ctx) || [];
     if (ig.length) notas.push(`${l.v.etiqueta} no se separa por ${ig.join(', ')}: cuenta entero.`);
   }
+  notas.push(...notasDeMix(ctx, lineas));
   /* El día de HOY aún se está registrando (lo cazó la revisión con el libro real: los desoves del último día salían 0 y el
      cambio del resumen, −100 %). Se dice; la cifra es la que hay, como en la tarjeta. */
   const hoy = ctx.M && ctx.M.hoy;
@@ -322,6 +343,26 @@ export function evolucion(ctx, op = {}) {
   }
 
   return { tramos, series, resumen: series.map((s) => resumenDe(s, tramos)), eventos, notas };
+}
+
+/* 🔀 2026-11-04 (A19) · lo que un MIX deja fuera de la gráfica, en las notas (que van también al Excel). Las variables que salen de los
+   desoves lo dejan fuera si hay un filtro de lo suyo y él no es una línea; las que salen de los animales, si se eligió el propio MIX. */
+const DE_DESOVES = new Set(['desoves', 'tasaDesove', 'huevosPorDesove', 'fertilidad', 'n5', 'n5PorDesove', 'alimentoPorN5']);
+const miles = (n) => Number(n).toLocaleString('es-EC');
+function notasDeMix(ctx, lineas) {
+  const fuera = new Map();
+  const sinAnimales = new Set();
+  const delineas = new Set(lineas.map((l) => l.de).filter(Boolean));
+  for (const l of lineas) {
+    if (!l.v.comparar.includes('lote')) continue;
+    if (!DE_DESOVES.has(l.v.clave)) { for (const x of (l.F && l.F.lotes) || []) if (esMix(x)) sinAnimales.add(`🔀 ${x} no tiene animales propios: ${l.v.etiqueta} no tiene cifra suya.`); continue; }
+    for (const m of mixAparte((ctx.M && ctx.M.fuentes && ctx.M.fuentes.desoves) || [], ctx.periodo, l.F)) if (!delineas.has(m.lote)) fuera.set(m.lote, m);
+  }
+  const notas = [...sinAnimales];
+  if (fuera.size) {
+    notas.push(`🔀 No incluye ${[...fuera.values()].map((m) => `${m.lote} (${miles(m.desoves)} desove(s), ${miles(m.huevos)} huevos, N2 ${miles(m.n2)}, N5 ${miles(m.n5)})`).join(' · ')}: las cifras de un MIX no se pueden separar por lote.`);
+  }
+  return notas;
 }
 
 /** El resumen de una serie: cuántos puntos tienen dato, el mínimo y el máximo (con su tramo), el promedio de los puntos,

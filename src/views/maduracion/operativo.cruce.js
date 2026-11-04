@@ -23,10 +23,10 @@
    2026-09-21: las 1665 filas de la MATRIZ y las 2227 de la Bitácora dicen «Sala N» y «Tanque N». Se comparan por su
    forma canónica (`salaCanonica`, `tanqueCanonico`).
    ============================================================ */
-import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
+import { normLote, lotesDeMix } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { ESTADO_MUERTO, resolveEventLocation } from './data.js';
 import { fechaDeFila } from './operativo.data.js';
-import { codigoEnFiltro, loteElegido, hayTanque, salaElegida, tanqueElegido, filtrosNoAplicados } from './operativo.tablero.js';   // 0r·4 · H2 · la pareja de códigos cuenta como sus dos
+import { sumaDeMix, codigoEnFiltro, loteElegido, hayTanque, salaElegida, tanqueElegido, filtrosNoAplicados } from './operativo.tablero.js';   // 0r·4 · H2 · la pareja de códigos cuenta como sus dos
 
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
 const esIso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -170,12 +170,17 @@ export function cruceConMicrochips(repro, libro, fuentes, periodo, F) {
     }
     return { lote, bitacora, hembrasQueDesovaron: hembras.size, operativo };
   });
+  /* 🔀 2026-11-04 (A19) · la Bitácora cuenta a la hembra de un lote aunque su desove vaya en un MIX, y la hoja de Desoves lo lleva en la
+     fila del MIX: sin decirlo, la columna de la hoja parecería corta. */
+  const lotesDelCruce = new Set(desoves.map((d) => d.lote));
+  const mix = sumaDeMix(((fuentes || {}).desoves || []).filter((r) => enPeriodo(fechaDeFila('desoves', r), periodo)
+    && lotesDeMix(r.Lote).some((l) => lotesDelCruce.has(l))));
 
   return {
     discrepancias, resumen,
     fuera: [...fuera.values()].map((o) => ({ lote: o.lote, vivas: o.vivas, tanques: o.tanques.size })).sort((a, b) => porNombre(a.lote, b.lote)),
     eventos: { revisados, sinExplicar, sinMatriz },
-    desoves, sinLote, sinUbicacion,
+    desoves, mix, sinLote, sinUbicacion,
     ignora: ignoraDeCruce(F),
   };
 }

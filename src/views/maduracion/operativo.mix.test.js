@@ -9,15 +9,18 @@
    que sumarlo a un lote, a un código o a una piscina da OTRA cifra. BP no participa: es el control. Datos FICTICIOS.
    ============================================================ */
 import { describe, it, expect } from 'vitest';
-import { modeloOperativo } from './operativo.data.js';
-import { normalizarFiltro, indiceDeFiltro, periodoDe, kpiReproduccion, mixAparte, mixEnFiltro, desoveEnCodigo } from './operativo.tablero.js';
+import { modeloOperativo, serieDiaria } from './operativo.data.js';
+import { normalizarFiltro, indiceDeFiltro, periodoDe, kpiReproduccion, mixAparte, mixEnFiltro, desoveEnCodigo, avisoDeMixElegido } from './operativo.tablero.js';
 import { tablaDeReproduccion, totalesDeReproduccion, pendientesDeN5 } from './operativo.reproduccion.js';
-import { reproduccionDeLote, mixDeLote, eventosDeLote, fichaDeLote, loteEnFiltro, desempenoPorPiscina } from './operativo.lotes.js';
+import { reproduccionDeLote, mixDeLote, eventosDeLote, fichaDeLote, loteEnFiltro, desempenoPorPiscina, comparativa } from './operativo.lotes.js';
+import { tasaDeDesove } from './operativo.indicadores.js';
+import { cruceConMicrochips } from './operativo.cruce.js';
+import { sumarDias } from '../registros/lib/mad-libro.js';
 import { graficoReproduccion } from './operativo.kpis.js';
 import { salasDelDesove, presenciaDiaria } from './operativo.tendencias.js';
 import { desovesDiarios, desovesYMarea } from './operativo.mareas.js';
 import { revisionesDeNauplios, mortalidadEnDesove } from './operativo.revisiones.js';
-import { evolucion } from './operativo.evolucion.js';
+import { evolucion, hojasDeEvolucion, tasaDelRango } from './operativo.evolucion.js';
 import { semanalPorLote, semanalPaginaHtml, semanalHojas, cierreDeLote, cierreHtml, cierreHojas, parteDiario, parteDiarioHtml, parteDiarioHojas } from './operativo.reportes.js';
 import { produccionDelMes } from '../visitante/maduracion.produccion.js';
 import { MAD_OP_ORIGEN } from './operativo.fuentes.js';
@@ -285,9 +288,205 @@ describe('🔀 Inf. Supervisor en la vista', () => {
     expect(de(F({ lote: 'ZZ' }))).toEqual([]);
     expect(de(SIN).sort()).toEqual(['BP', MIX].sort());
   });
-  it('🔴 la mortalidad en desove no se suma a un lote elegido', () => {
-    const t = (f) => mortalidadEnDesove(M.fuentes, f, P);
-    expect(JSON.stringify(t(F({ lote: 'BN' })))).not.toContain('"muertas":9');
-    expect(JSON.stringify(t(SIN))).toContain('"muertas":9');
+  it('🔴 la mortalidad en desove no se suma a un lote elegido, y se dice aparte', () => {
+    const t = (f, p = P) => mortalidadEnDesove(M.fuentes, f, p);
+    expect(t(F({ lote: 'BN' })).muertas).toBe(0);
+    expect(t(F({ lote: 'BN' })).mix).toEqual([{ lote: MIX, entran: 30, muertas: 9 }]);
+    expect(t(SIN).muertas).toBe(9);
+    expect(t(SIN).mix, 'sin filtro está en las cifras').toEqual([]);
+    expect(t(F({ lote: MIX })).muertas, 'elegido él, son suyas').toBe(9);
+    expect(t(F({ lote: MIX })).mix).toEqual([]);
+    expect(t(F({ lote: 'BP' })).mix, 'de quien no participa, ni se menciona').toEqual([]);
+    expect(t(F({ lote: 'BN' }), { desde: '2026-01-01', hasta: '2026-01-31' }).mix, 'fuera del período, tampoco').toEqual([]);
+  });
+});
+
+/* A19 (2026-11-04) · lo que quedaba sin decir. El día del MIX, BN tiene además su fila propia: distingue contar sus hembras una vez o dos. */
+describe('🔀 A19 · la Tasa de desove, los avisos y las notas', () => {
+  const PLANTA2 = [...PLANTA,
+    DES('2026-09-16', 'BN', 'CA', 'P1', 1, 100000, 50000, 40000),
+    INF('2026-09-12', 'BN', { 'Revisión': 'Entrada', Deformidad: 'Alta', Actividad: 'Baja' }),
+    INF('2026-09-17', MIX, { 'Revisión': 'Postlavado', Hongos: 'Presente' }),
+  ];
+  const M2 = modeloOperativo(PLANTA2, { fecha: FOTO, hoy: FOTO });
+  const IX2 = indiceDeFiltro(M2);
+  const F2 = (o = {}) => normalizarFiltro(o, IX2);
+  const serieDe = (m) => serieDiaria(m.fuentes, sumarDias(P.desde, -1), P.hasta);
+  const S1 = serieDe(M), S2 = serieDe(M2);
+  const hembras = (s, dia, lote) => s.find((d) => d.fecha === dia).porLote[lote].hembras;
+  const evo = (m, s, f, op) => evolucion({ M: m, F: f, periodo: P, serie: s, partes: [], copulas: [], clima: [] }, { agrupar: 'dia', movil: false, eventos: false, ...op });
+  const tasaDelDia = (R, dia) => R.series[0].datos[R.tramos.findIndex((t) => t.desde === dia)];
+  const dosDec = (x) => Math.round(x * 100) / 100;   // `cociente` da dos decimales
+
+  it('🔴 un día con sólo un MIX tiene Tasa: sus desoves sobre las hembras de sus lotes', () => {
+    const R = evo(M, S1, SIN, { a: 'tasaDesove' });
+    const h16 = hembras(S1, '2026-09-16', 'BN') + hembras(S1, '2026-09-16', 'BO');
+    expect(h16, 'el fixture distingue: BP no participa').toBeLessThan(h16 + hembras(S1, '2026-09-16', 'BP'));
+    expect(tasaDelDia(R, '2026-09-16')).toBe(dosDec((4 / h16) * 100));
+  });
+  it('🔴 el total de la planta lo incluye', () => {
+    const R = evo(M, S1, SIN, { a: 'tasaDesove' });
+    const h = hembras(S1, '2026-09-10', 'BN') + hembras(S1, '2026-09-10', 'BP') + hembras(S1, '2026-09-16', 'BN') + hembras(S1, '2026-09-16', 'BO');
+    expect(R.resumen[0].total).toBe(dosDec((7 / h) * 100));
+  });
+  it('🔴 un lote con fila propia y en un MIX el mismo día cuenta sus hembras UNA vez', () => {
+    const R = evo(M2, S2, F2(), { a: 'tasaDesove' });
+    const h16 = hembras(S2, '2026-09-16', 'BN') + hembras(S2, '2026-09-16', 'BO');
+    expect(tasaDelDia(R, '2026-09-16')).toBe(dosDec((5 / h16) * 100));
+    expect(tasaDelRango(M2.fuentes.desoves, S2).hembras, 'el 10/09 BN y BP; el 16/09 BN y BO').toBe(hembras(S2, '2026-09-10', 'BN') + hembras(S2, '2026-09-10', 'BP') + h16);
+  });
+  it('🔴 con un lote elegido el MIX sigue fuera; elegido él, es lo suyo', () => {
+    expect(tasaDelDia(evo(M2, S2, F2({ lote: 'BN' }), { a: 'tasaDesove' }), '2026-09-16')).toBe(dosDec((1 / hembras(S2, '2026-09-16', 'BN')) * 100));
+    expect(tasaDelDia(evo(M, S1, F({ lote: 'BN' }), { a: 'tasaDesove' }), '2026-09-16')).toBeNull();
+    expect(tasaDelDia(evo(M, S1, F({ lote: MIX }), { a: 'tasaDesove' }), '2026-09-16')).toBe(dosDec((4 / (hembras(S1, '2026-09-16', 'BN') + hembras(S1, '2026-09-16', 'BO'))) * 100));
+  });
+  it('🔴 `tasaDeDesove` da las hembras de sus lotes en la fila del MIX, y las de un lote suelto no cambian', () => {
+    const t = tasaDeDesove(M.fuentes.desoves, S1);
+    expect(t.find((x) => x.lote === MIX).hembras).toBe(hembras(S1, '2026-09-16', 'BN') + hembras(S1, '2026-09-16', 'BO'));
+    expect(t.find((x) => x.lote === 'BP').hembras).toBe(hembras(S1, '2026-09-10', 'BP'));
+  });
+  it('🔴 sin un MIX, `tasaDelRango` es Σ ÷ Σ de `tasaDeDesove`, y un día sin hembras no cuenta', () => {
+    const filas = M.fuentes.desoves.filter((r) => r.Lote !== MIX);
+    const t = tasaDeDesove(filas, S1);
+    const r = tasaDelRango(filas, S1);
+    expect(r.desoves).toBe(t.reduce((a, x) => a + x.desoves, 0));
+    expect(r.hembras).toBe(t.reduce((a, x) => a + x.hembras, 0));
+    expect(tasaDelRango(M.fuentes.desoves, [])).toEqual({ desoves: 0, hembras: 0, tasa: '' });
+  });
+
+  describe('la nota de 📈 Evolución y su Excel', () => {
+    const notas = (f, op = { a: 'desoves' }) => evo(M, S1, f, op).notas.join(' | ');
+    it('🔴 con un lote suyo dice lo que falta, con sus cifras', () => {
+      expect(notas(F({ lote: 'BN' }))).toContain('No incluye ' + MIX + ' (4 desove(s)');
+      expect(notas(F({ codigo: 'CA' }))).toContain('No incluye ' + MIX);
+    });
+    it('🔴 en total, con otro lote o con él mismo elegido, no', () => {
+      for (const f of [SIN, F({ lote: 'BP' }), F({ lote: MIX })]) expect(notas(f)).not.toContain('No incluye');
+    });
+    it('🔴 comparando: si es una línea, no se repite; si no, sí, y una sola vez', () => {
+      const cmp = (elegidos) => notas(SIN, { a: 'desoves', comparar: 'lote', elegidos });
+      expect(cmp(['BN', MIX])).not.toContain('No incluye');
+      expect(cmp(['BN', 'BO']).split('No incluye').length, 'BN y BO participan: una sola nota').toBe(2);
+    });
+    it('🔴 una variable que no sale de los desoves ni lo nombra, salvo si se eligió el MIX', () => {
+      expect(notas(F({ lote: 'BN' }), { a: 'vivos' })).not.toContain(MIX);
+      expect(notas(F({ lote: MIX }), { a: 'vivos' })).toContain(MIX + ' no tiene animales propios');
+      expect(notas(F({ lote: MIX }), { a: 'desoves' })).not.toContain('no tiene animales propios');
+      expect(notas(F({ lote: 'BN' }), { a: 'climaTemp' })).not.toContain(MIX);
+    });
+    it('🔴 la nota llega al Excel', () => {
+      const h = hojasDeEvolucion(evo(M, S1, F({ lote: 'BN' }), { a: 'desoves' }), {}).find((x) => x.nombre === 'Filtros y notas');
+      expect(h.aoa.flat().join(' ')).toContain('No incluye ' + MIX);
+    });
+  });
+
+  describe('elegir el propio MIX y su código o su origen', () => {
+    const fila = { Lote: MIX, 'Código genético': 'CA/CB' };
+    it('🔴 su código no lo saca: la tarjeta, la tabla y 📈 Evolución dan lo suyo', () => {
+      const f = F({ lote: MIX, codigo: 'CA/CB' });
+      expect(desoveEnCodigo(fila, f)).toBe(true);
+      expect(kpiReproduccion(M.fuentes.desoves, P, f).desoves).toBe(4);
+      expect(tablaDeReproduccion(M, P, f).map((x) => x.lote)).toEqual([MIX]);
+      expect(evo(M, S1, f, { a: 'desoves' }).resumen[0].total).toBe(4);
+      expect(mixAparte(M.fuentes.desoves, P, f), 'no se repite aparte').toEqual([]);
+    });
+    it('🔴 un código que no es suyo sí lo saca, y sin elegirlo un código tampoco lo alcanza', () => {
+      expect(kpiReproduccion(M.fuentes.desoves, P, F({ lote: MIX, codigo: 'CC' })).desoves).toBe(0);
+      expect(desoveEnCodigo(fila, F({ codigo: 'CA' }))).toBe(false);
+      expect(desoveEnCodigo(fila, F({ lote: 'BN', codigo: 'CA' }))).toBe(false);
+    });
+    it('🔴 su origen: la piscina de uno de sus lotes no lo saca; otra, sí', () => {
+      expect(kpiReproduccion(M.fuentes.desoves, P, F({ lote: MIX, piscina: 'P1' })).desoves).toBe(4);
+      expect(kpiReproduccion(M.fuentes.desoves, P, F({ lote: MIX, piscina: 'P3' })).desoves).toBe(0);
+      expect(kpiReproduccion(M.fuentes.desoves, P, F({ piscina: 'P1' })).desoves, 'sin elegirlo, no es de la piscina').toBe(2);
+    });
+    it('🔴 `loteEnFiltro`: elegido él, se mira en las posiciones de sus lotes', () => {
+      expect(loteEnFiltro(M.libro, MIX, F({ lote: MIX, codigo: 'CA/CB' }))).toBe(true);
+      expect(loteEnFiltro(M.libro, MIX, F({ lote: MIX, codigo: 'CC' }))).toBe(false);
+      expect(loteEnFiltro(M.libro, MIX, F({ lote: MIX, piscina: 'P1' }))).toBe(true);
+      expect(loteEnFiltro(M.libro, MIX, F({ lote: MIX, piscina: 'P3' }))).toBe(false);
+    });
+    it('🔴 🌊 Mareas igual', () => {
+      const d = desovesDiarios(M.fuentes);
+      const MAREA = new Map([['2026-09-16', { fase: 'Luna llena', ilum: 100, tipo: 'Viva', amplitud: 2 }]]);
+      const delDia = (o) => (desovesYMarea(d, MAREA, o).dias.find((x) => x.fecha === '2026-09-16') || {}).desoves;
+      expect(delDia({ lote: MIX, codigo: 'CA/CB' })).toBe(4);
+      expect(delDia({ lote: 'BN', codigo: 'CA' })).toBe(0);
+    });
+    it('🔴 el aviso: sólo con un MIX elegido, y nombrándolo', () => {
+      expect(avisoDeMixElegido(F({ lote: MIX }))).toContain(MIX + ': un MIX no tiene animales propios');
+      expect(avisoDeMixElegido(F({ lote: ['BN', MIX] }))).toContain(MIX);
+      expect(avisoDeMixElegido(F({ lote: 'BN' }))).toBe('');
+      expect(avisoDeMixElegido(SIN)).toBe('');
+      expect(avisoDeMixElegido(undefined)).toBe('');
+    });
+  });
+
+  describe('🔍 Revisiones: la de un MIX va aparte', () => {
+    const r = (f) => revisionesDeNauplios(M2.fuentes, f, P);
+    it('🔴 con un lote elegido no es «la última» ni la de su etapa, aunque sea más reciente', () => {
+      const x = r(F2({ lote: 'BN' }));
+      expect(x.filas[0].lote, 'la más reciente es la del MIX').toBe(MIX);
+      expect(x.ultima.lote).toBe('BN');
+      expect(x.porEtapa.find((e) => e.etapa === 'Entrada').ultima.lote).toBe('BN');
+      expect(x.porEtapa.find((e) => e.etapa === 'Lavado').ultima, 'sólo la tiene el MIX').toBeNull();
+    });
+    it('🔴 sigue en el historial, y su aviso se dice aparte', () => {
+      const x = r(F2({ lote: 'BN' }));
+      expect(x.filas.map((f) => f.lote)).toEqual([MIX, MIX, 'BN']);
+      expect(x.mix.map((f) => f.etapa).sort()).toEqual(['Lavado', 'Postlavado']);
+      expect(x.avisos, 'el lote no trae ninguno').toEqual([]);
+      expect(x.mixAvisos.map((f) => f.etapa)).toEqual(['Postlavado']);
+    });
+    it('🔴 sin filtro, o con el propio MIX elegido, es suya y cuenta como siempre', () => {
+      for (const f of [F2(), F2({ lote: MIX })]) {
+        const x = r(f);
+        expect(x.ultima.lote).toBe(MIX);
+        expect(x.avisos.map((a) => a.lote)).toEqual([MIX]);
+        expect(x.mix).toEqual([]);
+        expect(x.mixAvisos).toEqual([]);
+      }
+    });
+  });
+
+  it('🔴 📊 Comparativa: ninguna fila lleva el MIX, y se dice, con o sin filtro; sólo el que tiene algo de lo filtrado', () => {
+    const mix = (f, p = P, dim = 'lote') => comparativa(M, f, p, dim).mix.map((m) => m.lote);
+    expect(comparativa(M, SIN, P, 'lote').filas.map((x) => x.origen)).not.toContain(MIX);
+    expect(comparativa(M, SIN, P, 'lote').mix).toEqual([{ lote: MIX, desoves: 4, huevos: 700000, n2: 500000, n5: 300000 }]);
+    expect(mix(F({ lote: 'BN' }))).toEqual([MIX]);
+    expect(mix(F({ lote: MIX })), 'elegido, tampoco va en una fila').toEqual([MIX]);
+    expect(mix(F({ sala: 'Sala 2' })), 'en la sala de uno de sus lotes').toEqual([MIX]);
+    expect(mix(F({ lote: 'BP' }))).toEqual([]);
+    expect(mix(F({ sala: 'Sala 3' })), 'en una sala sin sus lotes').toEqual([]);
+    expect(mix(SIN, { desde: '2026-01-01', hasta: '2026-01-31' })).toEqual([]);
+    expect(mix(SIN, P, 'codigo')).toEqual([MIX]);
+    expect(mix(SIN, P, 'piscina')).toEqual([MIX]);
+  });
+
+  it('🔴 🩺 el cruce con 🧬 Microchips: la hoja de Desoves no suma el MIX al lote, y lo dice', () => {
+    const repro = (lote) => ({ females: [{ estado: 'Vivo', lote, codigo: lote === 'BN' ? 'CA' : 'CC', sala: 'Sala 1', tanque: 1, trovan: 'X1' }], desoves: [], mortalidades: [], byTrovan: new Map(), movByTrovan: new Map() });
+    const conBN = cruceConMicrochips(repro('BN'), M.libro, M.fuentes, P, SIN);
+    expect(conBN.desoves.find((d) => d.lote === 'BN').operativo).toBe(2);
+    expect(conBN.mix).toEqual([{ lote: MIX, desoves: 4, huevos: 700000, n2: 500000, n5: 300000 }]);
+    expect(cruceConMicrochips(repro('BP'), M.libro, M.fuentes, P, SIN).mix, 'BP no participa').toEqual([]);
+    expect(cruceConMicrochips(repro('BN'), M.libro, M.fuentes, { desde: '2026-01-01', hasta: '2026-01-31' }, SIN).mix).toEqual([]);
+  });
+
+  it('🔴 🌊 Mareas: con un lote o un código suyos dice lo que deja fuera; si no, nada', () => {
+    const d = desovesDiarios(M.fuentes);
+    const MAREA = new Map([['2026-09-16', { fase: 'Luna llena', ilum: 100, tipo: 'Viva', amplitud: 2 }]]);
+    const mix = (o) => desovesYMarea(d, MAREA, o).mix;
+    const fuera = [{ lote: MIX, desoves: 4 }];
+    expect(mix({ lote: 'BN' })).toEqual(fuera);
+    expect(mix({ lote: 'BO' })).toEqual(fuera);
+    expect(mix({ codigo: 'CA' })).toEqual(fuera);
+    expect(mix({})).toEqual([]);
+    expect(mix({ sala: 'Sala 1' }), 'con sólo la sala está en las cifras').toEqual([]);
+    expect(mix({ lote: MIX })).toEqual([]);
+    expect(mix({ lote: 'BP' })).toEqual([]);
+    expect(mix({ codigo: 'CC' })).toEqual([]);
+    expect(mix({ lote: 'BN', codigo: 'CC' }), 'tiene que casar en los dos').toEqual([]);
+    expect(mix({ lote: 'BN', sala: 'Sala 2' }), 'BN no está en esa sala').toEqual([]);
+    expect(mix({ lote: 'BN', mes: '2026-08' }), 'otro mes').toEqual([]);
   });
 });

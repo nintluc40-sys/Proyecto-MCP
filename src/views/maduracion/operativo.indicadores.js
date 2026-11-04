@@ -13,7 +13,7 @@
    · Los lotes casan entre hojas por su forma CANÓNICA (`normLote`: mayúsculas y sin espacios), la misma con que los
      guardan las fichas. (Los códigos genéticos, con `desempenoPorOrigen`, se fueron a operativo.lotes.js el 2026-09-29.)
    ============================================================ */
-import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
+import { normLote, lotesDeMix } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { areaTanqueM2 } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
 import { diasEntre } from '../registros/lib/mad-resumen.js';
 import { ubicKey } from '../registros/lib/mad-libro.js';
@@ -64,7 +64,7 @@ export const INDICADORES = [
   { id: 'densidadTanque', nombre: 'Densidad del tanque', unidad: 'animales/m²', definicion: 'Animales vivos ÷ área del tanque (catálogo de áreas de la ficha de Ingreso).' },
   { id: 'ocupacion', nombre: 'Ocupación de la sala', unidad: '%', definicion: 'Tanques con animales vivos ÷ tanques físicos de la sala × 100.' },
   { id: 'desovesPorLote', nombre: 'Huevos y no viables por desove', unidad: 'por desove', definicion: 'Total de huevos ÷ desoves y hembras no viables ÷ desoves, por lote, en el período.' },
-  { id: 'tasaDeDesove', nombre: 'Tasa de desove', unidad: '%', definicion: 'Desoves del día ÷ hembras vivas del lote al cierre de ese día × 100.' },
+  { id: 'tasaDeDesove', nombre: 'Tasa de desove', unidad: '%', definicion: 'Desoves del día ÷ hembras vivas del lote al cierre de ese día × 100. Un MIX, sobre las hembras de sus lotes.' },
   { id: 'fueraDeRango', nombre: 'Lecturas fuera de rango', unidad: '%', definicion: 'Lecturas del período fuera del rango de referencia ÷ lecturas del período × 100, por sala. Los extremos del rango cuentan como dentro.' },
   { id: 'diasDesdeDesinfeccion', nombre: 'Días desde la última desinfección', unidad: 'días', definicion: 'Días entre la última desinfección registrada en Tratamientos para esa sala y la fecha de cálculo.' },
   { id: 'alimentoPorMillonN5', nombre: 'Alimento planificado por millón de N5', unidad: 'kg por millón', definicion: 'Kg de alimento PLANIFICADO en el período (hoja de Alimentación) ÷ millones de N5 de los desoves del período.' },
@@ -118,7 +118,8 @@ export function desovesPorLote(filasDesoves, desde, hasta) {
 }
 
 /** La tasa de desove por día y lote (%): desoves del día ÷ hembras vivas del lote al CIERRE del día, que da la
- *  serie diaria del libro (`serieDiaria`). Sin hembras vivas ese día, vacía. */
+ *  serie diaria del libro (`serieDiaria`). Sin hembras vivas ese día, vacía.
+ *  🔀 2026-11-04 (A19, usuario: «Que entre») · un MIX no tiene hembras propias: las suyas son las de sus lotes ese día. */
 export function tasaDeDesove(filasDesoves, serie) {
   const vivas = new Map();
   for (const d of serie || []) {
@@ -134,7 +135,8 @@ export function tasaDeDesove(filasDesoves, serie) {
   }
   return [...dias.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)).map(([k, desoves]) => {
     const [fecha, lote] = k.split('|');
-    const hembras = vivas.get(k) || 0;
+    const delMix = lotesDeMix(lote);
+    const hembras = delMix.length ? delMix.reduce((a, l) => a + (vivas.get(fecha + '|' + l) || 0), 0) : vivas.get(k) || 0;
     return { fecha, lote, desoves, hembras, tasa: cociente(desoves, hembras, 100) };
   });
 }

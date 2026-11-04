@@ -125,11 +125,16 @@ export function revisionesDeNauplios(fuentes, F, periodo) {
   }
   const orden = (f) => f.fecha + '|' + String(ETAPAS_REVISION.indexOf(f.etapa) + 1).padStart(2, '0');
   filas.sort((a, b) => porNombre(orden(b), orden(a)));
+  /* 🔀 2026-11-04 (A19, usuario: «Aparte, sin ser la última») · la de un MIX va en `filas`, con su nombre, y no es la última del lote
+     elegido ni su estado por etapa. Sus avisos se dicen aparte (`mixAvisos`), para que no se pierdan. */
+  const propias = filas.filter((f) => loteElegido(f.lote, F));
+  const mix = filas.filter((f) => !loteElegido(f.lote, F));
+  const conAviso = (f) => f.hongos || f.salinidad.aviso || f.temperatura.aviso;
   /* El último estado de CADA etapa: la revisión de Entrada y la de Postlavado se leen juntas aunque sean de
      días distintos, que es como el laboratorio sigue una tanda. */
-  const porEtapa = ETAPAS_REVISION.map((etapa) => ({ etapa, ultima: filas.find((f) => f.etapa === etapa) || null }));
-  const avisos = filas.filter((f) => f.hongos || f.salinidad.aviso || f.temperatura.aviso);
-  return { filas, ultima: filas[0] || null, porEtapa, avisos, ignora };
+  const porEtapa = ETAPAS_REVISION.map((etapa) => ({ etapa, ultima: propias.find((f) => f.etapa === etapa) || null }));
+  const avisos = propias.filter(conAviso);
+  return { filas, ultima: propias[0] || null, porEtapa, avisos, mix, mixAvisos: mix.filter(conAviso), ignora };
 }
 
 /* ── LA ALCALINIDAD POR ÁREA ────────────────────────────────── */
@@ -183,12 +188,22 @@ export function alcalinidadPorArea(fuentes, F, periodo) {
 export function mortalidadEnDesove(fuentes, F, periodo) {
   const tipos = MAD_MORT_TIPOS.map((tipo) => ({ tipo, entran: 0, muertas: 0, registros: 0, lotes: new Set() }));
   const porTipo = new Map(tipos.map((t) => [t.tipo, t]));
+  const deMix = new Map();
   const temps = [];
   for (const r of ((fuentes || {}).mortDesove || [])) {
     if (!esMortalidad(r)) continue;
     const lote = txt(r.Lote);
-    if (!loteElegido(lote, F)) continue;
     const fecha = fechaDeFila('mortDesove', r);
+    /* 🔀 2026-11-04 (A19) · la de un MIX de los lotes elegidos no suma aquí (ver `mixEnFiltro`), y se dice aparte. */
+    if (!loteElegido(lote, F)) {
+      if (mixEnFiltro({ Lote: lote }, { lotes: (F || {}).lotes }) && enPeriodo(fecha, periodo) && porTipo.has(txt(r['Tipo de tanque']))) {
+        const a = deMix.get(lote) || { entran: 0, muertas: 0, lote };
+        a.entran += ent(r['Hembras que entran']);
+        a.muertas += ent(r['Hembras muertas']);
+        deMix.set(lote, a);
+      }
+      continue;
+    }
     if (!enPeriodo(fecha, periodo)) continue;
     const t = porTipo.get(txt(r['Tipo de tanque']));
     if (!t) continue;
@@ -213,7 +228,7 @@ export function mortalidadEnDesove(fuentes, F, periodo) {
     avisos: temps.filter((x) => x.valor > tope.max).length,
     max: tope.max,
   } : null;
-  return { filas, entran, muertas, pct: cociente(muertas, entran, 100), tempDesove, ignora: filtrosNoAplicados(F, ['lote']) };   // pauta 14
+  return { filas, entran, muertas, pct: cociente(muertas, entran, 100), tempDesove, mix: [...deMix.values()].filter((m) => m.entran || m.muertas), ignora: filtrosNoAplicados(F, ['lote']) };   // pauta 14
 }
 
 /* ── LA FRECUENCIA DE LAS OBSERVACIONES DE TANQUE ───────────── */

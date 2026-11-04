@@ -48,7 +48,7 @@ import {
   PERIODOS, PERIODO_INICIAL, periodoDe, normalizarFiltro, hayFiltro, kpiVivos, kpiLotes, kpiSalas, kpiOcupacion,
   kpiMortalidad, kpiReproduccion, kpiCopula, mapaDePlanta, MODOS_MAPA, ESTADO_VACIO, ESTADO_SIN, alertas, ultimosRegistros,
   cuarentenasDeLotes, conIngresoDelLote, curvaDeCuarentena, AVISO_CUARENTENA_DIAS, tarjetasDeSalas, detalleDeSala, ambienteDelDia,
-  indiceDeFiltro, cicloDelLote, etiquetasDeFiltro, kpiBiomasa, loteUnico, salaUnica, salaElegida, textoDeTanque,
+  indiceDeFiltro, cicloDelLote, etiquetasDeFiltro, avisoDeMixElegido, kpiBiomasa, loteUnico, salaUnica, salaElegida, textoDeTanque,
   filtrosNoAplicados,
 } from './operativo.tablero.js';
 import { KPIS_CON_GRAFICO, graficoDeKpi } from './operativo.kpis.js';
@@ -418,8 +418,9 @@ function depurarFiltros(o) {
 function etiquetasHTML(F) {
   const es = etiquetasDeFiltro(F);
   if (!es.length) return '';
+  const avisoMix = avisoDeMixElegido(F);
   return `<div class="mop-chips" role="group" aria-label="Filtros activos">${es.map((e) =>
-    `<button class="mop-chip-f" data-mop-quitar="${esc(e.dim)}"${MULTI.has(e.dim) ? ` data-mop-valor="${esc(e.clave)}"` : ''} title="Quitar el filtro de ${esc(e.rotulo)}">${esc(e.rotulo)}: <b>${esc(e.valor)}</b> ✕</button>`).join('')}</div>`;
+    `<button class="mop-chip-f" data-mop-quitar="${esc(e.dim)}"${MULTI.has(e.dim) ? ` data-mop-valor="${esc(e.clave)}"` : ''} title="Quitar el filtro de ${esc(e.rotulo)}">${esc(e.rotulo)}: <b>${esc(e.valor)}</b> ✕</button>`).join('')}</div>${avisoMix ? `<p class="mc-note">🔀 ${esc(avisoMix)}</p>` : ''}`;
 }
 /** Los tanques de las salas marcadas, como pares «sala|n», en el orden de las salas y de su catálogo. */
 const tanquesDe = (o, salas) => o.salas.filter((s) => salas.includes(s)).flatMap((s) => (o.tanquesPorSala[s] || []).map((t) => s + '|' + t));
@@ -757,7 +758,9 @@ function copulasMareaHTML(state) {
   _marCop.dias = x.conMarea ? x.dias : null;
   _marCop.ver = ver;
   _marCop.fase = state.copFase || '';
-  if (!x.conMarea) return `<div class="mop-marcop">${filtros}${info}<p class="muted mop-marcop-vacio">Sin días con ${V.que} y marea con estos filtros.</p></div>`;
+  // 🔀 2026-11-04 (A19) · lo de un MIX que este lote o código deja fuera: no se reparte, y no se calla
+  const notaMix = (x.mix || []).length ? `<p class="mc-note">🔀 No incluye ${x.mix.map((m) => `<b>${esc(m.lote)}</b> (${nf(m.desoves)} desove(s))`).join(' · ')}: las cifras de un MIX no se pueden separar por lote ni por código.</p>` : '';
+  if (!x.conMarea) return `<div class="mop-marcop">${filtros}${info}${notaMix}<p class="muted mop-marcop-vacio">Sin días con ${V.que} y marea con estos filtros.</p></div>`;
   const tipo = (k) => x.tipo.find((t) => t.k === k);
   const chip = (l, v, s) => `<div class="sv-marea-stat"><div class="sv-marea-stat-l">${esc(l)}</div><div class="sv-marea-stat-v">${v}</div><div class="sv-marea-stat-s">${esc(s)}</div></div>`;
   const cifras = `<div class="sv-marea-stats mop-marcop-cifras">
@@ -773,7 +776,7 @@ function copulasMareaHTML(state) {
       <tbody>${x.fase.map((g) => `<tr${g.k === state.copFase ? ' class="mop-marcop-fase-on"' : ''}><td>${esc(g.k)}</td><td class="r">${nf(g.dias)}</td><td class="r">${nf(g[V.campo])}</td><td class="r">${g.tasa === null ? '<span class="muted">—</span>' : barraF(g.tasa)}</td></tr>`).join('')}</tbody></table></div></div>`;
   const serie = `<div class="sv-marea-panel"><div class="sv-marea-ptitle">${V.serie} <span class="muted">· barras oscuras, marea viva; claras, muerta · la línea, la amplitud${state.copFase ? ` · en color, los días de ${esc(state.copFase)}` : ''}</span></div>
       <div class="sv-marea-charthost"><canvas id="mopMarCop"></canvas></div></div>`;
-  return `<div class="mop-marcop">${filtros}${info}${cifras}${serie}${fases}</div>`;
+  return `<div class="mop-marcop">${filtros}${info}${notaMix}${cifras}${serie}${fases}</div>`;
 }
 const COLOR_MAREA = { Viva: '#00838f', Muerta: '#80cbc4' };
 /* 1-A · con una fase lunar elegida, sus días van en su color y los demás, apagados. */
@@ -2302,7 +2305,7 @@ function comparativaHTML(c, p) {
         <th class="r">Ingresados</th><th class="r">Ingreso ♀</th><th class="r">Ingreso ♂</th><th class="r">Vivos</th><th class="r">Superv.</th>
         <th class="r">Desoves</th><th class="r">Fertilidad</th><th class="r">N5</th>
         <th class="r" title="Días de su ingreso a la foto (o a su cierre); con varios lotes, el rango de los suyos">Edad</th></tr></thead>
-      <tbody>${cuerpo}</tbody></table></div>${notaParejas}${veredicto}
+      <tbody>${cuerpo}</tbody></table></div>${notaParejas}${veredicto}${mixNotaHTML(c.mix, 'Además, en el período')}
   </div>`;
 }
 
@@ -2680,6 +2683,7 @@ function semaforoHTML(r, p, o = {}) {
     return `<div class="${clase}"><h4 class="mc-card-h">${titulo} <span class="mc-h-note">${esc(o.alcance || etiquetaPeriodo(p))}</span></h4>
       <p class="muted" style="margin:4px 0">Ninguna revisión registrada en ${esc(en)}.</p>
       <p class="mc-note">Las revisiones viven en la hoja del 📋 Inf. Supervisor.</p>
+      ${revMixHTML(r)}
       ${ignoraHTML(r.ignora, 'La revisión de nauplios')}</div>`;
   }
   const celda = (v) => {
@@ -2698,14 +2702,23 @@ function semaforoHTML(r, p, o = {}) {
   const etapas = r.porEtapa.map((e) => `<span class="mop-chip ${e.ultima ? '' : 'is-e-vacio'}" title="${esc(e.ultima ? 'Última: ' + dma(e.ultima.fecha) : 'Sin ninguna revisión de esta etapa en ' + en)}">${esc(e.etapa)}${e.ultima ? ' · ' + esc(dm(e.ultima.fecha)) : ''}</span>`).join('');
   return `<div class="${clase}">
     <h4 class="mc-card-h">${titulo}
-      <span class="mc-h-note">${o.conteo ? nf(r.filas.length) + ' en ' + esc(en) + ' · ' : ''}última: ${esc(dma(u.fecha))} · ${esc(u.etapa)}${o.sinLote ? '' : ' · lote ' + esc(u.lote || '—')}</span></h4>
+      <span class="mc-h-note">${o.conteo ? nf(r.filas.length - (r.mix || []).length) + ' en ' + esc(en) + ' · ' : ''}última: ${esc(dma(u.fecha))} · ${esc(u.etapa)}${o.sinLote ? '' : ' · lote ' + esc(u.lote || '—')}</span></h4>
     <div class="mop-sems">${VARIABLES_REVISION.map(celda).join('')}${lectura('Salinidad', u.salinidad)}${lectura('Temperatura', u.temperatura)}</div>
     <h5 class="mop-det-h">Última de cada etapa</h5>
     <div class="mop-sc-lotes">${etapas}</div>
     <p class="mc-note">⚠ Sólo llevan veredicto las reglas que EXISTEN: los dos topes de aviso que confirmó el usuario y la presencia de hongos. Deformidad, actividad, fototropismo y aireación se enseñan tal cual: no hay fuente que diga cuál de «Alta», «Media» o «Baja» está bien, y una escala inventada sería peor que ninguna.</p>
     ${r.avisos.length ? `<p class="mc-note">🔴 <b>${nf(r.avisos.length)}</b> revisión(es) ${del} traen algún aviso.</p>` : ''}
+    ${revMixHTML(r)}
     ${ignoraHTML(r.ignora, 'La revisión de nauplios')}
   </div>`;
+}
+/** 🔀 2026-11-04 (A19) · las revisiones de los MIX del lote elegido: van en el historial, y no son «la última» del lote. Su aviso no se pierde. */
+function revMixHTML(r) {
+  const n = (r.mix || []).length;
+  if (!n) return '';
+  const nombres = [...new Set(r.mix.map((f) => f.lote))].join(', ');
+  const av = (r.mixAvisos || []).length;
+  return `<p class="mc-note">🔀 Además, ${nf(n)} revisión(es) de ${esc(nombres)}, en el historial: no cuentan como las de este lote.${av ? ` <b>🔴 ${nf(av)} trae(n) algún aviso.</b>` : ''}</p>`;
 }
 
 function alcalinidadHTML(a, p) {
@@ -2736,6 +2749,7 @@ function mortDesoveHTML(m, p) {
       </tbody></table></div>`
     : '<p class="muted" style="margin:4px 0">Ninguna hembra entró a desovar ni a recuperarse en el período.</p>'}
     ${tempDesoveHTML(m.tempDesove)}
+    ${(m.mix || []).length ? `<p class="mc-note">🔀 Aparte, en ${m.mix.map((x) => `<b>${esc(x.lote)}</b>: ${nf(x.entran)} ♀ entran, ${nf(x.muertas)} mueren`).join(' · ')}. No suman aquí: las muertas de un MIX se reparten entre sus lotes en el libro.</p>` : ''}
     <p class="mc-note">⚠ Estas muertes YA están dentro de las bajas del lote: aquí se abren por tipo de tanque, que es lo que el libro no dice. No se suman a 💀 Bajas.</p>
     ${ignoraHTML(m.ignora, 'La mortalidad en desove y recuperación', '')}
   </div>`;
@@ -3543,7 +3557,7 @@ function cruceHTML(c, p, F) {
         <thead><tr><th>Lote</th><th class="r">Desoves en la Bitácora</th><th class="r">Hembras que desovaron</th><th class="r">Desoves en la hoja de Desoves</th></tr></thead>
         <tbody>${c.desoves.map((d) => `<tr><td><b>${esc(d.lote)}</b></td><td class="r">${nf(d.bitacora)}</td><td class="r">${nf(d.hembrasQueDesovaron)}</td><td class="r">${nf(d.operativo)}</td></tr>`).join('')}</tbody></table></div>
       <p class="mc-note">Sólo para informar: la Bitácora cuenta un evento por hembra con chip, y la hoja de Desoves los desoves del lote entero.
-        No tienen por qué coincidir.</p>` : '';
+        No tienen por qué coincidir.</p>${mixNotaHTML(c.mix, 'La hoja de Desoves, además, en MIX de estos lotes')}` : '';
   return `<div class="mc-card mc-card-wide">${cab}${desfase}
     <h5 class="mop-h5">Lo que no puede ser, tanque a tanque</h5>${disc}
     <p class="mc-note">Que haya MENOS hembras con chip que hembras en el libro es lo normal: no todas llevan chip. Por eso no se marca.</p>

@@ -199,8 +199,10 @@ export function desovesYMarea(diarios, marea, { sala = '', soloProduccion = fals
   let sinHembras = 0;
   const porDia = new Map();
   /* 🔀 2026-11-03 · con un MIX elegido, las hembras son las de sus lotes; y con sala o «sólo en producción» cuenta si alguno de sus
-     lotes está en el alcance. Con un código elegido no cuenta: un MIX no es de ningún código. */
+     lotes está en el alcance. Con un código elegido no cuenta: un MIX no es de ningún código, salvo si el elegido es él mismo. Lo que
+     queda fuera por el lote o el código se dice aparte (`mix`, A19). */
   const delLote = lotesDeMix(lote);
+  const deMix = new Map();
   for (const d of diarios || []) {
     if (mes && d.fecha.slice(0, 7) !== mes) continue;
     const pos = d.posiciones.filter((p) => (!sala || p.sala === sala) && (!lote || p.lote === lote || delLote.includes(p.lote))
@@ -209,15 +211,24 @@ export function desovesYMarea(diarios, marea, { sala = '', soloProduccion = fals
     if (!(hembras > 0)) { sinHembras++; continue; }
     const enAlcance = new Set(pos.map((p) => p.lote));
     const filas = d.filas.filter((f) => (!lote || f.lote === lote) && codigoEnFiltro(f.codigo, conCodigo(codigo))
-      && !(codigo && esMix(f.lote))
+      && !(codigo && esMix(f.lote) && f.lote !== lote)
       && (!(sala || soloProduccion) || enAlcance.has(f.lote) || lotesDeMix(f.lote).some((l) => enAlcance.has(l))));
     porDia.set(d.fecha, { fecha: d.fecha, desoves: filas.reduce((s, f) => s + f.desoves, 0), hembras });
+    if (lote || codigo) {
+      for (const f of d.filas) {
+        const suyos = lotesDeMix(f.lote);
+        if (!suyos.length || filas.includes(f) || (lote && !suyos.includes(lote)) || !codigoEnFiltro(f.codigo, conCodigo(codigo))) continue;
+        if ((sala || soloProduccion) && !suyos.some((l) => enAlcance.has(l))) continue;
+        deMix.set(f.lote, (deMix.get(f.lote) || 0) + f.desoves);
+      }
+    }
   }
   const todas = diarios || [];
   return {
     salas: unicos(todas.flatMap((d) => d.posiciones.map((p) => p.sala))),
     meses: unicos(todas.map((d) => d.fecha.slice(0, 7))), lotes: unicos(todas.flatMap((d) => d.filas.map((f) => f.lote))),
     codigos: unicos(todas.flatMap((d) => d.filas.map((f) => f.codigo))),
+    mix: [...deMix.entries()].map(([l, desoves]) => ({ lote: l, desoves })),
     sinHembras, ...relacionConMarea(porDia, marea, 'desoves'),
   };
 }

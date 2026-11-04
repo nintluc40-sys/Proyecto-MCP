@@ -4506,4 +4506,85 @@ describe('Maduración · operativo · 🔀 un MIX en pantalla', () => {
     click(filaLote('QD'));
     expect(plano(root)).not.toContain('Además participó en');
   });
+
+  /* A19 (2026-11-04) · lo que los módulos puros ya devuelven tiene que llegar a la pantalla: si no se pinta, la nota no existe. */
+  it('🔴 elegir el MIX avisa de que no tiene animales propios; un lote, no', async () => {
+    await montar(PLANTA_MIX);
+    marcar('lote', MIX);
+    expect(plano(root)).toContain(MIX + ': un MIX no tiene animales propios');
+    marcar('lote', 'QA');
+    expect(plano(root)).not.toContain('no tiene animales propios');
+  });
+
+  it('🔴 📊 Comparativa: dice el MIX, que no va en ninguna fila', async () => {
+    await montar(PLANTA_MIX);
+    abrirLotes();
+    const t = plano(root);
+    expect(t).toContain('Además, en el período: ' + MIX + ' · 4 desove(s)');
+  });
+
+  const REVS = [
+    INF('18/09/2026', { 'Revisión': 'Entrada', Lote: 'QB', Hongos: 'Ausente', Salinidad: 30, Temperatura: 28 }),
+    INF('19/09/2026', { 'Revisión': 'Postlavado', Lote: MIX, Hongos: 'Presente', Salinidad: 30, Temperatura: 28 }),
+    INF('19/09/2026', { 'Tipo de tanque': 'Desove', Lote: MIX, 'Hembras que entran': 30, 'Hembras muertas': 9 }),
+  ];
+
+  it('🔴 🔍 Revisiones con un lote suyo: «la última» es del lote, y la del MIX y su aviso se dicen aparte', async () => {
+    await montar([...PLANTA_MIX, ...REVS]);
+    abrir('revisiones');
+    marcar('lote', 'QB');
+    const t = plano(root);
+    expect(t).toContain('última: 18/09/2026 · Entrada · lote QB');
+    expect(t).toContain('Además, 1 revisión(es) de ' + MIX + ', en el historial');
+    expect(t).toContain('🔴 1 trae(n) algún aviso');
+    expect(t).not.toContain('revisión(es) del período traen algún aviso');
+  });
+
+  it('🔴 la ficha del lote cuenta sólo las suyas, y dice las del MIX', async () => {
+    await montar([...PLANTA_MIX, ...REVS]);
+    abrirLotes();
+    click(filaLote('QB'));
+    const t = plano(root);
+    expect(t).toContain('1 en su ciclo');
+    expect(t).toContain('Además, 1 revisión(es) de ' + MIX);
+  });
+
+  it('🔴 🥚 Mortalidad en desove: con un lote suyo, las del MIX van aparte; sin filtro, están en la tabla', async () => {
+    await montar([...PLANTA_MIX, ...REVS]);
+    abrir('revisiones');
+    expect(plano(root)).not.toContain('Aparte, en ' + MIX);
+    marcar('lote', 'QB');
+    expect(plano(root)).toContain('Aparte, en ' + MIX + ': 30 ♀ entran, 9 mueren');
+  });
+
+  it('🔴 🩺 el cruce con 🧬 Microchips dice el MIX de sus lotes', async () => {
+    await montar([...PLANTA_MIX, ...REPRO]);
+    abrirCalidad();
+    expect(plano(root)).toContain('La hoja de Desoves, además, en MIX de estos lotes: ' + MIX + ' · 4 desove(s)');
+  });
+
+  describe('🌊 Mareas: con un lote suyo dice lo que deja fuera', () => {
+    const panel = () => root.querySelector('[data-mareas-panel]');
+    const entrar = async (dia) => {
+      await montar([...PLANTA_MIX, MAR_COP(dia, 'Creciente', '8', 'Viva', '1.9')]);
+      click(root.querySelector('.mc-subnav [data-mop-sub="mareas"]'));
+      click(panel().querySelector('[data-mareamode="copulas"]'));
+    };
+    const elegir = (k, v) => { const s = panel().querySelector(`[data-mop-marcop="${k}"]`); s.value = v; s.dispatchEvent(new Event('change', { bubbles: true })); };
+    it('🔴 con días que comparar', async () => {
+      await entrar('19/09/2026');
+      elegir('var', 'desoves');
+      expect(plano(panel())).not.toContain('No incluye');
+      elegir('lote', 'QA');
+      expect(panel().querySelector('.mop-marcop-vacio')).toBeNull();
+      expect(plano(panel())).toContain('No incluye ' + MIX + ' (4 desove(s))');
+    });
+    it('🔴 y sin ninguno: la pantalla vacía no lo calla', async () => {
+      await entrar('01/09/2026');
+      elegir('var', 'desoves');
+      elegir('lote', 'QA');
+      expect(panel().querySelector('.mop-marcop-vacio')).not.toBeNull();
+      expect(plano(panel())).toContain('No incluye ' + MIX + ' (4 desove(s))');
+    });
+  });
 });
