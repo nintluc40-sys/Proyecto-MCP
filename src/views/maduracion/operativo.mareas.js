@@ -217,7 +217,7 @@ export function desovesYMarea(diarios, marea, { sala = '', soloProduccion = fals
     if (lote || codigo) {
       for (const f of d.filas) {
         const suyos = lotesDeMix(f.lote);
-        if (!suyos.length || filas.includes(f) || (lote && !suyos.includes(lote)) || !codigoEnFiltro(f.codigo, conCodigo(codigo))) continue;
+        if (!suyos.length || (lote && !suyos.includes(lote)) || !codigoEnFiltro(f.codigo, conCodigo(codigo))) continue;
         if ((sala || soloProduccion) && !suyos.some((l) => enAlcance.has(l))) continue;
         deMix.set(f.lote, (deMix.get(f.lote) || 0) + f.desoves);
       }

@@ -373,6 +373,12 @@ describe('🔀 A19 · la Tasa de desove, los avisos y las notas', () => {
       expect(notas(F({ lote: MIX }), { a: 'vivos' })).toContain(MIX + ' no tiene animales propios');
       expect(notas(F({ lote: MIX }), { a: 'desoves' })).not.toContain('no tiene animales propios');
       expect(notas(F({ lote: 'BN' }), { a: 'climaTemp' })).not.toContain(MIX);
+      expect(notas(F({ lote: MIX }), { a: 'climaTemp' }), 'el clima no se separa por lote: no va de eso').not.toContain(MIX);
+    });
+    ['desoves', 'tasaDesove', 'huevosPorDesove', 'fertilidad', 'n5', 'n5PorDesove', 'alimentoPorN5'].forEach((a) => {
+      it(`🔴 ${a} sale de los desoves: lo dice`, () => {
+        expect(notas(F({ lote: 'BN' }), { a })).toContain('No incluye ' + MIX);
+      });
     });
     it('🔴 la nota llega al Excel', () => {
       const h = hojasDeEvolucion(evo(M, S1, F({ lote: 'BN' }), { a: 'desoves' }), {}).find((x) => x.nombre === 'Filtros y notas');
@@ -488,5 +494,20 @@ describe('🔀 A19 · la Tasa de desove, los avisos y las notas', () => {
     expect(mix({ lote: 'BN', codigo: 'CC' }), 'tiene que casar en los dos').toEqual([]);
     expect(mix({ lote: 'BN', sala: 'Sala 2' }), 'BN no está en esa sala').toEqual([]);
     expect(mix({ lote: 'BN', mes: '2026-08' }), 'otro mes').toEqual([]);
+  });
+
+  it('🔴 🌊 Mareas con sala y código: sólo si sus lotes están en esa sala (BQ comparte el código en otra sala)', () => {
+    const m = modeloOperativo([...PLANTA, ING('2026-08-01', 'BQ', 'Sala 3', 2, 40, 'CA', 'P1')], { fecha: FOTO, hoy: FOTO });
+    const d = desovesDiarios(m.fuentes);
+    const MAREA = new Map([['2026-09-16', { fase: 'Luna llena', ilum: 100, tipo: 'Viva', amplitud: 2 }]]);
+    const mix = (o) => desovesYMarea(d, MAREA, o).mix;
+    expect(mix({ sala: 'Sala 1', codigo: 'CA' })).toEqual([{ lote: MIX, desoves: 4 }]);
+    expect(mix({ sala: 'Sala 3', codigo: 'CA' })).toEqual([]);
+  });
+
+  it('🔴 la mortalidad: una fila del MIX sólo con la temperatura no es un registro, y tampoco se dice aparte', () => {
+    const m = modeloOperativo([...PLANTA.filter((r) => r['Tipo de tanque'] !== 'Desove'),
+      INF('2026-09-16', MIX, { 'Tipo de tanque': 'Desove', 'Temperatura tanque desove': 30 })], { fecha: FOTO, hoy: FOTO });
+    expect(mortalidadEnDesove(m.fuentes, F({ lote: 'BN' }), P).mix).toEqual([]);
   });
 });
