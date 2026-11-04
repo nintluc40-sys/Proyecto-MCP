@@ -541,7 +541,10 @@ sin él, el HEAD se bloquea (happy-dom no aplica la CSP, las pruebas no lo ven).
 En **🛢️ Tanques**, los pesos ♂ y ♀ **bajan por su columna**: al teclear uno se copia a las filas
 de abajo que tengan animales vivos. Las observaciones sanitarias y operativas bajan igual (desde el
 2026-10-28, también sólo a las filas con vivos; antes bajaban a todas). En Inf. Supervisor bajan la salinidad y la
-temperatura de la Revisión de nauplios (allí, a todas las filas de abajo).
+temperatura de la Revisión de nauplios (allí, a todas las filas de abajo) y, desde el 2026-11-03, sus cinco variables
+—Deformidad, Actividad, Hongos, Fototropismo y Aireación—, **que bajan sólo desde Entrada**, aunque Entrada esté vacía y se
+elija en otra revisión. Se envía lo que se ve: una revisión que no se hizo se vacía a mano, y queda vacía aunque luego cambie
+Entrada. Lo vigilan `mad-naup-baja.test.js` y su banco `mutar-mad-naup-baja`.
 **Cambiar una fila que tenía el valor copiado sólo cambia ESA fila**: se marca en amarillo, no baja,
 y las de abajo conservan el primer valor; corregir la primera arrastra sus copias, no las marcadas
 (usuario, 2026-09-24). Lo que ya estaba —guardado, pegado o de antes de repintar— no se pisa nunca:

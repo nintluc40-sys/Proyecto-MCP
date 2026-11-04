@@ -10396,6 +10396,16 @@ function _madBorrAdaptar(ficha, fp, dia){
       // · 2026-10-04: la temperatura del tanque de desove; un borrador de antes no la trae.
       const pct=card.querySelector(".mm-desove-p");
       if(pct && !card.querySelector(".mm-desove-t")) pct.parentElement.insertAdjacentHTML("afterend", _MAD_MORT_TEMP_HTML);
+      // · 2026-11-03: las cinco variables de la Revisión de nauplios bajan desde Entrada; un borrador de antes no lo sabe.
+      MAD_NAUP_REVISIONES.forEach(function(rev, i){
+        _MAD_NAUP_COLS_SEL.forEach(function(col){
+          const s=card.querySelector(".mm-n-"+_MAD_NAUP_CLAVE[rev]+"-"+col);
+          if(!s || s.getAttribute("onchange")) return;
+          s.setAttribute("data-r", String(i));
+          s.setAttribute("data-c", col);
+          s.setAttribute("onchange", "madNaupBajaSel(this)");
+        });
+      });
     });
   }
   /* · fin (2026-09-16, PE1.6): la fecha de aplicación sigue a la del registro salvo que esté FIJADA a mano. Un borrador
@@ -13042,8 +13052,8 @@ function _madMortTipoHTML(tipo){
 const _MAD_MORT_TEMP_HTML = '<label style="'+_MAD_ING_LBL+'" title="Temperatura del tanque de desove. Sola también se guarda.">Temperatura (°C)'
   + '<input class="mm-desove-t" type="number" min="0" step="0.1" inputmode="decimal" style="'+_MAD_ING_INP+';width:110px"></label>';
 // Revisión de nauplios (2026-09-15, usuario): una fila por revisión; selects con sus listas y dos cifras.
-function _madNaupSelHTML(cls, lista){
-  return '<select class="'+cls+'" style="'+_MAD_ING_INP+';width:100%;min-width:90px"><option value=""></option>'
+function _madNaupSelHTML(cls, lista, r, col){
+  return '<select class="'+cls+'" data-r="'+r+'" data-c="'+col+'" onchange="madNaupBajaSel(this)" style="'+_MAD_ING_INP+';width:100%;min-width:90px"><option value=""></option>'
     + lista.map(function(o){ return '<option value="'+escapeHtml(o)+'">'+escapeHtml(o)+'</option>'; }).join("")+'</select>';
 }
 function _madNaupTablaHTML(){
@@ -13056,11 +13066,11 @@ function _madNaupTablaHTML(){
       return '<td><input class="'+cls+'" data-r="'+i+'" data-c="'+col+'" oninput="madNaupBaja(this)" type="number" min="0" max="'+max+'" step="0.1" inputmode="decimal" style="'+_MAD_ING_INP+';width:90px"></td>';
     };
     return '<tr><td style="font-weight:700;white-space:nowrap">'+escapeHtml(rev)+'</td>'
-      + '<td>'+_madNaupSelHTML(k+"-def", MAD_NAUP_DEFORMIDAD)+'</td>'
-      + '<td>'+_madNaupSelHTML(k+"-act", MAD_NAUP_ACTIVIDAD)+'</td>'
-      + '<td>'+_madNaupSelHTML(k+"-hon", MAD_NAUP_HONGOS)+'</td>'
-      + '<td>'+_madNaupSelHTML(k+"-fot", MAD_NAUP_FOTOTROPISMO)+'</td>'
-      + '<td>'+_madNaupSelHTML(k+"-air", MAD_NAUP_AIREACION)+'</td>'
+      + '<td>'+_madNaupSelHTML(k+"-def", MAD_NAUP_DEFORMIDAD, i, "def")+'</td>'
+      + '<td>'+_madNaupSelHTML(k+"-act", MAD_NAUP_ACTIVIDAD, i, "act")+'</td>'
+      + '<td>'+_madNaupSelHTML(k+"-hon", MAD_NAUP_HONGOS, i, "hon")+'</td>'
+      + '<td>'+_madNaupSelHTML(k+"-fot", MAD_NAUP_FOTOTROPISMO, i, "fot")+'</td>'
+      + '<td>'+_madNaupSelHTML(k+"-air", MAD_NAUP_AIREACION, i, "air")+'</td>'
       + cifra(k+"-sal", "sal", MAD_NAUP_SAL_MAX)
       + cifra(k+"-tem", "tem", MAD_NAUP_TEMP_MAX) + '</tr>';
   }).join("");
@@ -13068,6 +13078,16 @@ function _madNaupTablaHTML(){
 }
 /** Salinidad y temperatura tecleadas: bajan por su columna a las revisiones de abajo. */
 function madNaupBaja(el){ _madBajarColumna(el, null); }
+/* 2026-11-03 (usuario) · Deformidad, Actividad, Hongos, Fototropismo y Aireación: lo elegido en ENTRADA baja a las otras tres,
+   y cambiar otra revisión sólo cambia ésa. La bajada es la de siempre (_madBajarColumna), con una diferencia pedida por el
+   usuario: sólo baja desde la primera fila, aunque Entrada esté vacía. Salinidad y Temperatura siguen con madNaupBaja.
+   Lo vaciado a propósito —una revisión que no se hizo— se queda vacío aunque luego cambie Entrada. Se envía lo que se ve. */
+function madNaupBajaSel(el){
+  if(!el) return;
+  if(Number(el.getAttribute("data-r")) === 0) _madBajarColumna(el, null);
+  else _madBajaTeclea(el, String(el.value).trim() === "");
+}
+const _MAD_NAUP_COLS_SEL = ["def","act","hon","fot","air"];
 /* La alcalinidad es del DÍA y no de un lote, así que va FUERA de las tarjetas: dentro se
    repetiría una vez por lote y habría que decidir cuál de las copias vale. */
 /* PE1.5 (2026-09-16, usuario) · de DÍA y de NOCHE, cada turno con su campo por área. Va en su propia caja
@@ -13095,7 +13115,7 @@ function _madMortCardHTML(){
     + _MAD_DES_CARGAR_CAJA
     + '<div style="font-size:12px;font-weight:700;margin:2px 0 6px;color:#334155">📉 Mortalidad de hembras</div>'
     + _madMortTipoHTML("Desove") + _madMortTipoHTML("Recuperación")
-    + '<div style="font-size:12px;font-weight:700;margin:8px 0 6px;color:#334155">🔬 Revisión de nauplios</div>'
+    + '<div style="font-size:12px;font-weight:700;margin:8px 0 6px;color:#334155">🔬 Revisión de nauplios <span class="mm-naup-ayuda" style="font-weight:400;color:#64748b">· lo que elijas en Entrada se copia a las demás; cambiar otra revisión sólo cambia ésa. Vacía la que no se haya hecho.</span></div>'
     + _madNaupTablaHTML()
     + '<label style="'+_MAD_ING_LBL+';margin-top:8px">Observaciones<input class="mm-obs" style="'+_MAD_ING_INP+';width:100%;box-sizing:border-box"></label>'
     + '</div>';
@@ -16857,7 +16877,7 @@ function _madBajarColumna(el, puede){
   if(!cuerpo || col == null || !isFinite(fila)) return;
   const v = el.value, vacia = String(v).trim() === "";
   if(!_madBajaTeclea(el, vacia)) return;   // una corrección no baja
-  cuerpo.querySelectorAll('input[data-c="' + col + '"]').forEach(function(o){
+  cuerpo.querySelectorAll('input[data-c="' + col + '"],select[data-c="' + col + '"]').forEach(function(o){
     if(o === el || Number(o.getAttribute("data-r")) <= fila) return;
     if(!_madBajaRecibe(o, fila, String(o.value).trim() === "")) return;
     if(puede && !puede(o)) return;
