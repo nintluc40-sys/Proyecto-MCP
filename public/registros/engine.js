@@ -24624,7 +24624,13 @@ function _trasUpsert(list, id, data){
     return false;
   }
   list.unshift({ id: id, ts: Date.now(), synced:false, syncedAt:null, data:data });
-  if(list.length > TRAS_MAX) list.length = TRAS_MAX;
+  /* 2026-11-03 (pauta 1.6) · Al pasar del tope se retira lo YA ENVIADO, lo más viejo primero: sigue en la hoja. Lo pendiente no se toca
+     nunca: el tope lo borraba sin aviso, y el viaje no llegaba a la hoja. Si todo está pendiente se guarda igual y se avisa (decisión del
+     usuario): frenar a un chequeador sin señal en plena carga sería peor, y el espacio del navegador ya tiene su propio aviso. */
+  for(let i = list.length - 1; i >= 0 && list.length > TRAS_MAX; i--){
+    if(list[i] && list[i].synced) list.splice(i, 1);
+  }
+  if(list.length > TRAS_MAX) toast("⚠️ Hay "+list.length+" traslados sin enviar en este equipo. Envíalos en cuanto haya señal.", "warn", 8000);
   return true;
 }
 
