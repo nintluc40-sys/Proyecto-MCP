@@ -1873,6 +1873,21 @@ function _purgeQueueMark(mark){
   }catch(_){}
 }
 
+/* 2026-11-03 (pauta 1.2) · ¿Espera en la cola un envío con ALGUNA de estas llaves, y otras que éste no lleva? Entonces no puede salir
+   directo: _purgeQueueMark no retira ese lote —se perderían los demás— y al vaciarse volvería a escribir sobre lo de ahora los datos
+   viejos de las llaves compartidas, con la app diciendo «enviado». La salida es respetar el orden: ver postPayload. */
+function _colaSolapa(mark){
+  if(!mark || !mark.kind || !Array.isArray(mark.keys) || !mark.keys.length) return false;
+  const supKeys = new Set(mark.keys);
+  const cubre = (k) => _colaClaveCubierta(mark.kind, supKeys, k);
+  return _loadSyncQueue().some(it => {
+    if(!it || !it.mark || it.mark.kind !== mark.kind || !Array.isArray(it.mark.keys)) return false;
+    const comunes = it.mark.keys.filter(cubre).length;   // alguna, y no todas
+    return comunes > 0 && comunes < it.mark.keys.length;
+  });
+}
+const _colaRechazos = new Map();   // reqId → motivo: lo que el último vaciado retiró por sus DATOS (lo lee postPayload, ver _colaSolapa)
+
 // F3: reconcilia el estado local tras una ENTREGA confirmada desde la cola.
 // La marca identifica, por clave de sesión, qué registros locales corresponden
 // al envío → se marcan synced para que no sigan "pendientes" ni se reenvíen.
@@ -2082,6 +2097,7 @@ async function flushSyncQueue(opts){
         // Rechazo por los DATOS: reintentar es inútil y dejarlo bloquearía la cola.
         // NO se marca synced: el dato no se escribió y sigue pendiente en local.
         rejected++; msgDatos = _info.message || msgDatos;
+        if(it.reqId) _colaRechazos.set(it.reqId, _info.message || "");
       } else {
         remaining.push(it); // sigue siendo transitorio: se conserva
       }
@@ -2208,10 +2224,21 @@ async function postPayload(payload, url, opts){
     const MAX_ATTEMPTS = 2;
     let res = "retry";
     const _gasInfo = {};
-    for(let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++){
-      res = await _postOnce(bodyPayload, finalUrl, _gasInfo);
-      if(res === "ok" || res === "rejected") break;
-      if(attempt < MAX_ATTEMPTS) await _sleep(1200 * attempt);
+    if(_fp && opts && _colaSolapa(opts.mark)){
+      /* 2026-11-03 (pauta 1.2) · Detrás del lote viejo, y se vacía la cola: primero llega lo viejo y luego esto, así que gana lo último.
+         Si no sale, sigue en la cola y lo demás es el camino de siempre: «en cola», «rechazado» o, si no cupo, el error. */
+      if(_enqueueSync(payload, _fp, url, opts.mark)){
+        _colaRechazos.delete(_fp);
+        await flushSyncQueue();
+        if(_colaRechazos.has(_fp)){ _gasInfo.message = _colaRechazos.get(_fp); res = "rejected"; }
+        else if(!_loadSyncQueue().some(it => it && it.reqId === _fp)) res = "ok";
+      }
+    } else {
+      for(let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++){
+        res = await _postOnce(bodyPayload, finalUrl, _gasInfo);
+        if(res === "ok" || res === "rejected") break;
+        if(attempt < MAX_ATTEMPTS) await _sleep(1200 * attempt);
+      }
     }
 
     if(res === "ok"){
