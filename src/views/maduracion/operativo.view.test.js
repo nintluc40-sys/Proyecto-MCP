@@ -4540,6 +4540,15 @@ describe('Maduración · operativo · 🔀 un MIX en pantalla', () => {
     expect(t).not.toContain('revisión(es) del período traen algún aviso');
   });
 
+  it('🔴 🔍 Revisiones de un lote sin ninguna propia: lo dice, y no calla las de su MIX', async () => {
+    await montar([...PLANTA_MIX, ...REVS]);
+    abrir('revisiones');
+    marcar('lote', 'QA');
+    const t = plano(root);
+    expect(t).toContain('Ninguna revisión registrada');
+    expect(t).toContain('Además, 1 revisión(es) de ' + MIX + ', en el historial');
+  });
+
   it('🔴 la ficha del lote cuenta sólo las suyas, y dice las del MIX', async () => {
     await montar([...PLANTA_MIX, ...REVS]);
     abrirLotes();
