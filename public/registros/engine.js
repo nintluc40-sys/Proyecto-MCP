@@ -1962,10 +1962,14 @@ function _reconcileAlgas(mark){
     if(!k || k.indexOf(ALGHIST_PRE) !== 0) continue;
     let l = null; try{ l = JSON.parse(localStorage.getItem(k)); }catch(_){}
     if(!Array.isArray(l)) continue;
-    const idos = l.filter(h => h && enviados.has(String(h.id)));
+    // 2026-11-03 (pauta 1.3) · lo corregido después de enviarse se queda en el historial, sin enviar.
+    const _sellos = (mark.sellos && typeof mark.sellos === "object") ? mark.sellos : null;
+    const _igual = (h) => !_sellos || !Object.prototype.hasOwnProperty.call(_sellos, String(h.id))
+      || _sellos[String(h.id)] === _stringHash(JSON.stringify(h.data === undefined ? null : h.data));
+    const idos = l.filter(h => h && enviados.has(String(h.id)) && _igual(h));
     if(!idos.length) continue;
     idos.forEach(h => { if(h.data) pushAlgLog(h.data); });
-    const resto = l.filter(h => !(h && enviados.has(String(h.id))));
+    const resto = l.filter(h => idos.indexOf(h) === -1);
     try{ if(resto.length) localStorage.setItem(k, JSON.stringify(resto)); else localStorage.removeItem(k); }catch(_){}
     algo = true;
   }
@@ -1988,9 +1992,30 @@ function _reconcileMark(mark){
     if(mark.kind.indexOf("madlog:") === 0) return _madLogReconciliar(mark.kind.slice(7), mark.keys);
     const keys = new Set(mark.keys.map(String));
     const now  = Date.now();
-    // Cada vista define: raw() lee su lista local, save(l) la persiste y keyOf(r)
-    // da la clave del registro (sesión derivada de r.data, fecha, o id según la
-    // vista). Así el reconcile es uniforme para micro/cal/pat/biomol/AsT/maduración.
+    const _F = _marcaFuente(mark);
+    if(!_F) return false;
+    const raw = _F.raw, save = _F.save, keyOf = _F.keyOf;
+    const l = raw();
+    /* 2026-11-03 (pauta 1.3) · Sólo lo que SIGUE siendo lo que se envió. Lo corregido con 💾 mientras esperaba se queda pendiente: lo
+       entregado es la versión vieja, y darlo por enviado dejaría la corrección sin viajar, con la app diciendo «enviado» (y a los 7
+       días, fuera del equipo). Una marca de antes no trae sello: como hasta ahora. */
+    const sellos = (mark.sellos && typeof mark.sellos === "object") ? mark.sellos : null;
+    const ahora = sellos ? _marcaHuellas(l, keyOf) : null;
+    let ch = false;
+    l.forEach(r=>{
+      if(!r || r.synced) return;
+      let k; try{ k = keyOf(r); }catch(_){ return; }
+      if(k == null || !keys.has(String(k))) return;
+      if(sellos && Object.prototype.hasOwnProperty.call(sellos, String(k)) && ahora[String(k)] !== sellos[String(k)]) return;
+      r.synced = true; r.syncedAt = now; ch = true;
+    });
+    if(ch){ save(l); }
+    return ch;
+  }catch(_){ return false; }
+}
+/* Cada vista define: raw() lee su lista local, save(l) la persiste y keyOf(r) da la clave del registro (sesión derivada de r.data,
+   fecha, o id según la vista). Así el reconcile es uniforme para micro/cal/pat/biomol/AsT/maduración. */
+function _marcaFuente(mark){
     let raw, save, keyOf;
     if     (mark.kind === "mic" && typeof _micRaw === "function"){ raw=_micRaw; save=_micSave; keyOf=(r)=> r.data ? micSessionKey(r.data) : ""; }
     else if(mark.kind === "cal" && typeof _calRaw === "function"){ raw=_calRaw; save=_calSave; keyOf=(r)=> r.data ? calSessionKey(r.data) : ""; }
@@ -2011,17 +2036,50 @@ function _reconcileMark(mark){
       const _mk = mark.kind.slice(4);   // salas | tanques | lotes
       raw=()=>loadMad(_mk); save=(l)=>saveMadList(_mk, l); keyOf=(r)=> r.id;
     }
-    else return false;
-    const l = raw();
-    let ch = false;
-    l.forEach(r=>{
-      if(!r || r.synced) return;
-      let k; try{ k = keyOf(r); }catch(_){ return; }
-      if(k != null && keys.has(String(k))){ r.synced = true; r.syncedAt = now; ch = true; }
-    });
-    if(ch){ save(l); }
-    return ch;
-  }catch(_){ return false; }
+    else return null;
+    return { raw:raw, save:save, keyOf:keyOf };
+}
+/* 2026-11-03 (pauta 1.3) · LA HUELLA de cada clave: el contenido de sus registros, sin la hora ni el estado. Pulsar 💾 sin cambiar
+   nada da la misma huella, y un registro más en una sesión da otra. */
+function _marcaHuellas(list, keyOf){
+  const porClave = {};
+  (list || []).forEach(r => {
+    if(!r) return;
+    let k; try{ k = keyOf(r); }catch(_){ return; }
+    if(k == null || k === "") return;
+    const c = String(k);
+    (porClave[c] = porClave[c] || []).push(JSON.stringify(r.data === undefined ? null : r.data));
+  });
+  const out = {};
+  Object.keys(porClave).forEach(c => { out[c] = _stringHash(porClave[c].sort().join("\n")); });
+  return out;
+}
+/* Lab. Algas guarda un historial por día: su huella, en todos, como su entrega (_reconcileAlgas). */
+function _algHuellas(){
+  const out = {};
+  for(let i = localStorage.length - 1; i >= 0; i--){
+    const k = localStorage.key(i);
+    if(!k || k.indexOf(ALGHIST_PRE) !== 0) continue;
+    let l = null; try{ l = JSON.parse(localStorage.getItem(k)); }catch(_){}
+    if(!Array.isArray(l)) continue;
+    l.forEach(h => { if(h && h.id != null) out[String(h.id)] = _stringHash(JSON.stringify(h.data === undefined ? null : h.data)); });
+  }
+  return out;
+}
+/* Sella la marca con lo que viaja, ANTES de cualquier espera. Las fichas de saveE ya llevan el suyo, y las marcas con versión (id@ts)
+   lo llevan en la propia clave. */
+function _marcaSellar(mark){
+  if(!mark || mark.sellos || !mark.kind || !Array.isArray(mark.keys) || !mark.keys.length) return;
+  if(mark.kind === "fichas" || mark.kind.indexOf("madlog:") === 0 || _COLA_CON_VERSION.indexOf(mark.kind) !== -1) return;
+  try{
+    let todas = null;
+    if(mark.kind === "alg") todas = _algHuellas();
+    else { const F = _marcaFuente(mark); if(F) todas = _marcaHuellas(F.raw(), F.keyOf); }
+    if(!todas) return;
+    const s = {};
+    mark.keys.forEach(k => { const c = String(k); if(Object.prototype.hasOwnProperty.call(todas, c)) s[c] = todas[c]; });
+    mark.sellos = s;
+  }catch(_){}
 }
 
 // Reintenta enviar todo lo encolado. Idempotente y reentrante-seguro
@@ -2175,6 +2233,7 @@ async function _colaTick(){
 // E (2026-09-24, usuario) · `opts.sinAvisos`: quien llama da él UN aviso por la acción entera (los cuatro flujos del
 // reproductivo), así que aquí se callan los tres propios —en curso, idéntico y en cola— y sólo queda `opts.outcome`.
 async function postPayload(payload, url, opts){
+  if(opts) _marcaSellar(opts.mark);
   const _setOut = (v)=>{ if(opts) opts.outcome = v; };
   const flightKey = (payload && payload.sheetName) ? payload.sheetName : "_default";
   if(_syncInFlight.has(flightKey)){
@@ -9426,6 +9485,7 @@ const MAD_ING_GAS_VIEJO = "el GAS desplegado no es el de esta app y podría escr
    Recibe la respuesta YA preguntada: preguntar otra vez serían otros 6 s de espera (la lección de A2). */
 const MAD_GAS_SIN_CONFIRMAR = "no se pudo confirmar que el GAS desplegado sea el de esta app (no respondió)";
 async function _madPostConSello(payload, gas, opts){
+  if(opts) _marcaSellar(opts.mark);
   if(gas === true) return postPayload(payload, gasUrl(), opts);
   // 🔴 2026-10-04 · sin espacio el envío no queda en la cola: no se da por a salvo y lo tecleado se queda (ver _saveSyncQueue).
   if(!_enqueueSync(payload, _payloadFingerprint(payload), gasUrl(), opts && opts.mark)){
@@ -16311,6 +16371,7 @@ function _madZonasVaciar(fechaOverride){
 }
 /** Por la puerta del sello, como Tanques (_madTanquesEnviar): a un GAS que no es el de esta app no se le entrega. */
 async function _madZonasEnviar(payload, opts, gas){
+  if(opts) _marcaSellar(opts.mark);   // antes de preguntar al GAS: lo que se corrija mientras tanto no es lo que viaja
   const g = gas === undefined ? await _madIngGasAlDia() : gas;
   if(g === false){ opts.gasMessage = _madGasViejoMsg(MAD_SHEET.zonas); return false; }
   return _madPostConSello(payload, g, opts);
@@ -17391,6 +17452,7 @@ function saveMadTanquesGrid(opts){
    🔑 Aquí no se pierde nada aunque la cola caduque: los registros de la grilla viven en el dispositivo y sólo se marcan
    como enviados cuando la entrega se reconcilia (marca «mad:tanques»), así que el siguiente «Sincronizar» los reintenta. */
 async function _madTanquesEnviar(payload, opts, gas){
+  if(opts) _marcaSellar(opts.mark);   // antes de preguntar al GAS: lo que se corrija mientras tanto no es lo que viaja
   const g = gas === undefined ? await _madIngGasAlDia() : gas;
   if(g === false){ opts.gasMessage = _madGasViejoMsg(MAD_SHEET.tanques); return false; }
   return _madPostConSello(payload, g, opts);

@@ -72,8 +72,9 @@ describe('A · las llamadas a postPayload pasan opts', () => {
 
 /* ── B · los kind de las marcas existen ──────────────────────────────── */
 describe('B · toda marca usa un kind que _reconcileMark sabe reconciliar', () => {
-  const i = engine.indexOf('function _reconcileMark(');
-  const cuerpo = engine.slice(i, engine.indexOf('\n}\n', i));
+  // 2026-11-03 (pauta 1.3) · la lista de clases vive en _marcaFuente, que también la usa el sello.
+  const de = (nombre) => { const i = engine.indexOf('function ' + nombre + '('); return engine.slice(i, engine.indexOf('\n}\n', i)); };
+  const cuerpo = de('_reconcileMark') + de('_marcaFuente');
 
   const kindsReconocidos = [...cuerpo.matchAll(/mark\.kind === "([a-z:]+)"/g)].map((m) => m[1]);
   const prefijos = [...cuerpo.matchAll(/mark\.kind\.indexOf\("([a-z:]+)"\)/g)].map((m) => m[1]);
