@@ -20,7 +20,7 @@
    ============================================================ */
 import { ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_MIXTO, sumarDias, ubicKey } from '../registros/lib/mad-libro.js';
 import { SALAS_VISIBLES } from './operativo.data.js';
-import { tasaEntre, kpiBiomasa, posicionEnFiltro, codigoEnFiltro, loteElegido, hayLote, hayCodigo, haySala, hayTanque, salaElegida, tanqueElegido,
+import { tasaEntre, kpiBiomasa, posicionEnFiltro, desoveEnCodigo, loteElegido, hayLote, hayCodigo, haySala, hayTanque, salaElegida, tanqueElegido,
   hayPiscina, hayCamaronera, desoveEnOrigen, ignoraDeDesoves, kpiCopula } from './operativo.tablero.js';
 
 /** Las tarjetas que tienen gráfico, en su orden, con su título. */
@@ -226,7 +226,7 @@ export function graficoReproduccion(filasDesoves, periodo, F) {
     if (!enPeriodo(f, periodo)) continue;
     if (!loteElegido(r.Lote, F)) continue;
     if (!desoveEnOrigen(r, F)) continue;
-    if (!codigoEnFiltro(r['Código genético'], F)) continue;
+    if (!desoveEnCodigo(r, F)) continue;
     des.set(f, (des.get(f) || 0) + ent(r.Desoves));
     n5.set(f, (n5.get(f) || 0) + ent(r.N5));
   }

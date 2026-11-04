@@ -18,7 +18,7 @@
      alcalinidad, el RAS, las toneladas, las cargas y los tratamientos salen de `resumenMaduracion`; los estados, del
      libro. Lo único que se añade al último registro son sus extremos, leídos del MISMO registro que usa el Saldo.
    ============================================================ */
-import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
+import { normLote, normCodigoGenetico, esMix, lotesDeMix } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { MAD_TANQUES_POR_SALA } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
 import { sumarDias, ubicKey, CUARENTENA_DIAS, ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_MIXTO } from '../registros/lib/mad-libro.js';
 import { diasEntre, RESUMEN_TEMPS, RESUMEN_OXIGENOS } from '../registros/lib/mad-resumen.js';
@@ -281,6 +281,40 @@ export function loteElegido(lote, F) {
   return F.lotes.includes(normLote(lote));
 }
 
+/* 🔀 MIX (usuario, 2026-11-03: «Fila propia, sin repartir»). Sus huevos, N2 y N5 no se pueden separar, así que no es de ningún lote,
+   código ni piscina: cuenta en el total de la planta y, con cualquiera de esos filtros puestos, se queda fuera de las cifras y se
+   enseña aparte (`mixAparte`). El lote y el origen ya lo dejan fuera solos —su nombre no es el de ningún lote ni tiene Ingreso—;
+   el código no, porque lleva los de sus lotes: de ahí `desoveEnCodigo`. */
+export const desoveEnCodigo = (r, F) => codigoEnFiltro(r['Código genético'], F) && !(hayCodigo(F) && esMix(r.Lote));
+/** ¿Este MIX tiene algo de lo filtrado? Con lote, código, piscina o camaronera puestos, y casando en todos los puestos. */
+export function mixEnFiltro(r, F) {
+  const lotes = lotesDeMix(r.Lote);
+  if (!lotes.length || !(hayLote(F) || hayCodigo(F) || hayPiscina(F) || hayCamaronera(F))) return false;
+  if (hayLote(F) && !lotes.some((l) => F.lotes.includes(l))) return false;
+  if (hayCodigo(F) && !codigoEnFiltro(r['Código genético'], F)) return false;
+  if (F.indice && (hayPiscina(F) || hayCamaronera(F)) && !lotes.some((l) => origenEnFiltro(F.indice.origen.get(l), F))) return false;
+  return true;
+}
+/** Lo de varias filas de MIX, una entrada por MIX: lo que se enseña aparte. */
+export function sumaDeMix(filas) {
+  const m = new Map();
+  for (const r of filas || []) {
+    const lote = normLote(r.Lote);
+    const a = m.get(lote) || { lote, desoves: 0, huevos: 0, n2: 0, n5: 0 };
+    a.desoves += ent(r.Desoves);
+    a.huevos += ent(r['Total de huevos']);
+    a.n2 += ent(r.N2);
+    a.n5 += ent(r.N5);
+    m.set(lote, a);
+  }
+  return [...m.values()].sort((a, b) => (a.lote < b.lote ? -1 : a.lote > b.lote ? 1 : 0));
+}
+/** Los MIX del período que tienen algo de lo filtrado y por eso NO están en las cifras: se dicen aparte. */
+export function mixAparte(filasDesoves, periodo, F) {
+  return sumaDeMix((filasDesoves || []).filter((r) => enPeriodo(fecha10(r.Fecha), periodo) && mixEnFiltro(r, F)
+    && !(loteElegido(r.Lote, F) && desoveEnOrigen(r, F) && desoveEnCodigo(r, F))));
+}
+
 /** ¿Pasa esta posición del libro (sala, tanque, lote, código genético) por el filtro? */
 export function posicionEnFiltro(p, F) {
   if (!salaElegida(p.sala, F)) return false;
@@ -499,7 +533,7 @@ export function kpiReproduccion(filasDesoves, periodo, F) {
     if (!enPeriodo(fecha10(r.Fecha), periodo)) continue;
     if (!loteElegido(r.Lote, F)) continue;
     if (!desoveEnOrigen(r, F)) continue;
-    if (!codigoEnFiltro(r['Código genético'], F)) continue;
+    if (!desoveEnCodigo(r, F)) continue;
     const n2 = ent(r.N2);
     const n5 = ent(r.N5);
     a.desoves += ent(r.Desoves);
@@ -516,6 +550,7 @@ export function kpiReproduccion(filasDesoves, periodo, F) {
     fertilidad: cociente(a.n2ConHuevos, a.huevosConN2, 100),
     naupliosPorHembra: a.desovesConN5 > 0 ? Math.round(a.n5 / a.desovesConN5) : '',
     ignora: ignoraDeDesoves(F),
+    mix: mixAparte(filasDesoves, periodo, F),
   };
 }
 /** Lo que el filtro no puede aplicar a un desove (tarjeta y gráfico de 🥚 Reproducción): aplica el lote, el código y el

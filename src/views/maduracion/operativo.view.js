@@ -42,7 +42,7 @@ import { store } from '../../core/store.js';
 import { makeChart, destroyAllCharts } from '../../core/charts.js';
 import { esc } from '../../core/format.js';
 import { sumarDias, ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_MIXTO } from '../registros/lib/mad-libro.js';
-import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';   // punto 2 · etapa A
+import { normLote, normCodigoGenetico, esMix } from '../registros/lib/ficha-maduracion-desoves.schema.js';   // punto 2 · etapa A
 import { modeloOperativo, serieDiaria, diasDeTanque, libroAlCierre, SALAS_VISIBLES } from './operativo.data.js';
 import {
   PERIODOS, PERIODO_INICIAL, periodoDe, normalizarFiltro, hayFiltro, kpiVivos, kpiLotes, kpiSalas, kpiOcupacion,
@@ -570,7 +570,7 @@ function estadoHTML(M, memo, p, F) {
       'El libro lleva las bajas por lote, no por código genético.', 'mortalidad');
   }
   const repro = tile('Reproducción', `${nf(r.desoves)} desoves`,
-    `N5 ${r.n5 ? nf(r.n5 / 1e6, 2) + ' M' : '—'} · fert. ${pc(r.fertilidad)}${r.ignora.length ? ` · <span class="mop-nota">sin filtro de ${esc(r.ignora.join(', '))}</span>` : ''}`, 'is-desove',
+    `N5 ${r.n5 ? nf(r.n5 / 1e6, 2) + ' M' : '—'} · fert. ${pc(r.fertilidad)}${r.ignora.length ? ` · <span class="mop-nota">sin filtro de ${esc(r.ignora.join(', '))}</span>` : ''}${(r.mix || []).length ? ` · <span class="mop-nota">🔀 + ${nf(r.mix.reduce((a, m) => a + m.desoves, 0))} en MIX</span>` : ''}`, 'is-desove',
     'Desoves del período, por su fecha. Fertilidad = N2 ÷ huevos, sólo de los desoves que ya tienen su N2 (regla del ⚖️ Saldo). Un desove es de su lote y código genético, no de una sala, y no lleva estado ni sexo (es de hembras): esos filtros no se le aplican.', 'reproduccion');
 
   /* 2026-10-27 (usuario, ronda 8 · tarea 4) · la tasa de cópula, con la regla del ⚖️ Saldo y de 🌊 Mareas (kpiCopula). */
@@ -2224,6 +2224,7 @@ function fichaLoteHTML(f, p) {
       <div class="mop-sc-fila"><span class="mop-sc-l">Huevos</span><span>${nf(r.huevos)} · ${nf(r.huevosPorDesove)} por desove</span></div>
       <div class="mop-sc-fila"><span class="mop-sc-l">N2</span><span>${nf(r.n2)} · fertilidad ${pc(r.fertilidad)} ${dot(evaluar('fertilidad', r.fertilidad), refUmbral('fertilidad'))}</span></div>
       <div class="mop-sc-fila"><span class="mop-sc-l">N5</span><span>${nf(r.n5)} · ${nf(r.n5PorDesove)} por desove</span></div>
+      ${mixNotaHTML(f.mix, 'Además participó en')}
       <p class="mc-note">La fertilidad sale sólo de los desoves que TRAEN su N2 y sus huevos contados; el N5 se cuenta aparte y NO se compara con el N2.</p>
       <h5 class="mop-det-h">Promedios de sus tanques</h5>
       <div class="mop-sc-fila"><span class="mop-sc-l">Peso</span><span>♂ ${nf(pr.pesoMachos, 2)} g · ♀ ${nf(pr.pesoHembras, 2)} g</span></div>
@@ -2997,7 +2998,13 @@ function totalesReproHTML(T, p) {
       N5: uno pendiente no diluye la cifra. ⚠ N5 no se compara con N2 — se cuentan
       días distintos y de poblaciones que no son la misma.</p>
     ${ignoraHTML(T.ignora, 'La reproducción')}
+    ${mixNotaHTML(T.mix, 'Además, con este filtro')}
   </div>`;
+}
+/** 🔀 2026-11-03 · los MIX que tienen algo de lo elegido y no están en estas cifras: un MIX no se reparte, pero no se calla. */
+function mixNotaHTML(lista, inicio) {
+  if (!(lista || []).length) return '';
+  return `<p class="mc-note">🔀 ${esc(inicio)}: ${lista.map((m) => `<b>${esc(m.lote)}</b> · ${nf(m.desoves)} desove(s), ${nf(m.huevos)} huevos, N2 ${nf(m.n2)}, N5 ${nf(m.n5)}`).join(' · ')}. No suman aquí: las cifras de un MIX no se pueden separar por lote.</p>`;
 }
 
 function pendientesHTML(pend) {
@@ -3047,6 +3054,7 @@ function tablaReproHTML(filas, F, rep) {
         <th class="r">No viables</th><th class="r">N2</th><th class="r">Fertilidad</th><th class="r">N5</th>
         <th class="r">Nauplios/hembra</th><th>Destinos</th></tr></thead>
       <tbody>${filas.map(f).join('')}</tbody></table></div>
+    ${filas.some((x) => esMix(x.lote)) ? '<p class="mc-note">🔀 Un MIX es un desove de varios lotes juntos: sus huevos, N2 y N5 no se pueden separar, así que va en su propia fila y no suma a ninguno de sus lotes.</p>' : ''}
   </div>`;
 }
 

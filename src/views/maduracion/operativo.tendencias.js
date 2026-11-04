@@ -40,11 +40,11 @@
      con los filtros puestos, lo que la mortalidad de una sala no separa, lo que sólo elige los lotes (sus desoves y sus
      cópulas cuentan enteros) y si el código deja fuera las cópulas. La vista lo pinta bajo la nota de ⚠️ Alertas.
    ============================================================ */
-import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
+import { normLote, lotesDeMix } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { construirLibro, sumarDias, ubicKey, ESTADO_PRODUCCION } from '../registros/lib/mad-libro.js';
 import { fechaDeFila } from './operativo.data.js';
 import { cociente, tasaEnPartesDelLote } from './operativo.indicadores.js';
-import { posicionEnFiltro, salasEnAlcance, codigoEnFiltro, hayCodigo, tanqueElegido, filtrosNoAplicados } from './operativo.tablero.js';
+import { posicionEnFiltro, salasEnAlcance, desoveEnCodigo, hayCodigo, tanqueElegido, filtrosNoAplicados } from './operativo.tablero.js';
 import { loteEnFiltro, origenDeLote } from './operativo.lotes.js';
 import { UMBRALES_DE_AVISO } from './operativo.umbrales.js';
 
@@ -128,13 +128,15 @@ export function presenciaDiaria(fuentes, desde, hasta) {
 
 /** Las salas en las que cuenta un desove del lote `clave` del día `fecha`: aquellas donde el lote tenía animales al
  *  cierre de la VÍSPERA o del PROPIO día. Un lote que se mudó ese día cuenta en las dos; uno que cerró ese día, en la
- *  suya; uno que llegó ese día, en la nueva. */
+ *  suya; uno que llegó ese día, en la nueva. 🔀 Un MIX, en las salas de cualquiera de sus lotes. */
 export function salasDelDesove(presencia, clave, fecha) {
   const out = new Set();
+  const delMix = lotesDeMix(clave);
+  const claves = delMix.length ? delMix : [clave];
   for (const f of [sumarDias(fecha, -1), fecha]) {
     const foto = presencia && presencia.get(f);
     if (!foto) continue;
-    for (const [sala, lotes] of foto.salas) if (lotes.has(clave)) out.add(sala);
+    for (const [sala, lotes] of foto.salas) if (claves.some((c) => lotes.has(c))) out.add(sala);
   }
   return [...out].sort(porNombre);
 }
@@ -180,7 +182,7 @@ function desovesDelPeriodo(M, F, p, enAlcance) {
     if (!enPeriodo(fechaDesove(r), p)) return false;
     const clave = normLote(r.Lote);
     if (!clave || !enAlcance(clave)) return false;
-    return codigoEnFiltro(r['Código genético'], F);
+    return desoveEnCodigo(r, F);
   });
 }
 

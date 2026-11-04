@@ -4451,3 +4451,59 @@ describe('Maduración · operativo · pauta 14 · lo que no se aplica se dice en
     expect(plano(root)).toContain('Un cierre de Fin de Ciclo no puede separarse por sala: ese filtro no se ha aplicado aquí. La hoja de Fin de Ciclo se registra por lote');
   });
 });
+
+/* 🔀 2026-11-03 (usuario: «Fila propia, sin repartir»). Las cifras las prueba operativo.mix.test.js; aquí, que se VEAN. */
+describe('Maduración · operativo · 🔀 un MIX en pantalla', () => {
+  const MIX = 'MIX(QA,QB)';
+  const PLANTA_MIX = [...PLANTA,
+    DES('18/09/2026', 'QA', 2, 200000, { 'Fecha N5': '19/09/2026', N5: '80000' }),
+    DES('19/09/2026', MIX, 4, 700000, { 'Código genético': 'CA/CB', 'Fecha N5': '19/09/2026', N5: '300000' }),
+  ];
+
+  it('🔴 sin filtro: el total lo cuenta, va en su propia fila, y la tabla explica por qué', async () => {
+    await montar(PLANTA_MIX);
+    abrirRepro();
+    expect(kpi('Desoves')).toBe('6');
+    expect(plano(root)).toContain(MIX);
+    expect(plano(root)).toContain('va en su propia fila y no suma a ninguno de sus lotes');
+    expect(plano(root)).not.toContain('Además, con este filtro');
+  });
+
+  it('🔴 con un lote suyo: las cifras son sólo las del lote, y el MIX se dice aparte', async () => {
+    await montar(PLANTA_MIX);
+    abrirRepro();
+    marcar('lote', 'QA');
+    expect(kpi('Desoves')).toBe('2');
+    const t = plano(root);
+    expect(t).toContain('Además, con este filtro: ' + MIX + ' · 4 desove(s)');
+    expect(t).toContain('No suman aquí');
+    expect(t).not.toContain('va en su propia fila');
+  });
+
+  it('🔴 elegir el propio MIX enseña sus cifras, y no lo repite aparte', async () => {
+    await montar(PLANTA_MIX);
+    abrirRepro();
+    marcar('lote', MIX);
+    expect(kpi('Desoves')).toBe('4');
+    expect(plano(root)).not.toContain('Además, con este filtro');
+  });
+
+  it('🔴 la tarjeta de Reproducción del Estado actual avisa de lo que queda fuera', async () => {
+    await montar(PLANTA_MIX);
+    marcar('lote', 'QA');
+    expect(plano(root)).toContain('🔀 + 4 en MIX');
+    marcar('lote', []);
+    expect(plano(root)).not.toContain('en MIX');
+  });
+
+  it('🔴 🧬 Lotes: no es una fila de animales, y la ficha de quien participó lo dice', async () => {
+    await montar(PLANTA_MIX);
+    abrirLotes();
+    expect([...root.querySelectorAll('[data-mop-lote]')].map((x) => x.dataset.mopLote)).not.toContain(MIX);
+    click(filaLote('QB'));
+    expect(plano(root)).toContain('Además participó en: ' + MIX);
+    click(filaLote('QB'));
+    click(filaLote('QD'));
+    expect(plano(root)).not.toContain('Además participó en');
+  });
+});

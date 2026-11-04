@@ -1415,6 +1415,16 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   suelta es la copia de la MATRIZ (`larv4_mad_matriz`, ~16 %), que se vuelve a bajar; guardarla, en cambio, nunca borra nada
   para hacerse sitio. Si aun así no cabe, 💾 lo dice y **lo tecleado sigue en pantalla**: antes la grilla se repintaba desde
   lo guardado y lo borraba. La regla la vigilan `mad-espacio.test.js` y su banco `mutar-mad-espacio`.
+- **🔀 MIX: un desove de varios lotes** (usuario, 2026-11-03). Las copuladas de tanques de lotes distintos se juntan al desovar y
+  sus huevos, N2 y N5 ya no se pueden separar. En Desoves e Inf. Supervisor, **📥 Cargar** trae una opción fija **MIX (-,-)**:
+  pregunta qué lotes participan, dos o más, y rellena el lote —`MIX(BN,BO)`, en orden fijo: la misma mezcla, la misma llave—, los
+  códigos y las piscinas. Dos códigos del MISMO lote no son un MIX: queda ese lote con los códigos juntos, porque las cifras sí son
+  suyas. En la hoja es una fila más: el GAS no cambia. En el **saldo**, las hembras muertas de un MIX se reparten entre sus lotes
+  según las hembras vivas de cada uno, la regla de un tanque mezclado. En la **vista** va en su propia fila y sin repartir: cuenta
+  en el total de la planta y no suma a ninguno de sus lotes, códigos ni piscinas; con uno de esos filtros puestos se queda fuera de
+  las cifras y se dice aparte («🔀 Además…»), y la ficha y los reportes de cada lote dicen en qué MIX participó, con sus cifras. Con
+  una sala, cuenta en las salas de sus lotes. No tiene fila en 🧬 Lotes, que es de animales, y 🛢 Tanques no cambia. Lo vigilan
+  `mad-mix.test.js`, `operativo.mix.test.js` y su banco `mutar-mad-mix`.
 - **Los botones lentos leen en PARALELO.** Medido contra el GAS vivo: 13,5 s → 3,4 s.
 
 ### Otras que han costado caras

@@ -22,7 +22,7 @@
    · 0v·1 (2026-09-29, usuario) · `granjaDelDia`: la granja el día pulsado en el 🗓 Calendario lunar, con estas reglas.
    ============================================================ */
 import { construirLibro, ubicKey, estadoDeLote, ESTADO_PRODUCCION } from '../registros/lib/mad-libro.js';
-import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
+import { normLote, esMix, lotesDeMix } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { pearson } from '../../core/util.js';
 import { FASES_CICLO } from './data.js';
 import { fechaDeFila } from './operativo.data.js';
@@ -198,15 +198,19 @@ export function desovesDiarios(fuentes) {
 export function desovesYMarea(diarios, marea, { sala = '', soloProduccion = false, mes = '', lote = '', codigo = '' } = {}) {
   let sinHembras = 0;
   const porDia = new Map();
+  /* 🔀 2026-11-03 · con un MIX elegido, las hembras son las de sus lotes; y con sala o «sólo en producción» cuenta si alguno de sus
+     lotes está en el alcance. Con un código elegido no cuenta: un MIX no es de ningún código. */
+  const delLote = lotesDeMix(lote);
   for (const d of diarios || []) {
     if (mes && d.fecha.slice(0, 7) !== mes) continue;
-    const pos = d.posiciones.filter((p) => (!sala || p.sala === sala) && (!lote || p.lote === lote)
+    const pos = d.posiciones.filter((p) => (!sala || p.sala === sala) && (!lote || p.lote === lote || delLote.includes(p.lote))
       && codigoEnFiltro(p.codigo, conCodigo(codigo)) && (!soloProduccion || p.produccion));
     const hembras = pos.reduce((s, p) => s + p.hembras, 0);
     if (!(hembras > 0)) { sinHembras++; continue; }
     const enAlcance = new Set(pos.map((p) => p.lote));
     const filas = d.filas.filter((f) => (!lote || f.lote === lote) && codigoEnFiltro(f.codigo, conCodigo(codigo))
-      && (!(sala || soloProduccion) || enAlcance.has(f.lote)));
+      && !(codigo && esMix(f.lote))
+      && (!(sala || soloProduccion) || enAlcance.has(f.lote) || lotesDeMix(f.lote).some((l) => enAlcance.has(l))));
     porDia.set(d.fecha, { fecha: d.fecha, desoves: filas.reduce((s, f) => s + f.desoves, 0), hembras });
   }
   const todas = diarios || [];

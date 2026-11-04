@@ -6598,6 +6598,14 @@ const MAD_POR_LOTE_SIN_INGRESO = "sin ingreso - " + MAD_EST_DESINF;
 const MAD_LIBRO_SHEETS = { ingreso: "Maduración Ingreso", movimientos: "Maduración Movimientos", tanques: "Maduración Tanques", cierres: "Maduración Fin de Ciclo", mortDesove: "Maduración Mortalidad Desove" };
 function madLibroTxt(v){ return (v===null||v===undefined) ? "" : String(v).trim(); }
 function madLibroEnt(v){ const n=parseInt(v,10); return (isFinite(n)&&n>0)?n:0; }
+/* 🔀 2026-11-03 · los lotes de un MIX («MIX(BN,BO)»), en su orden y sin repetir; [] si no es un MIX. */
+function madLibroLotesDeMix(lote){
+  const m=/^MIX\((.+)\)$/.exec(madLibroTxt(lote).toUpperCase().replace(/\s+/g,""));
+  if(!m) return [];
+  const out=[];
+  m[1].split(",").forEach(function(l){ if(l && out.indexOf(l)===-1) out.push(l); });
+  return out;
+}
 function madUbicKey(sala,tanque){ return madLibroTxt(sala)+"|"+madLibroEnt(tanque); }
 function madPosKey(sala,tanque,lote,cg){ return madUbicKey(sala,tanque)+"|"+madLibroTxt(lote)+"|"+madLibroTxt(cg); }
 // Reparto por RESTO MAYOR. Redondear cada parte por separado no garantiza que lo
@@ -6816,6 +6824,27 @@ function madConstruirLibro(fuentes, opts){
       const reg=clase==="Recuperación" ? "mortRecuperacion" : clase==="Desove" ? "mortDesove" : "";
       const muertas=madLibroEnt(r["Hembras muertas"]), donde=clase==="Recuperación" ? "recuperación" : "desove";
       if(!reg){ anota(fecha,"mortdes-tipo","«"+clase+"» no es un tipo de tanque conocido (Desove o Recuperación): la fila no entra en el libro.",{ lote:lote }); return; }
+      /* 🔀 2026-11-03 (usuario: «Repartir según sus hembras vivas») · un MIX no es un lote del libro: sus muertas salen de los
+         tanques de sus lotes en proporción a las hembras vivas de cada uno, la misma regla que un tanque mezclado. Y «las que
+         entran» igual, para que el % de cada lote siga teniendo sentido. */
+      const delMix=madLibroLotesDeMix(lote);
+      if(delMix.length){
+        const posMix=Object.keys(pos).map(function(k){ return pos[k]; }).filter(function(p){ return delMix.indexOf(p.lote)!==-1; });
+        if(!posMix.length){
+          if(muertas) anota(fecha,"mortdes-sin-lote","Murieron "+muertas+" hembras del "+lote+" en tanques de "+donde+" y ninguno de sus lotes tiene animales en el libro.",{ lote:lote, hembras:muertas });
+          return;
+        }
+        const pesos=delMix.map(function(l){ return posMix.filter(function(p){ return p.lote===l; }).reduce(function(a,p){ return a+p.hembras; },0); });
+        const entran=pesos.some(function(x){ return x>0; }) ? madRepartirProporcional(madLibroEnt(r["Hembras que entran"]), pesos) : pesos.map(function(){ return 0; });
+        delMix.forEach(function(l,i){ if(lotes[l]) lotes[l][reg].entran+=entran[i]; });
+        const resMix=madTomarDe(posMix, "hembras", muertas);
+        posMix.forEach(function(p,i){
+          const dest=lotes[p.lote];
+          if(dest && resMix.partes[i]){ dest[reg].muertas+=resMix.partes[i]; dest.muertos.hembras+=resMix.partes[i]; }
+        });
+        if(resMix.sobra>0) anota(fecha,"deficit-mortdes","Del "+lote+" murieron "+resMix.sobra+" hembras de más en tanques de "+donde+" de las que el libro tenía vivas.",{ lote:lote, sexo:"hembras", cantidad:resMix.sobra });
+        return;
+      }
       const L=lotes[lote];
       const posLote=Object.keys(pos).map(function(k){ return pos[k]; }).filter(function(p){ return p.lote===lote; });
       if(!lote || !L || !posLote.length){
@@ -10978,7 +11007,32 @@ function madDesMiles(v){
   return n==="" ? "" : n*MAD_DESOVE_MIL;
 }
 function madDesNormLote(s){ return sanitizeStr(s,40).toUpperCase().replace(/\s+/g,""); }
-function madDesNormCG(s){ return sanitizeStr(s,60).toUpperCase().replace(/\s+/g,""); }
+/* 2026-11-03 · 200, no 60: el código de un MIX son los de todos sus lotes, y cortarlo partiría la llave de la hoja. */
+function madDesNormCG(s){ return sanitizeStr(s,200).toUpperCase().replace(/\s+/g,""); }
+/* 🔀 MIX (usuario, 2026-11-03): un pool de varios lotes va en UNA fila, con lote `MIX(BN,BO)` y los códigos y piscinas de los
+   participantes. Lo que dejan en la tarjeta las opciones elegidas en 📥 Cargar, en orden fijo —la misma mezcla, la misma llave—.
+   Dos códigos del MISMO lote no son un MIX: quedan como ese lote con los códigos juntos. Gemelo: `armarMix`, en el esquema. */
+function madDesArmarMix(elegidos){
+  const vistos={}, lista=[];
+  (elegidos||[]).forEach(function(e){
+    const x=e||{}, lote=madDesNormLote(x.lote), cg=madDesNormCG(x.codigoGenetico);
+    if(!lote || vistos[lote+"|"+cg]) return;
+    vistos[lote+"|"+cg]=1;
+    lista.push({ lote:lote, cg:cg, piscina:sanitizeStr(x.piscina,60) });
+  });
+  lista.sort(function(a,b){ return a.lote<b.lote ? -1 : a.lote>b.lote ? 1 : a.cg<b.cg ? -1 : a.cg>b.cg ? 1 : 0; });
+  const lotes=[], piscinas=[];
+  lista.forEach(function(l){
+    if(lotes.indexOf(l.lote)===-1) lotes.push(l.lote);
+    l.piscina.split("/").forEach(function(p){ const t=p.trim(); if(t && piscinas.indexOf(t)===-1) piscinas.push(t); });
+  });
+  return {
+    lote: lotes.length>1 ? "MIX("+lotes.join(",")+")" : (lotes[0]||""),
+    codigoGenetico: lista.map(function(l){ return l.cg; }).filter(Boolean).join("/"),
+    piscina: piscinas.join("/"),
+    esMix: lotes.length>1
+  };
+}
 function madDesBuildRows(model){
   const m = model||{};
   const fecha = sanitizeStr(m.fecha,10);
@@ -11420,8 +11474,54 @@ function _madDesPintaCargar(caja){
           return '<button class="btn md-cargar-op" type="button" onclick="madDesCargarElige(this)" style="font-size:12px"'
             + ' data-lote="'+escapeHtml(o.lote)+'" data-cg="'+escapeHtml(o.codigoGenetico)+'" data-piscina="'+escapeHtml(o.piscina)+'">'
             + escapeHtml(o.texto)+'</button>';
-        }).join("") + '</div>'
+        }).join("") + _MAD_DES_MIX_BTN + '</div>'
       : '<span style="color:#92400e">Ningún lote en producción ese día según el libro: escríbelo a mano.</span>');
+}
+/* 🔀 MIX (usuario, 2026-11-03): la opción fija de 📥 Cargar, en Desoves y en Inf. Supervisor. Pregunta qué lotes participan, con
+   casillas —en táctil, lo mismo que la lista: se toca, no se arrastra—, de lo que está en producción en esa fecha. */
+const _MAD_DES_MIX_BTN = '<button class="btn md-mix-btn" type="button" onclick="madDesMixAbrir(this)" style="font-size:12px;font-weight:700"'
+  + ' title="Varios lotes mezclados en un mismo desove: te pregunta cuáles">MIX (-,-)</button>';
+function madDesMixAbrir(el){
+  const caja = (el && el.closest) ? el.closest(".md-cargar") : null;
+  if(!caja) return;
+  const ops = Array.prototype.slice.call(caja.querySelectorAll(".md-cargar-op"));
+  if(ops.length < 2){ toast("Para un MIX hacen falta al menos dos opciones en producción.","warn",4000); return; }
+  const dato = function(b, n){ return escapeHtml(b.getAttribute(n) || ""); };
+  caja.innerHTML = '<div style="color:#1e40af;margin-bottom:6px"><b>MIX</b> · ¿qué lotes participan? Elige al menos dos.</div>'
+    + '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">' + ops.map(function(b){
+        return '<label class="md-mix-op" style="display:flex;gap:8px;align-items:center;padding:7px 8px;border:1px solid #bfdbfe;border-radius:8px;background:#fff;cursor:pointer;font-size:12px">'
+          + '<input type="checkbox" class="md-mix-chk" data-lote="'+dato(b,"data-lote")+'" data-cg="'+dato(b,"data-cg")+'" data-piscina="'+dato(b,"data-piscina")+'">'
+          + '<span>'+escapeHtml(b.textContent)+'</span></label>';
+      }).join("") + '</div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
+    +   '<button class="btn bp md-mix-aplicar" type="button" onclick="madDesMixAplicar(this)" style="font-size:12px">Aplicar MIX</button>'
+    +   '<button class="btn md-mix-volver" type="button" onclick="madDesMixVolver(this)" style="font-size:12px">← Volver a la lista</button>'
+    + '</div>';
+}
+function madDesMixVolver(el){
+  const caja = (el && el.closest) ? el.closest(".md-cargar") : null;
+  if(caja) _madDesPintaCargar(caja);
+}
+/* Rellena los TRES campos a la vez, como madDesCargarElige, y avisa al borrador como si se hubiera tecleado. */
+function madDesMixAplicar(el){
+  const caja = (el && el.closest) ? el.closest(".md-cargar") : null;
+  const card = caja ? caja.closest(".md-des, .mm-card") : null;
+  if(!card) return;
+  const elegidos = Array.prototype.slice.call(caja.querySelectorAll(".md-mix-chk")).filter(function(c){ return c.checked; })
+    .map(function(c){ return { lote:c.getAttribute("data-lote"), codigoGenetico:c.getAttribute("data-cg"), piscina:c.getAttribute("data-piscina") }; });
+  if(elegidos.length < 2){ toast("Elige al menos dos para el MIX.","warn",3500); return; }
+  const m = madDesArmarMix(elegidos);
+  // madDesNormLote corta a 40: un nombre más largo escribiría otro lote, sin cerrar el paréntesis.
+  if(m.lote.length > 40){ toast("Son demasiados lotes para un solo MIX: el nombre no cabe en la hoja.","err",5000); return; }
+  const esSup = card.classList.contains("mm-card"), p = esSup ? ".mm-" : ".md-";
+  const pon = function(sel, v){ const e=card.querySelector(sel); if(e) e.value=v; return e; };
+  const lote = pon(p+"lote", m.lote);
+  pon(p+"cg", m.codigoGenetico);
+  pon(p+"piscina", m.piscina);
+  caja.hidden = true;
+  if(lote) lote.dispatchEvent(new Event("input", { bubbles:true }));
+  if(!m.esMix) toast("Son códigos del mismo lote: queda como lote "+m.lote+", con sus códigos juntos.","info",5000);
+  else if(esSup) toast("Las hembras muertas de un MIX se descuentan repartidas entre sus lotes, según las hembras vivas de cada uno.","info",6000);
 }
 /* Rellena los TRES campos de la tarjeta a la vez —lo que evita cruzar el código de una piscina con otra— y
    avisa al borrador como si se hubiera tecleado: el valor puesto por programa no dispara `input`. */

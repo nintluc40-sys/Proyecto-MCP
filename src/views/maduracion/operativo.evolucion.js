@@ -24,7 +24,7 @@
    Lo que un filtro no puede separar se DICE (`notas`, con la regla común `filtrosNoAplicados`), y lo que no aplica no se
    inventa: el punto queda vacío y la nota dice por qué.
    ============================================================ */
-import { kpiCopula, loteElegido, desoveEnOrigen, codigoEnFiltro, salaElegida, ignoraDeDesoves, filtrosNoAplicados, haySala } from './operativo.tablero.js';
+import { kpiCopula, loteElegido, desoveEnOrigen, desoveEnCodigo, salaElegida, ignoraDeDesoves, filtrosNoAplicados, haySala } from './operativo.tablero.js';
 import { graficoVivos, graficoMortalidad } from './operativo.kpis.js';
 import { acumularDesoves } from './operativo.tendencias.js';
 import { tasaDeDesove, cociente } from './operativo.indicadores.js';
@@ -89,7 +89,7 @@ export function tramosDe(periodo, agrupar) {
 /** Los desoves que el filtro deja, con el filtro de `kpiReproduccion` (lote, origen y código), en el rango. */
 function desovesEn(ctx, F, desde, hasta) {
   return ((ctx.M && ctx.M.fuentes && ctx.M.fuentes.desoves) || []).filter((r) => enRango(fecha10(r.Fecha), desde, hasta)
-    && loteElegido(r.Lote, F) && desoveEnOrigen(r, F) && codigoEnFiltro(r['Código genético'], F));
+    && loteElegido(r.Lote, F) && desoveEnOrigen(r, F) && desoveEnCodigo(r, F));
 }
 /** Las lecturas de `columnas` en la hoja de Sala, de las salas del filtro, en el rango: la ÚLTIMA no vacía de cada
  *  (día, sala, columna), como `variableDeSala` (una sala puede tener varias filas el mismo día). */

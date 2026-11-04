@@ -12,6 +12,7 @@
    🔑 Por tanto «cuánto desovó el tanque 3» NO EXISTE como dato: preguntarlo obligaría a
    inventarlo. Lo que sí existe es la producción del pool, y el pool lo identifica el
    CÓDIGO GENÉTICO dentro de su lote (decisión del usuario). Ése es el grano.
+   🔀 Desde el 2026-11-03 un pool también puede mezclar LOTES: es un MIX (ver `armarMix`).
 
    ⚠ CONSECUENCIA PARA EL LIBRO: un desove NO mueve el saldo. Las hembras salen y vuelven
    al mismo tanque, así que no entra en la cadena +ingreso −bajas ±movimientos −fin de
@@ -148,7 +149,47 @@ export function aMiles(v) {
 /** Normaliza como el resto de Maduración: dos grafías del mismo valor parten los filtros
  *  y, aquí, producirían DOS filas para el mismo desove. */
 export const normLote = (s) => sanitizeStr(s, 40).toUpperCase().replace(/\s+/g, '');
-export const normCodigoGenetico = (s) => sanitizeStr(s, 60).toUpperCase().replace(/\s+/g, '');
+/* 2026-11-03 · 200, no 60: el código de un MIX son los de todos sus lotes, y cortarlo partiría la llave de la hoja. */
+export const normCodigoGenetico = (s) => sanitizeStr(s, 200).toUpperCase().replace(/\s+/g, '');
+
+/* ── 🔀 MIX: un pool de varios lotes (usuario, 2026-11-03) ──
+   Las copuladas de tanques de lotes distintos se juntan al desovar y sus huevos, N2 y N5 ya no se pueden separar. La ficha lo
+   registra en UNA fila cuyo lote es `MIX(BN,BO)`, con los códigos y las piscinas de los participantes. La hoja no cambia: la llave
+   sigue siendo (Fecha, Lote, Código genético). Lo que hace falta saber de él sale de su propio nombre.
+   Decisiones del usuario (no re-preguntar): dos códigos del MISMO lote no son un MIX, quedan como ese lote con los códigos juntos,
+   porque sus cifras sí son suyas · en la vista un MIX va en su propia fila y no se reparte · sus hembras muertas sí se reparten
+   entre sus lotes según sus hembras vivas (`construirLibro`): el saldo necesita saber de dónde restarlas. */
+const MIX_RE = /^MIX\((.+)\)$/;
+/** ¿Es este lote un MIX? */
+export const esMix = (lote) => MIX_RE.test(normLote(lote));
+/** Los lotes de un MIX, en su orden y sin repetir; [] si no es un MIX. */
+export function lotesDeMix(lote) {
+  const m = MIX_RE.exec(normLote(lote));
+  return m ? [...new Set(m[1].split(',').filter(Boolean))] : [];
+}
+/** Lo que dejan en la tarjeta las opciones elegidas en 📥 Cargar ({ lote, codigoGenetico, piscina }). En orden fijo, sea cual sea
+ *  el orden en que se tocaron: la misma mezcla tiene que escribir la misma llave. Una piscina de una pareja cuenta una vez. */
+export function armarMix(elegidos) {
+  const vistos = new Set();
+  const lista = [];
+  (elegidos || []).forEach((e) => {
+    const x = e || {};
+    const lote = normLote(x.lote);
+    const cg = normCodigoGenetico(x.codigoGenetico);
+    if (!lote || vistos.has(lote + '|' + cg)) return;
+    vistos.add(lote + '|' + cg);
+    lista.push({ lote, cg, piscina: sanitizeStr(x.piscina, 60) });
+  });
+  lista.sort((a, b) => (a.lote < b.lote ? -1 : a.lote > b.lote ? 1 : a.cg < b.cg ? -1 : a.cg > b.cg ? 1 : 0));
+  const lotes = [...new Set(lista.map((l) => l.lote))];
+  const piscinas = [...new Set(lista.flatMap((l) => l.piscina.split('/')).map((p) => p.trim()).filter(Boolean))];
+  return {
+    lote: lotes.length > 1 ? 'MIX(' + lotes.join(',') + ')' : (lotes[0] || ''),
+    codigoGenetico: lista.map((l) => l.cg).filter(Boolean).join('/'),
+    piscina: piscinas.join('/'),
+    esMix: lotes.length > 1,
+  };
+}
 
 /* ── Despacho: a dónde van los N5 (2026-09-14, usuario) ──
    Deja de ser texto libre: se ELIGEN uno o varios destinos de esta lista. La celda guarda los elegidos

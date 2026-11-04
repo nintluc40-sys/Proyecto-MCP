@@ -209,7 +209,7 @@ describe('Maduración · tablero · la reproducción del período', () => {
 
   it('fertilidad sobre los huevos de los desoves CON N2, y nauplios por hembra sobre los desoves CON N5', () => {
     expect(kpiReproduccion(DESOVES, p, SIN)).toEqual({ desoves: 8, huevos: 1600000, noViables: 1, n2: 1120000, n5: 850000,
-      fertilidad: 80, naupliosPorHembra: 170000, ignora: [] });
+      fertilidad: 80, naupliosPorHembra: 170000, ignora: [], mix: [] });
   });
 
   /* 3 (2026-10-01, usuario: «la tasa de fertilidad sale 2134,82 %») · 60 de las 72 filas reales traen N2 sin «Total de

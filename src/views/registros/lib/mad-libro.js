@@ -38,6 +38,7 @@
 
    Módulo PURO: sin DOM, sin red, sin localStorage. Recibe filas ya leídas.
    ============================================================ */
+import { lotesDeMix } from './ficha-maduracion-desoves.schema.js';   // 🔀 2026-11-03 · las muertas de un MIX (ver «mortdes»)
 
 /** Días de cuarentena de un lote recién ingresado (decisión del usuario). */
 export const CUARENTENA_DIAS = 15;
@@ -424,6 +425,33 @@ export function construirLibro(fuentes, opts) {
       const donde = clase === 'Recuperación' ? 'recuperación' : 'desove';
       if (!reg) {
         anota(fecha, 'mortdes-tipo', '«' + clase + '» no es un tipo de tanque conocido (Desove o Recuperación): la fila no entra en el libro.', { lote });
+        continue;
+      }
+      /* 🔀 2026-11-03 (usuario: «Repartir según sus hembras vivas») · un MIX no es un lote del libro: sus muertas salen de los
+         tanques de sus lotes en proporción a las hembras vivas de cada uno, la misma regla que un tanque mezclado. Y «las que
+         entran» igual, para que el % de cada lote siga teniendo sentido. */
+      const delMix = lotesDeMix(lote);
+      if (delMix.length) {
+        const posMix = [...pos.values()].filter((p) => delMix.includes(p.lote));
+        if (!posMix.length) {
+          if (muertas) {
+            anota(fecha, 'mortdes-sin-lote', 'Murieron ' + muertas + ' hembras del ' + lote +
+              ' en tanques de ' + donde + ' y ninguno de sus lotes tiene animales en el libro.', { lote, hembras: muertas });
+          }
+          continue;
+        }
+        const pesos = delMix.map((l) => posMix.filter((p) => p.lote === l).reduce((a, p) => a + p.hembras, 0));
+        const entran = pesos.some((x) => x > 0) ? repartirProporcional(ent(r['Hembras que entran']), pesos) : pesos.map(() => 0);
+        delMix.forEach((l, i) => { if (lotes.has(l)) lotes.get(l)[reg].entran += entran[i]; });
+        const { partes, sobra } = tomarDe(posMix, 'hembras', muertas);
+        posMix.forEach((p, i) => {
+          const dest = lotes.get(p.lote);
+          if (dest && partes[i]) { dest[reg].muertas += partes[i]; dest.muertos.hembras += partes[i]; }
+        });
+        if (sobra > 0) {
+          anota(fecha, 'deficit-mortdes', 'Del ' + lote + ' murieron ' + sobra + ' hembras de más en tanques de ' + donde +
+            ' de las que el libro tenía vivas.', { lote, sexo: 'hembras', cantidad: sobra });
+        }
         continue;
       }
       const L = lotes.get(lote);

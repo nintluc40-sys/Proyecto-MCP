@@ -34,7 +34,7 @@ import {
   MAD_NAUP_FOTOTROPISMO, MAD_NAUP_AIREACION, MAD_NAUP_SAL_MAX, MAD_NAUP_TEMP_MAX, MAD_ALC_AREAS,
 } from '../registros/lib/ficha-maduracion-mortdesove.schema.js';
 import { fechaDeFila } from './operativo.data.js';
-import { loteElegido, haySala, salaElegida, tanqueElegido, filtrosNoAplicados } from './operativo.tablero.js';   // punto 2 · etapas A y B · uno o varios
+import { loteElegido, mixEnFiltro, haySala, salaElegida, tanqueElegido, filtrosNoAplicados } from './operativo.tablero.js';   // punto 2 · etapas A y B · uno o varios
 import { cociente } from './operativo.indicadores.js';
 import { umbralVigente, evaluar } from './operativo.umbrales.js';
 import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';   // punto 6 · el lote del filtro propio
@@ -108,7 +108,8 @@ export function revisionesDeNauplios(fuentes, F, periodo) {
   for (const r of ((fuentes || {}).mortDesove || [])) {
     if (!esRevision(r)) continue;
     const lote = txt(r.Lote);
-    if (!loteElegido(lote, F)) continue;
+    /* 🔀 2026-11-03 · con un lote elegido, también las revisiones de sus MIX: no suman nada, y cada fila dice que es un MIX. */
+    if (!loteElegido(lote, F) && !mixEnFiltro({ Lote: lote }, { lotes: (F || {}).lotes })) continue;
     const fecha = fechaDeFila('mortDesove', r);
     if (!enPeriodo(fecha, periodo)) continue;
     const valores = {};

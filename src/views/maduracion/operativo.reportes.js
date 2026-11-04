@@ -230,7 +230,15 @@ function bloqueReproduccion(parte, tope) {
   const pie = `<div class="rp-pie-b">Fertilidad ${pc(R.fertilidad)} · nauplios/♀ ${nf(R.naupliosPorHembra)}${R.pendientes ? ` · <b>${nf(R.pendientes)} desoves pendientes de N5</b>` : ''}</div>`;
   // pauta 14 (2026-10-22): como las bajas, lo que un desove no puede honrar se DICE (antes se callaba en el papel)
   const nota = (R.ignora || []).length ? `<div class="rp-vacio">Un desove no se filtra por ${esc(R.ignora.join(' ni por '))}.</div>` : '';
-  return nota + tabla(['Lote', 'Desoves', 'Huevos', 'N2', 'N5', 'Pend.'], filas, tope, 'Sin desoves registrados en el día.', 'lotes') + pie;
+  return nota + tabla(['Lote', 'Desoves', 'Huevos', 'N2', 'N5', 'Pend.'], filas, tope, 'Sin desoves registrados en el día.', 'lotes') + pie + mixPie(R.mix);
+}
+
+/** 🔀 2026-11-03 · los MIX que no están en las cifras de esta hoja: un MIX no se reparte, pero el papel no puede callarlo. */
+const mixFilas = (lista) => (lista || []).map((m) => [m.lote, ent(m.desoves), ent(m.huevos), ent(m.n2), ent(m.n5)]);
+const MIX_NO_SUMA = 'Un MIX no se reparte: estas cifras no suman en las de arriba.';
+function mixPie(lista) {
+  if (!(lista || []).length) return '';
+  return `<div class="rp-pie-b">🔀 Además, sin sumar aquí: ${lista.map((m) => `${esc(m.lote)} · ${nf(m.desoves)} desoves · N5 ${nf(m.n5)}`).join(' · ')}.</div>`;
 }
 
 function bloqueManejo(parte, tope) {
@@ -444,6 +452,7 @@ function paginaSemanal(M, serie, partes, F, periodo, fila, presencia) {
   const bajas = desgloseDeBajas(M, serie, partes, Flote, periodo, 'lote');
   return {
     lote: fila.lote,
+    mix: ficha.mix,
     dia: txt(M.fecha),
     /* El RANGO viaja en cada página: una hoja suelta del semanal tiene que decir qué semana cubre, y la cabecera
        del reporte no se imprime (cada lote es una página independiente). */
@@ -608,7 +617,7 @@ export function semanalPaginaHtml(pg, opts = {}) {
         <div class="rp-pie-b">Los movimientos no dicen el lote (lo deduce el libro): no se listan aquí.</div></section>
       <section class="rp-b"><h3>🥚 Reproducción</h3>
         <table class="rp-tab"><thead><tr>${cabeceras(['Desoves', 'Huevos', 'N2', 'N5', 'Fertilidad'])}</tr></thead>
-        <tbody><tr>${celdas([nf(R.desoves), nf(R.huevos), nf(R.n2), nf(R.n5), pc(R.fertilidad)])}</tr></tbody></table>
+        <tbody><tr>${celdas([nf(R.desoves), nf(R.huevos), nf(R.n2), nf(R.n5), pc(R.fertilidad)])}</tr></tbody></table>${mixPie(p.mix)}
         <div class="rp-pie-b">${PR.compartido ? 'Los pesos y las cópulas se reparten: el lote comparte tanque.' : 'Pesos y cópulas de sus ' + nf(PR.tanques) + ' tanque(s).'}</div></section>
     </div>`;
 }
@@ -654,7 +663,7 @@ export function cierreHtml(rep, opts = {}) {
           <div class="rp-pie-b">${(f.codigos || []).length ? 'Códigos: ' + (f.codigos || []).join(' · ') : ''}${(f.salas || []).length ? ' · Salas: ' + f.salas.join(' · ') : ''}</div></section></div>
       <section class="rp-b"><h3>🥚 Reproducción del ciclo</h3>
         <table class="rp-tab"><thead><tr>${cabeceras(['Desoves', 'Huevos', 'No viables', 'N2', 'N5', 'Fertilidad'])}</tr></thead>
-        <tbody><tr>${celdas([nf(R.desoves), nf(R.huevos), nf(R.noViables), nf(R.n2), nf(R.n5), pc(R.fertilidad)])}</tr></tbody></table>
+        <tbody><tr>${celdas([nf(R.desoves), nf(R.huevos), nf(R.noViables), nf(R.n2), nf(R.n5), pc(R.fertilidad)])}</tr></tbody></table>${mixPie(f.mix)}
         <div class="rp-pie-b">Cópulas ${pc(PR.pctCopulas)} · muda ${pc(PR.pctMuda)}${PR.compartido ? ' · repartidos: el lote comparte tanque' : ''}</div></section>`;
 }
 
@@ -773,6 +782,7 @@ export function parteDiarioHojas(parte) {
     ...(p.reproduccionPorLote || []).map((r) => [r.lote, ent(r.desoves), ent(r.huevos), ent(r.noViables), ent(r.n2), ent(r.n5),
       r.huevosPorDesove === '' ? '' : r.huevosPorDesove, r.fertilidad === '' ? '' : r.fertilidad,
       r.naupliosPorHembra === '' ? '' : r.naupliosPorHembra, ent(r.pendientes), (r.destinos || []).join(' · ')]),
+    ...(((R.reproduccion || {}).mix || []).length ? [[], [MIX_NO_SUMA], ['MIX', 'Desoves', 'Huevos', 'N2', 'N5'], ...mixFilas(R.reproduccion.mix)] : []),
   ];
   const movs = [
     ['Fecha', 'Tipo', 'Motivo', 'Sala origen', 'Tanque origen', 'Sala destino', 'Tanque destino', 'Machos', 'Hembras', 'Total', 'Agua destino', 'Observaciones'],
@@ -906,6 +916,8 @@ export function semanalHojas(rep) {
     { nombre: 'Curva', aoa: curva },
     { nombre: 'Bajas', aoa: bajas },
     { nombre: 'Eventos', aoa: eventos },
+    ...(pgs.some((p) => (p.mix || []).length) ? [{ nombre: 'MIX', aoa: [[MIX_NO_SUMA], ['Lote', 'MIX', 'Desoves', 'Huevos', 'N2', 'N5'],
+      ...pgs.flatMap((p) => mixFilas(p.mix).map((fila) => [p.lote, ...fila]))] }] : []),
   ];
 }
 
@@ -964,6 +976,7 @@ export function cierreHojas(rep) {
     ['Desoves', 'Huevos', 'No viables', 'N2', 'N5', 'Fertilidad %', 'Nauplios por desove'],
     [ent(R.desoves), ent(R.huevos), ent(R.noViables), ent(R.n2), ent(R.n5),
       R.fertilidad === '' ? '' : R.fertilidad, R.n5PorDesove === '' || R.n5PorDesove === undefined ? '' : R.n5PorDesove],
+    ...((f.mix || []).length ? [[], [MIX_NO_SUMA], ['MIX', 'Desoves', 'Huevos', 'N2', 'N5'], ...mixFilas(f.mix)] : []),
   ];
   return [
     { nombre: 'Resumen', aoa: resumen },

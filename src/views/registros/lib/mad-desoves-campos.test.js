@@ -380,6 +380,38 @@ describe('Desoves · pendientes: guardar el N2 hoy y completar el N5 otro día (
   const pendientes = () => [...document.querySelectorAll('#md-pend tbody tr')];
   beforeEach(() => { localStorage.removeItem(H.MAD_DES_PEND_KEY); H.setDesHoja(null); respuestaRows = null; H.madDesReiniciar(); });
 
+  it('🔴 🔀 un MIX se completa como cualquiera: sale pendiente, se abre con su nombre y la llave no cambia', async () => {
+    llenar();
+    q('.md-lote').value = 'MIX(XA,XB)';
+    q('.md-cg').value = 'CG-1/CG-3';
+    q('.md-piscina').value = '901/902';
+    q('.md-n2').value = '9000';
+    await H.madDesGuardar();
+    expect(envios).toHaveLength(1);
+    expect(pendientes()).toHaveLength(1);
+    expect(pendientes()[0].textContent).toContain('MIX(XA,XB)');
+    H.madDesEditar(pendientes()[0].querySelector('.md-pend-ed').dataset.k);
+    expect(document.getElementById('md-edit').textContent).toContain('MIX(XA,XB)');
+    expect(q('.md-lote').value).toBe('MIX(XA,XB)');
+    expect(q('.md-cg').value).toBe('CG-1/CG-3');
+    expect(q('.md-lote').readOnly).toBe(true);
+    q('.md-n5').value = '8000';
+    await H.madDesGuardar();
+    expect(envios).toHaveLength(2);
+    const fila = envios[1].rows[0];
+    expect([fila[col('Lote')], fila[col('Código genético')], fila[col('Piscina Broodstock')]]).toEqual(['MIX(XA,XB)', 'CG-1/CG-3', '901/902']);
+    expect(fila[col('Fecha')]).toBe(envios[0].rows[0][col('Fecha')]);
+    expect(pendientes()).toHaveLength(0);
+  });
+
+  it('🔴 🔀 leído de la hoja, un MIX también sale pendiente, y se abre con la llave de la hoja', async () => {
+    respuestaRows = { ok: true, headers: MAD_DESOVE_HEADERS, rows: [{ Fecha: '2026-09-07', Lote: 'MIX(XA,XB)', 'Código genético': 'CG-1/CG-3', 'Piscina Broodstock': '901/902', N2: 9000000, N5: '' }] };
+    await H.madDesPendVer();
+    expect(pendientes()).toHaveLength(1);
+    H.madDesEditar(pendientes()[0].querySelector('.md-pend-ed').dataset.k);
+    expect([q('.md-lote').value, q('.md-cg').value, q('.md-piscina').value]).toEqual(['MIX(XA,XB)', 'CG-1/CG-3', '901/902']);
+  });
+
   it('🔴 el viaje: se guarda con N2, aparece pendiente, se abre, se completa con N5 y sale de la lista', async () => {
     llenar();
     q('.md-huevos').value = '14440';

@@ -245,6 +245,27 @@ const ESCENARIOS = {
     ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 200)],
     tanques: [],
   },
+  /* 🔀 2026-11-03 · MIX: las muertas salen de los tanques de sus lotes, según las hembras vivas de cada uno. Las ramas, todas: dos y
+     tres lotes, uno sin animales, ninguno con ellos, más muertas de las que hay, un tipo de tanque desconocido, y sin normalizar. */
+  'MIX: muertas repartidas según las hembras vivas': {
+    ingresos: [
+      ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 30, 70),
+      ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 2, 10, 20),
+      ing('2026-01-01', 'CD', 'CG2', 'Sala 2', 1, 10, 40),
+      ing('2026-01-01', 'EF', 'CG3', 'Sala 3', 1, 10, 15),
+    ],
+    mortDesove: [
+      { Fecha: '2026-01-06', Lote: 'MIX(AB,CD)', 'Tipo de tanque': 'Desove', 'Hembras que entran': 40, 'Hembras muertas': 13 },
+      { Fecha: '2026-01-07', Lote: 'MIX(AB,CD,EF)', 'Tipo de tanque': 'Recuperación', 'Hembras que entran': 31, 'Hembras muertas': 7 },
+      { Fecha: '2026-01-07', Lote: 'mix(ab, zz)', 'Tipo de tanque': 'Desove', 'Hembras que entran': 5, 'Hembras muertas': 2 },
+      { Fecha: '2026-01-08', Lote: 'MIX(YY,ZZ)', 'Tipo de tanque': 'Desove', 'Hembras muertas': 4 },
+      { Fecha: '2026-01-09', Lote: 'MIX(AB,CD)', 'Tipo de tanque': 'Otro', 'Hembras muertas': 1 },
+      { Fecha: '2026-01-09', Lote: 'MIX(EF,CD)', 'Tipo de tanque': 'Desove', 'Hembras que entran': 5, 'Hembras muertas': 500 },
+      { Fecha: '2026-01-10', Lote: 'MIX(EF,CD)', 'Tipo de tanque': 'Desove', 'Hembras que entran': 9 },
+      // Sigue siendo un lote cualquiera lo que no tiene la forma de un MIX.
+      { Fecha: '2026-01-10', Lote: 'MIX', 'Tipo de tanque': 'Desove', 'Hembras muertas': 1 },
+    ],
+  },
   'mortalidad y descarte': {
     ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 200)],
     tanques: [tq('2026-01-02', 'Sala 1', 1, {

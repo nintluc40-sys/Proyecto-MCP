@@ -24,12 +24,12 @@
    lote, en su ciclo (`revisiones`, `tratamientos`). Faltaban «porque su hoja no existía» (medido el 2026-09-19); desde
    entonces las dos tenían filas.
    ============================================================ */
-import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
+import { normLote, normCodigoGenetico, lotesDeMix } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { estadoDeLote, ESTADO_MIXTO, ubicKey, pesosDeAlimentacion } from '../registros/lib/mad-libro.js';
 import { diasEntre } from '../registros/lib/mad-resumen.js';
 import { fechaDeFila, diasDeTanque } from './operativo.data.js';
 import { cociente, proporcionHM, supervivencia, tasaDescarte, tasaEnPartesDelLote } from './operativo.indicadores.js';
-import { posicionEnFiltro, codigoEnFiltro, normalizarFiltro, loteElegido, hayCodigo, haySala, hayTanque, hayPiscina, hayCamaronera, origenEnFiltro, cicloDelLote, piscinaEnFiltro } from './operativo.tablero.js';
+import { sumaDeMix, posicionEnFiltro, codigoEnFiltro, normalizarFiltro, loteElegido, hayCodigo, haySala, hayTanque, hayPiscina, hayCamaronera, origenEnFiltro, cicloDelLote, piscinaEnFiltro } from './operativo.tablero.js';
 import { normPiscina } from '../registros/lib/ficha-maduracion-broodstock.schema.js';   // 5 · la piscina canónica
 import { revisionesDeNauplios } from './operativo.revisiones.js';   // 2026-10-26 · las revisiones del lote, en su ficha
 import { tratamientosDeLote } from './operativo.manejo.js';          // 2026-10-26 · sus tratamientos, en su ficha
@@ -153,6 +153,15 @@ function contextoDeLote(libro, clave) {
  *  de su sala.) Con el filtro vacío pasan todos. Se exporta para 📉 Tendencias (operativo.tendencias.js, 0f · 2b):
  *  «los lotes de lo filtrado» son los mismos que enseña la tabla de Lotes. */
 export function loteEnFiltro(libro, clave, F) {
+  /* 🔀 2026-11-03 · un MIX no tiene posiciones: su alcance es el de sus lotes, para la sala, el tanque y lo demás de las posiciones.
+     No es de ningún código ni origen, y de un lote sólo si es él mismo el elegido (ver `desoveEnCodigo`, en el tablero). */
+  const delMix = lotesDeMix(clave);
+  if (delMix.length) {
+    if (hayCodigo(F) || hayPiscina(F) || hayCamaronera(F) || !loteElegido(clave, F)) return false;
+    const deSusLotes = ((libro && libro.posiciones) || []).filter((p) => delMix.includes(normLote(p.lote)));
+    if (!deSusLotes.length) return sinPosicionEnFiltro(clave, F);
+    return deSusLotes.some((p) => posicionEnFiltro(p, { ...F, lotes: [] }));
+  }
   const suyas = ((libro && libro.posiciones) || []).filter((p) => normLote(p.lote) === clave);
   if (!suyas.length) return sinPosicionEnFiltro(clave, F);
   return suyas.some((p) => posicionEnFiltro(p, F));
@@ -289,7 +298,25 @@ export function eventosDeLote(fuentes, lote, periodo) {
     if (!enPeriodo(f, periodo)) continue;
     suma(f, 'desove', 'Desove', 0, 0, r);
   }
+  /* 🔀 2026-11-03 · los MIX en los que participó, para que la línea de tiempo no calle lo que pasó: sin cifras, que no son suyas.
+     Sus muertas sí le descuentan (lo reparte el libro), por eso se dice. */
+  for (const r of (fuentes || {}).mortDesove || []) {
+    if (!lotesDeMix(r.Lote).includes(clave) || !ent(r['Hembras muertas'])) continue;
+    const f = fechaDeFila('mortDesove', r);
+    if (enPeriodo(f, periodo)) suma(f, 'mortdes', 'Mortalidad en ' + (txt(r['Tipo de tanque']) || 'desove') + ' · ' + normLote(r.Lote) + ', repartida entre sus lotes', 0, 0, r);
+  }
+  for (const r of (fuentes || {}).desoves || []) {
+    if (!lotesDeMix(r.Lote).includes(clave)) continue;
+    const f = fechaDeFila('desoves', r);
+    if (enPeriodo(f, periodo)) suma(f, 'desove', 'Desove en ' + normLote(r.Lote), 0, 0, r);
+  }
   return [...grupos.values()].map(({ _tq, ...e }) => ({ ...e, tanques: _tq.size })).sort((a, b) => porNombre(a.fecha, b.fecha));
+}
+
+/** 🔀 Los MIX en los que participó el lote en el período, con sus cifras: NO suman en `reproduccionDeLote`, y su ficha lo dice. */
+export function mixDeLote(fuentes, lote, periodo) {
+  const clave = normLote(lote);
+  return sumaDeMix(((fuentes || {}).desoves || []).filter((r) => lotesDeMix(r.Lote).includes(clave) && enPeriodo(fechaDeFila('desoves', r), periodo)));
 }
 
 /** La REPRODUCCIÓN del lote en el período: desoves, huevos, N2, N5 y fertilidad (eclosión sobre los huevos que
@@ -424,6 +451,7 @@ export function fichaDeLote(M, serie, lote, periodo, ciclo = null, presencia = n
     eventos: eventosDeLote(M.fuentes, lote, ciclo || periodo),
     ciclo: ciclo || null,
     reproduccion: reproduccionDeLote(M.fuentes, lote, periodo),
+    mix: mixDeLote(M.fuentes, lote, periodo),
     promedios: promediosDeLote(M, lote, periodo, presencia),
     /* 2026-10-26 (ronda 7, Sesión B; usuario: «Su ciclo, desde el ingreso») · las revisiones de nauplios y los tratamientos
        del lote, en el MISMO alcance que la curva y sus eventos: su ciclo (o el período, sin fecha de ingreso). Sin cifras
