@@ -1980,7 +1980,9 @@ function _reconcileMark(mark){
     if     (mark.kind === "mic" && typeof _micRaw === "function"){ raw=_micRaw; save=_micSave; keyOf=(r)=> r.data ? micSessionKey(r.data) : ""; }
     else if(mark.kind === "cal" && typeof _calRaw === "function"){ raw=_calRaw; save=_calSave; keyOf=(r)=> r.data ? calSessionKey(r.data) : ""; }
     else if(mark.kind === "pat" && typeof _patRaw === "function"){ raw=_patRaw; save=_patSave; keyOf=(r)=> r.data ? patSessionKey(r.data) : ""; }
-    else if(mark.kind === "bio" && typeof _bioRaw === "function"){ raw=_bioRaw; save=_bioSave; keyOf=(r)=> r.data ? r.data.fecha : ""; }
+    // 2026-11-03 (pauta 1.1) · por ANÁLISIS, no por fecha. Una marca de antes (sólo la fecha) ya no casa con nada: su envío se entrega y lo
+    // suyo se queda pendiente hasta el siguiente envío, que reemplaza por Sesión. Mejor eso que otro «enviado» falso.
+    else if(mark.kind === "bio" && typeof _bioRaw === "function"){ raw=_bioRaw; save=_bioSave; keyOf=(r)=> r.data ? r.data.fecha + "|" + r.data.sid : ""; }
     else if(mark.kind === "ast" && typeof _astRaw === "function"){ raw=_astRaw; save=_astSave; keyOf=(r)=> r.id; }
     else if(mark.kind === "tras" && typeof _trasRaw === "function"){ raw=_trasRaw; save=_trasSave; keyOf=(r)=> r.id; }
     // 🎯 Score (2026-10-02): la marca lleva la VERSIÓN (id@ts), así que una evaluación corregida tras encolarse no se da por enviada.
@@ -18404,7 +18406,9 @@ async function syncBioGrid(sopts){
   if(!payload.rows.length){ toast("No hay filas válidas para enviar","warn",3000); return; }
   const quien = migrarDia ? ("el día "+fecha) : ("«"+bioSesNombre(sid, fecha)+"»");
   setSyncUI("pend","Enviando "+payload.rows.length+" muestra(s) de "+quien+"…");
-  const opts = { mark:{ kind:"bio", keys:[fecha] } };   // F3: reconciliación al entregar desde cola
+  /* F3: reconciliación al entregar desde cola. 2026-11-03 (pauta 1.1) · con la fecha sola, el segundo análisis del día sin señal
+     expulsaba al primero de la cola, y al entregarse marcaba a los dos como enviados: el primero nunca llegaba. */
+  const opts = { mark:{ kind:"bio", keys: sidsEnviados.map(s => fecha + "|" + s) } };
   const sent = await postPayload(payload, url, opts);
   if(sent){
     const enviados = new Set(sidsEnviados);
