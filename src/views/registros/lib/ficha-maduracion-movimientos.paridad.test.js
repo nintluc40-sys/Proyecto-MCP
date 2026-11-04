@@ -189,6 +189,8 @@ describe('Movimientos · la misma llave', () => {
       ['2026-09-08', 'Sala 1', 1, 'Sala 2', 16],
       ['2026-09-08', 'Sala 4', 1, 'Sala 2', 16],
       ['2026-12-31', 'Sala 5', 11, 'Sala 3', 27],
+      ['2026-09-08', 'Sala 1', 1, 'Sala 2', 16, 'mh3k2x9ab'],
+      ['2026-09-08', 'Sala 1', 1, 'Sala 2', 16, ''],
     ];
     for (const c of casos) expect(api.madMovRowId(...c)).toBe(movRowId(...c));
   });

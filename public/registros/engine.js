@@ -2475,6 +2475,7 @@ async function syncAll(){
   setSyncUI("pend","Sincronizando...");
   let ok=0, fail=0, queued=0, total=0;
   let _tqRetenido = false;   // 2026-09-30 · Tanques no se envió porque, ante «¿ronda repetida?», se contestó que no
+  let _movRetenido = false;  // 2026-11-04 · lo guardado de Movimientos no se envió: ante «¿movimiento repetido?», se contestó que no
   let _desRetenido = false;  // H1 (2026-10-13) · lo guardado de Desoves no se envió: ante «¿desove repetido?», se contestó que no
 
   // Block sync without corrida/técnico for M01-M10 and CIO (no aplica a Lab. Algas ni Maduración).
@@ -2547,6 +2548,7 @@ async function syncAll(){
        aquí se reutiliza la misma respuesta. */
     for(const f of MAD_LOC_FICHAS){
       if(!madLocLeer(f).length) continue;
+      if(f === "movimientos" && !(await _madMovConfirmarRepetidos(_madMovFilasGuardadas()))){ _movRetenido = true; _madMovNoEnviado(); continue; }
       if(f === "desoves" && !(await _madDesConfirmarRepetidos(_madDesFilasGuardadas()))){ _desRetenido = true; _madDesNoEnviado(); continue; }   // H1 · ¿desove repetido?
       total++;
       if(_gasLoc === undefined && _madLocCfg(f).sello) _gasLoc = await _madIngGasAlDia();
@@ -2658,8 +2660,8 @@ async function syncAll(){
   /* 2026-09-30 · con Tanques retenido ante «¿ronda repetida?», «Sin datos nuevos» y «Todo sincronizado» serían FALSOS:
      queda Tanques pendiente, y se dice. */
   // H1 (2026-10-13) · y lo mismo con Desoves retenido ante «¿desove repetido?»: se dice qué queda pendiente.
-  const _tqPend = [_tqRetenido ? "Tanques pendiente (¿ronda repetida?)" : "", _desRetenido ? "Desoves pendiente (¿desove repetido?)" : ""].filter(Boolean).join(" · ");
-  _tqRetenido = _tqRetenido || _desRetenido;
+  const _tqPend = [_tqRetenido ? "Tanques pendiente (¿ronda repetida?)" : "", _desRetenido ? "Desoves pendiente (¿desove repetido?)" : "", _movRetenido ? "Movimientos pendiente (¿movimiento repetido?)" : ""].filter(Boolean).join(" · ");
+  _tqRetenido = _tqRetenido || _desRetenido || _movRetenido;
   if(!total && _tqRetenido){ setSyncUI("pend", _tqPend); updateDots(); return; }
   if(!total){ setSyncUI("idle","Sin datos nuevos"); toast("No hay datos pendientes","info",2000); updateDots(); return; }
   if(!fail && !queued){
@@ -10642,8 +10644,12 @@ const MAD_MOV_COLUMNS = [
 const MAD_MOV_HEADERS = MAD_MOV_COLUMNS.map(function(c){ return c.h; });
 // Llave natural del tramo. Lleva las DOS salas además de los tanques porque la numeración
 // se repite entre salas: sin ellas, «t3 → t7» sería ambiguo.
-function madMovRowId(fecha, sO, tO, sD, tD){
-  return sanitizeStr(fecha,10)+"-"+madIngSalaTag(sO)+"t"+Number(tO)+"-"+madIngSalaTag(sD)+"t"+Number(tD);
+// 2026-11-04 (usuario, «ID propio y aviso») · `envio`: el mismo día y la misma ruta pueden moverse animales más de una vez, y con el ID
+// de la ruta sola el segundo reemplazaba al primero en la hoja y el saldo los perdía, sin error. Sin él, el ID de siempre (las filas de antes).
+function madMovRowId(fecha, sO, tO, sD, tD, envio){
+  const base = sanitizeStr(fecha,10)+"-"+madIngSalaTag(sO)+"t"+Number(tO)+"-"+madIngSalaTag(sD)+"t"+Number(tD);
+  const e = sanitizeStr(envio,20);
+  return e ? base+"-"+e : base;
 }
 function madMovBuildRows(model){
   const m = model||{};
@@ -10660,7 +10666,7 @@ function madMovBuildRows(model){
       salaOrigen: sO, tanqueOrigen: tO, salaDestino: sD, tanqueDestino: tD,
       machos: madIngInt(t.machos), hembras: madIngInt(t.hembras),
       agua: sanitizeStr(t.agua,20),
-      id: madMovRowId(fecha, sO, tO, sD, tD)
+      id: madMovRowId(fecha, sO, tO, sD, tD, m.envio)
     };
     filas.push(MAD_MOV_COLUMNS.map(function(col){ return v[col.k]; }));
   });
@@ -10818,7 +10824,7 @@ function madMovCollect(){
       machos:g(tr,".mv-machos"), hembras:g(tr,".mv-hembras"), agua:g(tr,".mv-agua")
     });
   });
-  return { fecha:v("mv-fecha"), tipo:v("mv-tipo"), motivo:v("mv-motivo"), observaciones:v("mv-obs"), tramos:tramos };
+  return { fecha:v("mv-fecha"), tipo:v("mv-tipo"), motivo:v("mv-motivo"), observaciones:v("mv-obs"), tramos:tramos, envio:v("mv-envio") };
 }
 function _madMovPinta(res, filas){
   const box=document.getElementById("mv-report"); if(!box) return;
@@ -10847,6 +10853,7 @@ function madMovAvisosOcupacion(model){
   return libro ? madAvisosTransferenciaCompartida(libro, model.tipo, model.tramos) : [];
 }
 function madMovRevisar(){
+  _madMovAsegurarEnvio();   // los avisos de ocupación miran el ID: el mismo con el que se enviará
   const model=madMovCollect();
   const res=madMovValidar(model);
   res.avisos=res.avisos.concat(madMovAvisosOcupacion(model));
@@ -10937,7 +10944,17 @@ function madMovLogHTML(){
     + '</div>';
 }
 /* PE1.4 · lo que 💾 y ☁️ comparten: recoger, revisar y construir. null si hay errores (ya los pintó y avisó). */
+/* El formulario guarda su identidad hasta que se limpia: reintentar un envío fallido escribe la misma fila, no otra. Corregir desde el
+   Historial conserva la que traiga, y un envío de antes, sin ella, conserva su ID de siempre: en los dos casos reemplaza su propia fila. */
+function _madMovAsegurarEnvio(){
+  const fp=document.getElementById("fp-movimientos");
+  if(!fp || _madHistCorrActiva("movimientos")) return;
+  let e=document.getElementById("mv-envio");
+  if(!e){ e=document.createElement("input"); e.type="hidden"; e.id="mv-envio"; fp.appendChild(e); }
+  if(!e.value){ e.value=Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
+}
 function _madMovPreparar(conGuardados){
+  _madMovAsegurarEnvio();
   const model=madMovCollect();
   const res=madMovValidar(model);
   res.avisos=res.avisos.concat(madMovAvisosOcupacion(model));
@@ -10947,6 +10964,61 @@ function _madMovPreparar(conGuardados){
   _madMovPinta(res, payload.rows.length);
   if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return null; }
   return { model:model, payload:payload };
+}
+/** Las filas guardadas con 💾 que se van a enviar (las de un esquema anterior no salen: ver _madLocEnviar). */
+function _madMovFilasGuardadas(){
+  const out=[], cab=JSON.stringify(MAD_MOV_HEADERS);
+  madLocLeer("movimientos").forEach(function(e){
+    const p=e && e.payload;
+    if(p && Array.isArray(p.rows) && JSON.stringify(p.headers)===cab) p.rows.forEach(function(r){ out.push(r); });
+  });
+  return out;
+}
+/** Lo que YA hay de cada ruta ese día, con otro ID: en la hoja, en lo enviado desde este equipo y en este mismo envío. La misma fila
+ *  (mismo ID) no cuenta: reenviarla la reemplaza. `hoja`: filas de la hoja, por nombre de columna; `historial`: entradas de madHistLeer. */
+function madMovRepetidos(filas, hoja, historial){
+  const col=function(h){ return MAD_MOV_HEADERS.indexOf(h); };
+  const iId=col("ID"), iF=col("Fecha"), iSO=col("Sala origen"), iTO=col("Tanque origen"), iSD=col("Sala destino"), iTD=col("Tanque destino"), iM=col("Machos"), iH=col("Hembras");
+  const cab=JSON.stringify(MAD_MOV_HEADERS);
+  const conocidas=[];
+  (hoja||[]).forEach(function(r){ if(r && r.ID) conocidas.push({ id:String(r.ID), machos:r.Machos, hembras:r.Hembras, donde:"la hoja" }); });
+  (historial||[]).forEach(function(e){
+    const p=e && e.payload;
+    if(!e || e.ficha!=="movimientos" || !p || !Array.isArray(p.rows) || JSON.stringify(p.headers)!==cab) return;
+    p.rows.forEach(function(r){ if(r[iId]) conocidas.push({ id:String(r[iId]), machos:r[iM], hembras:r[iH], donde:"este equipo" }); });
+  });
+  (filas||[]).forEach(function(r){ conocidas.push({ id:String(r[iId]), machos:r[iM], hembras:r[iH], donde:"este envío" }); });
+  const salida=[], vistos={};
+  (filas||[]).forEach(function(r){
+    const id=String(r[iId]), base=madMovRowId(r[iF], r[iSO], r[iTO], r[iSD], r[iTD]);
+    conocidas.forEach(function(k){
+      // Con el guion: la ruta al tanque 7 no es la del tanque 71.
+      if(k.id===id || (k.id!==base && k.id.indexOf(base+"-")!==0)) return;
+      const clave=[id,k.id].sort().join("|");
+      if(vistos[clave]) return;
+      vistos[clave]=1;
+      salida.push({ fecha:r[iF], salaOrigen:r[iSO], tanqueOrigen:r[iTO], salaDestino:r[iSD], tanqueDestino:r[iTD], machos:k.machos, hembras:k.hembras, donde:k.donde });
+    });
+  });
+  return salida;
+}
+/** ☁️ y 🔄 · true = enviar; false = quien sincroniza dijo que no. Sin poder leer la hoja, mira lo de este equipo y sigue: un envío de más se
+ *  ve en el saldo y se corrige; uno que no sale por falta de señal no se ve. Como el aviso de ronda repetida de Tanques. */
+async function _madMovConfirmarRepetidos(filas){
+  if(!filas || !filas.length) return true;
+  toast("Comprobando la hoja de Movimientos…","info",2500);
+  const hoja=await _madHojaFresca(MAD_MOV_SHEET);
+  const rep=madMovRepetidos(filas, hoja, madHistLeer());
+  if(!rep.length) return true;
+  const lineas=rep.map(function(x){
+    return "· "+x.salaOrigen+" T"+x.tanqueOrigen+" → "+x.salaDestino+" T"+x.tanqueDestino+" el "+x.fecha+": ya hay "+(Number(x.machos)||0)+" ♂ y "+(Number(x.hembras)||0)+" ♀ en "+x.donde;
+  });
+  return confirm("⚠ ¿Movimiento REPETIDO? Esa ruta ya tiene otro movimiento ese día:\n"+lineas.join("\n")
+    +"\n\nAceptar = es OTRO movimiento: enviar. Va en su propia fila y se suma al anterior."
+    +"\nCancelar = no enviar Movimientos ahora; lo tecleado y lo guardado siguen en este dispositivo. Para corregir el anterior, usa ✏️ Editar en 📜 Historial.");
+}
+function _madMovNoEnviado(){
+  toast("Movimientos NO enviado: lo tecleado y lo guardado siguen en este dispositivo.","warn",9000);
 }
 function madMovGuardarLocal(){
   const _p=_madMovPreparar(); if(!_p) return;
@@ -10958,9 +11030,14 @@ function madMovGuardarLocal(){
 }
 async function madMovGuardar(){
   const _loc=madLocLeer("movimientos").length;
-  const _p=_madMovPreparar(_loc>0); if(!_p) return;
+  let _p=_madMovPreparar(_loc>0); if(!_p) return;
+  if(!_p.payload.rows.length && !_loc){ toast("No hay ningún tramo completo que guardar.","warn",4000); return; }
+  // Se pregunta ANTES de enviar nada: «Cancelar» tampoco envía lo guardado. Una corrección reemplaza su propia fila: de ésa no se pregunta.
+  const _aMirar=(_madHistCorrActiva("movimientos") ? [] : _p.payload.rows).concat(_loc ? _madMovFilasGuardadas() : []);
+  if(!(await _madMovConfirmarRepetidos(_aMirar))){ _madMovNoEnviado(); return; }
+  // Leer la hoja puede tardar hasta 15 s: sale lo que se ve ahora, no lo de antes de esperar.
+  _p=_madMovPreparar(_loc>0); if(!_p) return;
   const model=_p.model, payload=_p.payload;
-  if(!payload.rows.length && !_loc){ toast("No hay ningún tramo completo que guardar.","warn",4000); return; }
   // PE1.4 · primero lo guardado con 💾 (lo más viejo antes); si algo falla, lo de pantalla tampoco sale.
   if(_loc && (await _madLocEnviar("movimientos")).fallo) return;
   if(!payload.rows.length) return;

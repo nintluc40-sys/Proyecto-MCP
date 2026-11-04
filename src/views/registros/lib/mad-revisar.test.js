@@ -369,6 +369,8 @@ describe('D13 · Ingreso y Movimientos avisan del tanque compartido con OTRO lot
     pon(f.querySelector('.mv-machos'), '20'); pon(f.querySelector('.mv-hembras'), '0');
     pon(document.getElementById('mv-tipo'), 'Transferencia');
     // La misma transferencia, ya en la hoja: AB entero de T1 a T4 (vacío), con el ID que da este formulario.
+    // Pauta A3 (2026-11-04): el ID lleva la identidad del formulario, y es 🔍 Revisar quien la estrena.
+    await H.madMovRevisar();
     const { headers, rows } = H.buildMadMovPayload(H.madMovCollect());
     const guardada = rows.map((fila) => Object.fromEntries(headers.map((h, i) => [h, fila[i]])));
     H.setLibro({ ingresos: [ING('AB', 1, 20)], movimientos: guardada });

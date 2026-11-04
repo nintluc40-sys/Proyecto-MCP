@@ -99,12 +99,15 @@ const int = (v) => {
   return Number.isFinite(n) && n >= 0 ? n : '';
 };
 
-/** Llave natural del tramo. Lleva las DOS salas además de los tanques porque la
- *  numeración se repite entre salas: sin ellas, «t3 → t7» sería ambiguo. */
-export function movRowId(fecha, salaOrigen, tanqueOrigen, salaDestino, tanqueDestino) {
-  return sanitizeStr(fecha, 10)
+/** Llave del tramo. Lleva las DOS salas además de los tanques porque la numeración se repite entre salas: sin ellas, «t3 → t7» sería
+ *  ambiguo. 2026-11-04 (usuario, «ID propio y aviso») · `envio`: el mismo día y la misma ruta pueden moverse animales más de una vez, y con
+ *  el ID de la ruta sola el segundo reemplazaba al primero en la hoja. Sin él, el ID de siempre (las filas de antes). */
+export function movRowId(fecha, salaOrigen, tanqueOrigen, salaDestino, tanqueDestino, envio) {
+  const base = sanitizeStr(fecha, 10)
     + '-' + salaTag(salaOrigen) + 't' + Number(tanqueOrigen)
     + '-' + salaTag(salaDestino) + 't' + Number(tanqueDestino);
+  const e = sanitizeStr(envio, 20);
+  return e ? base + '-' + e : base;
 }
 
 /** Filas listas para la hoja. Un tramo sin ubicación completa NO produce fila: se
@@ -134,7 +137,7 @@ export function buildMovRows(model) {
       machos: int(t.machos),
       hembras: int(t.hembras),
       agua: sanitizeStr(t.agua, 20),
-      id: movRowId(fecha, sO, tO, sD, tD),
+      id: movRowId(fecha, sO, tO, sD, tD, m.envio),
     });
     filas.push(MAD_MOV_COLUMNS.map((col) => valores[col.k]));
   });
