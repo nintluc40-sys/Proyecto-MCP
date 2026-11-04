@@ -2006,7 +2006,9 @@ function _reconcileMark(mark){
       if(!r || r.synced) return;
       let k; try{ k = keyOf(r); }catch(_){ return; }
       if(k == null || !keys.has(String(k))) return;
-      if(sellos && Object.prototype.hasOwnProperty.call(sellos, String(k)) && ahora[String(k)] !== sellos[String(k)]) return;
+      const igual = !sellos || !Object.prototype.hasOwnProperty.call(sellos, String(k)) || ahora[String(k)] === sellos[String(k)];
+      if(_F.alLlegar){ _F.alLlegar(r, igual); ch = true; }
+      if(!igual) return;
       r.synced = true; r.syncedAt = now; ch = true;
     });
     if(ch){ save(l); }
@@ -2037,7 +2039,43 @@ function _marcaFuente(mark){
       raw=()=>loadMad(_mk); save=(l)=>saveMadList(_mk, l); keyOf=(r)=> r.id;
     }
     else return null;
-    return { raw:raw, save:save, keyOf:keyOf };
+    return { raw:raw, save:save, keyOf:keyOf, alLlegar: mark.kind === "tras" ? _trasAlLlegar : null };
+}
+/* El viaje ya tiene filas en la hoja, haya cambiado después o no: `everSynced` NO se apaga nunca, porque distingue «ya tiene filas» de
+   «todavía no ha salido del dispositivo», y de eso depende que apagar lo quitado no invente filas. Lo quitado se olvida sólo si es lo
+   que viajó, porque ya se apagó: arrastrarlo no haría daño, pero engordaría cada envío para siempre. */
+function _trasAlLlegar(r, igual){
+  r.everSynced = true;
+  if(igual && r.data) r.data._quitados = [];
+}
+/* 2026-11-03 (pauta 1.4) · Un envío DIRECTO que llegó: la misma comprobación que una entrega de la cola. Antes, cada ficha marcaba como
+   enviado lo que hubiera en ese momento, y lo corregido con 💾 durante el envío quedaba «enviado» sin haber viajado. Lo corregido se
+   queda pendiente, y se dice: sin el aviso, el «✅» de la ficha haría creer que también llegó. */
+function _marcarEnviado(opts){
+  const m = opts && opts.mark;
+  if(!m) return false;
+  const corregido = _marcaCorregida(m);
+  const ch = _reconcileMark(m);
+  if(corregido) toast("✏️ Lo que cambiaste mientras se enviaba sigue pendiente: vuélvelo a enviar.", "warn", 7000);
+  return ch;
+}
+/** ¿Cambió algo de lo que lleva la marca desde que se selló? Se pregunta ANTES de marcar: al marcar, Traslado retoca sus datos. */
+function _marcaCorregida(m){
+  try{
+    if(m.kind === "fichas"){
+      const st = m.stamps || {};
+      return m.keys.some(k => {
+        const p = String(k).split("|"), mod = /^\d+$/.test(p[0]) ? Number(p[0]) : p[0];
+        const e = p.length === 3 ? JSON.parse(localStorage.getItem(PRE + mLabel(mod) + "_" + p[1] + "_" + p[2])) : loadE(mod, p[1]);
+        return !!e && Object.prototype.hasOwnProperty.call(st, k) && e.updatedAt !== st[k];
+      });
+    }
+    if(!m.sellos) return false;
+    let todas = null;
+    if(m.kind === "alg") todas = _algHuellas();
+    else { const F = _marcaFuente(m); if(F) todas = _marcaHuellas(F.raw(), F.keyOf); }
+    return !!todas && Object.keys(m.sellos).some(c => Object.prototype.hasOwnProperty.call(todas, c) && todas[c] !== m.sellos[c]);
+  }catch(_){ return false; }
 }
 /* 2026-11-03 (pauta 1.3) · LA HUELLA de cada clave: el contenido de sus registros, sin la hora ni el estado. Pulsar 💾 sin cambiar
    nada da la misma huella, y un registro más en una sesión da otra. */
@@ -2491,12 +2529,7 @@ async function syncAll(){
         const sent = f === "zonas" ? await _madZonasEnviar(payload, opts, _gasLoc)
           : f === "tanques" ? await _madTanquesEnviar(payload, opts, _gasLoc) : await postPayload(payload, url, opts);
         if(sent){
-          const list2 = loadMad(f);
-          pending.forEach(p => {
-            const idx = list2.findIndex(x => x.id === p.id);
-            if(idx >= 0){ list2[idx].synced = true; list2[idx].syncedAt = Date.now(); }
-          });
-          saveMadList(f, list2);
+          _marcarEnviado(opts);
           if(curTab === f) renderMad(f);
           else if(f === "zonas" && curTab === "salas") renderMad("salas");   // 2026-10-27 · las zonas se pintan en 🏠 Salas
           ok++;
@@ -2540,13 +2573,8 @@ async function syncAll(){
         const opts = { mark:{ kind:"alg", keys: histSnapshot.map(h => h && h.id).filter(Boolean), mod: curMod } };
         const sent = await postPayload(ap, url, opts);
         if(sent){
-          // Vuelca SOLO los registros del snapshot a la Bitácora (TTL 72 h)
-          histSnapshot.forEach(h => { if(h && h.data) pushAlgLog(h.data); });
-          // Conserva en el historial cualquier registro agregado durante el sync
-          const sentIds = new Set(histSnapshot.map(h => h && h.id).filter(Boolean));
-          const remaining = loadAlgHist().filter(h => h && !sentIds.has(h.id));
-          saveAlgHist(remaining);
-          const e=loadE(curMod,"algas"); if(e) saveE(curMod,"algas",e.data,true);
+          // Vuelca a la Bitácora (TTL 72 h) sólo lo del envío: lo agregado o corregido durante el sync se queda en el historial.
+          _marcarEnviado(opts);
           ok++;
           // Re-render para reflejar historial vacío + bitácora actualizada
           if(curTab === "algas")    try{ renderAlgas(); }catch(_){}
@@ -2577,13 +2605,7 @@ async function syncAll(){
         const opts = { mark: _marcaFichas(curMod, pendDatos) };
         const sent = await postPayload(dp, url, opts);
         if(sent){
-          pendDatos.forEach(f=>{
-            const e=loadE(curMod,f);
-            if(!e) return;
-            // Registra el envío en el Historial.
-            pushHist(curMod, f, e.data);
-            saveE(curMod,f,e.data,true);
-          });
+          _marcarEnviado(opts);   // con su Historial
           ok++;
         } else { const _b=_syncAllBucket(opts, "Datos Larvicultura"); if(_b==="queued") queued++; else if(_b==="fail") fail++; }
       } else {
@@ -2602,11 +2624,7 @@ async function syncAll(){
         const opts = { mark: _marcaFichas(curMod, ["params"]) };
         const sent = await postPayload(cp, url, opts);
         if(sent){
-          const e=loadE(curMod,"params");
-          if(e){
-            pushHist(curMod, "params", e.data);
-            saveE(curMod,"params",e.data,true);
-          }
+          _marcarEnviado(opts);
           ok++;
         }
         else { const _b=_syncAllBucket(opts, "Parámetros"); if(_b==="queued") queued++; else if(_b==="fail") fail++; }
@@ -2626,8 +2644,7 @@ async function syncAll(){
         const opts = { mark: _marcaFichas(curMod, ["desinfeccion"]) };
         const sent = await postPayload(dxp, url, opts);
         if(sent){
-          const e=loadE(curMod,"desinfeccion");
-          if(e) saveE(curMod,"desinfeccion",e.data,true);
+          _marcarEnviado(opts);
           ok++;
         } else { const _b=_syncAllBucket(opts, "Desinfección"); if(_b==="queued") queued++; else if(_b==="fail") fail++; }
       } else {
@@ -3436,29 +3453,20 @@ async function syncOneFicha(fid){
     if(cp.rows.length > 0){
       sent = await postPayload(cp, url, opts);
     } else { hadRows = false; }
-    if(sent){
-      const e = loadE(curMod,"params");
-      if(e){ pushHist(curMod,"params",e.data); saveE(curMod,"params",e.data,true); }
-    }
+    if(sent) _marcarEnviado(opts);
   } else if(fid === "desinfeccion"){
     // Desinfección → hoja propia "Registro_Desinfección" (formato tidy).
     const dxp = buildDesinfeccionPayload(curMod);
     if(dxp.rows.length > 0){
       sent = await postPayload(dxp, url, opts);
     } else { hadRows = false; }
-    if(sent){
-      const e = loadE(curMod, "desinfeccion");
-      if(e) saveE(curMod, "desinfeccion", e.data, true);  // sin pushHist (no es hoja Datos)
-    }
+    if(sent) _marcarEnviado(opts);
   } else if(["calidad","plg","poblacion","calagua","despacho"].includes(fid)){
     const dp = buildDatosPayload(curMod, [fid]);
     if(dp.rows.length > 0){
       sent = await postPayload(dp, url, opts);
     } else { hadRows = false; }
-    if(sent){
-      const e = loadE(curMod, fid);
-      if(e){ pushHist(curMod, fid, e.data); saveE(curMod, fid, e.data, true); }
-    }
+    if(sent) _marcarEnviado(opts);
   }
 
   if(!hadRows){
@@ -16203,9 +16211,7 @@ async function syncMadSalasGrid(){
   const opts = { mark:{ kind:"mad:salas", keys: pending.map(p=>p.id) } };   // F3
   const sent = await postPayload(payload, url, opts);
   if(sent){
-    const list2 = loadMad("salas");
-    pending.forEach(p => { const idx = list2.findIndex(x => x.id === p.id); if(idx >= 0){ list2[idx].synced = true; list2[idx].syncedAt = Date.now(); } });
-    saveMadList("salas", list2);
+    _marcarEnviado(opts);
     setSyncUI("ok",pending.length+" sala(s) sincronizada(s) ✔");
     toast("✅ Salas enviadas a Google Sheets","ok");
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
@@ -16383,9 +16389,7 @@ async function _madZonasSync(pend){
   const opts = { mark:{ kind:"mad:zonas", keys: pend.map(p=>p.id) } };   // F3: si acaba en la cola, se marcan solas al entregarse
   const sent = await _madZonasEnviar(payload, opts);
   if(sent){
-    const list2 = loadMad("zonas");
-    pend.forEach(p => { const idx = list2.findIndex(x => x.id === p.id); if(idx >= 0){ list2[idx].synced = true; list2[idx].syncedAt = Date.now(); } });
-    saveMadList("zonas", list2);
+    _marcarEnviado(opts);
     setSyncUI("ok",pend.length+" fila(s) de zonas sincronizada(s) ✔");
     toast("✅ Zonas enviadas a Google Sheets","ok");
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
@@ -17567,9 +17571,7 @@ async function syncMadTanquesGrid(){
   const opts = { mark:{ kind:"mad:tanques", keys: pending.map(p=>p.id) } };   // F3
   const sent = await _madTanquesEnviar(payload, opts);   // R2 · con el portón del sello
   if(sent){
-    const list2 = loadMad("tanques");
-    pending.forEach(p => { const idx = list2.findIndex(x => x.id===p.id); if(idx>=0){ list2[idx].synced = true; list2[idx].syncedAt = Date.now(); } });
-    saveMadList("tanques", list2);
+    _marcarEnviado(opts);
     setSyncUI("ok",pending.length+" tanque(s) sincronizado(s) ✔");
     toast("✅ Tanques enviados a Google Sheets","ok");
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
@@ -18500,10 +18502,7 @@ async function syncBioGrid(sopts){
   const opts = { mark:{ kind:"bio", keys: sidsEnviados.map(s => fecha + "|" + s) } };
   const sent = await postPayload(payload, url, opts);
   if(sent){
-    const enviados = new Set(sidsEnviados);
-    const list2 = _bioRaw();
-    list2.forEach(r => { if(r.data && r.data.fecha === fecha && enviados.has(r.data.sid)){ r.synced = true; r.syncedAt = Date.now(); } });
-    _bioSave(list2);
+    _marcarEnviado(opts);
     // Migrados: desde ahora cada análisis de esta fecha va por su propia clave.
     const ses2 = _bioSesAll();
     sidsEnviados.forEach(s => { if(ses2[s]) ses2[s].legacy = false; });
@@ -20097,10 +20096,7 @@ async function syncOneAstFromList(id){
   const opts = { dedupeSalt: id, mark:{ kind:"ast", keys:[id] } };
   const sent = await postPayload(payload, url, opts);
   if(sent){
-    const list2 = _astRaw();
-    const idx = list2.findIndex(x => x.id === id);
-    if(idx >= 0){ list2[idx].synced = true; list2[idx].syncedAt = Date.now(); }
-    _astSave(list2);
+    _marcarEnviado(opts);
     setSyncUI("ok","Sincronizado ✔");
     setTimeout(()=>{ setSyncUI("idle","Todo sincronizado"); }, 3000);
     if(curTab === "ast") renderAst();
@@ -20128,12 +20124,7 @@ async function syncAllPendingAst(){
   const opts = { dedupeSalt: pending.map(p=>p.id).join(","), mark:{ kind:"ast", keys: pending.map(p=>p.id) } };   // F3
   const sent = await postPayload(payload, url, opts);
   if(sent){
-    const list2 = _astRaw();
-    pending.forEach(p => {
-      const idx = list2.findIndex(x => x.id === p.id);
-      if(idx >= 0){ list2[idx].synced = true; list2[idx].syncedAt = Date.now(); }
-    });
-    _astSave(list2);
+    _marcarEnviado(opts);
     setSyncUI("ok", pending.length+" registro(s) enviado(s) ✔");
     toast(pending.length+" registro(s) sincronizados","ok",3000);
     setTimeout(()=>{ setSyncUI("idle","Todo sincronizado"); }, 3000);
@@ -24853,22 +24844,7 @@ async function syncAllPendingTras(){
     const opts = { dedupeSalt: lote.map(p=>p.id).join(","), mark:{ kind:"tras", keys: lote.map(p=>p.id) } };
     const sent = await postPayload(buildTrasPayload(lote), url, opts);
     if(!sent){ fallo = opts; break; }
-    const list2 = _trasRaw();
-    lote.forEach(p => {
-      const idx = list2.findIndex(x => x.id === p.id);
-      if(idx >= 0){
-        list2[idx].synced = true;
-        list2[idx].syncedAt = Date.now();
-        /* `everSynced` NO se apaga nunca: es lo que distingue «este viaje ya tiene
-           filas en la hoja» de «esto todavía no ha salido del dispositivo», y de
-           eso depende que apagar lo quitado no invente filas. */
-        list2[idx].everSynced = true;
-        // Ya se apagó lo que había que apagar; arrastrarlo otra vez no haría daño
-        // pero engordaría cada envío para siempre.
-        if(list2[idx].data) list2[idx].data._quitados = [];
-      }
-    });
-    _trasSave(list2);
+    _marcarEnviado(opts);
     enviados += lote.length;
   }
 
@@ -26169,9 +26145,7 @@ async function syncMic(){
   const opts = { mark:{ kind:"mic", keys:Array.from(pendKeys) } };
   const sent = await postPayload(payload, url, opts);
   if(sent){
-    const l2 = _micRaw();
-    l2.forEach(r=>{ if(r.data && pendKeys.has(micSessionKey(r.data))){ r.synced = true; r.syncedAt = Date.now(); } });
-    _micSave(l2);
+    _marcarEnviado(opts);
     setSyncUI("ok", payload.rows.length+" muestra(s) sincronizada(s) ✔");
     toast("✅ "+payload.rows.length+" muestra(s) enviadas a Microbiología (sesión reemplazada)","ok",4500);
     const ind = document.getElementById("mic-saved-ind");
@@ -27593,9 +27567,7 @@ async function syncCal(){
   const opts = { mark:{ kind:"cal", keys:Array.from(pendKeys) } };   // F3: reconciliación al entregar desde cola
   const sent=await postPayload(payload, url, opts);
   if(sent){
-    const l2=_calRaw();
-    l2.forEach(r=>{ if(r.data && pendKeys.has(calSessionKey(r.data))){ r.synced=true; r.syncedAt=Date.now(); } });
-    _calSave(l2);
+    _marcarEnviado(opts);
     setSyncUI("ok", payload.rows.length+" muestra(s) sincronizada(s) ✔");
     toast("✅ "+payload.rows.length+" muestra(s) enviadas a Calidad de Agua (sesión reemplazada)","ok",4500);
     const ind=document.getElementById("cal-saved-ind");
@@ -28260,9 +28232,7 @@ async function syncPat(){
   const opts = { mark:{ kind:"pat", keys:Array.from(pendKeys) } };   // F3: reconciliación al entregar desde cola
   const sent=await postPayload(payload, url, opts);
   if(sent){
-    const l2=_patRaw();
-    l2.forEach(r=>{ if(r.data && pendKeys.has(patSessionKey(r.data))){ r.synced=true; r.syncedAt=Date.now(); } });
-    _patSave(l2);
+    _marcarEnviado(opts);
     setSyncUI("ok", payload.rows.length+" muestra(s) sincronizada(s) ✔");
     toast("✅ "+payload.rows.length+" muestra(s) enviadas a Patología en Fresco (sesión reemplazada)","ok",4500);
     const ind=document.getElementById("pat-saved-ind"); if(ind) ind.textContent="✅ Sincronizado · "+new Date().toLocaleString("es-EC");

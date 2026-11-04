@@ -125,6 +125,10 @@ describe('B · syncOneAstFromList', () => {
       syncRateOk: () => true,
       _astRaw: () => [{ id: 'a1', synced: false }, { id: 'a2', synced: false }],
       _astSave: (l) => { guardado = l; },
+      // 2026-11-03 (pauta 1.4) · marcar lo enviado es de la función común, que vigila cola-en-vuelo.test.js. Aquí, lo que pide la marca.
+      _marcarEnviado: (o) => {
+        guardado = [{ id: 'a1', synced: false }, { id: 'a2', synced: false }].map((r) => (o.mark.keys.includes(r.id) ? { ...r, synced: true, syncedAt: 1 } : r));
+      },
       buildAstPayload: () => ({ sheetName: 'Registro_Supervisión', headers: [], rows: [] }),
       postPayload: async (p, u, o) => { Object.assign(visto, o); o.outcome = outcome; return outcome === 'ok'; },
       setSyncUI: (a, b) => ui.push([a, b]),
