@@ -21,7 +21,7 @@ const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['pickMod', 'enter', 'goBack', 'PINS', 'MAD_MOD', 'MAD_FICHAS', 'madKey', 'loadMad', 'saveMadList', 'renderMadTanques', 'renderMadSalas',
   'saveMadTanquesGrid', 'saveMadSalasGrid', 'syncMadTanquesGrid', 'syncMadSalasGrid', 'madTanquesSalaChange', 'MAD_RETENCION_DIAS', '_madPodarEnviados',
   '_madHistPodar', '_madLimpiezaDeEspacio', '_soltarCopiaMatriz', '_REPRO_CACHE_KEY', '_reproCacheSave', 'MAD_HIST_KEY', 'MAD_HIST_PANEL_PRE',
-  '_madHistGuardar', 'madHistLeer', '_madHistGrillas', 'renderMadHistorial', 'openCfg', 'closeCfg', 'liberarEspacio', '_espacioMedir', 'ESPACIO_TOPE', '_gasVersionLocal', 'safeSetItem', '_madTqConfirmarRepetidas', '_loadSyncQueue', 'MAD_RECOV_KEY', 'loadMadRecovery', '_lastSyncFingerprint'];
+  '_madHistGuardar', 'madHistLeer', '_madHistGrillas', 'renderMadHistorial', 'openCfg', 'closeCfg', 'liberarEspacio', '_espacioMedir', 'ESPACIO_TOPE', '_gasVersionLocal', 'safeSetItem', '_madTqConfirmarRepetidas', '_loadSyncQueue', 'MAD_RECOV_KEY', 'loadMadRecovery', '_lastSyncFingerprint', 'selTab', 'goBack', 'madTanquesFechaChange', 'madSalasFechaChange', '_madCommitActive', '_madGridFechaAuto'];
 const H = {};
 const avisos = [];
 const envios = [];
@@ -67,7 +67,7 @@ beforeAll(async () => {
     + '\ntry{ H.setGasUrl=function(f){gasUrl=f;}; }catch(_){}'
     + '\ntry{ H.setRepetidas=function(f){_madTqConfirmarRepetidas=f;}; H.dirty=function(){return _madGridDirty;}; }catch(_){}'
     + '\ntry{ H.setRate=function(f){syncRateOk=f;}; }catch(_){}'
-    + '\ntry{ H.setVista=function(m,t){ curMod=m; curTab=t; }; }catch(_){}\n})();';
+    + '\ntry{ H.setVista=function(m,t){ curMod=m; curTab=t; }; H.vista=function(){ return { mod:curMod, tab:curTab }; }; }catch(_){}\n})();';
   globalThis.__ENG = H;
   new Function('window', 'document', 'localStorage', 'globalThis', readFileSync(ENGINE, 'utf8') + epilogo)(window, document, almacen, globalThis);
   H.setToast((m) => { avisos.push(String(m)); });
@@ -385,6 +385,361 @@ describe('🔴 con el almacén lleno, lo tecleado no se pierde', () => {
     celda().value = '7';
     expect(H.saveMadTanquesGrid()).toBeGreaterThan(0);
     expect(celda().value).toBe('');
+  });
+});
+
+/* 2026-11-05 (pauta A7, usuario: «Preguntar») · Sin poder guardar, cambiar de sala, de fecha o de pestaña, o salir del módulo, borraba lo tecleado sin
+   remedio. Ahora se pregunta: quien se queda lo conserva, y quien sigue ya sabe que lo pierde. Con espacio, ni se pregunta. */
+describe('🔴 dejar una grilla con lo tecleado sin poder guardarse', () => {
+  let preguntas;
+  let respuesta;
+  beforeEach(() => {
+    preguntas = [];
+    respuesta = false;
+    globalThis.confirm = (t) => { preguntas.push(String(t)); return respuesta; };
+  });
+  /* La sala que pintó la grilla: en happy-dom, un <select> repintado por innerHTML sólo la dice en su option[selected]. */
+  const sala = () => { const s = document.getElementById('mad-tanques-sala'); const o = s.querySelector('option[selected]'); return o ? o.value : s.value; };
+  const lleno = () => {
+    poner('tanques', [rec(hace(1), { syncedAt: Date.now() })]);
+    almacen.dejarLibres(5);
+  };
+  const teclear = (el, v) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
+  const celdaSalas = () => document.querySelector('#fp-salas [name="sg_0_temp_02"]');
+  const irASalas = () => {
+    H.setVista(H.MAD_MOD, 'salas');
+    document.getElementById('fp-salas').innerHTML = '';
+    H.renderMadSalas();
+  };
+
+  describe('☁️ cambiar de sala', () => {
+    it('🔴 quedarse: lo tecleado sigue, y el selector vuelve a su sala', () => {
+      irASala('Sala 2');
+      lleno();
+      teclear(celda(), '7');
+      irASala('Sala 3');
+      expect(preguntas).toHaveLength(1);
+      expect(preguntas[0]).toContain('PERDERLO');
+      expect(preguntas[0]).toContain('☁️');
+      expect(document.getElementById('mad-tanques-sala').value, 'el selector vuelve').toBe('Sala 2');
+      expect(celda().value).toBe('7');
+    });
+
+    it('🔴 seguir: cambia, sabiendo que lo pierde', () => {
+      irASala('Sala 2');
+      lleno();
+      teclear(celda(), '7');
+      respuesta = true;
+      irASala('Sala 3');
+      expect(sala()).toBe('Sala 3');
+      expect(celda().value).toBe('');
+    });
+
+    it('🔵 con espacio no pregunta: lo guarda y cambia', () => {
+      irASala('Sala 2');
+      teclear(celda(), '7');
+      irASala('Sala 3');
+      expect(preguntas).toEqual([]);
+      expect(sala()).toBe('Sala 3');
+      expect(H.loadMad('tanques').some((r) => r.data.sala === 'Sala 2' && String(r.data.hembras_muertas) === '7')).toBe(true);
+    });
+
+    it('🔵 sin teclear nada no pregunta, aunque no haya espacio', () => {
+      irASala('Sala 2');
+      lleno();
+      irASala('Sala 3');
+      expect(preguntas).toEqual([]);
+      expect(sala()).toBe('Sala 3');
+    });
+  });
+
+  describe('📅 cambiar de fecha', () => {
+    const fecha = () => document.getElementById('mad-tanques-fecha');
+
+    it('🔴 quedarse: lo tecleado sigue, y la fecha vuelve', () => {
+      irASala('Sala 2');
+      lleno();
+      teclear(celda(), '7');
+      const antes = fecha().value;
+      const auto = H._madGridFechaAuto.tanques;
+      fecha().value = hace(2);
+      H.madTanquesFechaChange();
+      expect(preguntas).toHaveLength(1);
+      expect(fecha().value).toBe(antes);
+      expect(H._madGridFechaAuto.tanques, 'sigue siendo la fecha de la app').toBe(auto);
+      expect(celda().value).toBe('7');
+    });
+
+    it('🔴 seguir: cambia de fecha', () => {
+      irASala('Sala 2');
+      lleno();
+      teclear(celda(), '7');
+      respuesta = true;
+      fecha().value = hace(2);
+      H.madTanquesFechaChange();
+      expect(fecha().value).toBe(hace(2));
+      expect(celda().value).toBe('');
+    });
+
+    it('🔴 Salas: quedarse conserva lo tecleado', () => {
+      irASalas();
+      almacen.dejarLibres(5);
+      teclear(celdaSalas(), '28');
+      const el = document.getElementById('mad-salas-fecha');
+      const antes = el.value;
+      el.value = hace(2);
+      H.madSalasFechaChange();
+      expect(preguntas).toHaveLength(1);
+      expect(el.value).toBe(antes);
+      expect(celdaSalas().value).toBe('28');
+    });
+  });
+
+  describe('🗂 cambiar de pestaña', () => {
+    it('🔴 Tanques, quedarse: no cambia, y lo tecleado sigue', () => {
+      irASala('Sala 2');
+      lleno();
+      teclear(celda(), '7');
+      H.selTab('salas');
+      expect(preguntas).toHaveLength(1);
+      expect(H.vista().tab).toBe('tanques');
+      expect(celda().value).toBe('7');
+    });
+
+    it('🔴 Tanques, seguir: cambia', () => {
+      irASala('Sala 2');
+      lleno();
+      teclear(celda(), '7');
+      respuesta = true;
+      H.selTab('salas');
+      expect(H.vista().tab).toBe('salas');
+    });
+
+    it('🔴 Salas, quedarse: no cambia', () => {
+      irASalas();
+      almacen.dejarLibres(5);
+      teclear(celdaSalas(), '28');
+      H.selTab('tanques');
+      expect(H.vista().tab).toBe('salas');
+      expect(celdaSalas().value).toBe('28');
+    });
+
+    it('🔵 con espacio no pregunta', () => {
+      irASala('Sala 2');
+      teclear(celda(), '7');
+      H.selTab('salas');
+      expect(preguntas).toEqual([]);
+      expect(H.vista().tab).toBe('salas');
+    });
+  });
+
+  describe('⬅️ salir del módulo', () => {
+    it('🔴 quedarse: sigue en la grilla, con lo tecleado', () => {
+      irASala('Sala 2');
+      lleno();
+      teclear(celda(), '7');
+      H.goBack();
+      expect(preguntas).toHaveLength(1);
+      expect(H.vista()).toEqual({ mod: H.MAD_MOD, tab: 'tanques' });
+      expect(celda().value).toBe('7');
+    });
+
+    it('🔴 seguir: sale, y al volver no pregunta otra vez por lo que ya se dio por perdido', () => {
+      irASala('Sala 2');
+      lleno();
+      teclear(celda(), '7');
+      respuesta = true;
+      H.goBack();
+      expect(preguntas).toHaveLength(1);
+      H.setVista(H.MAD_MOD, 'tanques');
+      H.selTab('salas');
+      expect(preguntas).toHaveLength(1);
+    });
+
+    it('🔵 con sitio para la copia de recuperación no pregunta, y queda recuperable', () => {
+      irASala('Sala 2');
+      teclear(celda(), '7');
+      H.goBack();
+      expect(preguntas).toEqual([]);
+      expect(H.loadMadRecovery()).toBeTruthy();
+    });
+  });
+
+  describe('📦 llevar la grilla a otra fecha sin sitio para escribir allí', () => {
+    it('🔴 lo ya guardado vuelve a su sitio: no se pierde', () => {
+      irASala('Sala 2');
+      teclear(celda(), '3');
+      expect(H.saveMadTanquesGrid({ silent: true })).toBeGreaterThan(0);
+      const guardado = H.loadMad('tanques').map((r) => r.id);
+      const el = document.getElementById('mad-tanques-fecha');
+      const antes = el.value;
+      const celdas = document.querySelectorAll('#fp-tanques [name$="_hembras_muertas"]');
+      teclear(celdas[1], '9');
+      teclear(celdas[2], '8');
+      almacen.dejarLibres(5);
+      respuesta = true;   // sí a llevarlo; no cabe y vuelve; y sí a seguir sin guardar
+      preguntas.length = 0;
+      el.value = hace(2);
+      H.madTanquesFechaChange();
+      expect(H.loadMad('tanques').map((r) => r.id)).toEqual(guardado);
+      expect(H.loadMad('tanques').every((r) => r.data.fecha === antes)).toBe(true);
+    });
+
+    it('🔴 y si elige quedarse, también lo tecleado sigue', () => {
+      irASala('Sala 2');
+      teclear(celda(), '3');
+      expect(H.saveMadTanquesGrid({ silent: true })).toBeGreaterThan(0);
+      const el = document.getElementById('mad-tanques-fecha');
+      const antes = el.value;
+      const celdas = document.querySelectorAll('#fp-tanques [name$="_hembras_muertas"]');
+      teclear(celdas[1], '9');
+      teclear(celdas[2], '8');
+      almacen.dejarLibres(5);
+      globalThis.confirm = (t) => { preguntas.push(String(t)); return preguntas.length === 1; };   // sí a llevarlo; no a perderlo
+      el.value = hace(2);
+      H.madTanquesFechaChange();
+      expect(el.value).toBe(antes);
+      expect(document.querySelectorAll('#fp-tanques [name$="_hembras_muertas"]')[1].value).toBe('9');
+      expect(H.loadMad('tanques').length).toBeGreaterThan(0);
+    });
+
+    it('🔴 Salas: lo guardado vuelve, con sus zonas', () => {
+      irASalas();
+      teclear(celdaSalas(), '28');
+      expect(H.saveMadSalasGrid({ silent: true })).toBeGreaterThan(0);
+      poner('zonas', [rec(document.getElementById('mad-salas-fecha').value, { id: 'z1', synced: false, syncedAt: null, data: { fecha: document.getElementById('mad-salas-fecha').value, zona: 'Zona 1', tanque: 1 } })]);
+      const guardado = H.loadMad('salas').map((r) => r.id);
+      const el = document.getElementById('mad-salas-fecha');
+      H.renderMadSalas();
+      const otra = document.querySelector('#fp-salas [name="sg_1_temp_02"]') || celdaSalas();
+      teclear(otra, '29');
+      almacen.dejarLibres(2);
+      respuesta = true;
+      el.value = hace(2);
+      H.madSalasFechaChange();
+      expect(H.loadMad('salas').map((r) => r.id)).toEqual(guardado);
+      expect(H.loadMad('zonas').map((r) => r.id)).toEqual(['z1']);
+    });
+  });
+
+  describe('📦 llevar a otra fecha es una sola escritura', () => {
+    const celdaZona = (i = 0) => document.querySelector('#fp-zonas [name="zg_' + i + '_temp_02"]');
+    const fechaSalas = () => document.getElementById('mad-salas-fecha');
+    const irASalasYa = () => { irASalas(); expect(celdaZona(), 'la grilla de las zonas está pintada').toBeTruthy(); };
+
+    it('🔴 Tanques: cabe justo porque lo viejo sale en la misma escritura', () => {
+      irASala('Sala 2');
+      teclear(celda(), '3');
+      expect(H.saveMadTanquesGrid({ silent: true })).toBeGreaterThan(0);
+      teclear(celda(), '4');
+      almacen.dejarLibres(40);
+      respuesta = true;
+      const el = document.getElementById('mad-tanques-fecha');
+      el.value = hace(2);
+      H.madTanquesFechaChange();
+      const l = H.loadMad('tanques');
+      expect(l.length).toBe(1);
+      expect(l[0].data.fecha).toBe(hace(2));
+      expect(String(l[0].data.hembras_muertas)).toBe('4');
+    });
+
+    it('🔴 Salas: igual', () => {
+      irASalasYa();
+      teclear(celdaSalas(), '28');
+      expect(H.saveMadSalasGrid({ silent: true })).toBeGreaterThan(0);
+      teclear(celdaSalas(), '29');
+      almacen.dejarLibres(40);
+      respuesta = true;
+      fechaSalas().value = hace(2);
+      H.madSalasFechaChange();
+      const l = H.loadMad('salas');
+      expect(l.length).toBeGreaterThan(0);
+      expect(l.every((r) => r.data.fecha === hace(2))).toBe(true);
+    });
+
+    it('🔴 Zonas: igual', () => {
+      irASalasYa();
+      teclear(celdaZona(), '28');
+      expect(H.saveMadSalasGrid({ silent: true })).toBeGreaterThan(0);
+      teclear(celdaZona(), '29');
+      almacen.dejarLibres(40);
+      respuesta = true;
+      fechaSalas().value = hace(2);
+      H.madSalasFechaChange();
+      const l = H.loadMad('zonas');
+      expect(l.length).toBeGreaterThan(0);
+      expect(l.every((r) => r.data.fecha === hace(2))).toBe(true);
+    });
+
+    it('🔴 con la grilla vaciada no hay nada que escribir: lo de la fecha vieja sale igual', () => {
+      irASala('Sala 2');
+      teclear(celda(), '3');
+      expect(H.saveMadTanquesGrid({ silent: true })).toBeGreaterThan(0);
+      teclear(celda(), '');
+      respuesta = true;
+      const el = document.getElementById('mad-tanques-fecha');
+      el.value = hace(2);
+      H.madTanquesFechaChange();
+      expect(H.loadMad('tanques')).toEqual([]);
+    });
+
+    const salasYZonas = () => {
+      irASalasYa();
+      const hoy = fechaSalas().value;
+      teclear(celdaSalas(), '28');
+      teclear(celdaZona(), '28');
+      expect(H.saveMadSalasGrid({ silent: true })).toBeGreaterThan(0);
+      // Y crece: más celdas tecleadas, en las dos listas.
+      teclear(document.querySelector('#fp-salas [name="sg_1_temp_02"]'), '27');
+      teclear(document.querySelector('#fp-salas [name="sg_2_temp_02"]'), '27');
+      teclear(celdaZona(1), '27');
+      teclear(celdaZona(2), '27');
+      respuesta = true;
+      return hoy;
+    };
+
+    it('🔴 Salas: si no caben las zonas, las salas vuelven a su fecha', () => {
+      const hoy = salasYZonas();
+      almacen.bloquear(H.madKey('zonas'));
+      fechaSalas().value = hace(2);
+      H.madSalasFechaChange();
+      almacen.bloquear(null);
+      expect(H.loadMad('salas').every((r) => r.data.fecha === hoy)).toBe(true);
+      expect(H.loadMad('zonas').every((r) => r.data.fecha === hoy)).toBe(true);
+    });
+
+    it('🔴 Salas: si no caben las salas, las zonas vuelven a su fecha', () => {
+      const hoy = salasYZonas();
+      almacen.bloquear(H.madKey('salas'));
+      fechaSalas().value = hace(2);
+      H.madSalasFechaChange();
+      almacen.bloquear(null);
+      expect(H.loadMad('salas').every((r) => r.data.fecha === hoy)).toBe(true);
+      expect(H.loadMad('zonas').every((r) => r.data.fecha === hoy)).toBe(true);
+    });
+  });
+
+  describe('`_madCommitActive` dice si pudo', () => {
+    it('sí, con espacio; no, sin él', () => {
+      irASala('Sala 2');
+      teclear(celda(), '7');
+      expect(H._madCommitActive()).toBe(true);
+      lleno();
+      teclear(celda(), '8');
+      expect(H._madCommitActive()).toBe(false);
+    });
+    it('Salas también', () => {
+      irASalas();
+      almacen.dejarLibres(5);
+      teclear(celdaSalas(), '28');
+      expect(H._madCommitActive()).toBe(false);
+    });
+    it('fuera de Maduración o de una grilla no hay nada que decir', () => {
+      H.setVista(H.MAD_MOD, 'saldo');
+      expect(H._madCommitActive()).toBe(true);
+      H.setVista(1, 'calidad');
+      expect(H._madCommitActive()).toBe(true);
+    });
   });
 });
 

@@ -3086,6 +3086,16 @@ function enter(){
 }
 
 function goBack(){
+  /* 2026-11-05 (pauta A7, usuario: «Preguntar») · Salir no guarda la grilla: deja su copia de recuperación. Sin sitio tampoco para ella,
+     lo tecleado se perdería: se pregunta. Quien sigue ya lo da por perdido: no se le vuelve a preguntar al volver. */
+  if(isMadMod(curMod) && MAD_FICHAS.includes(curTab) && _madGridDirty){
+    let _copia = true;
+    try{ _copia = saveMadRecovery() !== false; }catch(_){}
+    if(!_copia){
+      if(!confirm(MAD_GRID_SIN_ESPACIO)) return;
+      _madGridDirty = false;
+    }
+  }
   // Respalda la grilla Biomol / el formulario As Técnico antes de salir
   // (recuperación de lo no guardado).
   try{ if(isBioMod(curMod)) saveBioRecovery(); }catch(_){}
@@ -3221,7 +3231,12 @@ function selTab(t){
   }
   // Al salir de una grilla de Maduración, persiste lo tecleado/pegado de la grilla
   // activa antes de cambiar de pestaña (anti-pérdida; curTab aún es la pestaña vieja).
-  if(isMadMod(curMod) && MAD_FICHAS.includes(curTab)){ try{ _madCommitActive(); }catch(_){} }
+  // Si no se pudo y se decide quedarse, no se cambia de pestaña (pauta A7).
+  if(isMadMod(curMod) && MAD_FICHAS.includes(curTab)){
+    let _seguir = true;
+    try{ _seguir = _madGridSePuedeDejar(); }catch(_){}
+    if(!_seguir) return;
+  }
   // 2026-09-24 · y al salir de una ficha de FORMULARIO, lo tecleado pendiente se guarda ya (hasta hoy no se guardaba aquí).
   if(isMadMod(curMod) && MAD_BORR_FICHAS[curTab]){ try{ madBorrGuardarYa(curTab); }catch(_){} }
   // Grilla de Mareas: vuelca lo tecleado/pegado antes de cambiar de pestaña.
@@ -6593,8 +6608,9 @@ function _madTqVaciadas(guardado, data){
 }
 // Persiste (silencioso, sin re-render) la grilla activa usando el contexto con que
 // se renderizó. Se llama ANTES de cambiar de sala/fecha o de pestaña.
+/* 2026-11-05 (pauta A7) · Devuelve false si había una grilla que guardar y no se pudo. Ver _madGridSePuedeDejar. */
 function _madCommitActive(){
-  if(!isMadMod(curMod)) return;
+  if(!isMadMod(curMod)) return true;
   /* 2026-09-15 · el borrador por fecha de las fichas de formulario se guarda en el MISMO
      momento que las grillas —cambiar de pestaña, volver atrás—, que es cuando se sabe que el
      usuario ha terminado de teclear. Va antes del `return` de abajo porque esas fichas no
@@ -6603,17 +6619,28 @@ function _madCommitActive(){
   if(MAD_BORR_FICHAS[curTab]){
     try{ madBorrGuardarYa(curTab); }catch(_){}
   }
-  if(!MAD_FICHAS.includes(curTab)) return;
-  const r = _madRendered[curTab]; if(!r) return;
+  if(!MAD_FICHAS.includes(curTab)) return true;
+  const r = _madRendered[curTab]; if(!r) return true;
   try{
     /* ⚠ La rama de caída (`else`) desapareció con la grilla de Lotes el 2026-09-08. Era
        un catch-all: CUALQUIER ficha que no fuera salas ni tanques acababa guardándose como
        si fuera Lotes. Con dos fichas es inalcanzable, pero un `else` que significa «la
        tercera» envejece mal — si mañana entra una cuarta, se guardaría en la equivocada
        sin dar síntoma. Ahora cada ficha se nombra. */
-    if(curTab==="salas")        saveMadSalasGrid({ fechaOverride:r.fecha, silent:true, noRender:true });
-    else if(curTab==="tanques") saveMadTanquesGrid({ salaOverride:r.sala, fechaOverride:r.fecha, silent:true, noRender:true });
+    if(curTab==="salas")        return saveMadSalasGrid({ fechaOverride:r.fecha, silent:true, noRender:true }) !== -1;
+    else if(curTab==="tanques") return saveMadTanquesGrid({ salaOverride:r.sala, fechaOverride:r.fecha, silent:true, noRender:true }) !== -1;
   }catch(_){}
+  return true;
+}
+/* 2026-11-05 (pauta A7, usuario: «Preguntar») · ANTES DE DEJAR UNA GRILLA. Sin espacio, cambiar de sala, de fecha o de pestaña, o salir del
+   módulo, repintaba y borraba lo tecleado sin remedio, mientras el aviso decía «sigue en pantalla». Ahora se pregunta. Con espacio, o sin nada
+   tecleado, ni se pregunta. Devuelve true para seguir. */
+const MAD_GRID_SIN_ESPACIO = "⚠ No hay espacio en este equipo para guardar lo tecleado en esta grilla.\n\nAceptar = seguir y PERDERLO."
+  + "\nCancelar = quedarte aquí, con lo tecleado. En Tanques, ☁️ lo envía sin guardarlo; en Salas hay que liberar espacio en ⚙ Config o anotarlo.";
+function _madGridSePuedeDejar(){
+  const tecleado = _madGridDirty;
+  if(_madCommitActive() || !tecleado) return true;
+  return confirm(MAD_GRID_SIN_ESPACIO);
 }
 // Autoguardado de recuperación (espejo de Biomol): la grilla activa cada 60s y en goBack.
 function saveMadRecovery(){
@@ -6630,7 +6657,7 @@ function saveMadRecovery(){
   const fecha = (fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today();
   const rec = { ficha, sala, fecha, ts:Date.now(), rows };
   if(zonas.length) rec.zonas = zonas;
-  _lsSet(MAD_RECOV_KEY, JSON.stringify(rec));
+  return _lsSet(MAD_RECOV_KEY, JSON.stringify(rec));
 }
 function loadMadRecovery(){
   try{
@@ -16441,12 +16468,12 @@ function saveMadSalasGrid(opts){
   // Carga la lista UNA vez, mergea en memoria y persiste UNA vez (O(n)).
   let saved = 0, zSaved = 0, _ok = true;
   if(rows.length){
-    const list = loadMad("salas");
+    const list = _madSinIds(loadMad("salas"), opts.quitar);   // opts.quitar: lo que se lleva de otra fecha (_madGridLlevar)
     rows.forEach(data => { if(!isValidDate(data.fecha)) return; _madMergeRow(list, "salas", data); saved++; });
     _ok = saveMadList("salas", list);
   }
   if(zRows.length){
-    const zl = loadMad("zonas");
+    const zl = _madSinIds(loadMad("zonas"), opts.quitarZonas);
     zRows.forEach(data => { if(!isValidDate(data.fecha)) return; _madMergeRow(zl, "zonas", data); zSaved++; });
     _ok = saveMadList("zonas", zl) && _ok;
   }
@@ -17317,8 +17344,9 @@ function madTqPesoBaja(el){
 }
 
 function madTanquesSalaChange(){
-  _madCommitActive();   // persiste la grilla de la sala ANTERIOR antes de cambiar
   const el = document.getElementById("mad-tanques-sala");
+  // Persiste la grilla de la sala ANTERIOR antes de cambiar; si no puede y se decide quedarse, el selector vuelve a ella.
+  if(!_madGridSePuedeDejar()){ if(el) el.value = _madTanquesSala; return; }
   _madTanquesSala = el ? el.value : "";
   renderMadTanques();
 }
@@ -17329,9 +17357,15 @@ function madTanquesFechaChange(){ _madGridFechaChange("tanques", renderMadTanque
 function _madGridFechaChange(ficha, pintar){
   // 2026-09-30 · una fecha ELEGIDA deja de ser la de la app (se respeta al día siguiente); elegir hoy la deja automática.
   const _el = document.getElementById("mad-" + ficha + "-fecha");
+  const _autoAntes = _madGridFechaAuto[ficha];
   _madGridFechaAuto[ficha] = (_el && _el.value === today()) ? today() : null;
   const llevado = _madGridLlevar(ficha);
-  if(!llevado) _madCommitActive();
+  // Si no se pudo guardar y se decide quedarse, la fecha vuelve a la que está pintada (pauta A7).
+  if(!llevado && !_madGridSePuedeDejar()){
+    _madGridFechaAuto[ficha] = _autoAntes;
+    if(_el && _madRendered[ficha]) _el.value = _madRendered[ficha].fecha;
+    return;
+  }
   pintar();
   /* Lo llevado sigue siendo lo que se tecleó: si la fecha elegida también era otra, se vuelve a llevar, igual que en
      las fichas de formulario. El render lo daría por «ya guardado y sin tocar». */
@@ -17346,6 +17380,7 @@ function _madGridFechaChange(ficha, pintar){
  *  🔴 2026-09-25 (usuario, revisión en Chrome de 0d) · «enviado» es haber llegado ALGUNA VEZ a la hoja (`syncedAt`), no
  *  `synced`: la fusión al guardar la grilla (salir de la pestaña, elegir el mismo día) le quita `synced` aunque nada
  *  cambie, y tras salir y volver una fila enviada se movía de día. */
+function _madSinIds(lista, ids){ return ids && ids.size ? lista.filter(function(x){ return !(x && ids.has(x.id)); }) : lista; }
 function _madGridLlevar(ficha){
   const r = _madRendered[ficha];
   const el = document.getElementById("mad-" + ficha + "-fecha");
@@ -17369,10 +17404,22 @@ function _madGridLlevar(ficha){
   if(!llevar) return null;
   // La hora del parte que se deja, antes de quitarlo: la ronda la conserva (Tanques).
   const hora = ficha === "tanques" ? _madParteHora(list, r.fecha, r.sala, _madParteAbierto(list, r.fecha, r.sala)) : "";
-  if(deOrigen.length && !saveMadList(ficha, list.filter(function(x){ return deOrigen.indexOf(x) === -1; }))) return null;
-  if(zOrigen.length && !saveMadList("zonas", zl.filter(function(x){ return zOrigen.indexOf(x) === -1; }))) return null;
-  if(ficha === "salas") saveMadSalasGrid({ fechaOverride: nueva, silent: true, noRender: true });
-  else saveMadTanquesGrid({ salaOverride: r.sala, fechaOverride: nueva, horaOverride: hora, silent: true, noRender: true });
+  /* 2026-11-05 (pauta A7) · De una sola escritura: salir de la fecha vieja y entrar en la nueva. Se borraba primero, y sin sitio para escribir
+     se perdía también lo ya guardado; ni devolverlo era seguro, porque en ese hueco otra escritura podía ocupar lo liberado. Salas escribe dos
+     listas: si la segunda falla, las dos vuelven como estaban. */
+  const _fuera = new Set(deOrigen.map(function(x){ return x.id; })), _fueraZ = new Set(zOrigen.map(function(x){ return x.id; }));
+  const _g = ficha === "salas" ? saveMadSalasGrid({ fechaOverride: nueva, silent: true, noRender: true, quitar: _fuera, quitarZonas: _fueraZ })
+    : saveMadTanquesGrid({ salaOverride: r.sala, fechaOverride: nueva, horaOverride: hora, silent: true, noRender: true, quitar: _fuera });
+  if(_g === -1){
+    if(ficha === "salas"){ saveMadList("salas", list); saveMadList("zonas", zl); }
+    return null;
+  }
+  // Sin nada que escribir (la grilla, vacía) esa escritura no ocurrió: lo de la fecha vieja sale igual, como siempre. Más corta, siempre cabe.
+  [[ficha, _fuera], ["zonas", _fueraZ]].forEach(function(p){
+    if(!p[1].size) return;
+    const l = loadMad(p[0]), q = _madSinIds(l, p[1]);
+    if(q.length !== l.length) saveMadList(p[0], q);
+  });
   return { nuevo: nuevo };
 }
 function madGridPaste(ev, ficha){
@@ -17679,7 +17726,7 @@ function saveMadTanquesGrid(opts){
   const rows = _collectTanquesGrid(opts.salaOverride, opts.fechaOverride);
   const vaciar = _madTqVaciadosEnteros(rows, sala, opts.fechaOverride);   // 2026-09-30 (noche, punto 5 · A) · ver abajo
   if(rows.length === 0){ if(!silent) toast("No hay datos para guardar","warn"); return 0; }
-  const list = loadMad("tanques");
+  const list = _madSinIds(loadMad("tanques"), opts.quitar);   // opts.quitar: lo que se lleva de otra fecha (_madGridLlevar)
   /* `silent` es el auto-guardado: actualiza el parte abierto. Un guardado explícito abre el siguiente.
      Si no hay ninguno abierto todavía, el auto-guardado abre el primero: lo tecleado no puede quedarse
      sin fila por el hecho de que el usuario navegara antes de pulsar 💾. */
