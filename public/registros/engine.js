@@ -1907,6 +1907,11 @@ function _colaSePisan(previo, it){
   const supKeys = new Set(it.mark.keys);
   return previo.mark.keys.filter(k => _colaClaveCubierta(previo.mark.kind, supKeys, k)).length > 0;
 }
+/* 2026-11-04 (pauta A15) · Vaciar para que salga lo que espera, sin quedarse colgado del vaciado entero: con la cola llena y el GAS lento dura
+   hasta ~43 min, y quien envía retenía su hoja y su ficha todo ese rato. Pasado el tope, lo suyo sigue a salvo en la cola y el vaciado sigue
+   solo. 45 s: lo que puede tardar un envío (40 s, ver _postOnce) más su consulta previa. */
+const COLA_ESPERA_ENVIO_MS = 45000;
+function _colaVaciarConTope(){ return Promise.race([flushSyncQueue(), _sleep(COLA_ESPERA_ENVIO_MS)]); }
 const _colaRechazos = new Map();   // reqId → motivo: lo que el último vaciado retiró por sus DATOS (lo lee postPayload, ver _colaSolapa)
 
 // F3: reconcilia el estado local tras una ENTREGA confirmada desde la cola.
@@ -1919,8 +1924,16 @@ const _colaRechazos = new Map();   // reqId → motivo: lo que el último vaciad
  *  marcará la que siga siendo EXACTAMENTE la que se envió. Sin ese sello, editar la ficha
  *  después de encolar y recibir luego la entrega la pintaría como sincronizada mientras
  *  la edición NO ha viajado. Devuelve null si no hay nada que sellar. */
+/* 2026-11-04 (pauta A15) · LA HUELLA de una ficha, y si sigue siendo lo que viajó. Por su CONTENIDO: pulsar 💾 sin cambiar nada sólo mueve la
+   hora, y la dejaba pendiente con un ✏️ falso. Una marca sin huella —de antes, o de días anteriores (previasEnviar)— va por la hora. */
+function _fichaHuella(e){ return _stringHash(JSON.stringify(e.data === undefined ? null : e.data)); }
+function _fichaIgual(mark, k, e){
+  const h = mark.huellas;
+  if(h && Object.prototype.hasOwnProperty.call(h, k)) return _fichaHuella(e) === h[k];
+  return e.updatedAt === (mark.stamps || {})[k];
+}
 function _marcaFichas(mod, fichas){
-  const keys = [], stamps = {};
+  const keys = [], stamps = {}, huellas = {};
   (fichas || []).forEach(f => {
     const e = loadE(mod, f);
     if(!e) return;
@@ -1928,9 +1941,9 @@ function _marcaFichas(mod, fichas){
     // se quedaría «pendiente de días anteriores» estando en la hoja. Sin fecha (marcas viejas), como antes.
     const _dia = (e.date && /^\d{4}-\d{2}-\d{2}$/.test(e.date)) ? e.date : "";
     const k = mod + "|" + f + (_dia ? "|" + _dia : "");
-    keys.push(k); stamps[k] = e.updatedAt;
+    keys.push(k); stamps[k] = e.updatedAt; huellas[k] = _fichaHuella(e);
   });
-  return keys.length ? { kind:"fichas", keys:keys, stamps:stamps } : null;
+  return keys.length ? { kind:"fichas", keys:keys, stamps:stamps, huellas:huellas } : null;
 }
 
 /* Reconciliación de las fichas saveE tras una ENTREGA confirmada desde la cola.
@@ -1938,7 +1951,6 @@ function _marcaFichas(mod, fichas){
    `pushHist` se auto-protege (sólo acepta FICHAS), así que Desinfección no entra en el
    Historial, igual que en el camino directo. */
 function _reconcileFichas(mark){
-  const sellos = (mark && mark.stamps) || {};
   let ch = false;
   mark.keys.forEach(k => {
     const p = String(k).split("|");
@@ -1952,7 +1964,7 @@ function _reconcileFichas(mark){
       if(!/^\d{4}-\d{2}-\d{2}$/.test(p[2]) || !isValidMod(mod)) return;
       const sk = PRE + mLabel(mod) + "_" + ficha + "_" + p[2];
       let ed = null; try{ ed = JSON.parse(localStorage.getItem(sk)); }catch(_){}
-      if(!ed || ed.synced || ed.mod !== mod || ed.ficha !== ficha || ed.updatedAt !== sellos[k]) return;
+      if(!ed || ed.synced || ed.mod !== mod || ed.ficha !== ficha || !_fichaIgual(mark, k, ed)) return;
       try{ pushHist(mod, ficha, ed.data); }catch(_){}
       ed.synced = true;
       if(_lsSet(sk, JSON.stringify(ed))){ _invalidateLoadE(sk); ch = true; }
@@ -1962,7 +1974,7 @@ function _reconcileFichas(mark){
     if(!e || e.synced) return;
     // El sello: si no casa, la ficha se editó después de encolarse. Sigue pendiente, y
     // eso es la VERDAD — lo que hay en pantalla no es lo que está en Sheets.
-    if(e.updatedAt !== sellos[k]) return;
+    if(!_fichaIgual(mark, k, e)) return;
     try{ pushHist(mod, ficha, e.data); }catch(_){}
     if(saveE(mod, ficha, e.data, true)) ch = true;
   });
@@ -2088,14 +2100,24 @@ function _marcaCorregida(m){
       return m.keys.some(k => {
         const p = String(k).split("|"), mod = /^\d+$/.test(p[0]) ? Number(p[0]) : p[0];
         const e = p.length === 3 ? JSON.parse(localStorage.getItem(PRE + mLabel(mod) + "_" + p[1] + "_" + p[2])) : loadE(mod, p[1]);
-        return !!e && Object.prototype.hasOwnProperty.call(st, k) && e.updatedAt !== st[k];
+        return !!e && !e.synced && Object.prototype.hasOwnProperty.call(st, k) && !_fichaIgual(m, k, e);
       });
     }
     if(!m.sellos) return false;
-    let todas = null;
+    let todas = null, pendientes = null;
     if(m.kind === "alg") todas = _algHuellas();
-    else { const F = _marcaFuente(m); if(F) todas = _marcaHuellas(F.raw(), F.keyOf); }
-    return !!todas && Object.keys(m.sellos).some(c => Object.prototype.hasOwnProperty.call(todas, c) && todas[c] !== m.sellos[c]);
+    else {
+      const F = _marcaFuente(m);
+      if(F){
+        /* 2026-11-04 (pauta A15) · Lo ya marcado no está «corregido»: una entrega por la cola lo marca antes de llegar aquí, y al marcar,
+           Traslado retoca sus datos. Por clave, no por registro: la huella de una clave lleva todos los suyos, enviados o no. */
+        const l = F.raw();
+        todas = _marcaHuellas(l, F.keyOf);
+        pendientes = {};
+        l.forEach(r => { if(r && !r.synced){ try{ pendientes[String(F.keyOf(r))] = true; }catch(_){} } });
+      }
+    }
+    return !!todas && Object.keys(m.sellos).some(c => Object.prototype.hasOwnProperty.call(todas, c) && todas[c] !== m.sellos[c] && (!pendientes || pendientes[c]));
   }catch(_){ return false; }
 }
 /* 2026-11-03 (pauta 1.3) · LA HUELLA de cada clave: el contenido de sus registros, sin la hora ni el estado. Pulsar 💾 sin cambiar
@@ -2126,14 +2148,16 @@ function _algHuellas(){
   return out;
 }
 /* Sella la marca con lo que viaja, ANTES de cualquier espera. Las fichas de saveE ya llevan el suyo, y las marcas con versión (id@ts)
-   lo llevan en la propia clave. */
-function _marcaSellar(mark){
+   lo llevan en la propia clave.
+   2026-11-04 (pauta A2) · `lista`: la foto con que se armó el envío. Quien espera entre armarlo y enviarlo (leer la hoja, el lote anterior)
+   tiene que pasarla: lo guardado de ahora puede llevar ya una corrección que no viajó, y quedaría «enviada» sin aviso. */
+function _marcaSellar(mark, lista){
   if(!mark || mark.sellos || !mark.kind || !Array.isArray(mark.keys) || !mark.keys.length) return;
   if(mark.kind === "fichas" || mark.kind.indexOf("madlog:") === 0 || _COLA_CON_VERSION.indexOf(mark.kind) !== -1) return;
   try{
     let todas = null;
     if(mark.kind === "alg") todas = _algHuellas();
-    else { const F = _marcaFuente(mark); if(F) todas = _marcaHuellas(F.raw(), F.keyOf); }
+    else { const F = _marcaFuente(mark); if(F) todas = _marcaHuellas(lista || F.raw(), F.keyOf); }
     if(!todas) return;
     const s = {};
     mark.keys.forEach(k => { const c = String(k); if(Object.prototype.hasOwnProperty.call(todas, c)) s[c] = todas[c]; });
@@ -2354,13 +2378,13 @@ async function postPayload(payload, url, opts){
       if(_enqueueSync(payload, _fp, url, opts.mark)){
         _directo = false;
         _colaRechazos.delete(_fp);
-        await flushSyncQueue();
+        await _colaVaciarConTope();
         if(_colaRechazos.has(_fp)){ _gasInfo.message = _colaRechazos.get(_fp); res = "rejected"; }
         else if(!_loadSyncQueue().some(it => it && it.reqId === _fp)) res = "ok";
       } else {
         /* 2026-11-04 (pauta A6, usuario: «vaciar primero») · No cupo en la cola, y eso no es razón para no enviar si hay señal: se vacía lo
            que espera —que además hace sitio— y, si ya nada se pisa con esto, sale directo. Si no, no pasa delante: acaba en el «sin espacio» de abajo. */
-        await flushSyncQueue();
+        await _colaVaciarConTope();
         _directo = !_colaSolapa(opts.mark, payload.sheetName);
       }
     }
@@ -2558,6 +2582,7 @@ async function syncAll(){
         // siempre y el usuario los reenviaba a mano. Es la única de las 16 rutas donde
         // hoy es posible: _reconcileMark tiene el kind "mad:*" y el modelo marca synced.
         const opts = { mark:{ kind:"mad:"+f, keys: pending.map(p=>p.id) } };
+        _marcaSellar(opts.mark, pending);   // pauta A2: Tanques ya esperó a leer la hoja, y Zonas y Tanques esperan al sello
         /* R2 · Tanques pasa por el portón del sello (ver _madTanquesEnviar); Salas no ha cambiado de llave. Zonas
            (2026-10-27) también: es hoja NUEVA y un GAS anterior la rechazaría (ver _madZonasEnviar). */
         if((f === "tanques" || f === "zonas") && _gasLoc === undefined) _gasLoc = await _madIngGasAlDia();
@@ -2565,7 +2590,9 @@ async function syncAll(){
           : f === "tanques" ? await _madTanquesEnviar(payload, opts, _gasLoc) : await postPayload(payload, url, opts);
         if(sent){
           _marcarEnviado(opts);
-          if(curTab === f) renderMad(f);
+          // 2026-11-04 · con algo tecleado sin guardar no se repinta: la grilla sale de lo guardado, y lo borraría sin aviso.
+          if(_madGridDirty){ /* se queda en pantalla */ }
+          else if(curTab === f) renderMad(f);
           else if(f === "zonas" && curTab === "salas") renderMad("salas");   // 2026-10-27 · las zonas se pintan en 🏠 Salas
           ok++;
         } else { const _b=_syncAllBucket(opts, MAD_SHEET[f]); if(_b==="queued") queued++; else if(_b==="fail") fail++; }
@@ -16411,7 +16438,17 @@ function saveMadSalasGrid(opts){
   return saved + zSaved;
 }
 
-async function syncMadSalasGrid(){
+/* 2026-11-04 (usuario: «Bloquear la grilla») · Al terminar, ☁️ repinta la grilla desde lo guardado, y lo tecleado mientras esperaba se borraba
+   sin aviso. Dejarlo en pantalla no es salida: en Tanques, ☁️ ya cerró el parte, y guardar de nuevo abriría otro con las mismas cifras, que el
+   libro restaría dos veces. Así que mientras envía no se puede teclear. */
+async function _madGridBloqueada(panel, enviar){
+  const fp = document.getElementById(panel);
+  if(fp){ fp.inert = true; fp.style.opacity = "0.6"; fp.style.pointerEvents = "none"; }
+  try{ return await enviar(); }
+  finally{ if(fp){ fp.inert = false; fp.style.opacity = ""; fp.style.pointerEvents = ""; } }
+}
+async function syncMadSalasGrid(){ return _madGridBloqueada("fp-salas", _syncMadSalasGrid); }
+async function _syncMadSalasGrid(){
   if(saveMadSalasGrid() === -1) return;   // almacenamiento falló, o una temperatura fuera de rango lo bloqueó (ya avisó): no enviar lo que no se guardó
   const url = gasUrl();
   if(!url){ toast("Configura la URL de Google Apps Script","warn"); openCfg(); return; }
@@ -16602,6 +16639,7 @@ async function _madZonasSync(pend){
   setSyncUI("pend","Enviando "+pend.length+" fila(s) de zonas…");
   const payload = buildMadPayload("zonas", pend);
   const opts = { mark:{ kind:"mad:zonas", keys: pend.map(p=>p.id) } };   // F3: si acaba en la cola, se marcan solas al entregarse
+  _marcaSellar(opts.mark, pend);   // pauta A2: `pend` se leyó antes de enviar las Salas
   const sent = await _madZonasEnviar(payload, opts);
   if(sent){
     _marcarEnviado(opts);
@@ -17782,7 +17820,8 @@ function _madTqSoltarEnviados(pending){
   if(quedan.length !== antes.length) saveMadList("tanques", quedan);
   pending.forEach(r => { if(r.data) _madRecDescartar("tanques", r.data.sala, r.data.fecha); });
 }
-async function syncMadTanquesGrid(){
+async function syncMadTanquesGrid(){ return _madGridBloqueada("fp-tanques", _syncMadTanquesGrid); }
+async function _syncMadTanquesGrid(){
   /* 2026-11-04 (pauta A6, usuario: «Enviar lo de pantalla») · Sin sitio para guardar se envía igual lo que hay en pantalla, como las fichas de
      Larvicultura: la hoja es el respaldo que de verdad cuenta, y es justo cuando más falta hace. Y entonces no se repinta hasta saber que
      llegó: la grilla sale de lo guardado, y borraría de la pantalla lo único que hay. */
@@ -17798,6 +17837,7 @@ async function syncMadTanquesGrid(){
   setSyncUI("pend","Enviando "+pending.length+" tanque(s)…");
   const payload = buildMadPayload("tanques", pending);
   const opts = { mark:{ kind:"mad:tanques", keys: pending.map(p=>p.id) } };   // F3
+  _marcaSellar(opts.mark, pending);   // pauta A2: `pending` se leyó antes de esperar a la hoja
   const sent = await _madTanquesEnviar(payload, opts);   // R2 · con el portón del sello
   const _aSalvo = sent || opts.outcome === "queued";
   if(sinCopia && _aSalvo) _madTqSoltarEnviados(pending);
@@ -25081,6 +25121,7 @@ async function syncAllPendingTras(){
     const lote = lotes[i];
     if(lotes.length > 1) setSyncUI("pend","Enviando lote "+(i+1)+" de "+lotes.length+"…");
     const opts = { dedupeSalt: lote.map(p=>p.id).join(","), mark:{ kind:"tras", keys: lote.map(p=>p.id) } };
+    _marcaSellar(opts.mark, lote);   // pauta A2: los lotes se armaron antes de enviar el primero
     const sent = await postPayload(buildTrasPayload(lote), url, opts);
     if(!sent){ fallo = opts; break; }
     _marcarEnviado(opts);

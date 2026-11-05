@@ -269,6 +269,16 @@ describe('🔴 las demás clases, por la función común', () => {
     });
   });
 
+  it('🔴 Lab. Algas: lo ya retirado del historial no se da por corregido', async () => {
+    H.pushAlgHist({ fecha: '2026-10-20', valor: 'A' });
+    const o = { mark: { kind: 'alg', keys: H.loadAlgHist().map((h) => h.id) } };
+    await H.postPayload({ sheetName: 'Lab_Algas', headers: ['v'], rows: [['A']] }, URL, o);
+    H._marcarEnviado(o);
+    expect(H.loadAlgHist()).toEqual([]);
+    H._marcarEnviado(o);
+    expect(avisó()).toBe(false);
+  });
+
   it('🔴 Lab. Algas: lo corregido se queda en el historial, y se avisa', async () => {
     H.pushAlgHist({ fecha: '2026-10-20', valor: 'VIEJO' });
     H.pushAlgHist({ fecha: '2026-10-20', valor: 'OTRO' });
@@ -320,7 +330,7 @@ describe('🔴 nadie marca «enviado» por su cuenta al terminar un envío', () 
     expect(veces).toEqual({
       syncAll: 5,            // Algas, Salas/Zonas/Tanques, Datos, Parámetros y Desinfección
       syncOneFicha: 3,
-      syncMadSalasGrid: 1, _madZonasSync: 1, syncMadTanquesGrid: 1,
+      _syncMadSalasGrid: 1, _madZonasSync: 1, _syncMadTanquesGrid: 1,
       syncBioGrid: 1,
       syncOneAstFromList: 1, syncAllPendingAst: 1,
       syncAllPendingTras: 1,

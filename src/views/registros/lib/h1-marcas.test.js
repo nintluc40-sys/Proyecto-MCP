@@ -37,7 +37,8 @@ function fnDelMotor(nombres, extra = {}) {
 
 /* ── A · _marcaFichas sella el updatedAt ─────────────────────────────── */
 describe('A · _marcaFichas', () => {
-  const conEntradas = (mapa) => fnDelMotor(['_marcaFichas'], {
+  const conEntradas = (mapa) => fnDelMotor(['_marcaFichas', '_fichaHuella'], {
+    _stringHash: (s) => 'h:' + s,
     loadE: (m, f) => mapa[m + '|' + f] || null,
   });
 
@@ -49,6 +50,7 @@ describe('A · _marcaFichas', () => {
       kind: 'fichas',
       keys: ['M01|calidad', 'M01|plg'],
       stamps: { 'M01|calidad': 111, 'M01|plg': 222 },
+      huellas: { 'M01|calidad': 'h:null', 'M01|plg': 'h:null' },   // pauta A15: las de una ficha sin datos
     });
   });
 
@@ -78,7 +80,8 @@ describe('B · _reconcileFichas', () => {
   function caja(entradas) {
     const store = JSON.parse(JSON.stringify(entradas));
     const hist = [];
-    const api = fnDelMotor(['_reconcileFichas'], {
+    const api = fnDelMotor(['_reconcileFichas', '_fichaHuella', '_fichaIgual'], {
+      _stringHash: (s) => 'h:' + s,
       loadE: (m, f) => store[m + '|' + f] || null,
       saveE: (m, f, data, synced) => {
         const k = m + '|' + f;

@@ -57,7 +57,7 @@ describe('Cola · lo entregado de Larvicultura deja de estar «pendiente»', () 
   it('el sello sigue mandando: si la ficha se editó después de encolarse, NO se da por enviada', () => {
     H.saveE(1, 'plg', { fecha: '2026-10-04', plg: 10 }, false);
     const marca = H._marcaFichas(1, ['plg']);
-    marca.stamps[marca.keys[0]] -= 1;                  // la entrada que hay ya no es la que se envió
+    H.saveE(1, 'plg', { fecha: '2026-10-04', plg: 11 }, false);   // la entrada que hay ya no es la que se envió (pauta A15: por su contenido)
     expect(H._reconcileMark(marca)).toBe(false);
     expect(H.loadE(1, 'plg').synced).toBe(false);
   });
