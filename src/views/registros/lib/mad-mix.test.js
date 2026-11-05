@@ -17,12 +17,13 @@ import { join } from 'node:path';
 import { armarMix, esMix, lotesDeMix, buildDesoveRows, MAD_DESOVE_HEADERS, normLote, textoMal, validarDesove } from './ficha-maduracion-desoves.schema.js';
 import { validarMort, mortRowId } from './ficha-maduracion-mortdesove.schema.js';
 import { construirLibro } from './mad-libro.js';
+import { resumenMaduracion } from './mad-resumen.js';
 
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['madDesArmarMix', 'madLibroLotesDeMix', 'madConstruirLibro', 'madDesReiniciar', 'madDesAddCard', 'madDesCargar', 'madDesCargarElige',
   'madDesMixAbrir', 'madDesMixAplicar', 'madDesMixVolver', 'madDesCollect', 'madDesValidar', 'madDesBuildRows', 'MAD_LIBRO_SHEETS', 'madMortReiniciar', 'madMortCollect',
-  'madMortBuildRows', 'madDesNormCG', 'madDesNormLote', 'madDesTextoMal', 'madMortValidar'];
+  'madMortBuildRows', 'madDesNormCG', 'madDesNormLote', 'madDesTextoMal', 'madMortValidar', 'madResumenMaduracion', '_madResCuerpoHTML', '_madResTabHTML'];
 const H = {};
 const avisos = [];
 
@@ -418,5 +419,91 @@ describe('🔀 A17 · un MIX a mano, y lo que no cabe', () => {
     H.madDesMixAplicar(caja.querySelector('.md-mix-aplicar'));
     expect(card.querySelector('.md-lote').value).toBe('');
     expect(avisos.at(-1)).toContain('no caben');
+  });
+});
+
+/* A18 (2026-11-04, usuario: «Con su fila y en el total») · el 📊 Saldo: un MIX no tiene animales y no salía en ningún sitio. */
+describe('🔀 A18 · 📊 Saldo', () => {
+  const DESF = (Fecha, Lote, cg, Desoves, h, N2, N5) => ({ Fecha, Lote, 'Código genético': cg, Desoves, 'Total de huevos': h, 'Hembras no viables': 1, N2, N5 });
+  const REV = (Fecha, Lote, rev) => ({ Fecha, Lote, 'Código genético': 'C', 'Tipo de tanque': '', Revisión: rev, Deformidad: 'Baja', Hongos: 'Presente', Salinidad: 30 });
+  const HOY = '2026-02-10';
+  const MIX = 'MIX(BN,BO)';
+  const F = { ingresos: INGRESOS,
+    desoves: [DESF('2026-01-20', 'BN', 'C1', 2, 200000, 100000, 80000), DESF('2026-01-21', MIX, 'C1/C2', 4, 700000, 500000, 300000), DESF('2026-01-22', 'MIX(QQ,ZZ)', 'C8/C9', 9, 900000, 900000, 900000)],
+    mortDesove: [REV('2026-01-21', MIX, 'Postlavado')] };
+  const R = () => resumenMaduracion(F, { hoy: HOY });
+  const SEL = { 'des-totales': 1, 'des-nauplios': 1, 'des-fertilidad': 1, mortdes: 1, 'des-huevos': 1, 'des-por100': 1, 'naup-calidad': 1, 'naup-agua': 1 };
+  const dom = (html) => { const d = document.createElement('div'); d.innerHTML = html; return d; };
+  const tabla = (d, titulo) => [...d.querySelectorAll('h2')].find((h) => h.textContent.includes(titulo)).nextElementSibling;
+  const filas = (t) => [...t.querySelectorAll('tbody tr')].map((tr) => [...tr.children].map((c) => c.textContent.trim()));
+
+  it('🔴 va aparte, con sus cifras; a sus lotes no les suma', () => {
+    const r = R();
+    expect(r.mix).toEqual([{ lote: MIX, desoves: { desoves: 4, noViables: 1, huevos: 700000, n2: 500000, n5: 300000, naupliosPorHembra: 75000, fertilidad: 71.43 },
+      nauplios: expect.objectContaining({ fecha: '2026-01-21' }) }]);
+    expect(r.mix[0].nauplios.revisiones[0].revision).toBe('Postlavado');
+    expect(r.lotes.find((l) => l.lote === 'BN').desoves.desoves).toBe(2);
+    expect(r.lotes.map((l) => l.lote)).not.toContain(MIX);
+  });
+  it('🔴 el de lotes que ya no están en el Saldo no sale: la lista no crece sin fin', () => {
+    expect(R().mix.map((m) => m.lote)).toEqual([MIX]);
+  });
+  it('🔴 el motor da lo mismo que el módulo', () => {
+    expect(H.madResumenMaduracion(F, { hoy: HOY }).mix).toEqual(R().mix);
+  });
+  it('sin un MIX, la lista va vacía', () => {
+    expect(resumenMaduracion({ ...F, desoves: F.desoves.slice(0, 1) }, { hoy: HOY }).mix).toEqual([]);
+    expect(H.madResumenMaduracion({ ...F, desoves: F.desoves.slice(0, 1) }, { hoy: HOY }).mix).toEqual([]);
+  });
+
+  describe('la pantalla', () => {
+    const pinta = (sel, filtro = null) => H._madResCuerpoHTML(H.madResumenMaduracion(F, { hoy: HOY }), sel, false, filtro);
+    it('🔴 su tarjeta, con lo suyo y explicando por qué va aparte', () => {
+      const t = dom(pinta(SEL)).textContent;
+      expect(t).toContain('🔀 MIX');
+      expect(t).toContain('🔀 ' + MIX);
+      expect(t).toContain('4 · 1 · 300.000');
+      expect(t).toContain('700.000 · 500.000');
+      expect(t).toContain('Postlavado');
+      expect(t).toContain('no suman a ninguno de sus lotes');
+    });
+    it('🔴 sin las variables suyas, ni la tarjeta; y en el PDF de un lote, tampoco', () => {
+      expect(dom(pinta({ 'lote-pesos': 1 })).textContent).not.toContain('🔀');
+      expect(dom(pinta(SEL, { tipo: 'lote', nombre: 'BN' })).textContent).not.toContain('🔀');
+    });
+    it.each([['des-totales', '4 · 1 · 300.000'], ['des-nauplios', '75.000'], ['des-fertilidad', '71.43%'], ['des-huevos', '700.000 · 500.000'], ['naup-calidad', 'Hongos Presente'], ['naup-agua', 'Sal. 30 ‰']])('🔴 %s enseña lo suyo', (id, texto) => {
+      expect(dom(pinta({ [id]: 1 })).textContent).toContain(texto);
+    });
+  });
+
+  describe('el PDF por tablas', () => {
+    const pdf = (sel = SEL, filtro = null) => dom(H._madResTabHTML(H.madResumenMaduracion(F, { hoy: HOY }), sel, filtro));
+    it('🔴 Reproducción: su fila, sin mortalidad, y el total lo incluye', () => {
+      const f = filas(tabla(pdf(), 'Lotes · Reproducción'));
+      const mix = f.find((x) => x[0] === MIX);
+      expect(mix.slice(1, 4)).toEqual(['4', '1', '300.000']);
+      expect(mix.slice(-2), 'sus muertas ya están en cada lote').toEqual(['—', '—']);
+      const tot = f[f.length - 1];
+      expect(tot[0]).toBe('Total · 3 lotes y 1 MIX');
+      expect(tot.slice(1, 4)).toEqual(['6', '2', '380.000']);
+    });
+    it('🔴 Huevos, N2 y por 100 ♀: su fila, y el total lo incluye', () => {
+      const f = filas(tabla(pdf(), 'Huevos, N2'));
+      expect(f.find((x) => x[0] === MIX)).toEqual([MIX, '700.000', '500.000', '—', '—', '—']);
+      expect(f[f.length - 1].slice(0, 3)).toEqual(['Total · 3 lotes y 1 MIX', '900.000', '600.000']);
+    });
+    it('🔴 la revisión de nauplios lo lista', () => {
+      expect(filas(tabla(pdf(), 'Revisión de nauplios')).some((x) => x[0] === MIX && x[1] === 'Postlavado')).toBe(true);
+    });
+    it('🔴 el PDF de un lote no lo lleva', () => {
+      const d = pdf(SEL, { tipo: 'lote', nombre: 'BN' });
+      expect(d.textContent).not.toContain(MIX);
+      expect(d.textContent).not.toContain('MIX');
+    });
+    it('sin un MIX, el total dice sólo los lotes', () => {
+      const d = dom(H._madResTabHTML(H.madResumenMaduracion({ ...F, desoves: F.desoves.slice(0, 1) }, { hoy: HOY }), SEL, null));
+      const f = filas(tabla(d, 'Lotes · Reproducción'));
+      expect(f[f.length - 1][0]).toBe('Total · 3 lotes');
+    });
   });
 });

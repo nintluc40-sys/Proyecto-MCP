@@ -23,6 +23,7 @@
 import { construirLibro, sumarDias, ubicKey, CUARENTENA_DIAS, ESTADO_PRODUCCION, ESTADO_CUARENTENA, ESTADO_CERRADO } from './mad-libro.js';
 import { MAD_TANQUES_POR_SALA, MAD_SALA_TONELADAS, areaTanqueM2 } from './ficha-maduracion-ingreso.schema.js';
 import { alimPesosDeReferencia } from './ficha-maduracion-alimentacion.schema.js';
+import { lotesDeMix } from './ficha-maduracion-desoves.schema.js';
 
 export const RESUMEN_TEMPS = ['Temperatura 2:00', 'Temperatura 4:00', 'Temperatura 6:00', 'Temperatura 8:00', 'Temperatura 10:00', 'Temperatura 12:00',
   'Temperatura 14:00', 'Temperatura 16:00', 'Temperatura 18:00', 'Temperatura 20:00', 'Temperatura 22:00', 'Temperatura 0:00'];
@@ -520,6 +521,20 @@ export function resumenDiaSalas(fuentes) {
  * El resumen entero. `fuentes`: las del libro (ingresos, movimientos, tanques, cierres, mortDesove) más
  * `sala`, `desoves` y `tratamientos`, filas tal como las devuelve `?p=rows`. `opts.hoy`: fecha de cálculo.
  */
+/* 🔀 A18 (2026-11-04, usuario: «Con su fila y en el total») · un MIX no tiene animales, así que `resumenLotes` no lo recorre y sus desoves no salían en ningún sitio:
+   el Saldo sumaba menos que la hoja. Va aparte, y sólo si alguno de sus lotes sigue en el Saldo. Gemelo: `_madResMix`, en el motor. */
+function resumenMix(fuentes, lotes) {
+  const desoves = acumularDesoves(fuentes.desoves);
+  const nauplios = naupliosPorLote(fuentes.mortDesove);
+  const enSaldo = new Set((lotes || []).map((L) => loteKey(L.lote)));
+  return [...desoves.keys()].filter((k) => lotesDeMix(k).some((l) => enSaldo.has(l))).sort().map((k) => {
+    const d = desoves.get(k);
+    return { lote: k, desoves: { desoves: d.desoves, noViables: d.noViables, huevos: d.huevos, n2: d.n2, n5: d.n5,
+      naupliosPorHembra: d.desovesConN5 > 0 ? Math.round(d.n5 / d.desovesConN5) : '',
+      fertilidad: d.huevosConN2 > 0 ? r2((d.n2ConHuevos / d.huevosConN2) * 100) : '' },
+    nauplios: nauplios.get(k) || { fecha: '', revisiones: [] } };
+  });
+}
 export function resumenMaduracion(fuentes, opts) {
   const f = fuentes || {};
   const hoy = txt((opts || {}).hoy);
@@ -531,9 +546,10 @@ export function resumenMaduracion(fuentes, opts) {
   /* La alcalinidad de «Inf. Supervisor» es POR ÁREA, y sus áreas son el RAS y las cinco salas: la
      de cada sala va a su tarjeta y la del RAS a la suya, que es donde se mira el agua del sistema. */
   const alc = { dia: ultimoPor(f.mortDesove, 'Área', 'Alcalinidad día'), noche: ultimoPor(f.mortDesove, 'Área', 'Alcalinidad noche') };
+  const lotes = resumenLotes(f, libro, hoy);
   return { hoy, hasta: libro.hasta, avisos: libro.avisos.length,
     // punto 2 (2026-10-13) · cada sala, con lo de su último día (resumenDiaSalas)
     salas: resumenSalas(f.sala, libro, f.tratamientos, tons, alc).map((s) => Object.assign(s, { dia: diaDeSalaVacio(), alimento: alimentoVacio() }, diaSalas.get(s.sala) || {})),
-    lotes: resumenLotes(f, libro, hoy),
+    lotes, mix: resumenMix(f, lotes),
     ras, rasAlcalinidad: { dia: alc.dia.get('RAS') || { valor: '', fecha: '' }, noche: alc.noche.get('RAS') || { valor: '', fecha: '' } } };
 }

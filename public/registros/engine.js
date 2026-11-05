@@ -7608,6 +7608,19 @@ function madResDiaSalas(fuentes){
   });
   return out;
 }
+/* 🔀 A18 (2026-11-04, usuario: «Con su fila y en el total») · un MIX no tiene animales, así que _madResLotes no lo recorre y sus desoves no salían en ningún sitio:
+   el Saldo sumaba menos que la hoja. Va aparte, y sólo si alguno de sus lotes sigue en el Saldo. Gemelo: `resumenMix`, en mad-resumen.js. */
+function _madResMix(fuentes, lotes){
+  const desoves=_madResDesoves(fuentes.desoves), nauplios=_madResNauplios(fuentes.mortDesove), enSaldo={};
+  (lotes||[]).forEach(function(L){ enSaldo[_madResLote(L.lote)]=1; });
+  return Object.keys(desoves).filter(function(k){ return madLibroLotesDeMix(k).some(function(l){ return enSaldo[l]===1; }); }).sort().map(function(k){
+    const d=desoves[k];
+    return { lote:k, desoves:{ desoves:d.desoves, noViables:d.noViables, huevos:d.huevos, n2:d.n2, n5:d.n5,
+        naupliosPorHembra:d.desovesConN5>0 ? Math.round(d.n5/d.desovesConN5) : "",
+        fertilidad:d.huevosConN2>0 ? _madResR2((d.n2ConHuevos/d.huevosConN2)*100) : "" },
+      nauplios:_madResDe(nauplios, k) || { fecha:"", revisiones:[] } };
+  });
+}
 function madResumenMaduracion(fuentes, opts){
   const f=fuentes||{}, hoy=madLibroTxt((opts||{}).hoy);
   const libro=madConstruirLibro(f, { hoy:hoy });
@@ -7618,10 +7631,11 @@ function madResumenMaduracion(fuentes, opts){
   /* La alcalinidad de «Inf. Supervisor» es POR ÁREA, y sus áreas son el RAS y las cinco salas: la
      de cada sala va a su tarjeta y la del RAS a la suya, que es donde se mira el agua del sistema. */
   const alc={ dia:_madResUltimoPor(f.mortDesove, "Área", "Alcalinidad día"), noche:_madResUltimoPor(f.mortDesove, "Área", "Alcalinidad noche") };
+  const lotes=_madResLotes(f, libro, hoy);
   return { hoy:hoy, hasta:libro.hasta, avisos:libro.avisos.length,
     // punto 2 (2026-10-13) · cada sala, con lo de su último día (madResDiaSalas)
     salas:_madResSalas(f.sala, libro, f.tratamientos, tons, alc).map(function(s){ return Object.assign(s, { dia:madResDiaDeSalaVacio(), alimento:madResAlimentoVacio() }, _madResDe(diaSalas, s.sala) || {}); }),
-    lotes:_madResLotes(f, libro, hoy),
+    lotes:lotes, mix:_madResMix(f, lotes),
     ras:ras, rasAlcalinidad:{ dia:_madResDe(alc.dia, "RAS") || { valor:"", fecha:"" }, noche:_madResDe(alc.noche, "RAS") || { valor:"", fecha:"" } } };
 }
 
@@ -7987,9 +8001,7 @@ function _madResLoteHTML(L, sel, conPdf){
   }).join("<br>")+_madResGris(L.fechaDia) : "—");
   /* Cada valor va con su etiqueta: cinco categorías seguidas —«Alta · Media · Ausente · Alta ·
      Baja»— se leen mal y se confunden entre sí justo cuando hay que decidir algo. */
-  const naup=function(campos){ return L.nauplios.revisiones.length
-    ? L.nauplios.revisiones.map(function(x){ return "<b>"+escapeHtml(x.revision)+"</b> "+campos.map(function(c){ return c[1]+" "+_madResCel(x[c[0]], c[2]); }).join(" · "); }).join("<br>")+_madResGris(L.nauplios.fecha)
-    : "—"; };
+  const naup=function(campos){ return _madResNaupCelda(L, campos); };
   if(sel["naup-calidad"]) b+=_madResFila("Revisión de nauplios", naup([["deformidad","Def."],["actividad","Act."],["hongos","Hongos"],["fototropismo","Fototrop."],["aireacion","Aireac."]]));
   if(sel["naup-agua"]) b+=_madResFila("Agua de la revisión", naup([["salinidad","Sal."," ‰"],["temperatura","T°"," °C"]]));
   if(sel["des-totales"]) b+=_madResFila("Desoves · no viables · N5", L.desoves.desoves+" · "+L.desoves.noViables+" · "+_madResMiles(L.desoves.n5));
@@ -8000,6 +8012,21 @@ function _madResLoteHTML(L, sel, conPdf){
   if(sel["mortdes"]) b+=_madResFila("Mortalidad ♀ en desove", md(L.mortDesove))+_madResFila("Mortalidad ♀ en recuperación", md(L.mortRecuperacion));
   if(sel["lote-trat"]) b+=_madResFila("Preventivos", _madResTratLista(L.tratamientos, function(t){ return escapeHtml(t.productos)+(t.ras ? " · RAS: "+escapeHtml(t.ras) : "")+(t.sala ? " ("+escapeHtml(t.sala)+")" : ""); }));
   return _madResTarjeta("🦐 Lote "+escapeHtml(L.lote), b, "lote:"+L.lote, conPdf);
+}
+function _madResNaupCelda(L, campos){ return L.nauplios.revisiones.length
+    ? L.nauplios.revisiones.map(function(x){ return "<b>"+escapeHtml(x.revision)+"</b> "+campos.map(function(c){ return c[1]+" "+_madResCel(x[c[0]], c[2]); }).join(" · "); }).join("<br>")+_madResGris(L.nauplios.fecha)
+    : "—"; }
+/* 🔀 A18 · la tarjeta de un MIX: sólo lo que es suyo. Sin vivos, pesos ni mortalidad: no tiene animales, y sus muertas ya están en cada lote. */
+function _madResMixHTML(M, sel){
+  const D=M.desoves;
+  let b="";
+  if(sel["des-totales"]) b+=_madResFila("Desoves · no viables · N5", D.desoves+" · "+D.noViables+" · "+_madResMiles(D.n5));
+  if(sel["des-nauplios"]) b+=_madResFila("Nauplios/Hembra", _madResMiles(D.naupliosPorHembra));
+  if(sel["des-fertilidad"]) b+=_madResFila("Tasa de fertilidad", _madResCel(D.fertilidad,"%"));
+  if(sel["des-huevos"]) b+=_madResFila("Huevos · N2", _madResMiles(D.huevos)+" · "+_madResMiles(D.n2));
+  if(sel["naup-calidad"]) b+=_madResFila("Revisión de nauplios", _madResNaupCelda(M, [["deformidad","Def."],["actividad","Act."],["hongos","Hongos"],["fototropismo","Fototrop."],["aireacion","Aireación"]]));
+  if(sel["naup-agua"]) b+=_madResFila("Agua de la revisión", _madResNaupCelda(M, [["salinidad","Sal."," ‰"],["temperatura","T°"," °C"]]));
+  return b ? _madResTarjeta("🔀 "+escapeHtml(M.lote), b, "", false) : "";
 }
 // `filtro`: null = todo; { tipo:"sala"|"lote", nombre } = una tarjeta (PDF individual).
 function _madResCuerpoHTML(R, sel, conPdf, filtro){
@@ -8012,6 +8039,9 @@ function _madResCuerpoHTML(R, sel, conPdf, filtro){
   // Las variables de la tarjeta de lote son las de todas las fichas salvo Salas y el RAS: se deducen de MAD_RES_VARS, no se teclean aparte.
   const deLote=[].concat.apply([], MAD_RES_VARS.slice(1).map(function(g){ return g.vars.map(function(v){ return v[0]; }); })).filter(function(id){ return MAD_RES_VARS_RAS.indexOf(id)===-1; });
   if(lotes.length && alguna(deLote)) h+='<h3 style="margin:8px 0 6px;font-size:14px">🦐 Lotes</h3>'+rejilla(lotes.map(function(l){ return _madResLoteHTML(l, sel, conPdf); }).join(""));
+  const mixes=(filtro ? [] : (R.mix||[])).map(function(m){ return _madResMixHTML(m, sel); }).filter(Boolean);
+  if(mixes.length) h+='<h3 style="margin:8px 0 6px;font-size:14px">🔀 MIX</h3>'+rejilla(mixes.join(""))
+    + '<div style="font-size:11px;color:#64748b;margin:-4px 0 10px">Un MIX es un desove de varios lotes juntos: sus huevos, N2 y N5 no se pueden separar, así que no suman a ninguno de sus lotes. Sus hembras muertas sí: están repartidas en cada lote.</div>';
   if(!filtro && alguna(MAD_RES_VARS_RAS)) h+='<h3 style="margin:8px 0 6px;font-size:14px">💧 RAS</h3>'
     + _madResTarjeta("Sistema RAS",
         (sel["ras-alc"] ? _madResFila("Alcalinidad ☀️ día", _madResCel(R.rasAlcalinidad.dia.valor, " mg/L")+_madResGris(R.rasAlcalinidad.dia.fecha))+_madResFila("Alcalinidad 🌙 noche", _madResCel(R.rasAlcalinidad.noche.valor, " mg/L")+_madResGris(R.rasAlcalinidad.noche.fecha)) : "")
@@ -8246,8 +8276,10 @@ function _madResTabSalaHTML(s, R, sel){
   return _madResTabBlk('<h2>🏠 '+escapeHtml(s.sala)+'</h2>'+fr+tq+trat);
 }
 // Las tablas de LOTES, por tema: una fila por lote y, donde hay algo que sumar, su total.
-function _madResTabLotesHTML(lotes, sel){
-  const n=lotes.length, tot='<tr class="tot"><td>Total · '+n+' lote'+(n===1 ? "" : "s")+'</td>';
+function _madResTotalDe(n, mix){ return '<tr class="tot"><td>Total · '+n+' lote'+(n===1 ? "" : "s")+(mix.length ? " y "+mix.length+" MIX" : "")+'</td>'; }
+function _madResTabLotesHTML(lotes, sel, mix){
+  mix=mix||[];
+  const n=lotes.length, tot=_madResTotalDe(n, mix);
   const mo=function(c, t){ return c+" ("+_madResCel(t,"%")+")"; };
   let h="";
   const pob=sel["lote-poblacion"], mort=sel["lote-mortalidad"], dias=sel["lote-dias"];
@@ -8306,15 +8338,25 @@ function _madResTabLotesHTML(lotes, sel){
         + (df ? _madResTabTd(_madResCel(D.fertilidad,"%"), true) : "")
         + (md ? _madResTabTd(mh(L.mortDesove), true)+_madResTabTd(mh(L.mortRecuperacion), true) : "")+'</tr>';
     }).join("");
+    /* 🔀 A18 · la fila del MIX suma al total, y sin mortalidad: sus muertas ya están en cada lote. */
+    const filasMix=mix.map(function(M){
+      const D=M.desoves;
+      S.d+=_madResTabN(D.desoves); S.nv+=_madResTabN(D.noViables); S.n5+=_madResTabN(D.n5);
+      return '<tr>'+_madResTabTd('<b>'+escapeHtml(M.lote)+'</b>')
+        + (dt ? _madResTabTd(D.desoves, true)+_madResTabTd(D.noViables, true)+_madResTabTd(_madResMiles(D.n5), true) : "")
+        + (dn ? _madResTabTd(_madResMiles(D.naupliosPorHembra), true) : "")
+        + (df ? _madResTabTd(_madResCel(D.fertilidad,"%"), true) : "")
+        + (md ? _madResTabTd("—", true)+_madResTabTd("—", true) : "")+'</tr>';
+    }).join("");
     const t=tot+(dt ? _madResTabTd(S.d, true)+_madResTabTd(S.nv, true)+_madResTabTd(_madResMiles(S.n5), true) : "")
       + (dn ? _madResTabTd("—", true) : "")+(df ? _madResTabTd("—", true) : "")
       + (md ? _madResTabTd("— ("+S.dm+" de "+S.de+")", true)+_madResTabTd("— ("+S.rm+" de "+S.re+")", true) : "")+'</tr>';
-    h+=_madResTabBlk('<h2>🥚 Lotes · Reproducción</h2><table>'+_madResTabCab(cab)+'<tbody>'+filas+(n>1 ? t : "")+'</tbody></table>');
+    h+=_madResTabBlk('<h2>🥚 Lotes · Reproducción</h2><table>'+_madResTabCab(cab)+'<tbody>'+filas+filasMix+(n+mix.length>1 ? t : "")+'</tbody></table>');
   }
   const nc=sel["naup-calidad"], na=sel["naup-agua"];
   if(nc || na){
     const filas=[];
-    lotes.forEach(function(L){ L.nauplios.revisiones.forEach(function(x){
+    lotes.concat(mix).forEach(function(L){ L.nauplios.revisiones.forEach(function(x){
       filas.push([_madResTabTd('<b>'+escapeHtml(L.lote)+'</b>'), _madResTabTd(escapeHtml(x.revision))]
         .concat(nc ? ["deformidad","actividad","hongos","fototropismo","aireacion"].map(function(k){ return _madResTabTd(_madResCel(x[k])); }) : [])
         .concat(na ? [_madResTabTd(_madResCel(x.salinidad), true), _madResTabTd(_madResCel(x.temperatura), true)] : [])
@@ -8330,12 +8372,13 @@ function _madResTabLotesHTML(lotes, sel){
     }); });
     h+=_madResTabBlk('<h2>🧪 Lotes · Preventivos</h2>'+_madResTabLista(["Lote","Fecha","Productos","Productos RAS","Sala"], filas, "Sin preventivos registrados."));
   }
-  h+=_madResTabLotesNuevosHTML(lotes, sel);   // punto 2 (2026-10-13)
+  h+=_madResTabLotesNuevosHTML(lotes, sel, mix);   // punto 2 (2026-10-13)
   return h;
 }
 // punto 2 (2026-10-13) · las variables nuevas de los lotes, en tablas PROPIAS (las de antes no cambian); total sólo de lo que se suma.
-function _madResTabLotesNuevosHTML(lotes, sel){
-  const n=lotes.length, tot='<tr class="tot"><td>Total · '+n+' lote'+(n===1 ? "" : "s")+'</td>';
+function _madResTabLotesNuevosHTML(lotes, sel, mix){
+  mix=mix||[];
+  const n=lotes.length, tot=_madResTotalDe(n, mix);
   let h="";
   const xd=sel["lote-descartes"], bio=sel["lote-biomasa"], ali=sel["lote-alimento"];
   if(xd || bio || ali){
@@ -8376,8 +8419,14 @@ function _madResTabLotesNuevosHTML(lotes, sel){
         + (hv ? _madResTabTd(_madResMiles(L.desoves.huevos), true)+_madResTabTd(_madResMiles(L.desoves.n2), true) : "")
         + (p100 ? _madResTabTd(_madResCel(D.por100), true)+_madResTabTd(D.fecha ? D.desoves+" · "+D.hembras : "—", true)+_madResTabTd(D.fecha ? escapeHtml(_madUpDMY(D.fecha)) : "—") : "")+'</tr>';
     }).join("");
+    const filasMix=mix.map(function(M){   // 🔀 A18 · suma al total; por 100 ♀ no le aplica: no tiene hembras propias
+      S.hu+=_madResTabN(M.desoves.huevos); S.n2+=_madResTabN(M.desoves.n2);
+      return '<tr>'+_madResTabTd('<b>'+escapeHtml(M.lote)+'</b>')
+        + (hv ? _madResTabTd(_madResMiles(M.desoves.huevos), true)+_madResTabTd(_madResMiles(M.desoves.n2), true) : "")
+        + (p100 ? _madResTabTd("—", true)+_madResTabTd("—", true)+_madResTabTd("—") : "")+'</tr>';
+    }).join("");
     const t=tot+(hv ? _madResTabTd(_madResMiles(S.hu), true)+_madResTabTd(_madResMiles(S.n2), true) : "")+(p100 ? _madResTabTd("—", true)+'<td></td><td></td>' : "")+'</tr>';
-    h+=_madResTabBlk('<h2>🥚 Lotes · Huevos, N2 y desoves por 100 ♀</h2><table>'+_madResTabCab(cab)+'<tbody>'+filas+(n>1 ? t : "")+'</tbody></table>');
+    h+=_madResTabBlk('<h2>🥚 Lotes · Huevos, N2 y desoves por 100 ♀</h2><table>'+_madResTabCab(cab)+'<tbody>'+filas+filasMix+(n+mix.length>1 ? t : "")+'</tbody></table>');
   }
   return h;
 }
@@ -8398,7 +8447,7 @@ function _madResTabHTML(R, sel, filtro){
       h+=_madResTabBlk('<h2>TOTAL GRANJA</h2><table class="gr">'+_madResTabCab(cab.map(function(t){ return { t:t }; }))+'<tbody><tr class="tot">'+fila.map(function(v){ return _madResTabTd(v, true); }).join("")+'</tr></tbody></table>');
     }
   }
-  if(lotes.length) h+=_madResTabLotesHTML(lotes, sel);
+  if(lotes.length) h+=_madResTabLotesHTML(lotes, sel, filtro ? [] : (R.mix||[]));
   /* El PDF de UN lote no lleva las salas: sus tanques van aquí, con su sala. Con TODOS los lotes de cada tanque: los
      animales son los del tanque entero, y un tanque compartido que sólo dijera este lote escondería al otro. */
   if(filtro && filtro.tipo==="lote" && lotes.length){
