@@ -272,6 +272,68 @@ describe('Mantenimiento · 🔧 Trabajo', () => {
   });
 });
 
+describe('A9 · ✏️ Abrir no pisa lo que no se ha guardado', () => {
+  const responder = (respuesta) => { const vistas = []; window.confirm = (m) => { vistas.push(m); return respuesta; }; return vistas; };
+
+  it('🔴 la ronda: con lo anotado sin guardar pregunta; «no» deja pantalla y borrador; guardado o vacío, no pregunta', () => {
+    const abrir = () => H.mntRondaAbrirEl($('#fp-mntronda button[data-mnt-id][onclick*="Abrir"]'));
+    teclear(celda('BLW-02', 'horometro'), '1028,42');
+    H.mntRondaGuardar();
+    teclear(celda('BLW-01', 'horometro'), '5');
+    const no = responder(false);
+    abrir();
+    expect(no).toHaveLength(1);
+    expect(no[0]).toContain('NO se ha guardado');
+    expect($(celda('BLW-01', 'horometro')).value).toBe('5');
+    expect(JSON.parse(localStorage.getItem(H.MNT_RONDA_DRAFT_KEY)).equipos['BLW-01'].horometro).toBe('5');
+    responder(true);
+    abrir();
+    expect($(celda('BLW-02', 'horometro')).value).toBe('1028,42');
+    expect($(celda('BLW-01', 'horometro')).value).toBe('');
+    const vistas = responder(false);
+    abrir();
+    H.mntRondaNueva();
+    expect($(celda('BLW-02', 'horometro')).value, 'guardada: «Nueva» no pregunta').toBe('');
+    abrir();
+    expect(vistas).toEqual([]);
+    expect($(celda('BLW-02', 'horometro')).value).toBe('1028,42');
+  });
+
+  it('🔴 «Nuevo trabajo», con lo anotado sin guardar, pregunta: «no» deja la pantalla; «sí» empieza en blanco', () => {
+    trabajoCompleto();
+    const no = responder(false);
+    H.mntTrabNuevo();
+    expect(no).toHaveLength(1);
+    expect(no[0]).toContain('NO se ha guardado');
+    expect($(campo('horometro')).value).toBe('927,30');
+    responder(true);
+    H.mntTrabNuevo();
+    expect($(campo('horometro')).value).toBe('');
+  });
+
+  it('🔴 el trabajo: con lo anotado sin guardar pregunta; «no» deja la pantalla; guardado o vacío, no pregunta', () => {
+    const abrir = () => H.mntTrabAbrirEl($('#fp-mnttrabajo button[data-mnt-id][onclick*="Abrir"]'));
+    trabajoCompleto();
+    H.mntTrabGuardar();
+    teclear(campo('horometro'), '100');
+    const no = responder(false);
+    abrir();
+    expect(no).toHaveLength(1);
+    expect(no[0]).toContain('NO se ha guardado');
+    expect($(campo('horometro')).value).toBe('100');
+    responder(true);
+    abrir();
+    expect($(campo('horometro')).value).toBe('927,30');
+    const vistas = responder(false);
+    abrir();
+    H.mntTrabNuevo();
+    expect(elegido(campo('equipo')), 'guardado: «Nuevo» no pregunta').toBe('');
+    abrir();
+    expect(vistas).toEqual([]);
+    expect(elegido(campo('equipo'))).toBe('BLW-03');
+  });
+});
+
 describe('Mantenimiento · el envío y la cola', () => {
   it('🔴 envía cada registro a SU hoja, con su cabecera, y los marca enviados', async () => {
     teclear(celda('BLW-05', 'horometro'), '483,35');

@@ -429,7 +429,10 @@ volver a abrir esto, esto es lo que ya se midió:
   módulo · corrida · tanque) el último: reenviar una evaluación la CORRIGE (el GAS la upserta sin merge). Un tanque
   sólo sale con sus 13 criterios, y lo marcado se guarda al instante en el equipo. «🧹 Vaciar TQ n» borra SÓLO el
   tanque en pantalla (decisión del usuario, 2026-10-04; «🗑 Nueva evaluación» vacía la entera) y «📄 PDF» imprime la
-  evaluación en pantalla: A4 horizontal, una fila por tanque evaluado, con observaciones y firmas.
+  evaluación en pantalla: A4 horizontal, una fila por tanque evaluado, con observaciones y firmas. «✏️ Abrir» pregunta si
+  hay algo sin guardar, y una evaluación nueva con la llave de otra guardada pregunta antes de reemplazarla, diciendo qué
+  tanques se perderían o cambiarían (decisión del usuario, 2026-11-04). Igual en 🧾 Auditoría, por sus filas; en
+  🔧 Mantenimiento sólo «✏️ Abrir» pregunta, porque cada ronda y trabajo lleva su propio ID.
   Y **🧾 Auditoría** (2026-10-03): las planillas «AUDITORIAS (MES) Cxxx» de una corrida y su módulo como ficha —la
   **siembra** (origen, guía, cantidad, toneladas del tanque, lote, código genético y el ingreso de reproductores: su
   fecha y sus guías, tecleados), la **transferencia** origen → destino (cantidad, estadío, PL/g y % de larvas pequeñas)

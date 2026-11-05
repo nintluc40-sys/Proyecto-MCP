@@ -20990,6 +20990,9 @@ function loadScore(){
 /* ── La evaluación en pantalla ──────────────────────────── */
 let _scoreModel = null;   // se guarda al instante en SCORE_DRAFT_KEY
 let _scoreTq = 1;         // el tanque en pantalla
+/* A9 · El id de la evaluación guardada que continúa la de la pantalla (abierta con ✏️ o ya guardada): seguir con ella no
+   pregunta. En memoria a propósito: recargada la página se olvida, y entonces sólo se pregunta si algo se pierde o cambia. */
+let _scoreOrigen = null;
 function _scoreUltimos(){ try{ return JSON.parse(localStorage.getItem(SCORE_ULT_KEY) || "{}") || {}; }catch(_){ return {}; } }
 function _scoreNuevo(){
   const u = _scoreUltimos();
@@ -21097,16 +21100,49 @@ function downloadScorePDF(){
   try{ w.document.title = fileName; }catch(_){}
   toast('📄 PDF: ' + fileName + ' · ' + tqs.length + ' tanque(s)', 'ok', 5000);
 }
+/* A9 · La pregunta de una ficha que cae sobre otra guardada con su misma llave; "" si no hay que preguntar: lo ya enviado
+   que aquí falta sigue en la hoja, y lo que no cambia no se pisa. `pisa` = { faltan, cambian }, ya en palabras. */
+function _preguntaPorLlave(cual, previa, pisa){
+  const lista = function(l){
+    const u = l.filter(function(x, i){ return l.indexOf(x) === i; });
+    return u.slice(0, 8).join(", ") + (u.length > 8 ? " y " + (u.length - 8) + " más" : "");
+  };
+  const lineas = [];
+  if(pisa.faltan.length && !previa.synced) lineas.push("Se perdería, sin llegar a la hoja: " + lista(pisa.faltan) + ".");
+  if(pisa.cambian.length) lineas.push((previa.synced ? "Se corregiría en la hoja: " : "Se sustituiría: ") + lista(pisa.cambian) + ".");
+  if(!lineas.length) return "";
+  return "Ya hay " + cual + " guardada en este dispositivo (" + (previa.synced ? "ya enviada" : "pendiente de enviar") + ").\n\n"
+    + lineas.join("\n") + "\n\n¿Reemplazarla igualmente?";
+}
+/* A9 · Los tanques evaluados en la guardada que aquí faltan o dicen otra cosa, sin contar el orden en que se marcaron. */
+function _scoreLoQuePisa(previa, m){
+  const a = (previa && previa.tanques) || {}, b = (m && m.tanques) || {}, faltan = [], cambian = [];
+  const huella = function(t){
+    return JSON.stringify(Object.keys(t).sort().map(function(k){ return [k, String(t[k] == null ? "" : t[k]).trim()]; })
+      .filter(function(par){ return par[1] !== ""; }));
+  };
+  for(let n = 1; n <= SCORE_TANQUES; n++){
+    if(scoreEstado(a[n]) === "vacio") continue;
+    if(scoreEstado(b[n]) === "vacio") faltan.push("TQ " + n);
+    else if(huella(a[n]) !== huella(b[n])) cambian.push("TQ " + n);
+  }
+  return { faltan: faltan, cambian: cambian };
+}
 // Valida y guarda la evaluación en el dispositivo como PENDIENTE (la misma fecha·módulo·corrida la sustituye).
 function _scoreRegistrar(){
   const m = _scoreActual();
   const err = scoreValidar(m);
   if(err.length){ toast("⚠ " + err.join(" · "), "warn", 8000); return null; }
   const id = _scoreEvalId(m);
+  // A9 · Otra evaluación con esta llave: lo suyo no se pisa sin preguntar. Seguir con la misma no pregunta.
+  const previa = _scoreOrigen === id ? null : _scoreRaw().find(function(r){ return r && r.id === id; });
+  const pregunta = previa ? _preguntaPorLlave("una evaluación de esta fecha, módulo y corrida", previa, _scoreLoQuePisa(previa.data, m)) : "";
+  if(pregunta && !confirm(pregunta)) return null;
   const list = _scoreRaw().filter(function(r){ return r && r.id !== id; });
   const rec = { id: id, ts: Date.now(), synced: false, data: JSON.parse(JSON.stringify(m)) };
   list.push(rec);
   if(!_scoreSave(list)) return null;
+  _scoreOrigen = id;
   _lsSet(SCORE_ULT_KEY, JSON.stringify({ laboratorio: m.laboratorio || "", realizado: m.realizado || "", revisado: m.revisado || "" }));
   return rec;
 }
@@ -21122,12 +21158,17 @@ async function scoreEnviar(){
   renderScore(); updateDots();
   await syncAllPendingScore();
 }
-function scoreNueva(){
+// A9 · ¿Hay en pantalla algo evaluado que no está guardado? «Nueva evaluación» y ✏️ Abrir lo miran con la misma vara.
+function _scoreSinGuardar(){
   const m = _scoreActual();
   const hay = Object.keys(m.tanques || {}).some(function(n){ return scoreEstado(m.tanques[n]) !== "vacio"; });
   const guardada = _scoreRaw().some(function(r){ return r && r.id === _scoreEvalId(m) && JSON.stringify(r.data) === JSON.stringify(m); });
-  if(hay && !guardada && !confirm("Lo marcado en esta evaluación NO se ha guardado.\n\n¿Empezar otra igualmente?")) return;
+  return hay && !guardada;
+}
+function scoreNueva(){
+  if(_scoreSinGuardar() && !confirm("Lo marcado en esta evaluación NO se ha guardado.\n\n¿Empezar otra igualmente?")) return;
   _scoreModel = _scoreNuevo();
+  _scoreOrigen = null;
   _scoreTq = 1;
   _scoreGuardarBorrador();
   renderScore();
@@ -21135,7 +21176,9 @@ function scoreNueva(){
 function scoreAbrir(id){
   const r = _scoreRaw().find(function(x){ return x && x.id === id; });
   if(!r) return;
+  if(_scoreSinGuardar() && !confirm("Lo marcado en esta evaluación NO se ha guardado: se perderá.\n\n¿Abrir la guardada igualmente?")) return;
   _scoreModel = JSON.parse(JSON.stringify(r.data));
+  _scoreOrigen = r.id;
   _scoreTq = 1;
   _scoreGuardarBorrador();
   renderScore();
@@ -21742,18 +21785,23 @@ async function mntTrabEnviar(){
 function _mntSinGuardar(key, m){
   return !_mntRaw(key).some(function(r){ return r && r.id === m.id && JSON.stringify(r.data) === JSON.stringify(m); });
 }
-function mntRondaNueva(){
+// A9 · ¿Hay en pantalla algo anotado que no está guardado? «Nueva» y ✏️ Abrir lo miran con la misma vara.
+function _mntRondaPorGuardar(){
   const m = _mntRondaActual();
-  const hay = MNT_EQUIPOS.some(function(q){ return !mntLecturaVacia(m.equipos[q.codigo]); });
-  if(hay && _mntSinGuardar(MNT_RONDA_KEY, m) && !confirm("Lo anotado en esta ronda NO se ha guardado.\n\n¿Empezar otra igualmente?")) return;
+  return MNT_EQUIPOS.some(function(q){ return !mntLecturaVacia(m.equipos[q.codigo]); }) && _mntSinGuardar(MNT_RONDA_KEY, m);
+}
+function _mntTrabPorGuardar(){
+  const m = _mntTrabActual();
+  return !!(m.equipo || m.tipo || m.actividad || String(m.horometro || "").trim() || String(m.descripcion || "").trim()) && _mntSinGuardar(MNT_TRAB_KEY, m);
+}
+function mntRondaNueva(){
+  if(_mntRondaPorGuardar() && !confirm("Lo anotado en esta ronda NO se ha guardado.\n\n¿Empezar otra igualmente?")) return;
   _mntRonda = _mntRondaNueva();
   _mntGuardarRonda();
   renderMntRonda();
 }
 function mntTrabNuevo(){
-  const m = _mntTrabActual();
-  const hay = !!(m.equipo || m.tipo || m.actividad || String(m.horometro || "").trim() || String(m.descripcion || "").trim());
-  if(hay && _mntSinGuardar(MNT_TRAB_KEY, m) && !confirm("Este trabajo NO se ha guardado.\n\n¿Empezar otro igualmente?")) return;
+  if(_mntTrabPorGuardar() && !confirm("Este trabajo NO se ha guardado.\n\n¿Empezar otro igualmente?")) return;
   _mntTrab = _mntTrabNuevo();
   _mntGuardarTrab();
   renderMntTrabajo();
@@ -21761,6 +21809,8 @@ function mntTrabNuevo(){
 function _mntAbrir(ronda, id){
   const r = (ronda ? _mntRondaRaw() : _mntTrabRaw()).find(function(x){ return x && x.id === id; });
   if(!r) return;
+  if(ronda && _mntRondaPorGuardar() && !confirm("Lo anotado en esta ronda NO se ha guardado: se perderá.\n\n¿Abrir la guardada igualmente?")) return;
+  if(!ronda && _mntTrabPorGuardar() && !confirm("Este trabajo NO se ha guardado: se perderá.\n\n¿Abrir el guardado igualmente?")) return;
   if(ronda){ _mntRonda = JSON.parse(JSON.stringify(r.data)); _mntGuardarRonda(); renderMntRonda(); }
   else { _mntTrab = JSON.parse(JSON.stringify(r.data)); _mntGuardarTrab(); renderMntTrabajo(); }
 }
@@ -22215,6 +22265,7 @@ function loadAud(){
 
 /* ── La auditoría en pantalla ───────────────────────────── */
 let _audModel = null;   // se guarda al instante en AUD_DRAFT_KEY
+let _audOrigen = null;  // A9 · el id de la guardada que continúa la de la pantalla, como `_scoreOrigen`
 function _audUltimos(){ try{ return JSON.parse(localStorage.getItem(AUD_ULT_KEY) || "{}") || {}; }catch(_){ return {}; } }
 function _audNueva(){
   return { corrida:"", modulo:"", registrado: _audUltimos().registrado || "", obs:"", siembras:[], transferencias:[], cosechas:[] };
@@ -22645,16 +22696,40 @@ function downloadAudPDF(){
   try{ w.document.title = fileName; }catch(_){}
   toast('📄 PDF: ' + fileName, 'ok', 5000);
 }
+/* A9 · Las filas de la guardada que aquí faltan o dicen otra cosa, por su ID de la hoja. Las observaciones y quien registra
+   son de la auditoría entera, no de la fila: cambiarlos no es cambiar las filas. */
+function _audLoQuePisa(previa, m){
+  const fuera = ["Observaciones", "Registrado por"].map(function(h){ return AUD_HEADERS.indexOf(h); }), iId = AUD_HEADERS.indexOf("ID");
+  const huellas = function(d){
+    const o = {};
+    audFilas(d).forEach(function(f){ o[f[iId]] = JSON.stringify(f.filter(function(_, i){ return fuera.indexOf(i) < 0; })); });
+    return o;
+  };
+  const antes = huellas(previa), ahora = huellas(m), faltan = [], cambian = [];
+  ["siembras","transferencias","cosechas"].forEach(function(tipo){
+    ((previa && previa[tipo]) || []).forEach(function(f){
+      const fila = audRowId(tipo, previa, f), que = AUD_TIPO[tipo] + " del TQ " + _audTq(f.tanque);
+      if(ahora[fila] === undefined) faltan.push(que);
+      else if(ahora[fila] !== antes[fila]) cambian.push(que);
+    });
+  });
+  return { faltan: faltan, cambian: cambian };
+}
 // Valida y guarda la auditoría en el dispositivo como PENDIENTE (la misma corrida · módulo la sustituye).
 function _audRegistrar(){
   const m = _audActual();
   const err = audValidar(m);
   if(err.length){ toast("⚠ " + err.join(" · "), "warn", 9000); return null; }
   const id = _audEvalId(m);
+  // A9 · Otra auditoría con esta llave: lo suyo no se pisa sin preguntar. Seguir con la misma no pregunta.
+  const previa = _audOrigen === id ? null : _audRaw().find(function(r){ return r && r.id === id; });
+  const pregunta = previa ? _preguntaPorLlave("una auditoría de esta corrida y módulo", previa, _audLoQuePisa(previa.data, m)) : "";
+  if(pregunta && !confirm(pregunta)) return null;
   const list = _audRaw().filter(function(r){ return r && r.id !== id; });
   const rec = { id: id, ts: Date.now(), synced: false, data: JSON.parse(JSON.stringify(m)) };
   list.push(rec);
   if(!_audSave(list)) return null;
+  _audOrigen = id;
   _lsSet(AUD_ULT_KEY, JSON.stringify({ registrado: m.registrado || "" }));
   return rec;
 }
@@ -22670,19 +22745,26 @@ async function audEnviar(){
   renderAud(); updateDots();
   await syncAllPendingAud();
 }
-function audNueva(){
+// A9 · ¿Hay en pantalla filas que no están guardadas? «Nueva auditoría» y ✏️ Abrir lo miran con la misma vara.
+function _audSinGuardar(){
   const m = _audActual();
   const hay = m.siembras.length || m.transferencias.length || m.cosechas.length;
   const guardada = _audRaw().some(function(r){ return r && r.id === _audEvalId(m) && JSON.stringify(r.data) === JSON.stringify(m); });
-  if(hay && !guardada && !confirm("Lo registrado en esta auditoría NO se ha guardado.\n\n¿Empezar otra igualmente?")) return;
+  return !!hay && !guardada;
+}
+function audNueva(){
+  if(_audSinGuardar() && !confirm("Lo registrado en esta auditoría NO se ha guardado.\n\n¿Empezar otra igualmente?")) return;
   _audModel = _audNueva();
+  _audOrigen = null;
   _audGuardarBorrador();
   renderAud();
 }
 function audAbrir(id){
   const r = _audRaw().find(function(x){ return x && x.id === id; });
   if(!r) return;
+  if(_audSinGuardar() && !confirm("Lo registrado en esta auditoría NO se ha guardado: se perderá.\n\n¿Abrir la guardada igualmente?")) return;
   _audModel = JSON.parse(JSON.stringify(r.data));
+  _audOrigen = r.id;
   _audGuardarBorrador();
   renderAud();
 }

@@ -44,7 +44,8 @@ beforeAll(async () => {
   const epilogo = '\n;(function(){ var H = globalThis.__ENG;\n'
     + EXPORTAR.map((n) => `try{ H[${JSON.stringify(n)}] = ${n}; }catch(_){}`).join('\n')
     + '\ntry{ H.setToast=function(f){toast=f;}; }catch(_){}'
-    + '\ntry{ H.olvidarModelo=function(){ _audModel=null; }; }catch(_){}'
+    + '\ntry{ H.olvidarModelo=function(){ _audModel=null; _audOrigen=null; }; }catch(_){}'
+    + '\ntry{ H.olvidarOrigen=function(){ _audOrigen=null; }; }catch(_){}'
     + '\ntry{ H.modelo=function(){ return _audActual(); }; }catch(_){}\n})();';
   globalThis.__ENG = H;
   new Function('window', 'document', 'localStorage', 'globalThis', readFileSync(ENGINE, 'utf8') + epilogo)(
@@ -557,5 +558,186 @@ describe('Auditoría · 📋 pegar por nombre de columna (la planilla tal cual)'
     pegar(celda('transferencias', 0, 'fecha'), [TIT, F2]);
     expect(tabla('transferencias')).toHaveLength(1);
     expect(avisos.find((a) => a.tipo === 'warn').m).toContain('Nada de lo pegado es de la tabla de Transferencia');
+  });
+});
+
+describe('A9 · abrir o repetir no pisa lo que no se ha guardado', () => {
+  const ID = 'AUE-901-M04';
+  /** Lo que `confirm` contestará; devuelve lo que se le pregunte. */
+  const responder = (respuesta) => { const vistas = []; window.confirm = (m) => { vistas.push(m); return respuesta; }; return vistas; };
+  const poner = (o) => Object.assign(H.modelo(), audit(o));
+  const abrir = (id) => H.audAbrirEl(fp().querySelector('button[onclick="audAbrirEl(this)"][data-aud-id="' + id + '"]'));
+  const guardada = () => H._audRaw().find((r) => r.id === ID);
+  const marcarEnviada = () => {
+    const l = H._audRaw();
+    l[0].synced = true;
+    localStorage.setItem('larv4_aud_records', JSON.stringify(l));
+  };
+
+  it('🔴 ✏️ Abrir, con filas sin guardar, pregunta: «no» deja la pantalla; «sí» abre la guardada', () => {
+    poner({ siembras: [SI({})] });
+    H.audGuardar();
+    H.audNueva();
+    poner({ corrida: '902', siembras: [SI({})] });
+    const no = responder(false);
+    abrir(ID);
+    expect(no).toHaveLength(1);
+    expect(no[0]).toContain('NO se ha guardado');
+    expect(H.modelo().corrida).toBe('902');
+    responder(true);
+    abrir(ID);
+    expect(H.modelo().corrida).toBe('901');
+  });
+
+  it('🔴 «Nueva», con filas sin guardar, pregunta: «no» deja la pantalla; «sí» empieza en blanco', () => {
+    poner({ siembras: [SI({})] });
+    const no = responder(false);
+    H.audNueva();
+    expect(no).toHaveLength(1);
+    expect(no[0]).toContain('NO se ha guardado');
+    expect(H.modelo().corrida).toBe('901');
+    responder(true);
+    H.audNueva();
+    expect(H.modelo().corrida).toBe('');
+  });
+
+  it('🔴 ✏️ Abrir no pregunta si lo de pantalla ya está guardado ni si no hay filas', () => {
+    poner({ siembras: [SI({})] });
+    H.audGuardar();
+    const vistas = responder(false);
+    abrir(ID);
+    H.audNueva();
+    expect(H.modelo().siembras, 'guardada: «Nueva» no pregunta').toEqual([]);
+    abrir(ID);
+    expect(vistas).toEqual([]);
+    expect(H.modelo().corrida).toBe('901');
+  });
+
+  it('🔴 una NUEVA con la llave de una PENDIENTE dice qué fila se perdería: «no» no toca nada; «sí» la reemplaza', () => {
+    poner({ siembras: [SI({})] });
+    H.audGuardar();
+    H.audNueva();
+    poner({ siembras: [SI({ tanque: '2' })] });
+    const no = responder(false);
+    H.audGuardar();
+    expect(no).toHaveLength(1);
+    expect(no[0]).toContain('pendiente de enviar');
+    expect(no[0]).toContain('Se perdería, sin llegar a la hoja: Siembra del TQ 1.');
+    expect(no[0]).not.toContain('TQ 2');
+    expect(guardada().data.siembras[0].tanque).toBe('1');
+    responder(true);
+    H.audGuardar();
+    expect(H._audRaw()).toHaveLength(1);
+    expect(guardada().data.siembras.map((f) => f.tanque)).toEqual(['2']);
+  });
+
+  it('🔴 la misma fila con otro dato se dice aparte; otras observaciones o quien registra no son un cambio', () => {
+    poner({ siembras: [SI({})], cosechas: [CO({ cantidad: '1,000' })] });
+    H.audGuardar();
+    H.audNueva();
+    poner({ siembras: [SI({ guia: '1002' })], cosechas: [CO({ cantidad: '1,000' })] });
+    const no = responder(false);
+    H.audGuardar();
+    expect(no).toHaveLength(1);
+    expect(no[0]).toContain('Se sustituiría: Siembra del TQ 1.');
+    expect(no[0]).not.toContain('Cosecha');
+    expect(no[0]).not.toContain('Se perdería');
+    expect(guardada().data.siembras[0].guia, '«no» conserva la fila').toBe('1001');
+    H.audNueva();
+    poner({ obs: 'otra nota', registrado: 'Otra persona', siembras: [SI({})], cosechas: [CO({ cantidad: '1,000' })] });
+    const vistas = responder(false);
+    H.audGuardar();
+    expect(vistas).toEqual([]);
+    expect(guardada().data.obs).toBe('otra nota');
+  });
+
+  it('🔴 ya ENVIADA: lo que falta sigue en la hoja y no pregunta; lo que cambia sí, y dice que se corrige allí', () => {
+    poner({ siembras: [SI({})] });
+    H.audGuardar();
+    marcarEnviada();
+    H.audNueva();
+    poner({ siembras: [SI({ tanque: '2' })] });
+    const vistas = responder(false);
+    H.audGuardar();
+    expect(vistas).toEqual([]);
+    expect(guardada().data.siembras.map((f) => f.tanque)).toEqual(['2']);
+    marcarEnviada();
+    H.audNueva();
+    poner({ siembras: [SI({ tanque: '2', guia: '1002' })] });
+    H.audGuardar();
+    expect(vistas).toHaveLength(1);
+    expect(vistas[0]).toContain('ya enviada');
+    expect(vistas[0]).toContain('Se corregiría en la hoja: Siembra del TQ 2.');
+    expect(guardada().synced, '«no» la deja como enviada').toBe(true);
+  });
+
+  it('🔴 seguir con la misma no pregunta: añadir, corregir y quitar filas, también en la abierta con ✏️', () => {
+    poner({ siembras: [SI({})] });
+    H.audGuardar();
+    const vistas = responder(false);
+    H.modelo().siembras.push(SI({ tanque: '2' }));
+    H.audGuardar();
+    expect(guardada().data.siembras, 'añadir').toHaveLength(2);
+    H.modelo().siembras[0].guia = '1002';
+    H.audGuardar();
+    expect(guardada().data.siembras[0].guia, 'corregir').toBe('1002');
+    H.modelo().siembras.pop();
+    H.audGuardar();
+    expect(guardada().data.siembras, 'quitar').toHaveLength(1);
+    H.audNueva();
+    abrir(ID);
+    H.modelo().siembras[0].guia = '1003';
+    H.audGuardar();
+    expect(guardada().data.siembras[0].guia, 'la abierta').toBe('1003');
+    expect(vistas).toEqual([]);
+  });
+
+  it('🔴 recargada la página sólo pregunta si algo se pierde o cambia', () => {
+    poner({ siembras: [SI({})] });
+    H.audGuardar();
+    H.olvidarOrigen();
+    const vistas = responder(false);
+    H.modelo().siembras.push(SI({ tanque: '2' }));
+    H.audGuardar();
+    expect(vistas, 'sólo añade').toEqual([]);
+    expect(guardada().data.siembras).toHaveLength(2);
+    H.olvidarOrigen();
+    H.modelo().siembras[0].guia = '1002';
+    H.audGuardar();
+    expect(vistas).toHaveLength(1);
+    expect(vistas[0]).toContain('Se sustituiría: Siembra del TQ 1.');
+  });
+
+  it('🔴 llevar una auditoría a la llave de otra también pregunta: la de allí no se pisa', () => {
+    poner({ siembras: [SI({})] });
+    H.audGuardar();
+    H.audNueva();
+    poner({ corrida: '902', siembras: [SI({ tanque: '2' })] });
+    H.audGuardar();
+    H.modelo().corrida = '901';
+    const no = responder(false);
+    H.audGuardar();
+    expect(no).toHaveLength(1);
+    expect(no[0]).toContain('Se perdería, sin llegar a la hoja: Siembra del TQ 1.');
+    expect(H._audRaw()).toHaveLength(2);
+    expect(guardada().data.siembras[0].tanque).toBe('1');
+  });
+
+  it('una lista larga no repite ni desborda la pregunta', () => {
+    const tanques = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+    poner({ siembras: tanques.map((tanque) => SI({ tanque })), cosechas: [CO({ cantidad: '1,000' }), CO({ cantidad: '1,000', partida: 2 })] });
+    H.audGuardar();
+    H.audNueva();
+    poner({ siembras: [SI({ tanque: '11' })] });
+    const no = responder(false);
+    H.audGuardar();
+    expect(no[0]).toContain('y 3 más.');
+    expect(no[0].match(/Siembra del TQ/g)).toHaveLength(8);
+    const solo = 'Cosecha del TQ 1';
+    H.audNueva();
+    poner({ siembras: tanques.map((tanque) => SI({ tanque })) });
+    const otra = responder(false);
+    H.audGuardar();
+    expect(otra[0].split(solo).length - 1, 'dos partidas del mismo tanque, una vez').toBe(1);
   });
 });

@@ -42,7 +42,7 @@ beforeAll(async () => {
   const epilogo = '\n;(function(){ var H = globalThis.__ENG;\n'
     + EXPORTAR.map((n) => `try{ H[${JSON.stringify(n)}] = ${n}; }catch(_){}`).join('\n')
     + '\ntry{ H.setToast=function(f){toast=f;}; }catch(_){}'
-    + '\ntry{ H.olvidarModelo=function(){ _scoreModel=null; _scoreTq=1; }; }catch(_){}\n})();';
+    + '\ntry{ H.olvidarModelo=function(){ _scoreModel=null; _scoreTq=1; _scoreOrigen=null; }; }catch(_){}\n})();';
   globalThis.__ENG = H;
   new Function('window', 'document', 'localStorage', 'globalThis', readFileSync(ENGINE, 'utf8') + epilogo)(
     window, document, globalThis.localStorage, globalThis,
@@ -314,5 +314,198 @@ describe('Score · 🧹 Vaciar TQ y 📄 PDF', () => {
     H.downloadScorePDF();
     expect(ventana).toBeNull();
     expect(H.ultimoAviso).toContain('al menos un tanque');
+  });
+});
+
+describe('A9 · abrir o repetir no pisa lo que no se ha guardado', () => {
+  const campo = (k, v) => { const el = document.createElement('input'); el.setAttribute('data-sk', k); el.value = v; H.scoreCampo(el); };
+  /** Evalúa en pantalla, en la corrida dada, los tanques { tanque: nivel } (el mismo toque desmarca: otro nivel para corregir). */
+  const evaluar = (tanques, corrida = '598') => {
+    campo('modulo', 'M03');
+    campo('corrida', corrida);
+    Object.entries(tanques).forEach(([n, nivel]) => { H.scoreTanque(Number(n)); marcarTodo(nivel); });
+  };
+  /** Lo que `confirm` contestará; devuelve lo que se le pregunte. */
+  const responder = (respuesta) => { const vistas = []; window.confirm = (m) => { vistas.push(m); return respuesta; }; return vistas; };
+  const borrador = () => JSON.parse(localStorage.getItem(H.SCORE_DRAFT_KEY));
+  const idDe = (corrida) => H._scoreRaw().find((r) => r.data.corrida === corrida).id;
+  const tanquesDe = (corrida) => {
+    const t = H._scoreRaw().find((r) => r.data.corrida === corrida).data.tanques;
+    return Object.keys(t).filter((n) => H.scoreEstado(t[n]) === 'completo').map(Number);
+  };
+  const marcarEnviada = () => {
+    const l = H._scoreRaw();
+    l[0].synced = true;
+    localStorage.setItem('larv4_score_records', JSON.stringify(l));
+  };
+
+  it('🔴 ✏️ Abrir, con tanques sin guardar, pregunta: «no» deja la pantalla y el borrador; «sí» abre la guardada', () => {
+    evaluar({ 1: 2 });
+    H.scoreGuardar();
+    H.scoreNueva();
+    evaluar({ 2: 3 }, '599');
+    const no = responder(false);
+    H.scoreAbrir(idDe('598'));
+    expect(no).toHaveLength(1);
+    expect(no[0]).toContain('NO se ha guardado');
+    expect(borrador().corrida).toBe('599');
+    expect(H.scoreEstado(borrador().tanques[2])).toBe('completo');
+    expect(fp().querySelector('[data-sk="corrida"]').value).toBe('599');
+    responder(true);
+    H.scoreAbrir(idDe('598'));
+    expect(borrador().corrida).toBe('598');
+    expect(fp().querySelector('[data-sk="corrida"]').value).toBe('598');
+  });
+
+  it('🔴 «🗑 Nueva evaluación», con tanques sin guardar, pregunta: «no» deja la pantalla; «sí» empieza en blanco', () => {
+    evaluar({ 1: 2 });
+    const no = responder(false);
+    H.scoreNueva();
+    expect(no).toHaveLength(1);
+    expect(no[0]).toContain('NO se ha guardado');
+    expect(borrador().corrida).toBe('598');
+    responder(true);
+    H.scoreNueva();
+    expect(borrador().corrida).toBe('');
+  });
+
+  it('🔴 ✏️ Abrir no pregunta si lo de pantalla ya está guardado ni si no hay nada evaluado', () => {
+    evaluar({ 1: 2 });
+    H.scoreGuardar();
+    const vistas = responder(false);
+    H.scoreAbrir(idDe('598'));
+    H.scoreNueva();
+    expect(borrador().corrida, 'guardada: «Nueva» no pregunta').toBe('');
+    H.scoreAbrir(idDe('598'));
+    expect(vistas).toEqual([]);
+    expect(borrador().corrida).toBe('598');
+  });
+
+  it('🔴 una NUEVA con la llave de una PENDIENTE dice qué tanque se perdería: «no» no toca nada; «sí» la reemplaza', () => {
+    evaluar({ 1: 2, 2: 2 });
+    H.scoreGuardar();
+    H.scoreNueva();
+    evaluar({ 4: 3 });
+    const no = responder(false);
+    H.scoreGuardar();
+    expect(no).toHaveLength(1);
+    expect(no[0]).toContain('pendiente de enviar');
+    expect(no[0]).toContain('Se perdería, sin llegar a la hoja: TQ 1, TQ 2.');
+    expect(no[0]).not.toContain('TQ 4');
+    expect(tanquesDe('598')).toEqual([1, 2]);
+    responder(true);
+    H.scoreGuardar();
+    expect(H._scoreRaw()).toHaveLength(1);
+    expect(tanquesDe('598')).toEqual([4]);
+  });
+
+  it('🔴 el mismo tanque con otros puntos se dice aparte, sin hablar de pérdidas', () => {
+    evaluar({ 1: 2, 2: 2 });
+    H.scoreGuardar();
+    H.scoreNueva();
+    evaluar({ 1: 3, 2: 2 });
+    const no = responder(false);
+    H.scoreGuardar();
+    expect(no).toHaveLength(1);
+    expect(no[0]).toContain('Se sustituiría: TQ 1.');
+    expect(no[0]).not.toContain('TQ 2');
+    expect(no[0]).not.toContain('Se perdería');
+    const t = H._scoreRaw()[0].data.tanques[1];
+    expect(H.SCORE_CRITERIOS.map((c) => t[c.k]), '«no» conserva los puntos').toEqual(H.SCORE_CRITERIOS.map((c) => c.pts[2]));
+  });
+
+  it('🔴 ya ENVIADA: lo que falta sigue en la hoja y no pregunta; lo que cambia sí, y dice que se corrige allí', () => {
+    evaluar({ 1: 2 });
+    H.scoreGuardar();
+    marcarEnviada();
+    H.scoreNueva();
+    evaluar({ 4: 3 });
+    const vistas = responder(false);
+    H.scoreGuardar();
+    expect(vistas).toEqual([]);
+    expect(tanquesDe('598')).toEqual([4]);
+    marcarEnviada();
+    H.scoreNueva();
+    evaluar({ 4: 1 });
+    H.scoreGuardar();
+    expect(vistas).toHaveLength(1);
+    expect(vistas[0]).toContain('ya enviada');
+    expect(vistas[0]).toContain('Se corregiría en la hoja: TQ 4.');
+    expect(H._scoreRaw()[0].synced, '«no» la deja como enviada').toBe(true);
+  });
+
+  it('🔴 seguir con la misma no pregunta: añadir, corregir y vaciar un tanque, también en la abierta con ✏️', () => {
+    evaluar({ 1: 2 });
+    H.scoreGuardar();
+    let vistas = responder(false);
+    H.scoreTanque(4);
+    marcarTodo(3);
+    H.scoreGuardar();
+    expect(tanquesDe('598'), 'añadir').toEqual([1, 4]);
+    H.scoreTanque(1);
+    marcarTodo(4);
+    H.scoreGuardar();
+    expect(H._scoreRaw()[0].data.tanques[1][H.SCORE_CRITERIOS[0].k], 'corregir').toBe(H.SCORE_CRITERIOS[0].pts[4]);
+    expect(vistas).toEqual([]);
+    responder(true);
+    H.scoreVaciarTanque();
+    vistas = responder(false);
+    H.scoreGuardar();
+    expect(tanquesDe('598'), 'vaciar').toEqual([4]);
+    H.scoreNueva();
+    H.scoreAbrir(idDe('598'));
+    H.scoreTanque(4);
+    marcarTodo(1);
+    H.scoreGuardar();
+    expect(H._scoreRaw()[0].data.tanques[4][H.SCORE_CRITERIOS[0].k], 'la abierta').toBe(H.SCORE_CRITERIOS[0].pts[1]);
+    expect(vistas).toEqual([]);
+  });
+
+  it('🔴 recargada la página sólo pregunta si algo se pierde o cambia', () => {
+    evaluar({ 1: 2 });
+    H.scoreGuardar();
+    H.olvidarModelo();
+    H.renderScore();
+    const vistas = responder(false);
+    H.scoreTanque(4);
+    marcarTodo(3);
+    H.scoreGuardar();
+    expect(vistas, 'sólo añade').toEqual([]);
+    expect(tanquesDe('598')).toEqual([1, 4]);
+    H.olvidarModelo();
+    H.renderScore();
+    H.scoreTanque(1);
+    marcarTodo(4);
+    H.scoreGuardar();
+    expect(vistas).toHaveLength(1);
+    expect(vistas[0]).toContain('Se sustituiría: TQ 1.');
+  });
+
+  it('🔴 llevar una evaluación a la llave de otra también pregunta: la de allí no se pisa', () => {
+    evaluar({ 1: 2 });
+    H.scoreGuardar();
+    H.scoreNueva();
+    evaluar({ 2: 3 }, '599');
+    H.scoreGuardar();
+    campo('corrida', '598');
+    const no = responder(false);
+    H.scoreGuardar();
+    expect(no).toHaveLength(1);
+    expect(no[0]).toContain('Se perdería, sin llegar a la hoja: TQ 1.');
+    expect(H._scoreRaw()).toHaveLength(2);
+    expect(tanquesDe('598')).toEqual([1]);
+  });
+
+  it('🔴 los mismos puntos marcados en otro orden no son un cambio', () => {
+    evaluar({ 1: 2 });
+    H.scoreGuardar();
+    H.scoreNueva();
+    campo('modulo', 'M03');
+    campo('corrida', '598');
+    [...H.SCORE_CRITERIOS].reverse().forEach((c) => H.scorePick(c.k, c.pts[2]));
+    const vistas = responder(false);
+    H.scoreGuardar();
+    expect(vistas).toEqual([]);
+    expect(tanquesDe('598')).toEqual([1]);
   });
 });
