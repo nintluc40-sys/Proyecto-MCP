@@ -39,7 +39,7 @@ const EXPORTAR = ['renderBiomol', '_collectBioGrid', 'buildBioPayload', 'bioGrid
   'saveBioGrid', 'syncBioGrid', 'bioSesCrear', 'bioSidActivo', 'bioSes', 'bioSesDelDia',
   'bioSesNombre', 'bioSesEtiqueta', '_bioSesAll', '_bioSesSave', '_bioRaw', '_bioSave',
   'loadBioRpt', 'saveBioRpt', '_bioMigrarSesiones', 'BIO_GRID_HEADERS',
-  'bioVerSes', 'bioNuevoAnalisis', '_bioSesEnBlanco', 'syncAllPendingBio', 'bioSesEtiqueta'];
+  'bioVerSes', 'bioNuevoAnalisis', '_bioSesEnBlanco', 'syncAllPendingBio', 'bioSesEtiqueta', 'today'];
 const H = {};
 const toasts = [];
 let enviados = [];
@@ -69,6 +69,7 @@ beforeAll(async () => {
     + '\ntry{ H.setPost=function(f){postPayload=f;}; }catch(_){}'
     + '\ntry{ H.setGasUrl=function(f){gasUrl=f;}; }catch(_){}'
     + '\ntry{ H.setRate=function(f){syncRateOk=f;}; }catch(_){}'
+    + '\ntry{ var _bioSaveReal=_bioSave; H.setBioSave=function(f){ _bioSave = f || _bioSaveReal; }; }catch(_){}'
     + '\ntry{ H.setMod=function(m){curMod=m;}; }catch(_){}'
     + '\ntry{ H.setTab=function(t){curTab=t;}; }catch(_){}\n})();';
   globalThis.__ENG = H;
@@ -307,6 +308,151 @@ describe('Biomol · el botón global cubre TODO el día', () => {
     // parecen decir cosas distintas sobre lo mismo.
     expect(toasts.filter((t) => /No hay datos para guardar/.test(t))).toHaveLength(0);
     expect(toasts).toHaveLength(1);
+  });
+});
+
+describe('Biomol · el botón global cubre también los OTROS días (pauta A12, «Enviar todo»)', () => {
+  /* El punto naranja mira todos los registros, pero 🔄 sólo recorría la fecha de la grilla: lo pendiente de otro día se
+     quedaba sin salir, y si en pantalla no había nada decía «No hay muestras para enviar». */
+  const fechaEnPantalla = () => document.getElementById('bio-grid-fecha').value;
+  const fechasEnviadas = () => enviados.map((p) => p.rows[0][p.headers.indexOf('Fecha')]);
+
+  it('🔴 lo pendiente de otro día sale con SU fecha, y la pantalla vuelve al día que tenías', async () => {
+    ponDia('2026-08-17'); H.renderBiomol();
+    const ayer = analisisCon('2026-08-17', 'De ayer', { codigo: 'AYE-1' });
+    ponDia('2026-08-18'); H.renderBiomol();
+    H.bioSesCrear('2026-08-18', 'El segundo del día');   // en pantalla, y no es el primero: no vale con volver «al primero»
+    H.renderBiomol();
+    const hoy = H.bioSidActivo('2026-08-18');
+
+    await H.syncAllPendingBio();
+
+    expect(fechasEnviadas()).toEqual(['2026-08-17']);
+    expect(enviados[0].rows[0][enviados[0].headers.indexOf('Sesión')]).toBe(H.bioSesEtiqueta(ayer));
+    expect(filasDe(ayer).every((r) => r.synced), 'el punto naranja ya se puede apagar').toBe(true);
+    expect(fechaEnPantalla()).toBe('2026-08-18');
+    expect(H.bioSidActivo('2026-08-18'), 'vuelve al análisis que estaba en pantalla').toBe(hoy);
+    expect(toasts.filter((t) => /No hay muestras para enviar/.test(t)), 'no puede decir que no hay nada').toHaveLength(0);
+  });
+
+  it('🔴 de la fecha más vieja a la más nueva, y el de pantalla el último', async () => {
+    ponDia('2026-08-16'); H.renderBiomol();
+    analisisCon('2026-08-16', 'Anteayer', { codigo: 'A-1' });
+    ponDia('2026-08-19'); H.renderBiomol();
+    analisisCon('2026-08-19', 'Futuro', { codigo: 'F-1' });
+    ponDia('2026-08-17'); H.renderBiomol();
+    analisisCon('2026-08-17', 'Ayer', { codigo: 'B-1' });
+    ponDia('2026-08-18'); H.renderBiomol();
+    analisisCon('2026-08-18', 'Pantalla', { codigo: 'C-1' });
+
+    await H.syncAllPendingBio();
+
+    expect(fechasEnviadas()).toEqual(['2026-08-16', '2026-08-17', '2026-08-19', '2026-08-18']);
+    expect(H._bioRaw().every((r) => r.synced)).toBe(true);
+    expect(fechaEnPantalla()).toBe('2026-08-18');
+  });
+
+  it('🔴 dentro de un mismo día, por orden de creación', async () => {
+    H._bioSesSave({
+      b: { fecha: '2026-08-17', nombre: 'Segundo', etiqueta: null, legacy: false, creado: 2 },
+      a: { fecha: '2026-08-17', nombre: 'Primero', etiqueta: null, legacy: false, creado: 1 },
+    });
+    H._bioSave([
+      { id: 'r2', ts: 1, synced: false, syncedAt: null, data: { fecha: '2026-08-17', fila: 1, sid: 'b', codigo: 'B-1' } },
+      { id: 'r1', ts: 1, synced: false, syncedAt: null, data: { fecha: '2026-08-17', fila: 1, sid: 'a', codigo: 'A-1' } },
+    ]);
+    ponDia('2026-08-18'); H.renderBiomol();
+
+    await H.syncAllPendingBio();
+
+    expect(enviados.map((p) => p.rows[0][p.headers.indexOf('Código')])).toEqual(['A-1', 'B-1']);
+  });
+
+  /* Con HOY en pantalla: una fecha que no vale hace que la grilla caiga en hoy y en su primer análisis, y saldría ése otra vez. */
+  it('🔴 un análisis sin fecha válida, o una entrada rota, no se envía ni hace salir otro en su lugar', async () => {
+    const hoy = H.today();
+    ponDia(hoy);
+    analisisCon(hoy, 'Parado', { codigo: 'P-1' });
+    const pantalla = H.bioSesCrear(hoy, 'En pantalla');
+    H.renderBiomol();
+    // Después de pintar, que suelta las entradas rotas: así llegan al botón.
+    H._bioSesSave(Object.assign(H._bioSesAll(), { malo: { fecha: 'sin fecha', nombre: 'Malo', etiqueta: null, legacy: false, creado: 1 }, roto: null }));
+    H._bioSave(H._bioRaw().concat([{ id: 'r-malo', ts: Date.now(), synced: false, syncedAt: null, data: { fecha: 'sin fecha', fila: 1, sid: 'malo', codigo: 'M-1' } }]));
+
+    await H.syncAllPendingBio();
+
+    expect(enviados.map((p) => p.rows[0][p.headers.indexOf('Código')])).toEqual(['P-1']);
+    expect(H.bioSidActivo(hoy)).toBe(pantalla);
+  });
+
+  it('🔴 lo tecleado en pantalla sin guardar se guarda antes de irse, y sale el último', async () => {
+    ponDia('2026-08-17'); H.renderBiomol();
+    analisisCon('2026-08-17', 'De ayer', { codigo: 'AYE-1' });
+    ponDia('2026-08-18'); H.renderBiomol();
+    escribir(1, { codigo: 'TEC-1' });
+
+    await H.syncAllPendingBio();
+
+    expect(fechasEnviadas()).toEqual(['2026-08-17', '2026-08-18']);
+    expect(enviados[1].rows[0][enviados[1].headers.indexOf('Código')]).toBe('TEC-1');
+  });
+
+  it('🔴 los de otro día no abren grillas nuevas en ese día', async () => {
+    ponDia('2026-08-17'); H.renderBiomol();
+    analisisCon('2026-08-17', 'De ayer', { codigo: 'AYE-1' });
+    const antes = H.bioSesDelDia('2026-08-17').length;
+    ponDia('2026-08-18'); H.renderBiomol();
+
+    await H.syncAllPendingBio();
+
+    expect(H.bioSesDelDia('2026-08-17')).toHaveLength(antes);
+  });
+
+  it('🔴 un día sin migrar se envía UNA vez, aunque tenga varios análisis pendientes', async () => {
+    H._bioSesSave({
+      a: { fecha: '2026-08-17', nombre: 'A', etiqueta: null, legacy: true, creado: 1 },
+      b: { fecha: '2026-08-17', nombre: 'B', etiqueta: null, legacy: true, creado: 2 },
+    });
+    H._bioSave([
+      { id: 'r1', ts: 1, synced: false, syncedAt: null, data: { fecha: '2026-08-17', fila: 1, sid: 'a', codigo: 'A-1' } },
+      { id: 'r2', ts: 1, synced: false, syncedAt: null, data: { fecha: '2026-08-17', fila: 1, sid: 'b', codigo: 'B-1' } },
+    ]);
+    ponDia('2026-08-18'); H.renderBiomol();
+
+    await H.syncAllPendingBio();
+
+    expect(enviados, 'la migración del día ya los llevó a los dos').toHaveLength(1);
+    expect(enviados[0].replaceDate).toBe('2026-08-17');
+    expect(H._bioRaw().every((r) => r.synced)).toBe(true);
+  });
+
+  it('🔴 si lo tecleado no cabe, no sale de la pantalla: repintar lo borraría', async () => {
+    ponDia('2026-08-17'); H.renderBiomol();
+    analisisCon('2026-08-17', 'De ayer', { codigo: 'AYE-1' });
+    ponDia('2026-08-18'); H.renderBiomol();
+    escribir(1, { codigo: 'TEC-1' });
+    H.setBioSave(() => false);
+    try {
+      await H.syncAllPendingBio();
+    } finally {
+      H.setBioSave(null);
+    }
+    expect(enviados).toHaveLength(0);
+    expect(fechaEnPantalla()).toBe('2026-08-18');
+    expect(fp().querySelector('[name="bg_1_codigo"]').value, 'lo tecleado sigue ahí').toBe('TEC-1');
+  });
+
+  it('sin nada pendiente en ningún día, el aviso de siempre', async () => {
+    ponDia('2026-08-17'); H.renderBiomol();
+    analisisCon('2026-08-17', 'De ayer', { codigo: 'AYE-1' });
+    ponDia('2026-08-18'); H.renderBiomol();
+    await H.syncAllPendingBio();
+    enviados = []; toasts.length = 0;
+
+    await H.syncAllPendingBio();
+
+    expect(enviados).toHaveLength(0);
+    expect(toasts.filter((t) => /No hay muestras para enviar/.test(t))).toHaveLength(1);
   });
 });
 

@@ -236,6 +236,56 @@ describe('📜 Historial · ✏️ Editar reescribe las MISMAS filas', () => {
     expect(l[0].resumen).toContain('BQ');
   });
 
+  /* 2026-11-05 (pauta A12) · 💾 en una corrección escribía después, sin haber preguntado: ni al guardar ni al enviar. */
+  const guardadosFin = () => JSON.parse(localStorage.getItem('larv4_mad_loc_fin') || '[]');
+  it('🔴 💾 con la llave cambiada también AVISA; «no» no guarda nada y sigue corrigiendo', async () => {
+    await abrir();
+    pon($('#fp-fin .mf-lote'), 'BQ');
+    confirmar = false;
+    H.madFinGuardarLocal();
+    expect(preguntas.join(' ')).toContain('filas NUEVAS');
+    expect(guardadosFin()).toHaveLength(0);
+    expect($('#fp-fin .mh-corr'), 'sigue corrigiendo').not.toBeNull();
+    expect($('#fp-fin .mf-lote').value, 'lo tecleado sigue ahí').toBe('BQ');
+  });
+
+  it('🔴 💾 con la llave cambiada, «sí»: lo guarda', async () => {
+    await abrir();
+    pon($('#fp-fin .mf-lote'), 'BQ');
+    H.madFinGuardarLocal();
+    expect(preguntas).toHaveLength(1);
+    expect(guardadosFin()).toHaveLength(1);
+    expect($('#fp-fin .mh-corr'), 'la corrección terminó').toBeNull();
+  });
+
+  it('🔴 💾 con la misma llave no pregunta', async () => {
+    await abrir();
+    pon($('#fp-fin .mf-machos'), '7');
+    H.madFinGuardarLocal();
+    expect(preguntas).toHaveLength(0);
+    expect(guardadosFin()).toHaveLength(1);
+  });
+
+  it('🔴 💾 fuera de una corrección no pregunta', () => {
+    llenarFin();
+    H.madFinGuardarLocal();
+    expect(preguntas).toHaveLength(0);
+    expect(guardadosFin()).toHaveLength(1);
+  });
+
+  it('🔴 💾 de algo que no se va a guardar (ya estaba) no pregunta por gusto', async () => {
+    await abrir();
+    pon($('#fp-fin .mf-lote'), 'BQ');
+    H.madFinGuardarLocal();
+    expect(preguntas).toHaveLength(1);
+    H.madHistEditar(hist()[0].id);
+    selectsComoNavegador($('#fp-fin'));
+    pon($('#fp-fin .mf-lote'), 'BQ');
+    H.madFinGuardarLocal();
+    expect(preguntas, 'dijo que ya estaba, sin volver a preguntar').toHaveLength(1);
+    expect(guardadosFin()).toHaveLength(1);
+  });
+
   it('🔴 con algo TECLEADO en la ficha, Editar pregunta antes; «no» lo deja como estaba', async () => {
     llenarFin();
     await H.madFinGuardar();
@@ -277,6 +327,13 @@ describe('📜 Historial · el cableado en CADA ficha (la lógica se prueba arri
     expect(aviso, 'el aviso de llave').toBeGreaterThan(-1);
     expect(aviso, 'antes del envío').toBeLessThan(b.indexOf('_madLogMarca("' + f + '", _envio)'));
     expect(b.split('_madHistAnota("' + f + '", payload, model.fecha, _envio)').length - 1, 'la captura').toBe(n);
+  });
+  // pauta A12 · El aviso de 💾 está en `_madLocAnotar`: las seis fichas que se corrigen desde el Historial tienen que guardar por ahí.
+  it.each([['madIngGuardarLocal', 'ingreso'], ['madMovGuardarLocal', 'movimientos'], ['madFinGuardarLocal', 'fin'],
+    ['madTratGuardarLocal', 'tratamientos'], ['madMortGuardarLocal', 'mortdes'], ['madAlimGuardarLocal', 'alimentacion']])('🔴 %s guarda por _madLocAnotar', (fn, f) => {
+    const i = src.indexOf('function ' + fn + '(');
+    expect(i, fn + ' no existe').toBeGreaterThan(-1);
+    expect(src.slice(i, src.indexOf('\n}\n', i))).toContain('_madLocAnotar("' + f + '", _p.payload');
   });
   it('🔴 Desoves anota cada envío (llegado y en cola) y lo enviado con 💾 entra, salvo Broodstock', () => {
     expect(cuerpo('madDesGuardar').split('_madHistAnotaDesoves(payload, model.fecha, _envio)').length - 1).toBe(2);

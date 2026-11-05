@@ -2493,6 +2493,26 @@ function _madReproNotOk(lista, extra){
   const rej = l.find(o=> o.gasMessage);
   toast("No se pudo enviar a Google Sheets"+_gasMotivo(rej && rej.gasMessage)+". Reintenta."+mas,"err",6000);
 }
+/* 2026-11-05 (pauta A12) · 🔄 CON UNA FECHA POR ENVÍO. La fecha es llave de la fila (Fecha+Módulo+Tanque) y un envío lleva una sola: con
+   Población de hoy y Calidad de ayer, lo de ayer caía en la fila de hoy, y lo ya enviado de otra fecha volvía a viajar dentro del envío de hoy.
+   Si todas las fichas coinciden, un solo envío sin fecha propia, el de siempre. Si no, uno por fecha, sólo con lo pendiente y de lo más viejo a
+   lo más nuevo. Una ficha sin fecha va con la general, y sin corrida ni técnico, con los del módulo: lo que le daba el envío único. */
+function _datosPorFecha(m, pend){
+  const orden = ["poblacion","calidad","plg","despacho","calagua"];   // el de buildDatosPayload
+  const datoDe = (f) => (loadE(m, f) || { data:{} }).data;
+  const fechaDe = (f) => { const d = datoDe(f).fecha || ""; return isValidDate(d) ? d : ""; };
+  const general = orden.map(fechaDe).find(Boolean) || "";
+  if(orden.every((f) => !fechaDe(f) || fechaDe(f) === general)) return [{ fichas:pend, fecha:"", datos:null }];
+  const primero = (k) => orden.map((f) => datoDe(f)[k] || "").find(Boolean) || "";
+  const corrida = primero("corrida"), tec = primero("tec");
+  const porFecha = {};
+  pend.forEach((f) => { const d = fechaDe(f) || general; (porFecha[d] = porFecha[d] || []).push(f); });
+  return Object.keys(porFecha).sort().map((d) => {
+    const datos = {};
+    porFecha[d].forEach((f) => { const x = datoDe(f); datos[f] = Object.assign({}, x, { corrida: x.corrida || corrida, tec: x.tec || tec }); });
+    return { fichas:porFecha[d], fecha:d, datos:datos };
+  });
+}
 async function syncAll(){
   // Atajo: Microbiología delega en syncMic / syncCal (reemplazo por sesión a sus hojas).
   if(isMicMod(curMod)){
@@ -2683,23 +2703,24 @@ async function syncAll(){
     // ── Hoja 1: Datos Larvicultura ──
     // Despacho también escribe en esta hoja (cols 37–41), por lo que su
     // estado pendiente debe disparar la sincronización del payload.
-    const pendDatos = ["calidad","plg","poblacion","despacho","calagua"].filter(f => getStatus(curMod,f)==="pending");
-    if(pendDatos.length > 0){
+    const _pendDatos = ["calidad","plg","poblacion","despacho","calagua"].filter(f => getStatus(curMod,f)==="pending");
+    for(const _g of (_pendDatos.length > 0 ? _datosPorFecha(curMod, _pendDatos) : [])){
+      const pendDatos = _g.fichas, _nomDatos = "Datos Larvicultura" + (_g.fecha ? " del " + _diaCorto(_g.fecha) : "");
       total++;
-      toast("Enviando Datos Larvicultura…","info",2000);
-      const dp = buildDatosPayload(curMod);
+      toast("Enviando " + _nomDatos + "…","info",2000);
+      const dp = _g.fecha ? buildDatosPayload(curMod, pendDatos, { dataByFicha:_g.datos, fecha:_g.fecha }) : buildDatosPayload(curMod);
       if(dp.rows.length > 0){
         const opts = { mark: _marcaFichas(curMod, pendDatos) };
         const sent = await postPayload(dp, url, opts);
         if(sent){
           _marcarEnviado(opts);   // con su Historial
           ok++;
-        } else { const _b=_syncAllBucket(opts, "Datos Larvicultura"); if(_b==="queued") queued++; else if(_b==="fail") fail++; }
+        } else { const _b=_syncAllBucket(opts, _nomDatos); if(_b==="queued") queued++; else if(_b==="fail") fail++; }
       } else {
         // Sin filas por tanque: nada llegó a Sheets. NO marcar como
         // sincronizado (evita un ✅ falso); la(s) ficha(s) siguen pendientes.
         total--;
-        toast("ℹ️ Datos Larvicultura sin valores por tanque — no se envió nada","info",4000);
+        toast("ℹ️ " + _nomDatos + " sin valores por tanque — no se envió nada","info",4000);
       }
     }
     // ── Hoja 2: Control_Tanque ──
@@ -9790,6 +9811,8 @@ function _madLocAnotar(ficha, payload, fecha, info){
     toast("💾 Ya hay "+list.length+" envíos de esta ficha guardados sin enviar: envíalos con ☁️ o descarta alguno antes de guardar más.","err",7000);
     return false;
   }
+  // 2026-11-05 (pauta A12) · Aquí, y no al enviar: lo guardado con 💾 sale después sin ficha en pantalla, y nadie más lo preguntaría.
+  if(!_madHistCorrConfirma(ficha, payload)) return false;
   list.push({ id:_madLogEnvioId(), ts:Date.now(), fecha:sanitizeStr(fecha,10), filas:payload.rows.length, payload:payload, huella:huella, info:info||{} });
   if(!madLocGuardar(ficha, list)){
     toast("❌ Este navegador NO está guardando los datos (almacenamiento lleno, en modo privado o bloqueado). Usa ☁️ Guardar y sincronizar para no perderlos.","err",7000);
@@ -10179,7 +10202,7 @@ function _madHistDesoveCorregido(fecha, desove){
     _madHistGuardar(l);
   }catch(_){}
 }
-/* Antes de ☁️ en una corrección: si alguna fila del envío original ya no sale (cambió su llave), se escribiría otra NUEVA y
+/* Antes de ☁️ o 💾 en una corrección: si alguna fila del envío original ya no sale (cambió su llave), se escribiría otra NUEVA y
    la vieja seguiría en la hoja. Se dice y se pregunta. Sin corrección abierta, o sin columna ID, no pregunta nada. */
 function _madHistCorrConfirma(ficha, payload){
   const b=_madHistCorrActiva(ficha); if(!b) return true;
@@ -17415,6 +17438,13 @@ function _madGridLlevar(ficha){
     toast("Lo del " + r.fecha + " ya se envió a la hoja: se queda en ese día (corrígelo en la hoja si la fecha era otra).", "warn", 7000);
     return null;
   }
+  /* 2026-11-05 (pauta A12, usuario: «No mover») · Lo que espera en la cola sale con su fecha: llevarlo a otra dejaba filas en los dos días, y en
+     Tanques las muertas contarían dos veces. Sacarlo de la cola no es seguro: pudo llegar ya sin confirmarse, y un envío lleva también otras filas. */
+  const _enCola = function(f, filas){ return _colaSolapa({ kind:"mad:" + f, keys:filas.map(function(x){ return x.id; }) }); };
+  if(_enCola(ficha, deOrigen) || _enCola("zonas", zOrigen)){
+    toast("Lo del " + r.fecha + " ya está en la cola de envío: se queda en ese día (cuando llegue, corrígelo en la hoja si la fecha era otra).", "warn", 7000);
+    return null;
+  }
   const nuevo = !r.conDatos, hayEnDestino = list.some(_madGridDelDia(ficha, nueva, r.sala)) || zl.some(_madZonasDelDia(nueva));
   const llevar = (nuevo && !hayEnDestino) || confirm(hayEnDestino
     ? "El " + nueva + " ya tiene " + (ficha === "salas" ? "datos de Salas" : "un parte abierto de " + r.sala) + " en este dispositivo.\n\nAceptar: llevar lo de pantalla al " + nueva
@@ -18910,14 +18940,26 @@ async function syncAllPendingBio(){
   const fecha  = bioGridFecha();
   const activo = bioSidActivo(fecha);
   const tienePend = (sid) => _bioRaw().some(r => r && r.data && r.data.sid === sid && !r.synced);
-  const otros = bioSesDelDia(fecha).filter(s => s.sid !== activo && tienePend(s.sid));
+  /* 2026-11-05 (pauta A12, usuario: «Enviar todo») · También los de OTROS días, de la fecha más vieja a la más nueva: el punto naranja los
+     cuenta, y 🔄 sólo recorría la fecha de la grilla, así que no había forma de apagarlo desde aquí. */
+  const _ses = _bioSesAll();
+  const otros = Object.keys(_ses)
+    .filter(sid => sid !== activo && _ses[sid] && isValidDate(_ses[sid].fecha) && tienePend(sid))
+    .map(sid => Object.assign({ sid }, _ses[sid]))
+    .sort((a, b) => a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : (a.creado||0) - (b.creado||0));
+  const _ponDia = (d) => { const el = document.getElementById("bio-grid-fecha"); if(el) el.value = d; };   // pintar la grilla crea otro campo
   if(otros.length){
-    // Lo tecleado en la grilla de pantalla se persiste UNA vez, antes de irse a los demás.
-    try{ saveBioGrid({ fecha, sid:activo, silent:true, noRender:true }); }catch(_){}
+    // Lo tecleado en la grilla de pantalla se persiste UNA vez, antes de irse a los demás. Si no cabe, no se va: repintar lo borraría.
+    let _g = 0;
+    try{ _g = saveBioGrid({ fecha, sid:activo, silent:true, noRender:true }); }catch(_){}
+    if(_g === -1) return;
     for(const s of otros){
+      if(!tienePend(s.sid)) continue;       // migrar un día heredado se lleva a todos los de esa fecha
+      _ponDia(s.fecha);
       _bioSid = s.sid; renderBiomol();
       await syncBioGrid({ rotar:false });   // sin abrir grillas nuevas por el camino
     }
+    _ponDia(fecha);
     /* Se vuelve al de pantalla SIN volver a guardar. `saveBioGrid` crea siempre los
        registros con synced:false —guardar significa "hay datos nuevos"—, así que pasar
        por él aquí re-marcaría como PENDIENTE justo lo que se acaba de sincronizar, y el

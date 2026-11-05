@@ -23,7 +23,7 @@ const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['renderMadSalas', 'renderMadTanques', 'madSalasFechaChange', 'madTanquesFechaChange',
   'madTanquesSalaChange', 'loadMad', 'saveMadList', 'MAD_SALA_OPTS', 'MAD_TANQUES_POR_SALA', 'today', '_madGridDiaDeLaApp', 'saveMadTanquesGrid',
-  'saveMadSalasGrid'];
+  'saveMadSalasGrid', 'MAD_ZONAS_FILAS'];
 const H = {};
 /* 2026-09-30 (noche) · el día en que la app ABRE la grilla: hoy, y antes de las 02:00 el que termina (`_madGridDiaDeLaApp`).
    Lo sembrado para «el día de la grilla» va a ESE día: con H.today() la prueba fallaría si corre entre las 00:00 y las 02:00
@@ -173,6 +173,70 @@ describe('🔴 Salas · la fecha con algo tecleado', () => {
   });
 });
 
+/* 2026-11-05 (pauta A12, usuario: «No mover») · Lo que espera en la cola sale con su fecha. Si lo tecleado se llevaba a otra, la hoja
+   acababa con filas en los dos días. Se queda en su día, igual que lo ya enviado, y se dice. */
+const enCola = (kind, keys) => localStorage.setItem('larv4_syncqueue', JSON.stringify([
+  { payload: { sheetName: 'Hoja de prueba', headers: ['ID'], rows: [['x']] }, reqId: 'r1', url: '', ts: Date.now(), mark: { kind, keys } },
+]));
+
+describe('🔴 Salas · lo que espera en la cola no cambia de día', () => {
+  it('🔴 se queda en su día y se dice, sin preguntar; lo tecleado se guarda en la misma fila', () => {
+    const f = fila({ fecha: HOY(), sala: H.MAD_SALA_OPTS[0], temp_08: 26 });
+    H.saveMadList('salas', [f]);
+    enCola('mad:salas', [f.id]);
+    abrirS();
+    teclearS(0, 'temp_10', '27');
+    fechaS(AYER);
+    expect(avisos.some((a) => a.includes('en la cola de envío')), 'no avisó').toBe(true);
+    expect(filasS(AYER)).toHaveLength(0);
+    expect(filasS(HOY()).map((r) => [r.id, r.data.temp_08, r.data.temp_10])).toEqual([[f.id, 26, 27]]);
+  });
+
+  it('🔴 las zonas de ese día en la cola también lo retienen', () => {
+    const { zona, tanque } = H.MAD_ZONAS_FILAS[0];
+    const z = fila({ fecha: HOY(), zona, tanque, temp_08: 26 });
+    H.saveMadList('zonas', [z]);
+    enCola('mad:zonas', [z.id]);
+    abrirS();
+    teclearS(0, 'temp_08', '28');
+    fechaS(AYER);
+    expect(avisos.some((a) => a.includes('en la cola de envío')), 'no avisó').toBe(true);
+    expect(filasS(AYER)).toHaveLength(0);
+    expect(H.loadMad('zonas').map((r) => r.id), 'la zona sigue en su día').toEqual([z.id]);
+  });
+
+  it('🔴 lo que hay en la cola de OTROS registros no retiene nada', () => {
+    H.saveMadList('salas', [fila({ fecha: HOY(), sala: H.MAD_SALA_OPTS[0], temp_08: 26 })]);
+    enCola('mad:salas', ['otro-registro']);
+    abrirS();
+    teclearS(0, 'temp_10', '27');
+    responder(true);                               // lo guardado del día, con cambios: se pregunta, como siempre
+    fechaS(AYER);
+    expect(avisos.some((a) => a.includes('en la cola de envío'))).toBe(false);
+    expect(filasS(AYER)).toHaveLength(1);
+    expect(filasS(HOY())).toHaveLength(0);
+  });
+
+  it('🔴 las mismas llaves en la cola de OTRA ficha tampoco', () => {
+    const f = fila({ fecha: HOY(), sala: H.MAD_SALA_OPTS[0], temp_08: 26 });
+    H.saveMadList('salas', [f]);
+    enCola('mad:tanques', [f.id]);
+    abrirS();
+    teclearS(0, 'temp_10', '27');
+    responder(true);
+    fechaS(AYER);
+    expect(avisos.some((a) => a.includes('en la cola de envío'))).toBe(false);
+    expect(filasS(AYER)).toHaveLength(1);
+  });
+
+  it('🔴 con la cola vacía, un día sin nada guardado se sigue llevando', () => {
+    abrirS();
+    teclearS(0, 'temp_08', '28');
+    fechaS(AYER);
+    expect(filasS(AYER)).toHaveLength(1);
+  });
+});
+
 /* ── TANQUES ───────────────────────────────────────────────────────────────────────────────────────────────────────── */
 const SALA = 'Sala 5';
 const celT = (tq, k) => document.querySelector('#fp-tanques [name="tg_' + tq + '_' + k + '"]');
@@ -188,6 +252,44 @@ const abrirT = () => {
 };
 const resumenT = (fecha) => filasT(fecha).map((r) => [r.data.tanque, Number(r.data.machos_muertos), r.data.parte, !!r.data.cerrado])
   .sort((a, b) => a[2] - b[2] || a[0] - b[0]);
+
+describe('🔴 Tanques · lo que espera en la cola no cambia de día (pauta A12)', () => {
+  it('🔴 el parte en cola se queda en su día y se dice; lo tecleado va al mismo parte', () => {
+    const f = fila({ fecha: HOY(), sala: SALA, tanque: 7, machos_muertos: 3, parte: 1, hora: '06:00', cerrado: 0 });
+    H.saveMadList('tanques', [f]);
+    enCola('mad:tanques', [f.id]);
+    abrirT();
+    teclearT(8, 'machos_muertos', '2');
+    fechaT(AYER);
+    expect(avisos.some((a) => a.includes('en la cola de envío')), 'no avisó').toBe(true);
+    expect(filasT(AYER)).toHaveLength(0);
+    expect(resumenT(HOY())).toEqual([[7, 3, 1, false], [8, 2, 1, false]]);
+    expect(filasT(HOY()).find((r) => r.data.tanque === 7).id, 'conserva su fila: es la que espera la cola').toBe(f.id);
+  });
+
+  it('🔴 basta UNA fila del parte en la cola: el día no se parte', () => {
+    const f = fila({ fecha: HOY(), sala: SALA, tanque: 7, machos_muertos: 3, parte: 1, hora: '06:00', cerrado: 0 });
+    const g = fila({ fecha: HOY(), sala: SALA, tanque: 8, machos_muertos: 1, parte: 1, hora: '06:00', cerrado: 0 });
+    H.saveMadList('tanques', [f, g]);
+    enCola('mad:tanques', [g.id, 'de-otra-sala']);
+    abrirT();
+    teclearT(7, 'machos_muertos', '4');
+    fechaT(AYER);
+    expect(filasT(AYER)).toHaveLength(0);
+    expect(filasT(HOY())).toHaveLength(2);
+  });
+
+  it('🔴 lo de otra sala en la cola no retiene esta', () => {
+    const otra = fila({ fecha: HOY(), sala: 'Sala 1', tanque: 1, machos_muertos: 3, parte: 1, hora: '06:00', cerrado: 0 });
+    H.saveMadList('tanques', [otra]);
+    enCola('mad:tanques', [otra.id]);
+    abrirT();
+    teclearT(7, 'machos_muertos', '4');
+    fechaT(AYER);
+    expect(avisos.some((a) => a.includes('en la cola de envío'))).toBe(false);
+    expect(resumenT(AYER)).toEqual([[7, 4, 1, false]]);
+  });
+});
 
 describe('🔴 Tanques · la ronda tecleada y la fecha', () => {
   it('el fixture ejerce algo: la Sala 5 tiene los tanques 7 y 8', () => {

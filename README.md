@@ -516,7 +516,8 @@ app lo perdía. Desde ese día, en las siete fichas y en las grillas de Salas y 
   abrirlo) y el día elegido tampoco tiene nada, **se lleva** al elegido; si no, **se pregunta**
   (Aceptar lo lleva; Cancelar lo deja en su día y enseña el elegido); sin teclear nada, la fecha
   enseña lo guardado de cada día, como antes;
-- en las grillas, lo **ya enviado no se mueve** (la hoja lo tiene con su fecha); en Tanques la ronda
+- en las grillas, lo **ya enviado no se mueve** (la hoja lo tiene con su fecha), **ni lo que espera en la cola**,
+  que saldrá con la suya (2026-11-05, usuario: «No mover»): se dice y se queda en su día; en Tanques la ronda
   llevada es un **parte de ese día** —los partes cerrados son otras rondas y no cuentan como
   conflicto— y conserva la hora con que se abrió.
 
@@ -1196,6 +1197,10 @@ sin avisar**:
   enviado dejaba de verse a medianoche y la limpieza lo borraba. Ahora la limpieza no lo toca y, al abrir el módulo,
   un aviso dice qué quedó y de qué día, con **«☁️ Enviarlas»** (cada ficha a su hoja con SU fecha) y
   **«🗑 Descartarlas»**.
+- **🔄 envía cada cosa con SU fecha** (2026-11-05). En Larvicultura, si las fichas llevan fechas distintas, sale un
+  envío por fecha, sólo con lo pendiente y de la más vieja a la más nueva: antes, una Calidad de ayer junto a la
+  Población de hoy se escribía en la fila de hoy. Con una sola fecha, el envío de siempre. En Biomol, 🔄 envía también
+  los análisis pendientes de OTROS días (usuario: «Enviar todo») y vuelve al que estaba en pantalla.
 - **Reproductivo · elegir la hembra:** si el envío falla de verdad, los microchips elegidos **siguen** en la lista
   para reintentar (entregado o en cola, salen como antes).
 
@@ -1409,8 +1414,8 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   **7 días** (hasta 200 POR ficha) de las siete fichas de formulario y de Salas/Tanques (de sus propios registros); Broodstock, fuera. Cada
   envío —directo, en cola o desde 💾— guarda sus filas: se revisa, se imprime (📄) y se borra (🗑, sólo del
   equipo). **✏️ Editar** abre la ficha tal como se envió, en corrección (fecha FIJA y aviso), en los últimos
-  **10** envíos de cada ficha (Alimentación, 3); guardar reescribe las MISMAS filas (mismo ID) y avisa antes si
-  cambió la llave. Desoves usa su propia corrección (sólo viaja lo cambiado). Un reenvío con las mismas filas
+  **10** envíos de cada ficha (Alimentación, 3); guardar —con ☁️ o con 💾— reescribe las MISMAS filas (mismo ID) y
+  avisa antes si cambió la llave. Desoves usa su propia corrección (sólo viaja lo cambiado). Un reenvío con las mismas filas
   SUSTITUYE a su entrada («🔁 reenviado»). Sin espacio se liberan primero las copias para Editar y después la mitad
   más vieja del Historial; la cola, nunca.
 - **🧹 El espacio del navegador** (usuario, 2026-11-03: 7 días, «Sola, con indicador y botón»). El navegador da a cada SITIO
