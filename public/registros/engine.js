@@ -2347,16 +2347,24 @@ async function postPayload(payload, url, opts){
     const MAX_ATTEMPTS = 2;
     let res = "retry";
     const _gasInfo = {};
+    let _directo = true;
     if(_fp && opts && _colaSolapa(opts.mark, payload.sheetName)){
       /* 2026-11-03 (pauta 1.2) · Detrás del lote viejo, y se vacía la cola: primero llega lo viejo y luego esto, así que gana lo último.
          Si no sale, sigue en la cola y lo demás es el camino de siempre: «en cola», «rechazado» o, si no cupo, el error. */
       if(_enqueueSync(payload, _fp, url, opts.mark)){
+        _directo = false;
         _colaRechazos.delete(_fp);
         await flushSyncQueue();
         if(_colaRechazos.has(_fp)){ _gasInfo.message = _colaRechazos.get(_fp); res = "rejected"; }
         else if(!_loadSyncQueue().some(it => it && it.reqId === _fp)) res = "ok";
+      } else {
+        /* 2026-11-04 (pauta A6, usuario: «vaciar primero») · No cupo en la cola, y eso no es razón para no enviar si hay señal: se vacía lo
+           que espera —que además hace sitio— y, si ya nada se pisa con esto, sale directo. Si no, no pasa delante: acaba en el «sin espacio» de abajo. */
+        await flushSyncQueue();
+        _directo = !_colaSolapa(opts.mark, payload.sheetName);
       }
-    } else {
+    }
+    if(_directo){
       for(let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++){
         res = await _postOnce(bodyPayload, finalUrl, _gasInfo);
         if(res === "ok" || res === "rejected") break;
@@ -17600,7 +17608,7 @@ function saveMadTanquesGrid(opts){
      2026-11-03 · sin guardar NO se repinta: la grilla sale de lo guardado, y borraba de la pantalla lo recién tecleado. */
   if(_ok && !opts.noRender) renderMadTanques();
   updateDots(); updateSyncUI();
-  if(!_ok) return -1;
+  if(!_ok){ opts.lista = list; return -1; }   // lo que no se pudo guardar, para quien lo quiera enviar igual (syncMadTanquesGrid)
   if(!silent) toast("💾 Parte "+parte+" de las "+hora+" · "+saved+" tanque(s) guardado(s)","ok",3000);
   return saved;
 }
@@ -17715,28 +17723,46 @@ function _madTqNoEnviado(){
   toast("Tanques NO enviado: se queda pendiente en este dispositivo. Si era la misma ronda, no hace falta enviarla (🗑 Borrar sala la descarta del dispositivo; lo ya enviado sigue en la hoja).","warn",9000);
 }
 
+/* 2026-11-04 (pauta A6, usuario: «Enviar lo de pantalla») · La hoja ya tiene esto (o la cola, si cupo allí) y este equipo no tiene sitio para
+   anotarlo: lo que guardaba de esos registros se retira, o un envío posterior escribiría lo viejo encima. Una lista más corta siempre cabe;
+   sin nada que retirar no se escribe, o con el almacén lleno saldría un «no se pudo guardar» falso justo después de llegar a la hoja. */
+function _madTqSoltarEnviados(pending){
+  const fuera = new Set(pending.map(r => r.id));
+  const antes = loadMad("tanques");
+  const quedan = antes.filter(r => !(r && fuera.has(r.id)));
+  if(quedan.length !== antes.length) saveMadList("tanques", quedan);
+  pending.forEach(r => { if(r.data) _madRecDescartar("tanques", r.data.sala, r.data.fecha); });
+}
 async function syncMadTanquesGrid(){
-  if(saveMadTanquesGrid() === -1) return;
+  /* 2026-11-04 (pauta A6, usuario: «Enviar lo de pantalla») · Sin sitio para guardar se envía igual lo que hay en pantalla, como las fichas de
+     Larvicultura: la hoja es el respaldo que de verdad cuenta, y es justo cuando más falta hace. Y entonces no se repinta hasta saber que
+     llegó: la grilla sale de lo guardado, y borraría de la pantalla lo único que hay. */
+  const _g = {};
+  const sinCopia = saveMadTanquesGrid(_g) === -1 ? _g.lista : null;
   const url = gasUrl();
   if(!url){ toast("Configura la URL de Google Apps Script","warn"); openCfg(); return; }
   if(!isValidGasUrl(url)){ toast("URL inválida","err"); return; }
   if(!syncRateOk()) return;
-  const pending = loadMad("tanques").filter(r => !r.synced);
+  const pending = (sinCopia || loadMad("tanques")).filter(r => !r.synced);
   if(pending.length === 0){ toast("Sin pendientes","info"); return; }
-  if(!(await _madTqConfirmarRepetidas(pending))){ _madTqNoEnviado(); renderMadTanques(); updateDots(); updateSyncUI(); return; }   // 2026-09-30 · ¿ronda repetida?
+  if(!(await _madTqConfirmarRepetidas(pending))){ _madTqNoEnviado(); if(!sinCopia) renderMadTanques(); updateDots(); updateSyncUI(); return; }   // 2026-09-30 · ¿ronda repetida?
   setSyncUI("pend","Enviando "+pending.length+" tanque(s)…");
   const payload = buildMadPayload("tanques", pending);
   const opts = { mark:{ kind:"mad:tanques", keys: pending.map(p=>p.id) } };   // F3
   const sent = await _madTanquesEnviar(payload, opts);   // R2 · con el portón del sello
+  const _aSalvo = sent || opts.outcome === "queued";
+  if(sinCopia && _aSalvo) _madTqSoltarEnviados(pending);
   if(sent){
-    _marcarEnviado(opts);
+    if(!sinCopia) _marcarEnviado(opts);
     setSyncUI("ok",pending.length+" tanque(s) sincronizado(s) ✔");
-    toast("✅ Tanques enviados a Google Sheets","ok");
+    if(sinCopia) toast("✅ Tanques enviados a Google Sheets. Este equipo no tiene espacio y no guardó copia: si hay que corregir esa ronda, se hace en la hoja.","warn",9000);
+    else toast("✅ Tanques enviados a Google Sheets","ok");
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
     _syncNotOkUI(opts.outcome, "Error al sincronizar Tanques", null, opts.gasMessage);
+    if(sinCopia && _aSalvo) toast("⚠️ Este equipo no tiene espacio: esa ronda sólo queda en la cola, no en la lista de Tanques.","warn",9000);
   }
-  renderMadTanques();
+  if(!sinCopia || _aSalvo) renderMadTanques();
   updateDots(); updateSyncUI();
 }
 

@@ -21,26 +21,31 @@ const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['pickMod', 'enter', 'goBack', 'PINS', 'MAD_MOD', 'MAD_FICHAS', 'madKey', 'loadMad', 'saveMadList', 'renderMadTanques', 'renderMadSalas',
   'saveMadTanquesGrid', 'saveMadSalasGrid', 'syncMadTanquesGrid', 'syncMadSalasGrid', 'madTanquesSalaChange', 'MAD_RETENCION_DIAS', '_madPodarEnviados',
   '_madHistPodar', '_madLimpiezaDeEspacio', '_soltarCopiaMatriz', '_REPRO_CACHE_KEY', '_reproCacheSave', 'MAD_HIST_KEY', 'MAD_HIST_PANEL_PRE',
-  '_madHistGuardar', 'madHistLeer', '_madHistGrillas', 'renderMadHistorial', 'openCfg', 'closeCfg', 'liberarEspacio', '_espacioMedir', 'ESPACIO_TOPE', '_gasVersionLocal', 'safeSetItem'];
+  '_madHistGuardar', 'madHistLeer', '_madHistGrillas', 'renderMadHistorial', 'openCfg', 'closeCfg', 'liberarEspacio', '_espacioMedir', 'ESPACIO_TOPE', '_gasVersionLocal', 'safeSetItem', '_madTqConfirmarRepetidas', '_loadSyncQueue', 'MAD_RECOV_KEY', 'loadMadRecovery', '_lastSyncFingerprint'];
 const H = {};
 const avisos = [];
 const envios = [];
+let respuesta = 'ok';
 
 /* El almacén, con cupo y contando como el navegador: claves y valores. */
 const almacen = (() => {
   const m = new Map();
   let cupo = Infinity;
+  let bloqueada = null;
   const usado = () => [...m].reduce((s, [k, v]) => s + k.length + v.length, 0);
   return {
     getItem: (k) => (m.has(k) ? m.get(k) : null),
     setItem: (k, v) => {
       const s = String(v);
+      if (k === bloqueada && (!m.has(k) || s.length > m.get(k).length)) { const e = new Error('cuota'); e.name = 'QuotaExceededError'; throw e; }
       const antes = m.has(k) ? k.length + m.get(k).length : 0;
       if (usado() - antes + k.length + s.length > cupo) { const e = new Error('cuota'); e.name = 'QuotaExceededError'; throw e; }
       m.set(k, s);
     },
     removeItem: (k) => { m.delete(k); },
-    clear: () => { m.clear(); cupo = Infinity; },
+    clear: () => { m.clear(); cupo = Infinity; bloqueada = null; },
+    /** Esta clave no puede crecer, y las demás sí: lo que se acorta siempre cabe, como en el navegador. */
+    bloquear: (k) => { bloqueada = k; },
     key: (i) => Array.from(m.keys())[i] ?? null,
     get length() { return m.size; },
     usado,
@@ -60,12 +65,15 @@ beforeAll(async () => {
     + '\ntry{ H.setToast=function(f){toast=f;}; }catch(_){}'
     + '\ntry{ H.setPostOnce=function(f){_postOnce=f;}; }catch(_){}'
     + '\ntry{ H.setGasUrl=function(f){gasUrl=f;}; }catch(_){}'
+    + '\ntry{ H.setRepetidas=function(f){_madTqConfirmarRepetidas=f;}; H.dirty=function(){return _madGridDirty;}; }catch(_){}'
+    + '\ntry{ H.setRate=function(f){syncRateOk=f;}; }catch(_){}'
     + '\ntry{ H.setVista=function(m,t){ curMod=m; curTab=t; }; }catch(_){}\n})();';
   globalThis.__ENG = H;
   new Function('window', 'document', 'localStorage', 'globalThis', readFileSync(ENGINE, 'utf8') + epilogo)(window, document, almacen, globalThis);
   H.setToast((m) => { avisos.push(String(m)); });
-  H.setPostOnce(async (b) => { envios.push(JSON.parse(JSON.stringify(b))); return 'ok'; });
+  H.setPostOnce(async (b) => { envios.push(JSON.parse(JSON.stringify(b))); return respuesta; });
   H.setGasUrl(() => 'https://script.google.com/macros/s/AKfycbPRUEBA/exec');
+  H.setRate(() => true);
   globalThis.fetch = async (url) => {
     if (String(url).indexOf('p=ver') !== -1) return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, version: H._gasVersionLocal() }) };
     return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, rows: [] }) };
@@ -90,6 +98,9 @@ beforeEach(() => {
   almacen.clear();
   avisos.length = 0;
   envios.length = 0;
+  respuesta = 'ok';
+  H._lastSyncFingerprint.clear();   // el motor recuerda 30 s el último envío idéntico: no puede pasar de una prueba a otra
+  H.setRepetidas(H._madTqConfirmarRepetidas);
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   globalThis.confirm = () => true;
   H.setVista(H.MAD_MOD, 'tanques');
@@ -234,13 +245,129 @@ describe('🔴 con el almacén lleno, lo tecleado no se pierde', () => {
     expect(avisos.at(-1)).not.toContain('☁️');
   });
 
-  it('🔴 Tanques · ☁️: tampoco envía, y lo tecleado sigue en pantalla', async () => {
+  /* 2026-11-04 (pauta A6, usuario: «Enviar lo de pantalla») · ☁️ envía aunque no haya podido guardar, como las fichas de Larvicultura: la
+     hoja es el respaldo que de verdad cuenta, y es justo cuando más falta hace. */
+  const dia = () => document.getElementById('mad-tanques-fecha').value;
+  const viaja = (env, v) => env.rows.some((f) => f.includes(Number(v)) || f.includes(String(v)));
+
+  it('🔴 Tanques · ☁️: envía lo que hay en pantalla, limpia la grilla y avisa de que no quedó copia', async () => {
     irASala('Sala 2');
+    lleno();
+    const antes = ids('tanques');
+    celda().value = '7';
+    await H.syncMadTanquesGrid();
+    expect(envios).toHaveLength(1);
+    expect(viaja(envios[0], 7), 'viaja lo tecleado').toBe(true);
+    expect(celda().value, 'está en la hoja: la grilla queda limpia').toBe('');
+    expect(avisos.at(-1)).toContain('no guardó copia');
+    expect(ids('tanques'), 'lo ya enviado de antes sigue').toEqual(antes);
+    expect(H.dirty()).toBe(false);
+  });
+
+  it('🔴 Tanques · ☁️: sin nada que retirar no escribe: no sale un «no se pudo guardar» falso después de llegar', async () => {
+    irASala('Sala 2');
+    almacen.dejarLibres(5);
+    celda().value = '7';
+    await H.syncMadTanquesGrid();
+    expect(envios).toHaveLength(1);
+    expect(avisos.filter((a) => a.includes('No se pudo guardar')), 'sólo el del guardado, antes de enviar').toHaveLength(1);
+    expect(avisos.at(-1)).toContain('no guardó copia');
+  });
+
+  it('🔴 Tanques · ☁️: lo que el equipo guardaba de esa ronda se retira: nadie escribe después lo viejo encima', async () => {
+    irASala('Sala 2');
+    celda().value = '3';
+    expect(H.saveMadTanquesGrid({ silent: true })).toBeGreaterThan(0);
+    expect(H.loadMad('tanques').filter((r) => !r.synced).length).toBeGreaterThan(0);
+    almacen.dejarLibres(0);
+    celda().value = '7';
+    await H.syncMadTanquesGrid();
+    expect(viaja(envios[0], 7)).toBe(true);
+    expect(H.loadMad('tanques').filter((r) => !r.synced)).toEqual([]);
+  });
+
+  it('🔴 Tanques · ☁️: lo pendiente de otra sala viaja también, y también se retira', async () => {
+    poner('tanques', [rec(hace(1), { synced: false, syncedAt: null, data: { fecha: hace(1), sala: 'Sala 1', tanque: 1, parte: 1, hora: '08:00', cerrado: 1, machos_muertos: 9 } })]);
+    irASala('Sala 2');
+    almacen.dejarLibres(5);
+    celda().value = '7';
+    await H.syncMadTanquesGrid();
+    expect(envios[0].rows.length).toBeGreaterThan(1);
+    expect(H.loadMad('tanques')).toEqual([]);
+  });
+
+  it('🔴 Tanques · ☁️: lo que recordaba como no guardado se olvida: ya está en la hoja', async () => {
+    irASala('Sala 2');
+    const hoy = dia();
+    almacen.setItem(H.MAD_RECOV_KEY, JSON.stringify({ ficha: 'tanques', sala: 'Sala 2', fecha: hoy, ts: Date.now(), rows: [] }));
     lleno();
     celda().value = '7';
     await H.syncMadTanquesGrid();
+    expect(almacen.getItem(H.MAD_RECOV_KEY)).toBeNull();
+  });
+
+  it('🔴 Tanques · ☁️: si la hoja lo rechaza, lo tecleado sigue en pantalla y lo guardado no se toca', async () => {
+    irASala('Sala 2');
+    celda().value = '3';
+    expect(H.saveMadTanquesGrid({ silent: true })).toBeGreaterThan(0);
+    almacen.dejarLibres(0);
+    const antes = ids('tanques');
+    expect(antes.length).toBeGreaterThan(0);
+    celda().value = '7';
+    respuesta = 'rejected';
+    await H.syncMadTanquesGrid();
+    expect(envios).toHaveLength(1);
+    expect(celda().value).toBe('7');
+    expect(ids('tanques')).toEqual(antes);
+    expect(avisos.join(' ')).not.toContain('no guardó copia');
+  });
+
+  it('🔴 Tanques · ☁️: sin señal, lo tecleado sigue en pantalla y dice que no se envió ni se guardó', async () => {
+    vi.useRealTimers();
+    irASala('Sala 2');
+    lleno();
+    celda().value = '7';
+    respuesta = 'retry';
+    await H.syncMadTanquesGrid();
+    expect(celda().value).toBe('7');
+    expect(avisos.join(' ')).toContain('no hay espacio');
+    expect(H._loadSyncQueue()).toEqual([]);
+  });
+
+  it('🔴 Tanques · ☁️: si contesta que NO a «¿ronda repetida?», lo tecleado sigue en pantalla', async () => {
+    irASala('Sala 2');
+    lleno();
+    celda().value = '7';
+    H.setRepetidas(async () => false);
+    await H.syncMadTanquesGrid();
     expect(envios).toHaveLength(0);
     expect(celda().value).toBe('7');
+  });
+
+  it('🔴 Tanques · ☁️: si cabe en la cola y no en la lista, queda en la cola, y lo guardado se retira', async () => {
+    vi.useRealTimers();
+    irASala('Sala 2');
+    celda().value = '3';
+    expect(H.saveMadTanquesGrid({ silent: true })).toBeGreaterThan(0);
+    almacen.bloquear(H.madKey('tanques'));
+    celda().value = '7';
+    respuesta = 'retry';
+    await H.syncMadTanquesGrid();
+    almacen.bloquear(null);
+    expect(H._loadSyncQueue().length).toBe(1);
+    expect(viaja(H._loadSyncQueue()[0].payload, 7)).toBe(true);
+    expect(celda().value).toBe('');
+    expect(avisos.join(' ')).toContain('sólo queda en la cola');
+  });
+
+  it('🔵 Tanques · ☁️ con sitio: guarda, envía y marca como siempre', async () => {
+    irASala('Sala 2');
+    celda().value = '7';
+    await H.syncMadTanquesGrid();
+    expect(envios).toHaveLength(1);
+    expect(H.loadMad('tanques').length).toBeGreaterThan(0);
+    expect(H.loadMad('tanques').every((r) => r.synced)).toBe(true);
+    expect(avisos.join(' ')).not.toContain('no guardó copia');
   });
 
   it('🔴 Salas · 💾: lo tecleado sigue en pantalla', () => {

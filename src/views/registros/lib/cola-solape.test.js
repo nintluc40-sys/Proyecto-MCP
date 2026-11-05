@@ -179,14 +179,72 @@ describe('🔴 la corrección directa no la pisa el lote viejo', () => {
     expect(hoja).toEqual([[['a', 1], ['b', 2]], [['a', 99]]]);
   });
 
-  it('sin espacio para encolar lo dice, en vez de darlo por a salvo', async () => {
+  it('sin señal y sin espacio para encolar lo dice, en vez de darlo por a salvo', async () => {
     lote();
     lleno = true;
+    red.respuesta = SIN_SENAL;
     const r = await corregirA();
     lleno = false;
     expect(r.ok).toBe(false);
     expect(r.outcome).toBe('error');
-    expect(hoja, 'con el lote esperando no puede salir directo').toEqual([]);
+    expect(hoja).toEqual([]);
+  });
+});
+
+/* 2026-11-04 (pauta A6, usuario: «vaciar primero») · No caber en la cola no es razón para no enviar si hay señal: se vacía lo que espera y,
+   si ya nada se pisa con esto, sale directo. Hacerlo sin vaciar traería de vuelta el dato viejo encima de lo nuevo (pauta 1.2). */
+describe('🔴 la cola no tiene sitio y hay señal', () => {
+  it('🔴 corrige un registro de un lote que espera: sale el lote y luego la corrección', async () => {
+    lote();
+    lleno = true;
+    const r = await corregirA();
+    lleno = false;
+    expect(r.ok).toBe(true);
+    expect(r.outcome).toBe('ok');
+    expect(hoja).toEqual([[['a', 1], ['b', 2]], [['a', 99]]]);
+    expect(cola()).toEqual([]);
+  });
+
+  it('🔴 lo cubre entero: sale lo viejo y luego lo nuevo', async () => {
+    H._enqueueSync(P(['a', 1]), 'req-viejo', URL, MARK('a'));
+    lleno = true;
+    const r = await corregirA();
+    lleno = false;
+    expect(r.ok).toBe(true);
+    expect(hoja).toEqual([[['a', 1]], [['a', 99]]]);
+  });
+
+  it('🔴 si lo viejo no sale, lo nuevo no pasa delante, y lo dice', async () => {
+    lote();
+    lleno = true;
+    red.respuesta = (body) => (body.rows.length === 2 ? 'retry' : 'ok');
+    const r = await corregirA();
+    lleno = false;
+    expect(r.ok).toBe(false);
+    expect(r.outcome).toBe('error');
+    expect(r.gasMessage).toContain('no hay espacio');
+    expect(hoja).toEqual([]);
+  });
+
+  it('🔴 si lo viejo sale y lo nuevo no, lo dice', async () => {
+    lote();
+    lleno = true;
+    red.respuesta = (body) => (body.rows.length === 2 ? 'ok' : 'retry');
+    const r = await corregirA();
+    lleno = false;
+    expect(r.ok).toBe(false);
+    expect(r.outcome).toBe('error');
+    expect(hoja).toEqual([[['a', 1], ['b', 2]]]);
+  });
+
+  it('🔴 con un vaciado en marcha no pasa delante de lo que viaja', async () => {
+    lote();
+    let dentro = null;
+    red.antesDeEscribir = async () => { lleno = true; dentro = await corregirA(); lleno = false; };
+    await H.flushSyncQueue();
+    expect(dentro.ok).toBe(false);
+    expect(dentro.outcome).toBe('error');
+    expect(hoja).toEqual([[['a', 1], ['b', 2]]]);
   });
 });
 
