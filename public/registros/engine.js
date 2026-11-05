@@ -1261,7 +1261,13 @@ function toast(msg, type="info", dur=3500){
 /* ══════════════════════════════════════════
    SYNC UI
 ══════════════════════════════════════════ */
-function setSyncUI(st, lbl){
+function setSyncUI(st, lbl, yaContado){
+  /* A14 (2026-11-05) · Igual de falso con algo sin enviar en el módulo: lo decide lo pendiente, no quien llama. `yaContado`,
+     cuando quien llama acaba de contarlo (`_syncUIResumen`), para no contar dos veces. */
+  if(st === "idle" && lbl === "Todo sincronizado" && !yaContado && typeof _pendientesDelModulo === "function"){
+    const _p = _pendientesDelModulo();
+    if(_p[0]){ _syncUIResumen(_p[0], _p[1]); return; }
+  }
   /* B (2026-09-24, usuario) · «Todo sincronizado» con envíos esperando en la cola era FALSO (las fichas de formulario de
      Maduración y el reproductivo no tienen otro registro que los cuente). Lo decide la cola, no quien llama: son más de
      veinte los sitios que lo ponen tras un envío. */
@@ -2919,13 +2925,15 @@ function buildGrid(){
     <span class="mc-dot"></span>
   </div>`;
   // As Técnico tile — pinta dot pend/sync según historial local.
-  // Cuenta las DOS fichas del módulo (Supervisión y Traslado): si sólo mirara la
-  // primera, un traslado pendiente no encendería el punto y nadie sabría que falta
-  // por enviar hasta entrar en la pestaña.
+  // Cuenta las CUATRO listas del módulo (Supervisión, Traslado, Score y Auditoría): si
+  // sólo mirara algunas, lo pendiente de las otras no encendería el punto y nadie sabría
+  // que falta por enviar hasta entrar en la pestaña.
   const astList = (typeof loadAst === "function") ? loadAst() : [];
   const trasLst = (typeof loadTras === "function") ? loadTras() : [];
-  const astPend = astList.some(r => !r.synced) || trasLst.some(r => !r.synced);
-  const astSync = astList.some(r => r.synced)  || trasLst.some(r => r.synced);
+  const scoreLst = (typeof loadScore === "function") ? loadScore() : [];   // A14
+  const audLst = (typeof loadAud === "function") ? loadAud() : [];         // A14
+  const astPend = [astList, trasLst, scoreLst, audLst].some(l => l.some(r => !r.synced));
+  const astSync = [astList, trasLst, scoreLst, audLst].some(l => l.some(r => r.synced));
   const astCls  = astPend?"pend":astSync?"sync":"";
   h += `<div class="mc mc-ast ${astCls}" id="mc13" onclick="pickMod(13)">
     <div class="mc-num">AsT</div>
@@ -3321,38 +3329,36 @@ function updateDots(){
    «N en cola» si la cola tiene algo. */
 function _syncUIResumen(p, cosa){
   const q = syncQueueLen();
-  if(!p){ setSyncUI("idle","Todo sincronizado"); return; }
+  if(!p){ setSyncUI("idle","Todo sincronizado", true); return; }
   setSyncUI("pend", p + " " + cosa + " pendiente(s)" + (q ? " · " + q + " en cola" : ""));
 }
-function updateSyncUI(){
-  if(isMntMod(curMod)){ _syncUIResumen(mntPendientes(), "registro(s)"); return; }   // 🔧 Mantenimiento (2026-10-28)
+/* A14 (2026-11-05) · Lo pendiente del módulo abierto: [cuántos, de qué]. Lo cuenta uno solo: la cabecera, «Todo sincronizado»
+   y el aviso al cerrar contaban cada uno otra cosa. Sin módulo abierto sale 0: `loadE` sólo da registros de ese módulo. */
+function _pendientesDelModulo(){
+  if(isMntMod(curMod)) return [mntPendientes(), "registro(s)"];   // 🔧 Mantenimiento (2026-10-28)
   if(isMicMod(curMod)){
-    const p = loadMic().filter(r=>!r.synced).length + (typeof _calRaw==="function"?_calRaw().filter(r=>!r.synced).length:0) + (typeof _patRaw==="function"?_patRaw().filter(r=>!r.synced).length:0);
-    _syncUIResumen(p, "muestra(s)");
-    return;
+    return [loadMic().filter(r=>!r.synced).length + (typeof _calRaw==="function"?_calRaw().filter(r=>!r.synced).length:0) + (typeof _patRaw==="function"?_patRaw().filter(r=>!r.synced).length:0), "muestra(s)"];
   }
-  if(isBioMod(curMod)){
-    const p = loadBio().filter(r => !r.synced).length;
-    _syncUIResumen(p, "registro(s)");
-    return;
-  }
+  if(isBioMod(curMod)) return [loadBio().filter(r => !r.synced).length, "registro(s)"];
   if(isAstMod(curMod)){
-    const p = loadAst().filter(r => !r.synced).length
+    return [loadAst().filter(r => !r.synced).length
+      + ((typeof loadTras === "function") ? loadTras().filter(r => !r.synced).length : 0)     // 🚚 Traslado (A14)
       + ((typeof loadScore === "function") ? loadScore().filter(r => !r.synced).length : 0)   // 🎯 Score (2026-10-02)
-      + ((typeof loadAud === "function") ? loadAud().filter(r => !r.synced).length : 0);     // 🧾 Auditoría (2026-10-03)
-    _syncUIResumen(p, "registro(s)");
-    return;
+      + ((typeof loadAud === "function") ? loadAud().filter(r => !r.synced).length : 0), "registro(s)"];     // 🧾 Auditoría (2026-10-03)
   }
   if(isMadMod(curMod)){
     let p = 0;
     MAD_FICHAS.forEach(f => { p += loadMad(f).filter(r => !r.synced).length; });
     p += madLocTotal();   // PE1.4 · lo guardado con 💾 en las fichas de formulario también está pendiente
-    _syncUIResumen(p, "registro(s)");
-    return;
+    return [p, "registro(s)"];
   }
-  const tabs = isLabMod(curMod) ? ["algas"] : STD_FICHAS_ALL;
-  const p = tabs.filter(f=>getStatus(curMod,f)==="pending").length;
-  _syncUIResumen(p, "ficha(s)");
+  const lab = isLabMod(curMod), tabs = lab ? ["algas"] : STD_FICHAS_ALL;
+  // A14 (usuario: «Sí, también») · y lo de días anteriores sin enviar, como la baldosa.
+  return [tabs.filter(f=>getStatus(curMod,f)==="pending").length + (lab ? _previasAlgas() : _previasFichas(curMod)).length, "ficha(s)"];
+}
+function updateSyncUI(){
+  const r = _pendientesDelModulo();
+  _syncUIResumen(r[0], r[1]);
 }
 
 /* ══════════════════════════════════════════
@@ -32573,27 +32579,17 @@ function _markFormDirty(){
 window.addEventListener("beforeunload", function(e){
   try{
     if(curMod === null || curMod === undefined) return;
-    let hasPending = false;
-    if(isMadMod(curMod)){
-      hasPending = _madGridDirty || MAD_FICHAS.some(f => loadMad(f).some(r => !r.synced));
-    } else if(isLabMod(curMod)){
-      hasPending = loadAlgHist().length > 0;
-    } else if(isBioMod(curMod)){
-      hasPending = _bioGridDirty || loadBio().some(r => !r.synced);
-    } else if(isAstMod(curMod)){
-      hasPending = _astFormDirty || loadAst().some(r => !r.synced)
-        || ((typeof loadScore === "function") && loadScore().some(r => !r.synced))   // 🎯 Score (2026-10-02)
-        || ((typeof loadAud === "function") && loadAud().some(r => !r.synced));     // 🧾 Auditoría (2026-10-03)
-    } else if(isMicMod(curMod)){
-      hasPending = loadMic().some(r => !r.synced) || (typeof _calRaw==="function" && _calRaw().some(r => !r.synced)) || (typeof _patRaw==="function" && _patRaw().some(r => !r.synced));
-    } else if(isMntMod(curMod)){
-      hasPending = mntPendientes() > 0;   // 🔧 Mantenimiento (2026-10-28)
-    } else {
-      // R3: advierte tanto por datos guardados-sin-sincronizar (pending) como
-      // por datos TECLEADOS pero aún no guardados (_formDirty). Antes esto
-      // último se perdía al cerrar la pestaña sin ningún aviso.
-      hasPending = _formDirty || FICHAS.some(f => getStatus(curMod, f) === "pending");
-    }
+    // A14 · Lo guardado sin enviar lo cuenta `_pendientesDelModulo`, el mismo de la cabecera: este aviso omitía Traslado,
+    // Desinfección, lo guardado con 💾 en Maduración y lo de días anteriores.
+    const _p = _pendientesDelModulo();
+    // R3: advierte tanto por datos guardados-sin-sincronizar (pending) como
+    // por datos TECLEADOS pero aún no guardados. Antes esto
+    // último se perdía al cerrar la pestaña sin ningún aviso.
+    const hasPending = _p[0] > 0
+      || (isMadMod(curMod) && _madGridDirty)
+      || (isBioMod(curMod) && _bioGridDirty)
+      || (isAstMod(curMod) && _astFormDirty)
+      || (isStdMod(curMod) && _formDirty);
     if(hasPending){
       e.preventDefault();
       e.returnValue = "";  // Chrome/Edge/Firefox necesitan este string
