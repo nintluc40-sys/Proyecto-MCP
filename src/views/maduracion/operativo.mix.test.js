@@ -15,6 +15,7 @@ import { tablaDeReproduccion, totalesDeReproduccion, pendientesDeN5 } from './op
 import { reproduccionDeLote, mixDeLote, eventosDeLote, fichaDeLote, loteEnFiltro, desempenoPorPiscina, comparativa } from './operativo.lotes.js';
 import { tasaDeDesove } from './operativo.indicadores.js';
 import { cruceConMicrochips } from './operativo.cruce.js';
+import { desgloseDeBajas } from './operativo.bajas.js';
 import { sumarDias } from '../registros/lib/mad-libro.js';
 import { graficoReproduccion } from './operativo.kpis.js';
 import { salasDelDesove, presenciaDiaria } from './operativo.tendencias.js';
@@ -509,5 +510,33 @@ describe('🔀 A19 · la Tasa de desove, los avisos y las notas', () => {
     const m = modeloOperativo([...PLANTA.filter((r) => r['Tipo de tanque'] !== 'Desove'),
       INF('2026-09-16', MIX, { 'Tipo de tanque': 'Desove', 'Temperatura tanque desove': 30 })], { fecha: FOTO, hoy: FOTO });
     expect(mortalidadEnDesove(m.fuentes, F({ lote: 'BN' }), P).mix).toEqual([]);
+  });
+});
+
+/* A18 (2026-11-04) · «en desove» sale del libro: sus filas dicen `MIX(BN,BO)`, y sólo el libro sabe qué parte es de cada lote (BN tiene el doble de hembras que BO). */
+describe('🔀 A18 · 💀 Bajas por lote: su parte de un MIX', () => {
+  const des = (f = SIN, p = P) => desgloseDeBajas(M, serieDiaria(M.fuentes, sumarDias(p.desde, -1), p.hasta), [], f, p, 'lote');
+  const de = (d, lote) => d.filas.find((x) => x.clave === lote);
+  it('🔴 «en desove» lleva su parte, igual que sus muertes naturales', () => {
+    const d = des();
+    expect([de(d, 'BN').natural.hembras, de(d, 'BN').desove]).toEqual([6, 6]);
+    expect([de(d, 'BO').natural.hembras, de(d, 'BO').desove]).toEqual([3, 3]);
+    expect(de(d, 'BP'), 'BP no participa').toBeUndefined();
+    expect(d.desove).toBe(9);
+  });
+  it('🔴 sólo lo del período: el MIX del 16/09 no cuenta en un período posterior', () => {
+    const d = des(SIN, { desde: '2026-09-17', hasta: FOTO });
+    expect(d.desove).toBe(0);
+    expect(d.filas).toEqual([]);
+  });
+  it('🔴 con un lote elegido, el suyo', () => {
+    const d = des(F({ lote: 'BO' }));
+    expect(d.filas.map((x) => x.clave)).toEqual(['BO']);
+    expect(d.desove).toBe(3);
+  });
+  it('🔴 también cuenta recuperación', () => {
+    const m = modeloOperativo([...PLANTA, INF('2026-09-17', 'BP', { 'Tipo de tanque': 'Recuperación', 'Hembras que entran': 10, 'Hembras muertas': 2 })], { fecha: FOTO, hoy: FOTO });
+    const d = desgloseDeBajas(m, serieDiaria(m.fuentes, sumarDias(P.desde, -1), P.hasta), [], SIN, P, 'lote');
+    expect(d.filas.find((x) => x.clave === 'BP').desove).toBe(2);
   });
 });

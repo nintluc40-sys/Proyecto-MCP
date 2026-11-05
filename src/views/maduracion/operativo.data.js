@@ -230,6 +230,8 @@ function fotoDelLibro(posiciones, lotes) {
     o.ingresados = { ...L.ingresados };
     o.muertos = { ...L.muertos };
     o.descartes = { ...L.descartes };
+    o.mortDesove = { ...L.mortDesove };   // A18 · lo que murió en tanques de desove y recuperación, con su parte de un MIX
+    o.mortRecuperacion = { ...L.mortRecuperacion };
   }
   return { total, porSala, porLote, porTanque, porLoteSala, relojLoteSala };
 }

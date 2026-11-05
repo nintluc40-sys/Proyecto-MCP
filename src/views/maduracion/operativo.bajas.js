@@ -104,22 +104,13 @@ function porLoteEnSerie(serie, F, periodo) {
     const natural = par(m1.machos - m0.machos, m1.hembras - m0.hembras);
     const descarte = par(d1.machos - d0.machos, d1.hembras - d0.hembras);
     if (!natural.total && !descarte.total) continue;
-    filas.push({ clave: txt(lote), sala: '', tanque: null, natural, descarte });
+    /* Las hembras que murieron en tanques de DESOVE o de RECUPERACIÓN en el período. Van DENTRO de `natural` (el libro las suma a
+       `muertos`), así que se dan aparte para poder decirlo. 🔀 A18 (2026-11-04) · salen del libro, no de la hoja: sus filas dicen
+       `MIX(BN,BO)`, y sólo el libro sabe qué parte es de cada lote. */
+    const enTanque = (foto) => { const o = (foto.porLote || {})[lote] || {}; return ent((o.mortDesove || {}).muertas) + ent((o.mortRecuperacion || {}).muertas); };
+    filas.push({ clave: txt(lote), sala: '', tanque: null, natural, descarte, desove: enTanque(fin) - enTanque(antes) });
   }
   return filas;
-}
-
-/** Las hembras que murieron en tanques de DESOVE o de RECUPERACIÓN en el período, por lote. Van DENTRO de
- *  `natural` (el libro las suma a `muertos`), así que se devuelven aparte para poder decirlo. */
-function desovePorLote(fuentes, periodo, F) {
-  const m = new Map();
-  for (const r of ((fuentes || {}).mortDesove || [])) {
-    const lote = txt(r.Lote);
-    if (!lote || !loteElegido(lote, F)) continue;
-    if (!enPeriodo(fechaDeFila('mortDesove', r), periodo)) continue;
-    m.set(lote, (m.get(lote) || 0) + ent(r['Hembras muertas']));
-  }
-  return m;
 }
 
 /** 0u · H6 (2026-09-29) · las bajas del período que el libro NO pudo dar a ningún lote: las de un parte de un tanque donde
@@ -154,8 +145,6 @@ export function desgloseDeBajas(M, serie, partes, F, periodo, dimension) {
   if (dim === 'lote') {
     filas = porLoteEnSerie(serie, F, periodo);
     if (filas === null) return { dimension: dim, filas: [], totales: par(0, 0), modo: 'sin-serie', ignora, desove: 0, sinLote: null };
-    const des = desovePorLote((M || {}).fuentes, periodo, F);
-    filas.forEach((f) => { f.desove = des.get(f.clave) || 0; });
   } else {
     filas = porPartes(partes, F, periodo, dim);
   }
