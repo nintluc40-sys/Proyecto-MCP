@@ -529,6 +529,12 @@ describe('🔀 A18 · 💀 Bajas por lote: su parte de un MIX', () => {
     expect(d.desove).toBe(0);
     expect(d.filas).toEqual([]);
   });
+  it('🔴 con otra baja en ese período posterior, sólo ésa: no arrastra su parte del MIX', () => {
+    const m = modeloOperativo([...PLANTA, INF('2026-09-18', 'BN', { 'Tipo de tanque': 'Desove', 'Hembras que entran': 5, 'Hembras muertas': 2 })], { fecha: FOTO, hoy: FOTO });
+    const p = { desde: '2026-09-17', hasta: FOTO };
+    const d = desgloseDeBajas(m, serieDiaria(m.fuentes, sumarDias(p.desde, -1), p.hasta), [], SIN, p, 'lote');
+    expect(d.filas.find((x) => x.clave === 'BN').desove).toBe(2);
+  });
   it('🔴 con un lote elegido, el suyo', () => {
     const d = des(F({ lote: 'BO' }));
     expect(d.filas.map((x) => x.clave)).toEqual(['BO']);
