@@ -136,7 +136,8 @@ describe('Cola · lo que pasa MIENTRAS se vacía se respeta', () => {
 
 describe('Cola · qué sale y qué se queda al terminar', () => {
   it('🔴 sale lo entregado y lo rechazado por sus DATOS; se queda lo transitorio', async () => {
-    pon([envio(1), envio(2), envio(3)]);
+    // Otra hoja para el tercero: dos sin marca de la MISMA hoja salen en orden (pauta A1), y aquí tiene que intentarse aunque r2 no saliera.
+    pon([envio(1), envio(2), envio(3, { payload: { ...pl(3), sheetName: 'Datos Larvicultura - M02' } })]);
     H.setVerify(async () => false);
     H.setPostOnce(async (body, url, info) => {
       if (body.reqId === 'r1') return 'ok';

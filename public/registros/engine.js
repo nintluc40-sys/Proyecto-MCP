@@ -1875,8 +1875,10 @@ function _purgeQueueMark(mark){
 
 /* 2026-11-03 (pauta 1.2) · ¿Espera en la cola un envío con ALGUNA de estas llaves, y otras que éste no lleva? Entonces no puede salir
    directo: _purgeQueueMark no retira ese lote —se perderían los demás— y al vaciarse volvería a escribir sobre lo de ahora los datos
-   viejos de las llaves compartidas, con la app diciendo «enviado». La salida es respetar el orden: ver postPayload. */
-function _colaSolapa(mark){
+   viejos de las llaves compartidas, con la app diciendo «enviado». La salida es respetar el orden: ver postPayload.
+   2026-11-04 (pauta A1) · Si las marcas no dicen qué registros tocan (_colaSinLlaves), basta con que sea la misma hoja. */
+function _colaSolapa(mark, hoja){
+  if(hoja && _loadSyncQueue().some(it => it && it.payload && it.payload.sheetName === hoja && _colaSinLlaves(it.mark, mark))) return true;
   if(!mark || !mark.kind || !Array.isArray(mark.keys) || !mark.keys.length) return false;
   const supKeys = new Set(mark.keys);
   const cubre = (k) => _colaClaveCubierta(mark.kind, supKeys, k);
@@ -1885,6 +1887,22 @@ function _colaSolapa(mark){
     const comunes = it.mark.keys.filter(cubre).length;   // alguna, y no todas
     return comunes > 0 && comunes < it.mark.keys.length;
   });
+}
+/* 2026-11-04 (pauta A1) · Dos envíos de una hoja cuyas marcas no dicen si tocan los mismos registros: un formulario de Maduración marca
+   el ENVÍO, no la fila, y hay envíos sin marca. */
+function _colaSinLlaves(a, b){
+  const llaves = (m) => !!(m && m.kind && Array.isArray(m.keys) && m.keys.length);
+  if(!llaves(a) || !llaves(b)) return true;
+  return a.kind === b.kind && a.kind.indexOf("madlog:") === 0;
+}
+/* 2026-11-04 (pauta A1, usuario: «solo lo que se pisa») · ¿`it` tiene que esperar a `previo`, que no salió? Al salir después, `previo`
+   escribiría sus datos viejos encima, con la app diciendo «enviado». Lo que no se pisa sigue saliendo: un envío trabado no frena al resto. */
+function _colaSePisan(previo, it){
+  if(!previo || !it || !previo.payload || !it.payload || previo.payload.sheetName !== it.payload.sheetName) return false;
+  if(_colaSinLlaves(previo.mark, it.mark)) return true;
+  if(previo.mark.kind !== it.mark.kind) return false;
+  const supKeys = new Set(it.mark.keys);
+  return previo.mark.keys.filter(k => _colaClaveCubierta(previo.mark.kind, supKeys, k)).length > 0;
 }
 const _colaRechazos = new Map();   // reqId → motivo: lo que el último vaciado retiró por sus DATOS (lo lee postPayload, ver _colaSolapa)
 
@@ -2145,16 +2163,18 @@ async function flushSyncQueue(opts){
     // envío sigue vivo en la cola. Se guarda un motivo de cada clase para el aviso.
     let enEspera = 0, msgEntorno = "", msgDatos = "";
     const _selloPorUrl = {};   // PV3: la respuesta de ?p=ver, UNA por URL en este vaciado
+    const _noSalieron = [];    // pauta A1: lo que sigue en la cola y aún puede salir; lo que se pise con ello, espera detrás (_colaSePisan)
     for(const it of q){
       const url = it.url || gasUrl();
       if(!url || !isValidGasUrl(url)){ remaining.push(it); continue; }
+      if(_noSalieron.some(p => _colaSePisan(p, it))){ remaining.push(it); _noSalieron.push(it); continue; }
       // Las hojas selladas de Maduración (_madHojaPideGasNuevo) sólo se entregan a EL GAS DE ESTA APP (ver _madIngGasAlDia).
       // PV3 (2026-09-16) · y con el sello SIN CONFIRMAR (null) también esperan: antes sólo las frenaba un «no» explícito.
       // Se pregunta UNA vez por URL en cada vaciado: con diez envíos en cola eran diez esperas de hasta 6 s.
       if(it.payload && _madHojaPideGasNuevo(it.payload.sheetName)){
         if(!Object.prototype.hasOwnProperty.call(_selloPorUrl, url)) _selloPorUrl[url] = await _madIngGasAlDia(url);
         if(_selloPorUrl[url] !== true){
-          remaining.push(it); enEspera++;
+          remaining.push(it); _noSalieron.push(it); enEspera++;
           msgEntorno = _selloPorUrl[url] === false ? _madGasViejoMsg(it.payload.sheetName) : MAD_GAS_SIN_CONFIRMAR;
           continue;
         }
@@ -2187,7 +2207,7 @@ async function flushSyncQueue(opts){
         // El dato está bien; lo que falta se arregla FUERA (re-desplegar el GAS, poner
         // el token). Se conserva para que el vaciado automático lo entregue solo. La
         // cola no se atasca: tiene TTL de 7 días y tope de SYNCQ_MAX (los dos, avisados).
-        remaining.push(it);
+        remaining.push(it); _noSalieron.push(it);
         enEspera++; msgEntorno = _info.message || msgEntorno;
       } else if(res === "rejected"){
         // Rechazo por los DATOS: reintentar es inútil y dejarlo bloquearía la cola.
@@ -2195,7 +2215,7 @@ async function flushSyncQueue(opts){
         rejected++; msgDatos = _info.message || msgDatos;
         if(it.reqId) _colaRechazos.set(it.reqId, _info.message || "");
       } else {
-        remaining.push(it); // sigue siendo transitorio: se conserva
+        remaining.push(it); _noSalieron.push(it); // sigue siendo transitorio: se conserva
       }
     }
     /* 🔴 A (2026-09-24) · LA COLA SE RELEE AL TERMINAR. Se escribía la foto del PRINCIPIO menos lo entregado, y con el GAS
@@ -2321,7 +2341,7 @@ async function postPayload(payload, url, opts){
     const MAX_ATTEMPTS = 2;
     let res = "retry";
     const _gasInfo = {};
-    if(_fp && opts && _colaSolapa(opts.mark)){
+    if(_fp && opts && _colaSolapa(opts.mark, payload.sheetName)){
       /* 2026-11-03 (pauta 1.2) · Detrás del lote viejo, y se vacía la cola: primero llega lo viejo y luego esto, así que gana lo último.
          Si no sale, sigue en la cola y lo demás es el camino de siempre: «en cola», «rechazado» o, si no cupo, el error. */
       if(_enqueueSync(payload, _fp, url, opts.mark)){

@@ -231,6 +231,19 @@ describe('🔴 lo que debe seguir reemplazando su propia fila', () => {
     expect(hojaEnviada[1].rows[0][col('Machos')]).toBe(6);
   });
 
+  it('🔴 corregir lo que aún espera en la cola: primero lo viejo y luego la corrección (pauta A1)', async () => {
+    red.respuesta = () => 'retry';
+    llenar(5, 5);
+    await H.madMovGuardar();
+    const id = H._loadSyncQueue()[0].payload.rows[0][col('ID')];
+    red.respuesta = () => 'ok';
+    editarDelHistorial(H.madHistLeer().find((e) => e.ficha === 'movimientos').id);
+    q('.mv-machos').value = '6';
+    await H.madMovGuardar();
+    expect(hojaEnviada.map((p) => [p.rows[0][col('ID')], p.rows[0][col('Machos')]])).toEqual([[id, 5], [id, 6]]);
+    expect(H._loadSyncQueue()).toEqual([]);
+  });
+
   it('🔴 corregir uno de dos de la misma ruta tampoco pregunta, y sigue habiendo dos filas', async () => {
     llenar(5, 5);
     await H.madMovGuardar();

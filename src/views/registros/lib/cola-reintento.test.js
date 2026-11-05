@@ -124,7 +124,8 @@ describe('Cola · se reintenta sola', () => {
 
   it('🔴 si llega ALGO (aunque no todo), el siguiente intento vuelve a los 60 s', async () => {
     H._enqueueSync(pl(1), 'r1', '', null);
-    H._enqueueSync(pl(2), 'r2', '', null);
+    // Otra hoja: dos sin marca de la MISMA hoja salen en orden (pauta A1), y aquí cada vuelta tiene que intentar los dos.
+    H._enqueueSync({ ...pl(2), sheetName: 'Datos Larvicultura - M02' }, 'r2', '', null);
     await avanza(60000);
     await avanza(120000);
     expect(posts).toBe(4);                   // dos vueltas sin avanzar (dos envíos cada una): el siguiente, a los 240 s
