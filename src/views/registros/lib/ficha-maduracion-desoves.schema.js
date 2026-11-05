@@ -103,6 +103,14 @@ const int = (v) => {
   return Number.isFinite(n) && n >= 0 ? n : '';
 };
 
+/* A16 (2026-11-04, usuario: «Rechazarlo y pedir miles enteros») · `int` lee «6.5» como 6 y «-3» como vacío, y el dato se perdía sin aviso.
+   Lo que se valida es lo TECLEADO: vacío sigue siendo «sin cifra». «4.0» vale (es 4); «1e3», no (parseInt daría 1). Lo usan las cinco fichas
+   de Maduración que cuentan animales. Gemelo: `madCifraMala` y `madCifraMalaTexto`, en el motor. */
+export function cifraMala(v) {
+  const s = String(v === null || v === undefined ? '' : v).trim();
+  return s !== '' && !/^\d+(\.0*)?$/.test(s);
+}
+export const cifraMalaTexto = (donde, que, v, enMiles) => 'En ' + donde + ', «' + String(v).trim() + '» no vale para ' + que + ': se escribe' + (enMiles ? ' en miles,' : '') + ' con un número entero, sin decimales ni signo.';
 /* ── Las fechas de N2 y N5 salen AUTOMÁTICAS, pero se pueden editar (2026-09-16 / 2026-09-17, usuario) ──
    «La de N2 es la misma que la del desove» —no ve necesario separarlas— «y la de N5 sale automática: N2 + 1».
    Se DERIVAN de la fecha del desove y son el VALOR POR DEFECTO; cada una se escribe sólo JUNTO A SU CIFRA:
@@ -290,6 +298,9 @@ export function validarDesove(model) {
     }
     vistos.add(llave);
 
+    [['desoves', 'los desoves', false], ['huevos', 'el total de huevos', true], ['hembrasNoViables', 'las hembras no viables', false], ['n2', 'el N2', true], ['n5', 'el N5', true]].forEach(([k, que, miles]) => {
+      if (cifraMala(x[k])) errores.push(cifraMalaTexto(et, que, x[k], miles));
+    });
     /* 🔒 EL CANDADO que pidió el usuario: N5 exige N2. Un N5 sin su N2 deja un hueco que
        después nadie sabe si fue que no se contó o que se olvidó registrar.
        2026-09-16: mira la CIFRA, no la fecha. Y sigue mirándola desde que las fechas se pueden editar

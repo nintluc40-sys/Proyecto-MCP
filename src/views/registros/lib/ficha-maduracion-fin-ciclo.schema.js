@@ -54,7 +54,7 @@
    ============================================================ */
 
 import { sanitizeStr } from '../../../core/trovan.js';
-import { normLote } from './ficha-maduracion-desoves.schema.js';
+import { normLote, cifraMala, cifraMalaTexto } from './ficha-maduracion-desoves.schema.js';
 
 /** Hoja destino. Ya está en el `ALLOWED` del GAS desde `f66a3c4` y va por `isMadId`, así
  *  que no hace falta otro re-despliegue. */
@@ -206,6 +206,9 @@ export function validarFinCiclo(model) {
     }
     vistos.add(llave);
 
+    [['machos', 'los machos'], ['hembras', 'las hembras'], ['rojos', 'los rojos']].forEach(([k, que]) => {
+      if (cifraMala(x[k])) errores.push(cifraMalaTexto(et, que, x[k], false));
+    });
     const mach = int(x.machos);
     const hemb = int(x.hembras);
     if ((mach === '' || mach === 0) && (hemb === '' || hemb === 0)) {

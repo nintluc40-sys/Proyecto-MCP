@@ -76,6 +76,15 @@ const api = motorDesoves();
 /* Cada modelo ejerce una rama distinta. Ya pasó dos veces el mismo día que un fixture
    incompleto dejaba una regla sin ejercer y la paridad daba verde sin significar nada. */
 const MODELOS = {
+  /* A16 · lo que `int` perdía o recortaba sin aviso: las dos copias lo rechazan con la misma frase. */
+  'cifras malas: decimales, negativos y basura': {
+    fecha: '2026-09-08',
+    desoves: [{ lote: 'BM', codigoGenetico: '766', piscina: 'P-766', desoves: '2.5', huevos: '6.5', hembrasNoViables: -2, fechaN2: '', n2: '1e3', fechaN5: '', n5: '12abc', observaciones: '' }],
+  },
+  'cifras buenas: un entero con su punto y lo vacío': {
+    fecha: '2026-09-08',
+    desoves: [{ lote: 'BM', codigoGenetico: '766', piscina: 'P-766', desoves: '4', huevos: '9800.0', hembrasNoViables: ' 0 ', fechaN2: '', n2: '', fechaN5: '', n5: null, observaciones: '' }],
+  },
   'un desove simple': {
     fecha: '2026-09-08',
     desoves: [{ lote: 'BM', codigoGenetico: '766', piscina: 'P-766', desoves: 4, huevos: 9800, hembrasNoViables: 12, fechaN2: '', n2: '', fechaN5: '', n5: '', observaciones: 'sin novedad' }],

@@ -68,6 +68,11 @@ const MODELOS = {
      daría el mismo resultado y la paridad estaría verde sin significar nada: la divergencia
      «el monolito redondea la dosis» SE LE ESCAPABA hasta que este fixture cambió. Lo cazó el
      banco, no la lectura. */
+  /* A16 · lo que `int` perdía o recortaba sin aviso: las dos copias lo rechazan con la misma frase. */
+  'cifras malas': {
+    fecha: '2026-09-08',
+    cierres: [{ lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', machos: '-3', hembras: '2.5', rojos: '1.5' }],
+  },
   'un pedido parcial': {
     fecha: '2026-09-08',
     cierres: [{ lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', metabisulfito: 12.75, fechaMetabisulfito: '2026-09-10', machos: 40, hembras: 60, observaciones: 'camión 2' }],

@@ -27,6 +27,7 @@
    ============================================================ */
 
 import { sanitizeStr } from '../../../core/trovan.js';
+import { isValidDate } from './security.js';
 import { mLabel, CIO_MOD } from './modules.js';
 
 /** Hoja destino. La crea el propio GAS (`ss.insertSheet`) al primer envío. */
@@ -485,7 +486,7 @@ export function validarViaje(data) {
   const errs = [];
   const falta = (campo, mensaje) => errs.push({ campo, mensaje });
 
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.fecha || ''))) falta('fecha', 'Falta la fecha de entrega');
+  if (!isValidDate(String(d.fecha || ''))) falta('fecha', 'Falta la fecha de entrega');   // A16 · como `validarTraslado`, en el motor
 
   const cam = celdaTxt(d.camaronera);
   if (cam === '') falta('camaronera', 'Falta la camaronera de destino');

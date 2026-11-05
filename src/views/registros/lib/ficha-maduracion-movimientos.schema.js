@@ -38,6 +38,7 @@
    ============================================================ */
 
 import { sanitizeStr } from '../../../core/trovan.js';
+import { cifraMala, cifraMalaTexto } from './ficha-maduracion-desoves.schema.js';
 import { MAD_SALA_OPTS, MAD_TANQUES_POR_SALA, AGUA_OPTS, salaTag } from './ficha-maduracion-ingreso.schema.js';
 
 /** Hoja destino. La crea el propio GAS (`ss.insertSheet`) al primer envío, y ya está
@@ -206,6 +207,9 @@ export function validarMovimiento(model) {
     }
     vistos.add(llave);
 
+    [['machos', 'los machos'], ['hembras', 'las hembras']].forEach(([k, que]) => {
+      if (cifraMala(t[k])) errores.push(cifraMalaTexto('el ' + et, que, t[k], false));
+    });
     const mach = int(t.machos);
     const hemb = int(t.hembras);
     if ((mach === '' || mach === 0) && (hemb === '' || hemb === 0)) {

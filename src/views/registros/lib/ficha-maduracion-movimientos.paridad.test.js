@@ -78,6 +78,11 @@ const api = motorMovimientos();
    de paridad del Ingreso metió la divergencia del GRUPO y la paridad no la vio, porque
    ningún fixture la ejercía. */
 const MODELOS = {
+  /* A16 · lo que `int` perdía o recortaba sin aviso: las dos copias lo rechazan con la misma frase. */
+  'cifras malas': {
+    fecha: '2026-09-08', tipo: 'Transferencia', motivo: 'Mezcla de lotes', observaciones: '',
+    tramos: [{ salaOrigen: 'Sala 1', tanqueOrigen: 1, salaDestino: 'Sala 2', tanqueDestino: 16, machos: '-3', hembras: '2.5', agua: 'RAS' }],
+  },
   'transferencia simple': {
     fecha: '2026-09-08', tipo: 'Transferencia', motivo: 'Mezcla de lotes', observaciones: 'sin novedad',
     tramos: [{ salaOrigen: 'Sala 1', tanqueOrigen: 1, salaDestino: 'Sala 2', tanqueDestino: 16, machos: 30, hembras: 20, agua: 'RAS' }],

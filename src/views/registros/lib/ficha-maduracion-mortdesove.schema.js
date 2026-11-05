@@ -17,7 +17,7 @@
    ============================================================ */
 
 import { sanitizeStr } from '../../../core/trovan.js';
-import { normLote, normCodigoGenetico } from './ficha-maduracion-desoves.schema.js';
+import { normLote, normCodigoGenetico, cifraMala, cifraMalaTexto } from './ficha-maduracion-desoves.schema.js';
 // La alcalinidad es por ÁREA, y las áreas son el RAS más las salas del catálogo del Ingreso.
 import { MAD_SALA_OPTS, salaTag } from './ficha-maduracion-ingreso.schema.js';
 
@@ -195,6 +195,16 @@ export function validarMort(model) {
       return int(t.entran) !== '' || int(t.muertas) !== '' || (tipo === 'Desove' && crudo(t.temperatura) !== '');
     });
     const conRevision = MAD_NAUP_REVISIONES.filter((rev) => revisionConDato(revisionDe(x, rev)));
+    // A16 · antes que nada: con «-3», `conCifras` diría que no hay ninguna cifra. Un negativo no es «sin cifra».
+    let malas = false;
+    MAD_MORT_TIPOS.forEach((tipo) => {
+      const t = x[CLAVE[tipo]] || {};
+      const donde = (lote || 'el registro ' + (i + 1)) + ' (tanques de ' + (tipo === 'Desove' ? 'desove' : 'recuperación') + ')';
+      [['entran', 'las hembras que entran'], ['muertas', 'las muertas']].forEach(([k, que]) => {
+        if (cifraMala(t[k])) { malas = true; errores.push(cifraMalaTexto(donde, que, t[k], false)); }
+      });
+    });
+    if (malas) return;
     if (!lote && !conCifras.length && !conRevision.length) return;
     if (!lote) { errores.push('Falta el lote del registro ' + (i + 1) + '.'); return; }
     if (!conCifras.length && !conRevision.length) { errores.push('El lote ' + lote + ' no trae ninguna cifra ni revisión de nauplios.'); return; }

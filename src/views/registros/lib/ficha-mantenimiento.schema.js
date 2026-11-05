@@ -19,6 +19,7 @@
    ============================================================ */
 
 import { sanitizeStr } from '../../../core/trovan.js';
+import { isValidDate } from './security.js';
 
 export const MNT_TRAB_SHEET = 'Mantenimiento Trabajos';
 export const MNT_LECT_SHEET = 'Mantenimiento Lecturas';
@@ -77,7 +78,7 @@ const NUMEROS_TRABAJO = [
 ];
 
 /* ── Las reglas ─────────────────────────────────────────── */
-const esDia = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
+const esDia = (d) => isValidDate(String(d || ''));   // A16 · un día REAL: el patrón solo dejaba pasar 2026-13-45
 export function mntEsHora(h) { return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(h || '')); }
 export function mntEquipo(codigo) { return MNT_EQUIPOS.find((q) => q.codigo === codigo) || null; }
 

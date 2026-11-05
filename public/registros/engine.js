@@ -8722,6 +8722,10 @@ function madIngRowId(fecha, lote, cg, sala, tanque){
 function madIngNum(v){ if(v===""||v==null) return ""; const n=Number(v); return isFinite(n)?n:""; }
 // Entero NO NEGATIVO: un conteo negativo restaría animales que nunca entraron.
 function madIngInt(v){ if(v===""||v==null) return ""; const n=parseInt(v,10); return (isFinite(n)&&n>=0)?n:""; }
+/* A16 (2026-11-04, usuario: «Rechazarlo y pedir miles enteros») · `madIngInt` lee «6.5» como 6 y «-3» como vacío, y el dato se perdía sin aviso.
+   Lo que se valida es lo TECLEADO: vacío sigue siendo «sin cifra». «4.0» vale (es 4); «1e3», no (parseInt daría 1). Gemelo: `cifraMala`, en el esquema de Desoves. */
+function madCifraMala(v){ const s=String(v==null?"":v).trim(); return s!=="" && !/^\d+(\.0*)?$/.test(s); }
+function madCifraMalaTexto(donde, que, v, enMiles){ return "En "+donde+", «"+String(v).trim()+"» no vale para "+que+": se escribe"+(enMiles?" en miles,":"")+" con un número entero, sin decimales ni signo."; }
 function madIngSumaReparto(rep, campo){
   return (rep||[]).reduce(function(a,r){ const n=parseInt(r&&r[campo],10); return a+((isFinite(n)&&n>0)?n:0); },0);
 }
@@ -8841,6 +8845,9 @@ function madIngValidar(model){
     if(!reparto.length) errores.push("«"+et+"» no se repartió en ningún tanque.");
     reparto.forEach(function(rep){
       const r = rep||{}, sala = sanitizeStr(r.sala,30), tanque = madIngInt(r.tanque);
+      [["machos","los machos"],["hembras","las hembras"]].forEach(function(s){
+        if(madCifraMala(r[s[0]])) errores.push(madCifraMalaTexto("«"+et+"»", s[1]+" del reparto", r[s[0]], false));
+      });
       if(sala===""||tanque==="") return;
       // ⚠⚠ ESTO EVITA UNA PÉRDIDA SILENCIOSA, no es una molestia de formulario: dos filas
       // de la MISMA composición en el MISMO tanque generan el MISMO ID y el upsert escribe
@@ -8863,6 +8870,7 @@ function madIngValidar(model){
       if(!permitidos) avisos.push("«"+sala+"» no es una sala conocida.");
     });
     ["machos","hembras"].forEach(function(sexo){
+      if(madCifraMala(c[sexo])){ errores.push(madCifraMalaTexto("«"+et+"»", sexo==="machos" ? "los machos declarados" : "las hembras declaradas", c[sexo], false)); return; }
       const dec = parseInt(c[sexo],10);
       if(!isFinite(dec)) return;
       const rep = madIngSumaReparto(reparto, sexo);
@@ -10718,6 +10726,9 @@ function madMovValidar(model){
     const llave = madIngSalaTag(sO)+"|"+tO+"|"+madIngSalaTag(sD)+"|"+tD;
     if(vistos[llave]) errores.push("El "+et+" repite el mismo origen y destino que otro tramo. Los dos generarían la misma fila y el segundo borraría al primero: regístralos sumados.");
     vistos[llave]=1;
+    [["machos","los machos"],["hembras","las hembras"]].forEach(function(s){
+      if(madCifraMala(t[s[0]])) errores.push(madCifraMalaTexto("el "+et, s[1], t[s[0]], false));
+    });
     const mach = madIngInt(t.machos), hemb = madIngInt(t.hembras);
     if((mach===""||mach===0) && (hemb===""||hemb===0)) errores.push("El "+et+" no mueve ningún animal.");
     [[sO,tO,"origen"],[sD,tD,"destino"]].forEach(function(par){
@@ -11445,6 +11456,9 @@ function madDesValidar(model){
     const llave = lote+"|"+cg;
     if(vistos[llave]) errores.push("El lote "+lote+" con código "+cg+" aparece dos veces en esta fecha. Los dos escribirían la misma fila y el segundo pisaría al primero: regístralos sumados.");
     vistos[llave]=1;
+    [["desoves","los desoves",false],["huevos","el total de huevos",true],["hembrasNoViables","las hembras no viables",false],["n2","el N2",true],["n5","el N5",true]].forEach(function(c){
+      if(madCifraMala(x[c[0]])) errores.push(madCifraMalaTexto(et, c[1], x[c[0]], c[2]));
+    });
     // 🔒 EL CANDADO que pidió el usuario: N5 exige N2. Un N5 sin su N2 deja un hueco que
     // después nadie sabe si fue que no se contó o que se olvidó registrar.
     // 2026-09-16: mira la CIFRA, y sigue mirándola desde que las fechas se editan (2026-09-17): lo que dice que
@@ -12480,6 +12494,9 @@ function madFinValidar(model){
     const llave = lote+"|"+madFinMotivoTag(motivo);
     if(vistos[llave]) errores.push("El lote "+lote+" se cierra dos veces por «"+motivo+"» en esta fecha. Los dos escribirían la misma fila y el segundo borraría al primero: regístralos sumados.");
     vistos[llave]=1;
+    [["machos","los machos"],["hembras","las hembras"],["rojos","los rojos"]].forEach(function(s){
+      if(madCifraMala(x[s[0]])) errores.push(madCifraMalaTexto(et, s[1], x[s[0]], false));
+    });
     const mach = madIngInt(x.machos), hemb = madIngInt(x.hembras);
     if((mach===""||mach===0) && (hemb===""||hemb===0)){
       // Un cierre TOTAL sin cifras es legítimo: cierra el lote igual; sólo falta la constancia de lo que
@@ -13174,6 +13191,15 @@ function madMortValidar(model){
     const x=c||{}, lote=madDesNormLote(x.lote), cg=madDesNormCG(x.codigoGenetico);
     const conCifras=MAD_MORT_TIPOS.filter(function(tipo){ const t=x[_MAD_MORT_CLAVE[tipo]]||{}; return madIngInt(t.entran)!=="" || madIngInt(t.muertas)!=="" || (tipo==="Desove" && _madNaupCrudo(t.temperatura)!==""); });
     const conRevision=MAD_NAUP_REVISIONES.filter(function(rev){ return _madNaupConDato(_madNaupRevision(x, rev)); });
+    // A16 · antes que nada: con «-3», `conCifras` diría que no hay ninguna cifra. Un negativo no es «sin cifra».
+    let malas=false;
+    MAD_MORT_TIPOS.forEach(function(tipo){
+      const t=x[_MAD_MORT_CLAVE[tipo]]||{}, donde=(lote||"el registro "+(i+1))+" (tanques de "+(tipo==="Desove" ? "desove" : "recuperación")+")";
+      [["entran","las hembras que entran"],["muertas","las muertas"]].forEach(function(c){
+        if(madCifraMala(t[c[0]])){ malas=true; errores.push(madCifraMalaTexto(donde, c[1], t[c[0]], false)); }
+      });
+    });
+    if(malas) return;
     if(!lote && !conCifras.length && !conRevision.length) return;
     if(!lote){ errores.push("Falta el lote del registro "+(i+1)+"."); return; }
     if(!conCifras.length && !conRevision.length){ errores.push("El lote "+lote+" no trae ninguna cifra ni revisión de nauplios."); return; }
@@ -21197,7 +21223,7 @@ const _MNT_NUMEROS_TRABAJO = [
 ];
 
 /* ── Las reglas (puras) ─────────────────────────────────── */
-function _mntEsDia(d){ return /^\d{4}-\d{2}-\d{2}$/.test(String(d || "")); }
+function _mntEsDia(d){ return isValidDate(String(d || "")); }   // A16 · un día REAL: el patrón solo dejaba pasar 2026-13-45
 function mntEsHora(h){ return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(h || "")); }
 function mntEquipo(codigo){ return MNT_EQUIPOS.find(function(q){ return q.codigo === codigo; }) || null; }
 /** Un número tecleado: «534,51», «534.51», «1,028.42» o «1.028,42» (el ÚLTIMO separador es el decimal). "" si está vacío;

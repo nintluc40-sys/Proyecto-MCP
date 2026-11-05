@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createContext, Script } from 'node:vm';
 import { sanitizeStr } from '../../../core/trovan.js';
+import { isValidDate } from './security.js';
 import * as M from './ficha-mantenimiento.schema.js';
 
 const src = readFileSync(new URL('../../../../public/registros/engine.js', import.meta.url), 'utf8').split('\r\n').join('\n');
@@ -23,7 +24,7 @@ const NOMBRES = ['MNT_TRAB_SHEET', 'MNT_LECT_SHEET', 'MNT_EQUIPOS', 'MNT_TIPOS',
   'mntParadaHoras', 'mntParada', 'mntNuevoId', 'mntValidarTrabajo', 'mntLecturaVacia', 'mntValidarRonda', 'mntFilaTrabajo',
   'mntFilasRonda', 'buildMntTrabajoPayload', 'buildMntRondaPayload', 'mntHorometros', 'mntHorometroBaja', 'mntAvisosRonda',
   'mntAvisosTrabajo', 'MNT_ANULADA', 'mntAnulados'];
-const ctx = { String, Number, Object, Array, JSON, Math, Date, isNaN, isFinite, sanitizeStr };
+const ctx = { String, Number, Object, Array, JSON, Math, Date, isNaN, isFinite, sanitizeStr, isValidDate };
 ctx.globalThis = ctx;
 createContext(ctx);
 new Script(bloque() + '\n;globalThis.__api = {' + NOMBRES.join(', ') + '};').runInContext(ctx);
@@ -77,6 +78,12 @@ describe('PARIDAD · Mantenimiento · el bloque de engine.js dice lo mismo que e
       .forEach(([a, b]) => expect(J(E.mntParadaHoras(a, b))).toBe(J(M.mntParadaHoras(a, b))));
     ['BLW-01', 'BLW-11', 'BLW-12', '', null].forEach((c) => expect(J(E.mntEquipo(c))).toBe(J(M.mntEquipo(c))));
     expect(E.mntNuevoId('MT', '2026-10-28', 123456789)).toBe(M.mntNuevoId('MT', '2026-10-28', 123456789));
+  });
+
+  it('🔴 A16 · una fecha imposible no pasa en ninguna de las dos copias', () => {
+    const t = { fecha: '2026-13-45', equipo: 'BLW-01', tipo: M.MNT_TIPOS[0], actividad: M.MNT_ACTIVIDADES[0], horometro: 100, estado: M.MNT_ESTADOS[0] };
+    expect(J(E.mntValidarTrabajo(t))).toBe(J(M.mntValidarTrabajo(t)));
+    expect(E.mntValidarTrabajo(t)[0]).toContain('la fecha');
   });
 
   it.each(TRABAJOS.map((t, i) => [i, t]))('trabajo %i: validación, parada y fila', (_i, t) => {

@@ -92,6 +92,13 @@ const api = motorIngreso();
 /* Modelos de prueba. Cada uno ejerce una rama distinta del payload o del veredicto: un
    fixture único no distinguiría una implementación correcta de una que se dejó un caso. */
 const MODELOS = {
+  /* A16 · lo que `int` perdía o recortaba sin aviso: las dos copias lo rechazan con la misma frase. */
+  'cifras malas en lo declarado y en el reparto': {
+    fecha: '2026-09-08',
+    lote: 'AB',
+    composiciones: [{ codigoGenetico: 'CG01', piscina: 'P-12', machos: '2.5', hembras: '-3',
+      reparto: [{ sala: 'Sala 1', tanque: 1, machos: '-1', hembras: '1.5', agua: 'RAS' }] }],
+  },
   'simple, un tanque': {
     fecha: '2026-09-08',
     lote: 'AB',

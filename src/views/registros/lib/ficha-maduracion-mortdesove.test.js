@@ -234,6 +234,10 @@ describe('Inf. Supervisor · el monolito y el módulo dicen lo mismo', () => {
       expect(api.buildMadMortPayload(m)).toEqual(buildMortPayload(m));
       expect(api.madMortValidar(m)).toEqual(validarMort(m));
     }
+    /* A16 · lo que `int` perdía o recortaba sin aviso: las dos copias lo rechazan con la misma frase. */
+    const malas = { fecha: '2026-09-15', lotes: [{ lote: 'BP', codigoGenetico: 'CG1', desove: { entran: '-1', muertas: '2.5' }, recuperacion: { entran: '4', muertas: '-3' } }, { lote: '', codigoGenetico: '', desove: { muertas: 'x' } }] };
+    expect(api.madMortValidar(malas)).toEqual(validarMort(malas));
+    expect(validarMort(malas).errores).toHaveLength(4);
     expect(validarMort(MODELOS[1]).errores.length).toBeGreaterThan(3);   // el fixture ejerce algo
     expect(validarMort(MODELOS[4]).errores.length).toBeGreaterThan(3);
     expect(buildMortRows(MODELOS[3]).length).toBe(4);

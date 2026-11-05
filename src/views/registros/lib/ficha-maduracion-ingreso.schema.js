@@ -28,6 +28,7 @@
    ============================================================ */
 
 import { sanitizeStr } from '../../../core/trovan.js';
+import { cifraMala, cifraMalaTexto } from './ficha-maduracion-desoves.schema.js';
 
 /** Hoja destino. La crea el propio GAS (`ss.insertSheet`) al primer envío. */
 export const MAD_INGRESO_SHEET = 'Maduración Ingreso';
@@ -384,6 +385,9 @@ export function validarIngreso(model) {
 
     reparto.forEach((rep) => {
       const r = rep || {};
+      [['machos', 'los machos'], ['hembras', 'las hembras']].forEach(([k, que]) => {
+        if (cifraMala(r[k])) errores.push(cifraMalaTexto('«' + etiqueta + '»', que + ' del reparto', r[k], false));
+      });
       const sala = sanitizeStr(r.sala, 30);
       const tanque = int(r.tanque);
       if (sala === '' || tanque === '') return;
@@ -423,6 +427,7 @@ export function validarIngreso(model) {
        dice, porque un descuadre aquí es justo la clase de error de registro que este
        módulo existe para cazar. */
     ['machos', 'hembras'].forEach((sexo) => {
+      if (cifraMala(c[sexo])) { errores.push(cifraMalaTexto('«' + etiqueta + '»', sexo === 'machos' ? 'los machos declarados' : 'las hembras declaradas', c[sexo], false)); return; }
       const declarado = parseInt(c[sexo], 10);
       if (!Number.isFinite(declarado)) return;
       const repartido = sumaReparto(reparto, sexo);
