@@ -1755,8 +1755,12 @@ const SYNCQ_KEY = "larv4_syncqueue";
 const SYNCQ_MAX = 50;
 /* B (2026-09-24, usuario) · 7 DÍAS, no 24 h, y lo que caduque SE AVISA (_colaAvisaDescartes): a las 24 h se borraba en
    silencio, y el reproductivo —sin copia en el dispositivo— lo perdía sin rastro. Contrapartida aceptada: un envío que
-   llega días después puede pisar una corrección hecha a mano en la hoja entre medias. */
-const SYNCQ_TTL = 7 * 24 * 60 * 60 * 1000;
+   llega días después puede pisar una corrección hecha a mano en la hoja entre medias.
+   2026-11-05 (pauta A8, usuario: «No caduca sola») · YA NO CADUCA. A los 7 días se descartaba con aviso, pero un formulario no tiene otra copia:
+   la ficha se limpió al encolarse y el Historial caducaba con ella. El aviso decía «revísalos» y no quedaba nada que revisar. Sigue intentándolo
+   hasta que llegue o la hoja lo rechace por sus datos; lo único que descarta es el tope de SYNCQ_MAX, que avisa. La contrapartida sigue, y va a
+   más: por eso lo que llega con más de este tiempo se dice. */
+const SYNCQ_VIEJO_MS = 7 * 24 * 60 * 60 * 1000;
 let _flushingQueue = false;
 
 function _loadSyncQueue(){
@@ -2188,10 +2192,10 @@ async function flushSyncQueue(opts){
   _flushingQueue = true;
   try{
     const now = Date.now();
-    q = q.filter(it => it && (now - (it.ts || 0)) < SYNCQ_TTL); // purga vencidos
+    q = q.filter(it => it);
     const remaining = [];
     const _entregados = new Set();   // A (2026-09-24) · los que este vaciado ENTREGÓ, por su identidad (ver el final)
-    let sent = 0, rejected = 0, reconciled = false;
+    let sent = 0, rejected = 0, reconciled = false, viejos = 0;
     // Los rechazos de ENTORNO se cuentan aparte: no son un error del usuario y su
     // envío sigue vivo en la cola. Se guarda un motivo de cada clase para el aviso.
     let enEspera = 0, msgEntorno = "", msgDatos = "";
@@ -2237,12 +2241,13 @@ async function flushSyncQueue(opts){
       const res = await _postOnce(body, finalUrl, _info);
       if(res === "ok"){
         sent++;
+        if((now - (it.ts || 0)) >= SYNCQ_VIEJO_MS) viejos++;
         _entregados.add(_claveCola(it));
         if(_reconcileMark(it.mark)) reconciled = true;   // F3: entregado → marca los registros locales
       } else if(res === "rejected" && _esRechazoDeEntorno(_info.message)){
         // El dato está bien; lo que falta se arregla FUERA (re-desplegar el GAS, poner
         // el token). Se conserva para que el vaciado automático lo entregue solo. La
-        // cola no se atasca: tiene TTL de 7 días y tope de SYNCQ_MAX (los dos, avisados).
+        // cola no se atasca: tiene tope de SYNCQ_MAX, avisado.
         remaining.push(it); _noSalieron.push(it);
         enEspera++; msgEntorno = _info.message || msgEntorno;
       } else if(res === "rejected"){
@@ -2257,19 +2262,17 @@ async function flushSyncQueue(opts){
     /* 🔴 A (2026-09-24) · LA COLA SE RELEE AL TERMINAR. Se escribía la foto del PRINCIPIO menos lo entregado, y con el GAS
        lento un vaciado dura minutos: lo que se encolaba mientras tanto se PERDÍA, y lo que otro envío más nuevo había
        purgado (_purgeQueueMark, _enqueueSync) RESUCITABA para pisar después los datos buenos con los viejos. Ahora sólo
-       se quita lo que ESTE vaciado resolvió —entregado o rechazado por sus datos— y lo caducado; lo demás, como esté.
+       se quita lo que ESTE vaciado resolvió —entregado o rechazado por sus datos—; lo demás, como esté.
        Y lo entregado reconcilia la marca que tenga AHORA: un guardado idéntico que se sumó mientras tanto (_enqueueSync)
        también llegó, y su fila del registro no puede acabar en «⚠ no llegó». */
     const _resueltos = new Set(q.filter(it => remaining.indexOf(it) === -1).map(_claveCola));
-    const _ahora = Date.now();
-    const _leida = _loadSyncQueue().filter(it => it);
-    const _cola = _leida.filter(it => (_ahora - (it.ts || 0)) < SYNCQ_TTL);
-    // B (2026-09-24) · lo que caduca ya no sale en silencio.
-    _colaAvisaDescartes(_leida.filter(it => (_ahora - (it.ts || 0)) >= SYNCQ_TTL), "llevaban 7 días sin poder salir");
+    const _cola = _loadSyncQueue().filter(it => it);
     _cola.forEach(it => { if(_entregados.has(_claveCola(it)) && _reconcileMark(it.mark)) reconciled = true; });
     _saveSyncQueue(_cola.filter(it => !_resueltos.has(_claveCola(it))));
     if(sent > 0 || rejected > 0 || enEspera > 0){
       if(sent > 0)     toast("✅ "+sent+" envío(s) pendiente(s) de la cola completados", "ok", 4000);
+      // pauta A8 · también en el reintento automático: esto no es lo que espera, es lo que acaba de escribirse en la hoja.
+      if(viejos > 0)   toast("⚠️ Llegaron a la hoja "+viejos+" envío(s) de hace más de 7 días: si alguien corrigió esas filas después, quedó lo de entonces. Revísalas.", "warn", 9000);
       // El de ENTORNO no dice «revisa los datos»: los datos están bien y siguen en cola.
       // B · el reintento automático no lo repite cada minuto: lo que espera lo dice el indicador.
       if(enEspera > 0 && !_auto) toast("⏳ "+enEspera+" envío(s) esperando en la cola"+_gasMotivo(msgEntorno)
@@ -10014,10 +10017,25 @@ const MAD_HIST_EDITABLES = { alimentacion:3 };   // las demás, 10
 function _madHistEditables(f){ return MAD_HIST_EDITABLES[f] || 10; }
 function _madHistNombre(f){ const t=TAB_META[f]; return t ? t[0]+" "+t[1] : f; }
 function _madHistPanelKey(id){ return MAD_HIST_PANEL_PRE + id; }
+/* 2026-11-05 (pauta A8) · Lo que sigue en la cola no sale del Historial, por viejo que sea: es desde donde se ve, y se corrige. */
+function _madHistEnCola(){
+  const s=new Set();
+  _loadSyncQueue().forEach(function(it){
+    const m=it && it.mark;
+    if(m && typeof m.kind==="string" && m.kind.indexOf("madlog:")===0 && Array.isArray(m.keys)) m.keys.forEach(function(k){ s.add(String(k)); });
+  });
+  return s;
+}
 function madHistLeer(){
   let l=[]; try{ const v=JSON.parse(localStorage.getItem(MAD_HIST_KEY)||"[]"); if(Array.isArray(v)) l=v; }catch(_){}
   const ahora=Date.now();
-  return l.filter(function(e){ return e && e.id && MAD_HIST_FICHAS.indexOf(e.ficha)!==-1 && (ahora-(e.ts||0)) < MAD_HIST_TTL; });
+  let enCola=null;
+  return l.filter(function(e){
+    if(!e || !e.id || MAD_HIST_FICHAS.indexOf(e.ficha)===-1) return false;
+    if((ahora-(e.ts||0)) < MAD_HIST_TTL) return true;
+    if(!enCola) enCola=_madHistEnCola();
+    return enCola.has(String(e.envio));
+  });
 }
 /* Libera TODAS las copias para Editar (primera estrategia de safeSetItem y de _reclaimSpace): el historial sigue, sin Editar. */
 function _purgeMadHistPaneles(){
@@ -10264,13 +10282,14 @@ function madHistPdf(id){
 /* Salas y Tanques: de sus propios registros del equipo, los enviados dentro del plazo (MAD_HIST_TTL). Salas, una línea por fecha
    (su grilla es la de todas las salas); Tanques, por fecha y sala. */
 function _madHistGrillas(){
-  const out=[], lim=new Date(Date.now()-MAD_HIST_TTL), desde=lim.getFullYear()+"-"+pad(lim.getMonth()+1)+"-"+pad(lim.getDate());
+  const out=[], limMs=Date.now()-MAD_HIST_TTL, lim=new Date(limMs), desde=lim.getFullYear()+"-"+pad(lim.getMonth()+1)+"-"+pad(lim.getDate());
   ["salas","tanques"].forEach(function(f){
     const g={};
     // 2026-10-27 · las zonas cuentan en el día de 🏠 Salas: se editan y se imprimen desde su grilla.
     (f==="salas" ? loadMad(f).concat(loadMad("zonas")) : loadMad(f)).forEach(function(r){
       if(!r || !(r.synced || r.syncedAt) || !r.data) return;
-      const fecha=sanitizeStr(r.data.fecha,10); if(!isValidDate(fecha) || fecha < desde) return;
+      // 2026-11-05 (pauta A8) · La misma regla que la poda (_madSinCaducados): un día viejo enviado hace poco sigue en el equipo, y se lista.
+      const fecha=sanitizeStr(r.data.fecha,10); if(!isValidDate(fecha) || (fecha < desde && (r.syncedAt||0) < limMs)) return;
       const sala=f==="tanques" ? String(r.data.sala||"") : "";
       const k=fecha+"|"+sala;
       if(!g[k]) g[k]={ ficha:f, fecha:fecha, sala:sala, n:0, ts:0 };
@@ -16937,6 +16956,7 @@ function renderMadTanques(){
     </div>
     <div class="fc-b">
       <div class="meta" style="margin-bottom:8px">${salaSel}${fechaInp}</div>
+      ${_madTqDiaQuitado(list, fecha, sala) ? '<div id="mad-tanques-quitado" style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#92400e">⚠️ Lo enviado de este día ya no está en este equipo (se quita a los 7 días), y no se sabe qué partes tiene. Si esa ronda ya se registró, teclearla crea otra fila y el libro resta dos veces: corrígela en la hoja.</div>' : ''}
       <div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#065f46;display:flex;align-items:center;gap:8px">
         <span style="font-size:16px">ℹ️</span>
         <span>Completa lo de ESTA ronda por tanque, no el acumulado del día. Al guardar (💾 o ☁️) el parte se cierra con su hora y la grilla queda limpia para la ronda siguiente. Puedes pegar bloques desde Excel.</span>
@@ -17594,6 +17614,15 @@ function _collectTanquesGrid(salaOverride, fechaOverride){
      · un auto-guardado actualiza el parte ABIERTO, nunca abre otro.
    Vaciar la grilla al cerrar no es estética: es lo que impide que la ronda siguiente se escriba sobre la
    anterior. Lo guardado no se pierde — está en el registro local y en «Registrado desde este dispositivo». */
+/* 2026-11-05 (pauta A8, usuario: «Avisar y preguntar») · ¿ESTE DÍA YA NO ESTÁ EN EL EQUIPO? Lo enviado se quita a los 7 días, y entonces el número de
+   parte vuelve a 1 con otra hora: otra llave en la hoja, otra fila, y el libro resta dos veces. Numerar según la hoja no se puede: el parte se
+   asigna al guardar, muchas veces sin señal. Lo autoguardado no cuenta como saber de ese día: sólo lo enviado o lo cerrado. */
+function _madTqDiaQuitado(list, fecha, sala){
+  if(!isValidDate(fecha) || !sala) return false;
+  const lim=new Date(Date.now()-MAD_RETENCION_MS), desde=lim.getFullYear()+"-"+pad(lim.getMonth()+1)+"-"+pad(lim.getDate());
+  if(fecha >= desde) return false;
+  return !(list || []).some(function(r){ return r && r.data && r.data.fecha===fecha && r.data.sala===sala && (r.synced || r.syncedAt || r.data.cerrado); });
+}
 function _madParteSiguiente(list, fecha, sala){
   let max = 0;
   (list || []).forEach(function(r){
@@ -17732,6 +17761,9 @@ function saveMadTanquesGrid(opts){
      sin fila por el hecho de que el usuario navegara antes de pulsar 💾. */
   const explicito = !silent;
   const fechaDeLaRonda = rows[0] && rows[0].fecha;
+  if(explicito && _madTqDiaQuitado(list, fechaDeLaRonda, sala) && !confirm("⚠ Los partes del " + fechaDeLaRonda + " en " + sala + " ya no están en este equipo (lo enviado se quita a los 7 días)."
+    + " Si esta ronda ya se registró, guardarla crea OTRA fila y el libro resta dos veces: corrígela en la hoja."
+    + "\n\nAceptar = es una ronda nueva: guardarla.\nCancelar = no guardar; lo tecleado sigue en pantalla.")){ opts.cancelado = true; return 0; }
   const abiertoPrevio = _madParteAbierto(list, fechaDeLaRonda, sala);
   const parte = abiertoPrevio || _madParteSiguiente(list, fechaDeLaRonda, sala);
   /* R2 (2026-09-17) · LA HORA ES LA DE CUANDO SE ABRIÓ EL PARTE, y ya no se toca. Entra en la llave del GAS
@@ -17895,6 +17927,7 @@ async function _syncMadTanquesGrid(){
      llegó: la grilla sale de lo guardado, y borraría de la pantalla lo único que hay. */
   const _g = {};
   const sinCopia = saveMadTanquesGrid(_g) === -1 ? _g.lista : null;
+  if(_g.cancelado) return;   // pauta A8: el día ya no está en el equipo, y no quiso guardarla
   const url = gasUrl();
   if(!url){ toast("Configura la URL de Google Apps Script","warn"); openCfg(); return; }
   if(!isValidGasUrl(url)){ toast("URL inválida","err"); return; }

@@ -21,7 +21,7 @@ const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['pickMod', 'enter', 'goBack', 'PINS', 'MAD_MOD', 'MAD_FICHAS', 'madKey', 'loadMad', 'saveMadList', 'renderMadTanques', 'renderMadSalas',
   'saveMadTanquesGrid', 'saveMadSalasGrid', 'syncMadTanquesGrid', 'syncMadSalasGrid', 'madTanquesSalaChange', 'MAD_RETENCION_DIAS', '_madPodarEnviados',
   '_madHistPodar', '_madLimpiezaDeEspacio', '_soltarCopiaMatriz', '_REPRO_CACHE_KEY', '_reproCacheSave', 'MAD_HIST_KEY', 'MAD_HIST_PANEL_PRE',
-  '_madHistGuardar', 'madHistLeer', '_madHistGrillas', 'renderMadHistorial', 'openCfg', 'closeCfg', 'liberarEspacio', '_espacioMedir', 'ESPACIO_TOPE', '_gasVersionLocal', 'safeSetItem', '_madTqConfirmarRepetidas', '_loadSyncQueue', 'MAD_RECOV_KEY', 'loadMadRecovery', '_lastSyncFingerprint', 'selTab', 'goBack', 'madTanquesFechaChange', 'madSalasFechaChange', '_madCommitActive', '_madGridFechaAuto'];
+  '_madHistGuardar', 'madHistLeer', '_madHistGrillas', 'renderMadHistorial', 'openCfg', 'closeCfg', 'liberarEspacio', '_espacioMedir', 'ESPACIO_TOPE', '_gasVersionLocal', 'safeSetItem', '_madTqConfirmarRepetidas', '_loadSyncQueue', 'MAD_RECOV_KEY', 'loadMadRecovery', '_lastSyncFingerprint', 'selTab', 'goBack', 'madTanquesFechaChange', 'madSalasFechaChange', '_madCommitActive', '_madGridFechaAuto', 'madMovGuardar', 'renderMadMovimientos', 'madMovSalaChange', '_loadSyncQueue', 'flushSyncQueue', 'SYNCQ_KEY', '_madTqDiaQuitado'];
 const H = {};
 const avisos = [];
 const envios = [];
@@ -210,7 +210,7 @@ describe('🧹 el 📜 Historial, al mismo plazo', () => {
   });
 
   it('🔴 no se enseña lo caducado de Salas y Tanques, y el panel dice el plazo de verdad', () => {
-    poner('tanques', [rec(hace(8), { syncedAt: Date.now() - DIA }), rec(hace(2), { syncedAt: Date.now() - DIA })]);
+    poner('tanques', [rec(hace(8), { syncedAt: Date.now() - 8 * DIA }), rec(hace(2), { syncedAt: Date.now() - DIA })]);
     expect(H._madHistGrillas().map((g) => g.fecha)).toEqual([hace(2)]);
     H.setVista(H.MAD_MOD, 'historial');
     H.renderMadHistorial();
@@ -740,6 +740,230 @@ describe('🔴 dejar una grilla con lo tecleado sin poder guardarse', () => {
       H.setVista(1, 'calidad');
       expect(H._madCommitActive()).toBe(true);
     });
+  });
+});
+
+/* 2026-11-05 (pauta A8, usuario: «No caduca sola») · Un formulario se limpia al encolarse, y ésa es su única copia: a los 7 días la cola lo
+   descartaba, también el Historial, y el aviso decía «revísalos» sin que quedara nada que revisar. */
+describe('🔴 lo que espera en la cola no caduca', () => {
+  const q = (x) => document.querySelector('#fp-movimientos ' + x);
+  const OK = async (b) => { envios.push(JSON.parse(JSON.stringify(b))); return 'ok'; };
+  const SIN_SENAL = async () => 'retry';
+  const moverFormulario = async () => {
+    H.setVista(H.MAD_MOD, 'movimientos');
+    document.getElementById('fp-movimientos').innerHTML = '';
+    H.renderMadMovimientos();
+    q('.mv-so').value = 'Sala 1'; H.madMovSalaChange(q('.mv-so')); q('.mv-to').value = '3';
+    q('.mv-sd').value = 'Sala 2'; H.madMovSalaChange(q('.mv-sd')); q('.mv-td').value = '16';
+    q('.mv-machos').value = '5'; q('.mv-hembras').value = '5';
+    await H.madMovGuardar();
+  };
+  const envejecer = (dias) => {
+    const c = JSON.parse(almacen.getItem(H.SYNCQ_KEY) || '[]');
+    c.forEach((i) => { i.ts = Date.now() - dias * DIA; });
+    almacen.setItem(H.SYNCQ_KEY, JSON.stringify(c));
+    const l = JSON.parse(almacen.getItem(H.MAD_HIST_KEY) || '[]');
+    l.forEach((e) => { e.ts = Date.now() - dias * DIA; });
+    almacen.setItem(H.MAD_HIST_KEY, JSON.stringify(l));
+  };
+  beforeEach(async () => {
+    vi.useRealTimers();
+    H.setPostOnce(SIN_SENAL);
+    await moverFormulario();
+    expect(H._loadSyncQueue().length).toBe(1);
+    expect(q('.mv-machos').value, 'el formulario ya se limpió: la cola es su única copia').toBe('');
+    H.setPostOnce(OK);
+    envios.length = 0;
+    avisos.length = 0;
+  });
+  afterEach(() => { H.setPostOnce(OK); });
+
+  it('🔴 con 8 días: llega a la hoja, y se dice que era viejo', async () => {
+    envejecer(8);
+    await H.flushSyncQueue();
+    expect(envios).toHaveLength(1);
+    expect(H._loadSyncQueue()).toEqual([]);
+    expect(avisos.join(' ')).not.toContain('descartaron');
+    expect(avisos.join(' ')).toContain('más de 7 días');
+  });
+
+  it('🔴 también lo dice el reintento automático, que calla lo que espera', async () => {
+    envejecer(8);
+    await H.flushSyncQueue({ automatico: true });
+    expect(envios).toHaveLength(1);
+    expect(avisos.join(' ')).toContain('más de 7 días');
+  });
+
+  it('🔴 con 30 días y sin señal: sigue ahí, y en el Historial', async () => {
+    envejecer(30);
+    H.setPostOnce(SIN_SENAL);
+    await H.flushSyncQueue();
+    expect(H._loadSyncQueue().length).toBe(1);
+    expect(avisos.join(' ')).not.toContain('descartaron');
+    expect(H.madHistLeer().filter((e) => e.ficha === 'movimientos').length, 'el Historial lo conserva mientras espera').toBe(1);
+  });
+
+  it('🔴 en cuanto llega, el Historial vuelve a su plazo', async () => {
+    envejecer(8);
+    expect(H.madHistLeer().length).toBe(1);
+    await H.flushSyncQueue();
+    expect(H.madHistLeer()).toEqual([]);
+  });
+
+  it('🔵 lo reciente no avisa de nada', async () => {
+    await H.flushSyncQueue();
+    expect(envios).toHaveLength(1);
+    expect(avisos.join(' ')).not.toContain('más de 7 días');
+  });
+
+  it('🔴 lo de otros envíos del Historial sigue con su plazo', async () => {
+    envejecer(8);
+    const l = JSON.parse(almacen.getItem(H.MAD_HIST_KEY));
+    l.push({ ...l[0], id: 'otro', envio: 'no-esta-en-cola' });
+    almacen.setItem(H.MAD_HIST_KEY, JSON.stringify(l));
+    expect(H.madHistLeer().map((e) => e.id)).not.toContain('otro');
+    expect(H.madHistLeer().length).toBe(1);
+  });
+
+  it('🔴 una marca de otra clase con la misma llave no lo retiene en el Historial', () => {
+    envejecer(8);
+    const envioDe = JSON.parse(almacen.getItem(H.MAD_HIST_KEY))[0].envio;
+    const c = JSON.parse(almacen.getItem(H.SYNCQ_KEY));
+    c[0].mark = { kind: 'ast', keys: [envioDe] };
+    almacen.setItem(H.SYNCQ_KEY, JSON.stringify(c));
+    expect(H.madHistLeer()).toEqual([]);
+  });
+});
+
+describe('🔴 el Historial lista lo que la poda deja en el equipo', () => {
+  const parte = (fecha, syncedAt) => rec(fecha, { syncedAt, data: { fecha, sala: 'Sala 2', tanque: 16, parte: 1, hora: '08:00', cerrado: 1, hembras_muertas: 2 } });
+  it('🔴 un parte de hace 10 días, enviado ayer, sale', () => {
+    poner('tanques', [parte(hace(10), Date.now() - DIA)]);
+    H._madLimpiezaDeEspacio();
+    expect(H.loadMad('tanques').length).toBe(1);
+    expect(H._madHistGrillas().filter((g) => g.ficha === 'tanques').length).toBe(1);
+  });
+  it('🔵 uno de hace 10 días, enviado hace 9, no', () => {
+    poner('tanques', [parte(hace(10), Date.now() - 9 * DIA)]);
+    expect(H._madHistGrillas().filter((g) => g.ficha === 'tanques').length).toBe(0);
+  });
+  it('🔵 uno reciente, sí', () => {
+    poner('tanques', [parte(hace(2), Date.now() - 2 * DIA)]);
+    expect(H._madHistGrillas().filter((g) => g.ficha === 'tanques').length).toBe(1);
+  });
+});
+
+/* 2026-11-05 (pauta A8, usuario: «Avisar y preguntar») · Pasados 7 días, lo enviado de ese día ya no está en el equipo: teclearlo volvía al parte 1
+   con otra hora, y eso es otra llave: otra fila, que el libro resta dos veces. */
+describe('🔴 un día de Tanques ya quitado del equipo', () => {
+  let preguntas;
+  let respuesta;
+  beforeEach(() => {
+    preguntas = [];
+    respuesta = false;
+    globalThis.confirm = (t) => { preguntas.push(String(t)); return respuesta; };
+  });
+  const teclear = (el, v) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
+  const irADia = (fecha) => {
+    irASala('Sala 2');
+    const el = document.getElementById('mad-tanques-fecha');
+    el.value = fecha;
+    H.madTanquesFechaChange();
+  };
+  const banner = () => document.getElementById('mad-tanques-quitado');
+  const deLaSala = () => H.loadMad('tanques').filter((r) => r.data.sala === 'Sala 2');
+
+  it('🔴 lo dice en la grilla', () => {
+    irADia(hace(10));
+    expect(banner()).toBeTruthy();
+    expect(banner().textContent).toContain('7 días');
+    expect(banner().textContent).toContain('dos veces');
+  });
+
+  it('🔵 hoy, o hace 6 días, ni lo dice ni pregunta', () => {
+    irADia(hace(6));
+    expect(banner()).toBeNull();
+    teclear(celda(), '4');
+    expect(H.saveMadTanquesGrid()).toBeGreaterThan(0);
+    expect(preguntas).toEqual([]);
+  });
+
+  it('🔵 si el equipo aún tiene lo enviado de ese día, ni lo dice ni pregunta: los partes siguen su número', () => {
+    const f = hace(10);
+    poner('tanques', [rec(f, { syncedAt: Date.now() - DIA, data: { fecha: f, sala: 'Sala 2', tanque: 99, parte: 3, hora: '21:00', cerrado: 1, hembras_muertas: 2 } })]);
+    irADia(f);
+    expect(banner()).toBeNull();
+    teclear(celda(), '4');
+    expect(H.saveMadTanquesGrid()).toBeGreaterThan(0);
+    expect(preguntas).toEqual([]);
+    expect(deLaSala().find((r) => String(r.data.parte) === '4')).toBeTruthy();
+  });
+
+  it('🔵 otra sala de ese día no cuenta: en ésta no se sabe', () => {
+    const f = hace(10);
+    poner('tanques', [rec(f, { syncedAt: Date.now() - DIA, data: { fecha: f, sala: 'Sala 3', tanque: 99, parte: 3, hora: '21:00', cerrado: 1, hembras_muertas: 2 } })]);
+    irADia(f);
+    expect(banner()).toBeTruthy();
+  });
+
+  it('🔴 💾, «Cancelar»: no se guarda, y lo tecleado sigue', () => {
+    irADia(hace(10));
+    teclear(celda(), '4');
+    H.saveMadTanquesGrid();
+    expect(preguntas).toHaveLength(1);
+    expect(preguntas[0]).toContain('OTRA fila');
+    expect(preguntas[0]).toContain(hace(10));
+    expect(deLaSala()).toEqual([]);
+    expect(celda().value).toBe('4');
+  });
+
+  it('🔴 💾, «Aceptar»: es una ronda nueva, y la siguiente ya no pregunta', () => {
+    irADia(hace(10));
+    teclear(celda(), '4');
+    respuesta = true;
+    expect(H.saveMadTanquesGrid()).toBeGreaterThan(0);
+    expect(deLaSala().length).toBe(1);
+    expect(preguntas).toHaveLength(1);
+    teclear(celda(), '5');
+    expect(H.saveMadTanquesGrid()).toBeGreaterThan(0);
+    expect(preguntas).toHaveLength(1);
+  });
+
+  it('🔴 lo autoguardado no cuenta como saberlo: el 💾 de después también pregunta', () => {
+    irADia(hace(10));
+    teclear(celda(), '4');
+    expect(H.saveMadTanquesGrid({ silent: true })).toBeGreaterThan(0);
+    expect(preguntas, 'el autoguardado no pregunta').toEqual([]);
+    teclear(celda(), '5');
+    H.saveMadTanquesGrid();
+    expect(preguntas).toHaveLength(1);
+  });
+
+  it('🔴 ☁️, «Cancelar»: no sale nada, ni siquiera lo que estuviera pendiente de otro día', async () => {
+    const f = hace(2);
+    poner('tanques', [rec(f, { synced: false, syncedAt: null, data: { fecha: f, sala: 'Sala 1', tanque: 1, parte: 1, hora: '08:00', cerrado: 1, machos_muertos: 1 } })]);
+    irADia(hace(10));
+    teclear(celda(), '4');
+    await H.syncMadTanquesGrid();
+    expect(preguntas).toHaveLength(1);
+    expect(envios).toHaveLength(0);
+    expect(celda().value).toBe('4');
+  });
+
+  it('🔴 ☁️, «Aceptar»: sale', async () => {
+    irADia(hace(10));
+    teclear(celda(), '4');
+    respuesta = true;
+    await H.syncMadTanquesGrid();
+    expect(envios).toHaveLength(1);
+  });
+
+  it('`_madTqDiaQuitado`: sin fecha o sin sala no hay nada que decir', () => {
+    expect(H._madTqDiaQuitado([], '', 'Sala 2')).toBe(false);
+    expect(H._madTqDiaQuitado([], hace(10), '')).toBe(false);
+    expect(H._madTqDiaQuitado([], hace(10), 'Sala 2')).toBe(true);
+    expect(H._madTqDiaQuitado([], hace(7), 'Sala 2'), 'el borde: de hace 7 días aún no se quita').toBe(false);
+    expect(H._madTqDiaQuitado([], hace(8), 'Sala 2')).toBe(true);
   });
 });
 

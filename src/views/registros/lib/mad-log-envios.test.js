@@ -130,7 +130,7 @@ describe('Registro de envíos · cada entrada dice el estado de SU envío', () =
 
   /* 🔄 2026-09-24 (usuario, punto 2a · B) · LA REGLA CAMBIÓ: el plazo de la cola pasa de 24 h a 7 DÍAS y lo que caduca se
      AVISA. Esta prueba exigía la caducidad a las 25 h; ahora a las 25 h el envío sigue en la cola y se entrega. */
-  it('🔴 si CADUCA en la cola (7 días) dice «no llegó», NO «enviado» (antes mentía a favor), y se AVISA', async () => {
+  it('🔴 con más de 7 días ya no caduca (pauta A8): se entrega, dice «enviado» y avisa de que era viejo', async () => {
     const avisos = [];
     H.setToast((m, t) => avisos.push({ m: String(m), t }));
     try {
@@ -138,12 +138,20 @@ describe('Registro de envíos · cada entrada dice el estado de SU envío', () =
       ponCola(cola().map((it) => ({ ...it, ts: Date.now() - 7 * 24 * 3600e3 - 3600e3 })));
       await H.flushSyncQueue();
       expect(cola()).toHaveLength(0);
-      expect(envios).toHaveLength(0);
-      expect(estados(H.madTratLogHTML())).toEqual(['⚠ no llegó']);
-      expect(avisos.some((a) => a.t === 'err' && a.m.includes(H.MAD_TRAT_SHEET) && a.m.includes('7 días')), 'ya no sale en silencio').toBe(true);
+      expect(envios).toHaveLength(1);
+      expect(estados(H.madTratLogHTML())).toEqual(['✅ enviado']);
+      expect(avisos.some((a) => a.m.includes('más de 7 días'))).toBe(true);
     } finally {
       H.setToast(() => {});
     }
+  });
+
+  it('🔴 si sale de la cola sin llegar (el tope de 50) dice «no llegó», NO «enviado» (antes mentía a favor)', async () => {
+    await tratEnCola();
+    ponCola([]);
+    await H.flushSyncQueue();
+    expect(envios).toHaveLength(0);
+    expect(estados(H.madTratLogHTML())).toEqual(['⚠ no llegó']);
   });
 
   it('🔴 a las 25 h ya NO caduca: se entrega (hasta el 2026-09-24 se borraba en silencio)', async () => {

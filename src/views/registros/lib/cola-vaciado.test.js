@@ -17,7 +17,7 @@ import { join } from 'node:path';
 
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
-const EXPORTAR = ['flushSyncQueue', '_enqueueSync', '_purgeQueueMark', 'madDesLogLeer', 'MAD_DES_LOG_KEY', 'SYNCQ_TTL'];
+const EXPORTAR = ['flushSyncQueue', '_enqueueSync', '_purgeQueueMark', 'madDesLogLeer', 'MAD_DES_LOG_KEY', 'SYNCQ_VIEJO_MS'];
 const H = {};
 const COLA = 'larv4_syncqueue';
 let posts = [];      // cada POST de la cola espera aquí a que la prueba lo conteste
@@ -157,11 +157,11 @@ describe('Cola · qué sale y qué se queda al terminar', () => {
     expect(cola().map((i) => i.payload.rows[0][0])).toEqual([2]);
   });
 
-  it('🔴 lo caducado (24 h) sigue saliendo, también si se encoló antes y nadie lo tocó', async () => {
-    pon([envio(1, { ts: Date.now() - H.SYNCQ_TTL - 1000 }), envio(2)]);
+  it('🔴 lo viejo ya no caduca (pauta A8): sigue en la cola, sin descartarse, aunque no salga', async () => {
+    pon([envio(1, { ts: Date.now() - H.SYNCQ_VIEJO_MS - 1000 }), envio(2)]);
     H.setVerify(async () => false);
     H.setPostOnce(async () => 'retry');
     await H.flushSyncQueue();
-    expect(cola().map((i) => i.reqId)).toEqual(['r2']);
+    expect(cola().map((i) => i.reqId)).toEqual(['r1', 'r2']);
   });
 });
