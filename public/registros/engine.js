@@ -13703,7 +13703,7 @@ function renderMadMortDesove(){
     + '<div class="fc-h"><div class="fc-t">📋 Maduración · Inf. Supervisor</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
     + '<div class="fc-b">'
     +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:flex-start;gap:8px">'
-    +     '<span style="font-size:16px">ℹ️</span><span>Por <b>lote</b>. <b>📉 Mortalidad de hembras:</b> cuántas entran a los tanques de <b>desove</b> y de <b>recuperación</b> y cuántas mueren; el % se calcula solo y las muertas <b>se descuentan del saldo</b> del lote. <b>🔬 Revisión de nauplios:</b> Deformidad, Actividad, Hongos, Salinidad y Temperatura en cada revisión (Entrada, Lavado, Lavado 2 y Postlavado); rellena sólo las revisiones hechas.</span>'
+    +     '<span style="font-size:16px">ℹ️</span><span>Por <b>lote</b>. <b>📉 Mortalidad de hembras:</b> cuántas entran a los tanques de <b>desove</b> y de <b>recuperación</b> y cuántas mueren; el % se calcula solo y las muertas <b>se descuentan del saldo</b> del lote. <b>🔬 Revisión de nauplios:</b> Deformidad, Actividad, Hongos, Salinidad y Temperatura en cada revisión (Entrada, Lavado, Lavado 2 y Postlavado): lo elegido en Entrada se copia a las demás, así que <b>vacía las revisiones que no se hayan hecho</b>.</span>'
     +   '</div>'
     +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
     +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha<input type="date" id="mm-fecha" value="'+escapeHtml(todayStr)+'" onchange="madBorrFechaChange(&quot;mortdes&quot;)" style="'+_MAD_ING_INP+'"></label>'
@@ -31122,13 +31122,19 @@ function _espacioPintar(){
 function liberarEspacio(){
   const antes = _espacioMedir().total;
   const r = _madLimpiezaDeEspacio();
-  const copia = _soltarCopiaMatriz();
+  /* 2026-11-05 (pauta A20, usuario: «Preguntar») · La copia de la MATRIZ, sólo si se acepta: sin ella y sin red, el reproductivo no registra
+     traslados ni eventos, porque no sabe qué hembra es cada microchip. Lo antiguo ya salió, se conteste lo que se conteste. Cuando un guardado
+     no cabe, se sigue soltando sola (_lsSet). */
+  const tam = _espacioMedir().partes.matriz;
+  const copia = tam && confirm("¿Borrar también la copia de la MATRIZ? Ocupa el " + (_espacioPct(tam) || "menos de 1") + " % del espacio.\n\n"
+    + "Con red se vuelve a bajar sola. Sin red, hasta entonces, el reproductivo no podrá registrar traslados ni eventos.\n\n"
+    + "Aceptar: borrarla. Cancelar: dejarla.") ? _soltarCopiaMatriz() : null;
   const hecho = [];
   if(r.grillas) hecho.push(r.grillas + " registro(s) enviados de Salas, Tanques y Zonas");
   if(r.historial) hecho.push(r.historial + " envío(s) del Historial");
   if(copia) hecho.push(copia + " (se vuelve a bajar cuando haga falta)");
   _espacioPintar();
-  if(!hecho.length){ toast("🧹 No hay nada antiguo que liberar: lo que ocupa el espacio es reciente o aún no se envió.","info",5000); return; }
+  if(!hecho.length){ toast("🧹 No hay nada antiguo que liberar: lo que ocupa el espacio es reciente o aún no se envió" + (tam ? ", y la copia de la MATRIZ se queda." : "."),"info",5000); return; }
   toast("🧹 Liberado el " + Math.max(1, _espacioPct(antes - _espacioMedir().total)) + " % del espacio: " + hecho.join(" · ") + ".","ok",6000);
   try{ updateDots(); updateSyncUI(); }catch(_){}
 }

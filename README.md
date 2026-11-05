@@ -1424,7 +1424,8 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   dejaron de poder guardar. Ahora un registro de esas tres listas se va del equipo cuando **ya se envió, su fecha es de hace
   más de 7 días y se envió hace más de 7 días**; lo pendiente no se borra nunca. En el libro sigue: en el equipo se pierde
   abrirlo con ✏️ y su PDF, y una corrección posterior se hace en la hoja. Corre sola al entrar en Maduración y al faltar
-  espacio. ⚙ Config enseña cuánto se usa y en qué, y **🧹 Liberar espacio** lo hace a mano. Si falta espacio, lo primero que se
+  espacio. ⚙ Config enseña cuánto se usa y en qué, y **🧹 Liberar espacio** lo hace a mano; la copia de la MATRIZ, sólo si se
+  acepta (2026-11-05, usuario: «Preguntar»), porque sin ella y sin red el reproductivo no registra traslados ni eventos. Si falta espacio, lo primero que se
   suelta es la copia de la MATRIZ (`larv4_mad_matriz`, ~16 %), que se vuelve a bajar; guardarla, en cambio, nunca borra nada
   para hacerse sitio. Si aun así no cabe, 💾 lo dice y **lo tecleado sigue en pantalla**: antes la grilla se repintaba desde
   lo guardado y lo borraba. La regla la vigilan `mad-espacio.test.js` y su banco `mutar-mad-espacio`.

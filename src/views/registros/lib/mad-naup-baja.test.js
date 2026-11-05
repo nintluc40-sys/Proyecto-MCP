@@ -71,6 +71,18 @@ beforeEach(() => {
   tarjeta().querySelector('.mm-cg').value = 'CG-1';
 });
 
+/* 2026-11-05 (pauta A20) · el recuadro de arriba decía «rellena sólo las revisiones hechas», y con la bajada eso ya no basta: quien se fiaba
+   de él enviaba cuatro revisiones habiendo hecho una. */
+describe('🔬 el recuadro de arriba dice lo mismo que la ficha', () => {
+  const recuadro = () => document.querySelector('#fp-mortdes .fc-b > div').textContent;
+  it('🔴 dice que lo de Entrada se copia y que hay que vaciar lo no hecho', () => {
+    expect(recuadro()).toContain('Revisión de nauplios');
+    expect(recuadro()).toContain('lo elegido en Entrada se copia a las demás');
+    expect(recuadro()).toContain('vacía las revisiones que no se hayan hecho');
+    expect(recuadro()).not.toContain('rellena sólo las revisiones hechas');
+  });
+});
+
 describe('🔬 lo elegido en Entrada baja', () => {
   VARIABLES.forEach(([col, a]) => {
     it(`🔴 ${col}: baja a las otras tres, y no se mete en ninguna otra columna`, () => {

@@ -1101,9 +1101,71 @@ describe('🧹 ⚙ Config: el indicador y el botón', () => {
     expect(avisos.at(-1)).toContain('Liberado el 30 %');
   });
 
+  /* 2026-11-05 (pauta A20, usuario: «Preguntar») · Sin la copia y sin red, el reproductivo no registra traslados ni eventos: no sabe qué
+     hembra es cada microchip. El botón ya no la suelta sin preguntar. Cuando un guardado no cabe, se suelta sola, como antes. */
+  const preguntas = [];
+  const responder = (si) => { preguntas.length = 0; globalThis.confirm = (t) => { preguntas.push(String(t)); return si; }; };
+
+  it('🔴 con la copia, pregunta antes y dice lo que se pierde sin red', () => {
+    copiaMatriz(Math.round(H.ESPACIO_TOPE * 0.3));
+    responder(true);
+    H.liberarEspacio();
+    expect(preguntas).toHaveLength(1);
+    expect(preguntas[0]).toContain('copia de la MATRIZ');
+    expect(preguntas[0]).toContain('30 %');
+    expect(preguntas[0]).toMatch(/sin red/i);
+    expect(preguntas[0]).toContain('traslados');
+    expect(preguntas[0]).toContain('eventos');
+    expect(almacen.getItem(H._REPRO_CACHE_KEY)).toBeNull();
+  });
+
+  it('🔴 «no»: la copia se queda; lo antiguo se quita igual y el aviso lo dice', () => {
+    const pend = rec(hace(30), { synced: false });
+    poner('tanques', [rec(hace(30)), pend]);
+    copiaMatriz(1000);
+    responder(false);
+    H.liberarEspacio();
+    expect(almacen.getItem(H._REPRO_CACHE_KEY)).not.toBeNull();
+    expect(ids('tanques')).toEqual([pend.id]);
+    expect(avisos.at(-1)).toContain('1 registro(s) enviados');
+    expect(avisos.at(-1)).not.toContain('copia de la MATRIZ (se vuelve');
+  });
+
+  it('🔴 «no» y nada antiguo: lo dice, sin decir que la copia se fue', () => {
+    copiaMatriz(1000);
+    responder(false);
+    H.liberarEspacio();
+    expect(almacen.getItem(H._REPRO_CACHE_KEY)).not.toBeNull();
+    expect(avisos.at(-1)).toContain('No hay nada antiguo que liberar');
+    expect(avisos.at(-1)).toContain('la copia de la MATRIZ se queda');
+  });
+
+  it('🔴 sin copia, no pregunta', () => {
+    poner('tanques', [rec(hace(30))]);
+    responder(true);
+    H.liberarEspacio();
+    expect(preguntas).toHaveLength(0);
+    expect(avisos.at(-1)).toContain('1 registro(s) enviados');
+  });
+
+  it('🔴 lo antiguo se quita antes de preguntar: lo que diga sobre la copia no lo retiene', () => {
+    poner('tanques', [rec(hace(30))]);
+    copiaMatriz(1000);
+    globalThis.confirm = () => { preguntas.push(ids('tanques').length); return false; };
+    preguntas.length = 0;
+    H.liberarEspacio();
+    expect(preguntas, 'al preguntar ya se había quitado lo antiguo').toEqual([0]);
+  });
+
   it('sin nada que quitar lo dice, en vez de presumir de haber liberado', () => {
     H.liberarEspacio();
     expect(avisos.at(-1)).toContain('No hay nada antiguo que liberar');
+    expect(avisos.at(-1)).not.toContain('MATRIZ');
+  });
+
+  it('🔴 el botón dice que la copia sólo se borra si se acepta', () => {
+    const b = readFileSync(SHELL, 'utf8').split('\n').find((l) => l.includes('onclick="liberarEspacio()"'));
+    expect(b).toContain('si lo aceptas');
   });
 
   it('el botón está en el panel', () => {
