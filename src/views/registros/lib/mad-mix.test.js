@@ -14,14 +14,15 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { armarMix, esMix, lotesDeMix, buildDesoveRows, MAD_DESOVE_HEADERS } from './ficha-maduracion-desoves.schema.js';
+import { armarMix, esMix, lotesDeMix, buildDesoveRows, MAD_DESOVE_HEADERS, normLote, textoMal, validarDesove } from './ficha-maduracion-desoves.schema.js';
+import { validarMort, mortRowId } from './ficha-maduracion-mortdesove.schema.js';
 import { construirLibro } from './mad-libro.js';
 
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['madDesArmarMix', 'madLibroLotesDeMix', 'madConstruirLibro', 'madDesReiniciar', 'madDesAddCard', 'madDesCargar', 'madDesCargarElige',
   'madDesMixAbrir', 'madDesMixAplicar', 'madDesMixVolver', 'madDesCollect', 'madDesValidar', 'madDesBuildRows', 'MAD_LIBRO_SHEETS', 'madMortReiniciar', 'madMortCollect',
-  'madMortBuildRows', 'madDesNormCG'];
+  'madMortBuildRows', 'madDesNormCG', 'madDesNormLote', 'madDesTextoMal', 'madMortValidar'];
 const H = {};
 const avisos = [];
 
@@ -332,5 +333,84 @@ describe('🔀 📥 Cargar en la ficha', () => {
     const fila = H.madDesBuildRows({ ...m, fecha: FECHA })[0];
     expect(fila.slice(0, 3)).toEqual([FECHA, 'MIX(XA,XB)', 'CG-1/CG-3']);
     expect(H.madDesValidar({ ...m, fecha: FECHA }).errores.filter((e) => e.includes('lote') || e.includes('código'))).toEqual([]);
+  });
+});
+
+/* A17 (2026-11-04, usuario: «Ordenarlo solo; si está mal, error», «No dejar guardar y explicarlo») · lo que se escribe a mano o no cabe. */
+describe('🔀 A17 · un MIX a mano, y lo que no cabe', () => {
+  const des = (o) => ({ fecha: FECHA, desoves: [{ lote: 'BN', codigoGenetico: 'CA', piscina: '556', desoves: 1, huevos: 10, ...o }] });
+  const mort = (o) => ({ fecha: FECHA, lotes: [{ lote: 'BN', codigoGenetico: 'CA', desove: { entran: 10, muertas: 1 }, recuperacion: {}, ...o }] });
+
+  const NOMBRES = [['mix(bo, bn)', 'MIX(BN,BO)'], ['MIX(BO,BN)', 'MIX(BN,BO)'], [' mix ( bn , bo ) ', 'MIX(BN,BO)'], ['MIX(BQ,BN,BO)', 'MIX(BN,BO,BQ)'], ['MIX(BO,BN,BO)', 'MIX(BN,BO)'],
+    ['MIX(BN,BN)', 'BN'], ['MIX(BN)', 'BN'], ['MIX(BN,)', 'BN'], ['bn', 'BN'], ['MIX', 'MIX'], ['MIX OLF', 'MIXOLF'], ['MIXTO', 'MIXTO'], ['MIX(BN,BO', 'MIX(BN,BO'], ['', '']];
+  it.each(NOMBRES)('🔴 «%s» queda «%s», en el motor y en el esquema', (escrito, queda) => {
+    expect(normLote(escrito)).toBe(queda);
+    expect(H.madDesNormLote(escrito)).toBe(queda);
+  });
+  it('🔴 lo escrito a mano y lo de 📥 Cargar son la MISMA llave', () => {
+    const armado = armarMix([{ lote: 'BO', codigoGenetico: 'CB', piscina: '2' }, { lote: 'BN', codigoGenetico: 'CA', piscina: '1' }]).lote;
+    const fila = (lote) => buildDesoveRows(des({ lote }))[0][MAD_DESOVE_HEADERS.indexOf('Lote')];
+    expect(fila('mix(bo, bn)')).toBe(armado);
+    expect(H.madDesBuildRows(des({ lote: 'mix(bo, bn)' }))[0][MAD_DESOVE_HEADERS.indexOf('Lote')]).toBe(armado);
+    expect(mortRowId(FECHA, 'mix(bo, bn)', 'CA', 'Desove')).toBe(mortRowId(FECHA, armado, 'CA', 'Desove'));
+  });
+  it('🔴 dos veces el mismo lote no es un MIX: se guarda como ese lote', () => {
+    expect(buildDesoveRows(des({ lote: 'MIX(BN,BN)' }))[0][MAD_DESOVE_HEADERS.indexOf('Lote')]).toBe('BN');
+  });
+  it('leer sigue siendo leer: `esMix` y `lotesDeMix` no reordenan, como el libro', () => {
+    expect(lotesDeMix('MIX(BO,BN)')).toEqual(['BO', 'BN']);
+    expect(H.madLibroLotesDeMix('MIX(BO,BN)')).toEqual(['BO', 'BN']);
+  });
+
+  const MALOS = ['MIX(BN,BO', 'mix(bn,bo', 'MIX()', 'MIX(,)', 'MIX(BN,BO)X', 'MIX(LA,LB,LC,LD,LE,LF,LG,LH,LI,LJ,LK,LL,LM)'];
+  it.each(MALOS)('🔴 «%s» no es un MIX válido: error, y no se confunde con un lote', (lote) => {
+    const e = validarDesove(des({ lote })).errores;
+    expect(e).toHaveLength(1);
+    expect(e[0]).toContain('no es un MIX válido');
+    expect(H.madDesValidar(des({ lote }))).toEqual(validarDesove(des({ lote })));
+    expect(validarMort(mort({ lote })).errores[0]).toContain('no es un MIX válido');
+    expect(H.madMortValidar(mort({ lote }))).toEqual(validarMort(mort({ lote })));
+  });
+  it('🔴 lo que está bien pasa, también en el límite de los 40', () => {
+    const justo = 'MIX(LA,LB,LC,LD,LE,LF,LG,LH,LI,LJ,LK,L1)';
+    expect(justo).toHaveLength(40);
+    ['MIX(BN,BO)', 'mix(bo, bn)', 'MIX(BN,BN)', justo, 'BN', 'MIXTO'].forEach((lote) => {
+      expect(textoMal({ lote }), lote).toEqual([]);
+      expect(H.madDesTextoMal({ lote }), lote).toEqual([]);
+    });
+  });
+  it('🔴 un código o una piscina que no caben: error con su largo, en las dos copias; en el tope, no', () => {
+    const c = (n) => 'C'.repeat(n);
+    expect(validarDesove(des({ codigoGenetico: c(201) })).errores[0]).toBe('El código genético de «BN» no cabe: tiene 201 caracteres y el tope es 200.');
+    expect(validarDesove(des({ piscina: c(61) })).errores[0]).toBe('La piscina de «BN» no cabe: tiene 61 caracteres y el tope es 60.');
+    expect(textoMal({ lote: 'BN', codigoGenetico: c(200), piscina: c(60) })).toEqual([]);
+    expect(textoMal({ codigoGenetico: c(201) })[0]).toContain('«este registro»');
+    for (const o of [{ codigoGenetico: c(201) }, { piscina: c(61) }, { codigoGenetico: c(201), piscina: c(61) }]) {
+      expect(H.madDesValidar(des(o))).toEqual(validarDesove(des(o)));
+      expect(H.madMortValidar(mort(o))).toEqual(validarMort(mort(o)));
+    }
+    expect(validarMort(mort({ piscina: c(61) })).errores[0]).toContain('no cabe');
+    expect(validarDesove(des({ codigoGenetico: c(201), piscina: c(61) })).errores).toHaveLength(2);
+  });
+  it('🔴 📥 Cargar: si sus códigos o sus piscinas no caben, no rellena nada y lo dice', async () => {
+    const largo = (i) => 'X'.repeat(70) + i;
+    HOJAS = { [H.MAD_LIBRO_SHEETS.ingreso]: [0, 1, 2].map((i) => ({ ...ING('2026-01-01', 'Q' + i, largo(i), 'Sala 2', 16 + i, 10), 'Piscina Broodstock': String(i), Grupo: '' })) };
+    globalThis.fetch = async (url) => {
+      const hoja = new URL(String(url)).searchParams.get('sheet');
+      return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, headers: [], rows: HOJAS[hoja] || [] }) };
+    };
+    localStorage.clear();
+    H.olvidarLibro();
+    H.madDesReiniciar();
+    avisos.length = 0;
+    document.getElementById('md-fecha').value = FECHA;
+    const card = document.querySelector('#md-cards .md-des');
+    await H.madDesCargar(card.querySelector('.md-cargar-btn'));
+    const caja = card.querySelector('.md-cargar');
+    H.madDesMixAbrir(caja.querySelector('.md-mix-btn'));
+    caja.querySelectorAll('.md-mix-chk').forEach((c) => { c.checked = true; });
+    H.madDesMixAplicar(caja.querySelector('.md-mix-aplicar'));
+    expect(card.querySelector('.md-lote').value).toBe('');
+    expect(avisos.at(-1)).toContain('no caben');
   });
 });

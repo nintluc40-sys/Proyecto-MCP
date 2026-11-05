@@ -156,9 +156,32 @@ export function aMiles(v) {
 
 /** Normaliza como el resto de Maduración: dos grafías del mismo valor parten los filtros
  *  y, aquí, producirían DOS filas para el mismo desove. */
-export const normLote = (s) => sanitizeStr(s, 40).toUpperCase().replace(/\s+/g, '');
+export const normLote = (s) => mixCanonico(sanitizeStr(s, 40).toUpperCase().replace(/\s+/g, ''));
+/* A17 (2026-11-04, usuario: «Ordenarlo solo; si está mal, error») · un MIX escrito a mano: «mix(bo, bn)» es MIX(BN,BO), la misma llave que el de 📥 Cargar;
+   y dos veces el mismo lote no es un MIX (decisión del 03-11), queda ese lote. Gemelo: `_madDesMixCanon`, en el motor. */
+function mixCanonico(l) {
+  const m = /^MIX\((.+)\)$/.exec(l);
+  if (!m) return l;
+  const lotes = [...new Set(m[1].split(',').filter(Boolean))].sort();
+  return lotes.length > 1 ? 'MIX(' + lotes.join(',') + ')' : (lotes[0] || l);
+}
+export const CG_MAX = 200;
+export const PISCINA_MAX = 60;
+/** A17 · lo que se perdería sin aviso al guardar: un MIX que no cierra o no cabe dejaría de ser un MIX, y un código o una piscina se cortarían
+ *  (el código va en la llave). Devuelve los errores. Gemelo: `madDesTextoMal`, en el motor. */
+export function textoMal(x) {
+  const c = (v) => String(v === null || v === undefined ? '' : v);
+  const r = [];
+  const lote = c((x || {}).lote).toUpperCase().replace(/\s+/g, '');
+  const cg = c((x || {}).codigoGenetico).trim();
+  const pis = c((x || {}).piscina).trim();
+  if (lote.indexOf('MIX(') === 0 && (lote.length > 40 || !/^MIX\(.*[^,()].*\)$/.test(lote))) r.push('«' + lote.slice(0, 60) + '» no es un MIX válido: se escribe MIX(BN,BO), bien cerrado y en 40 caracteres como mucho. Elígelo con 📥 Cargar.');
+  if (cg.length > CG_MAX) r.push('El código genético de «' + (lote.slice(0, 40) || 'este registro') + '» no cabe: tiene ' + cg.length + ' caracteres y el tope es ' + CG_MAX + '.');
+  if (pis.length > PISCINA_MAX) r.push('La piscina de «' + (lote.slice(0, 40) || 'este registro') + '» no cabe: tiene ' + pis.length + ' caracteres y el tope es ' + PISCINA_MAX + '.');
+  return r;
+}
 /* 2026-11-03 · 200, no 60: el código de un MIX son los de todos sus lotes, y cortarlo partiría la llave de la hoja. */
-export const normCodigoGenetico = (s) => sanitizeStr(s, 200).toUpperCase().replace(/\s+/g, '');
+export const normCodigoGenetico = (s) => sanitizeStr(s, CG_MAX).toUpperCase().replace(/\s+/g, '');
 
 /* ── 🔀 MIX: un pool de varios lotes (usuario, 2026-11-03) ──
    Las copuladas de tanques de lotes distintos se juntan al desovar y sus huevos, N2 y N5 ya no se pueden separar. La ficha lo
@@ -169,10 +192,11 @@ export const normCodigoGenetico = (s) => sanitizeStr(s, 200).toUpperCase().repla
    entre sus lotes según sus hembras vivas (`construirLibro`): el saldo necesita saber de dónde restarlas. */
 const MIX_RE = /^MIX\((.+)\)$/;
 /** ¿Es este lote un MIX? */
-export const esMix = (lote) => MIX_RE.test(normLote(lote));
+const nombreDeMix = (lote) => sanitizeStr(lote, 40).toUpperCase().replace(/\s+/g, '');
+export const esMix = (lote) => MIX_RE.test(nombreDeMix(lote));
 /** Los lotes de un MIX, en su orden y sin repetir; [] si no es un MIX. */
 export function lotesDeMix(lote) {
-  const m = MIX_RE.exec(normLote(lote));
+  const m = MIX_RE.exec(nombreDeMix(lote));
   return m ? [...new Set(m[1].split(',').filter(Boolean))] : [];
 }
 /** Lo que dejan en la tarjeta las opciones elegidas en 📥 Cargar ({ lote, codigoGenetico, piscina }). En orden fijo, sea cual sea
@@ -283,6 +307,8 @@ export function validarDesove(model) {
     const x = d || {};
     const lote = normLote(x.lote);
     const cg = normCodigoGenetico(x.codigoGenetico);
+    const mal = textoMal(x);
+    if (mal.length) { errores.push(...mal); return; }
     const et = cg ? '«' + cg + '»' : 'el desove ' + (i + 1);
 
     if (lote === '') errores.push('Falta el lote ' + (cg ? 'de ' + et : 'del desove ' + (i + 1)) + '.');

@@ -23,7 +23,7 @@ import { join } from 'node:path';
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['madDesComposiciones', 'madConstruirLibro', 'madDesReiniciar', 'madDesAddCard', 'madDesCargar',
-  'madDesCargarElige', 'madDesCargarReleer', 'madDesCollect', 'MAD_LIBRO_SHEETS', '_madDesCardHTML', '_madBorrAdaptar',
+  'madDesCargarElige', 'madDesCargarReleer', 'madDesMixAbrir', 'madDesCollect', 'MAD_LIBRO_SHEETS', '_madDesCardHTML', '_madBorrAdaptar',
   'madMortReiniciar', 'madMortCollect'];   // punto 6: el mismo 📥 Cargar en Inf. Supervisor
 const H = {};
 
@@ -219,6 +219,18 @@ describe('Desoves · 📥 Cargar · en la ficha', () => {
     const caja = await abrir(tarjeta());
     expect(caja.textContent).toMatch(/INCOMPLETA/);
     expect(caja.textContent.indexOf('INCOMPLETA')).toBeLessThan(caja.textContent.indexOf('XA ·'));
+    /* A17 · y la pregunta del MIX elige de esa misma lista: abrirla no puede borrar el aviso. */
+    H.madDesMixAbrir(caja.querySelector('.md-mix-btn'));
+    expect(caja.textContent).toContain('¿qué lotes participan?');
+    expect(caja.textContent).toMatch(/INCOMPLETA/);
+    expect(caja.textContent.indexOf('INCOMPLETA')).toBeLessThan(caja.textContent.indexOf('¿qué lotes'));
+  });
+
+  it('🔴 sin hojas recortadas ni la lista ni la pregunta del MIX lo dicen', async () => {
+    const caja = await abrir(tarjeta());
+    expect(caja.textContent).not.toMatch(/INCOMPLETA/);
+    H.madDesMixAbrir(caja.querySelector('.md-mix-btn'));
+    expect(caja.textContent).not.toMatch(/INCOMPLETA/);
   });
 
   it('sin nada en producción ese día lo dice, y no ofrece nada', async () => {

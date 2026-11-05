@@ -17,7 +17,7 @@
    ============================================================ */
 
 import { sanitizeStr } from '../../../core/trovan.js';
-import { normLote, normCodigoGenetico, cifraMala, cifraMalaTexto } from './ficha-maduracion-desoves.schema.js';
+import { normLote, normCodigoGenetico, cifraMala, cifraMalaTexto, textoMal } from './ficha-maduracion-desoves.schema.js';
 // La alcalinidad es por ÁREA, y las áreas son el RAS más las salas del catálogo del Ingreso.
 import { MAD_SALA_OPTS, salaTag } from './ficha-maduracion-ingreso.schema.js';
 
@@ -195,6 +195,8 @@ export function validarMort(model) {
       return int(t.entran) !== '' || int(t.muertas) !== '' || (tipo === 'Desove' && crudo(t.temperatura) !== '');
     });
     const conRevision = MAD_NAUP_REVISIONES.filter((rev) => revisionConDato(revisionDe(x, rev)));
+    const mal = textoMal(x);
+    if (mal.length) { errores.push(...mal); return; }
     // A16 · antes que nada: con «-3», `conCifras` diría que no hay ninguna cifra. Un negativo no es «sin cifra».
     let malas = false;
     MAD_MORT_TIPOS.forEach((tipo) => {
