@@ -2326,6 +2326,20 @@ async function _colaTick(){
 // con los ~20 llamadores existentes.
 // E (2026-09-24, usuario) · `opts.sinAvisos`: quien llama da él UN aviso por la acción entera (los cuatro flujos del
 // reproductivo), así que aquí se callan los tres propios —en curso, idéntico y en cola— y sólo queda `opts.outcome`.
+/* 2026-11-04 (pauta A5, usuario: «Solo en la app») · EL reqId DE UN ENVÍO. El GAS recuerda 10 min cada reqId ya escrito y contesta «ok» sin
+   escribir. Si fuera sólo la huella del contenido, con 28, 29 y otra vez 28 el tercero parecería un reintento del primero, y la hoja se
+   quedaría en 29 con el equipo diciendo «enviado». Así que un contenido que vuelve DESPUÉS DE OTRO DISTINTO lleva otro reqId; repetido seguido,
+   el mismo. Un reintento conserva el suyo, también en la cola: un reintento tardío sigue sin poder pisar lo nuevo.
+   Volver a escribir no duplica: todas las hojas reemplazan por clave (lo vigila cola-volver-atras.test.js). Por página, y no guardado: tras
+   recargar, otro reqId, que reescribe lo mismo. Delante de la huella, porque el GAS corta a 120 caracteres. */
+const _reqGen = new Map();   // hoja → { fp: la última huella, n: cuántas distintas van }
+const _reqSesion = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+function _reqIdDeEnvio(hoja, fp){
+  if(!fp) return fp;
+  const st = _reqGen.get(hoja) || { fp:"", n:0 };
+  if(st.fp !== fp){ st.fp = fp; st.n++; _reqGen.set(hoja, st); }
+  return _reqSesion + "." + st.n + "~" + fp;
+}
 async function postPayload(payload, url, opts){
   if(opts) _marcaSellar(opts.mark);
   const _setOut = (v)=>{ if(opts) opts.outcome = v; };
@@ -2348,6 +2362,7 @@ async function postPayload(payload, url, opts){
     }
   }
   _syncInFlight.add(flightKey);
+  const _rid = _reqIdDeEnvio(flightKey, _fp);
   try{
     // Adjunta el sessionId como query (?z=...) para que el rate-limit del
     // GAS sea por dispositivo y no global. Compatible con URLs que ya
@@ -2357,7 +2372,7 @@ async function postPayload(payload, url, opts){
     // ── Token compartido + reqId (idempotencia) ──────────────────────
     // `token`: autenticación opcional (el GAS sólo lo valida si tiene token: la propiedad del script
     //   SHARED_TOKEN o, si falta, su constante, hoy vacía; sin token, se ignora — BC).
-    // `reqId`: huella del payload. El GAS la recuerda ~10 min (CacheService);
+    // `reqId`: ver _reqIdDeEnvio. El GAS lo recuerda ~10 min (CacheService);
     //   si llega otra vez el MISMO reqId, responde "ok" sin volver a escribir.
     //   Esto hace que CUALQUIER reintento (en línea o desde la cola offline)
     //   sea idempotente y nunca duplique, ni siquiera en hojas append-only.
@@ -2366,7 +2381,7 @@ async function postPayload(payload, url, opts){
     const _gasTok = gcfg("gas-token", "");
     const extra = {};
     if(_gasTok) extra.token = _gasTok;
-    if(_fp)     extra.reqId = _fp;
+    if(_rid)    extra.reqId = _rid;
     const bodyPayload = Object.keys(extra).length
       ? Object.assign({}, payload, extra)
       : payload;
@@ -2378,15 +2393,15 @@ async function postPayload(payload, url, opts){
     let res = "retry";
     const _gasInfo = {};
     let _directo = true;
-    if(_fp && opts && _colaSolapa(opts.mark, payload.sheetName)){
+    if(_rid && opts && _colaSolapa(opts.mark, payload.sheetName)){
       /* 2026-11-03 (pauta 1.2) · Detrás del lote viejo, y se vacía la cola: primero llega lo viejo y luego esto, así que gana lo último.
          Si no sale, sigue en la cola y lo demás es el camino de siempre: «en cola», «rechazado» o, si no cupo, el error. */
-      if(_enqueueSync(payload, _fp, url, opts.mark)){
+      if(_enqueueSync(payload, _rid, url, opts.mark)){
         _directo = false;
-        _colaRechazos.delete(_fp);
+        _colaRechazos.delete(_rid);
         await _colaVaciarConTope();
-        if(_colaRechazos.has(_fp)){ _gasInfo.message = _colaRechazos.get(_fp); res = "rejected"; }
-        else if(!_loadSyncQueue().some(it => it && it.reqId === _fp)) res = "ok";
+        if(_colaRechazos.has(_rid)){ _gasInfo.message = _colaRechazos.get(_rid); res = "rejected"; }
+        else if(!_loadSyncQueue().some(it => it && it.reqId === _rid)) res = "ok";
       } else {
         /* 2026-11-04 (pauta A6, usuario: «vaciar primero») · No cupo en la cola, y eso no es razón para no enviar si hay señal: se vacía lo
            que espera —que además hace sitio— y, si ya nada se pisa con esto, sale directo. Si no, no pasa delante: acaba en el «sin espacio» de abajo. */
@@ -2427,7 +2442,7 @@ async function postPayload(payload, url, opts){
     // timeout o respuesta ambigua). Se encola para reintento automático; el dato
     // se entregará y verificará solo (F3), así que NO es un error para el usuario.
     // 🔴 2026-10-04 · sólo es «en cola» si de verdad quedó en la cola (sin espacio no queda: ver _saveSyncQueue).
-    if(!_enqueueSync(payload, _fp, url, opts && opts.mark)){
+    if(!_enqueueSync(payload, _rid, url, opts && opts.mark)){
       if(opts) opts.gasMessage = SYNCQ_SIN_ESPACIO;
       _setOut("error");
       return false;
