@@ -48,6 +48,7 @@ import { MAD_BS_HEADERS as BS_HEADERS, buildBroodstockRows } from './ficha-madur
 import { TRASLADO_HEADERS } from './ficha-traslado.schema.js';
 import { REPRO_MATRIZ_HEADERS, REPRO_EVENTO, REPRO_TRANSFER_TIPO, buildAltaBatch, buildEventBatch, buildTransferBatch, matrixIndexFromRows } from './reproductivo.data.js';
 import { sanitizeStr } from '../../../core/trovan.js';   // 2026-09-28 · el saneado REAL del cliente (Traslado, de extremo a extremo)
+import { isValidDate } from './security.js';
 
 const leer = (u) => readFileSync(new URL(u, import.meta.url), 'utf8').split('\r\n').join('\n');
 const gasSrc = leer('../../../../GAS/Code.gs');
@@ -2034,7 +2035,7 @@ function modeloDeMantenimiento() {
   const i = engineSrc.indexOf(desde);
   const j = engineSrc.indexOf('/* ── fin del modelo de Mantenimiento ── */', i);
   if (i < 0 || j < 0) throw new Error('no se encontró el modelo de Mantenimiento en engine.js');
-  const ctx = { sanitizeStr };
+  const ctx = { sanitizeStr, isValidDate };   // A16 · `_mntEsDia` pide un día real, con la del motor
   createContext(ctx);
   new Script(engineSrc.slice(i, j) + '\n;globalThis.__m = { MNT_TRAB_HEADERS, MNT_LECT_HEADERS, buildMntTrabajoPayload, buildMntRondaPayload };')
     .runInContext(ctx);
