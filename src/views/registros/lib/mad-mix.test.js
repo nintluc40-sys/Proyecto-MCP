@@ -360,6 +360,12 @@ describe('🔀 A17 · un MIX a mano, y lo que no cabe', () => {
   it('leer sigue siendo leer: `esMix` y `lotesDeMix` no reordenan, como el libro', () => {
     expect(lotesDeMix('MIX(BO,BN)')).toEqual(['BO', 'BN']);
     expect(H.madLibroLotesDeMix('MIX(BO,BN)')).toEqual(['BO', 'BN']);
+    expect(esMix('MIX(BN,BN)'), 'al leer, el nombre tal cual: escribirlo así ya no se puede').toBe(true);
+  });
+  it('🔴 un nombre mal escrito para ahí: no suma los errores de lo que venía detrás', () => {
+    const m = des({ lote: 'MIX(BN,BO', n5: 10 });
+    expect(validarDesove(m).errores).toHaveLength(1);
+    expect(H.madDesValidar(m)).toEqual(validarDesove(m));
   });
 
   const MALOS = ['MIX(BN,BO', 'mix(bn,bo', 'MIX()', 'MIX(,)', 'MIX(BN,BO)X', 'MIX(LA,LB,LC,LD,LE,LF,LG,LH,LI,LJ,LK,LL,LM)'];
@@ -384,6 +390,7 @@ describe('🔀 A17 · un MIX a mano, y lo que no cabe', () => {
     expect(validarDesove(des({ codigoGenetico: c(201) })).errores[0]).toBe('El código genético de «BN» no cabe: tiene 201 caracteres y el tope es 200.');
     expect(validarDesove(des({ piscina: c(61) })).errores[0]).toBe('La piscina de «BN» no cabe: tiene 61 caracteres y el tope es 60.');
     expect(textoMal({ lote: 'BN', codigoGenetico: c(200), piscina: c(60) })).toEqual([]);
+    expect(H.madDesTextoMal({ lote: 'BN', codigoGenetico: c(200), piscina: c(60) }), 'el motor, en el tope').toEqual([]);
     expect(textoMal({ codigoGenetico: c(201) })[0]).toContain('«este registro»');
     for (const o of [{ codigoGenetico: c(201) }, { piscina: c(61) }, { codigoGenetico: c(201), piscina: c(61) }]) {
       expect(H.madDesValidar(des(o))).toEqual(validarDesove(des(o)));
@@ -392,9 +399,8 @@ describe('🔀 A17 · un MIX a mano, y lo que no cabe', () => {
     expect(validarMort(mort({ piscina: c(61) })).errores[0]).toContain('no cabe');
     expect(validarDesove(des({ codigoGenetico: c(201), piscina: c(61) })).errores).toHaveLength(2);
   });
-  it('🔴 📥 Cargar: si sus códigos o sus piscinas no caben, no rellena nada y lo dice', async () => {
-    const largo = (i) => 'X'.repeat(70) + i;
-    HOJAS = { [H.MAD_LIBRO_SHEETS.ingreso]: [0, 1, 2].map((i) => ({ ...ING('2026-01-01', 'Q' + i, largo(i), 'Sala 2', 16 + i, 10), 'Piscina Broodstock': String(i), Grupo: '' })) };
+  it.each([['sus códigos', (i) => 'X'.repeat(70) + i, (i) => String(i)], ['sus piscinas', (i) => 'C' + i, (i) => 'P'.repeat(25) + i]])('🔴 📥 Cargar: si %s no caben, no rellena nada y lo dice', async (_n, cg, piscina) => {
+    HOJAS = { [H.MAD_LIBRO_SHEETS.ingreso]: [0, 1, 2].map((i) => ({ ...ING('2026-01-01', 'Q' + i, cg(i), 'Sala 2', 16 + i, 10), 'Piscina Broodstock': piscina(i), Grupo: '' })) };
     globalThis.fetch = async (url) => {
       const hoja = new URL(String(url)).searchParams.get('sheet');
       return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, headers: [], rows: HOJAS[hoja] || [] }) };
