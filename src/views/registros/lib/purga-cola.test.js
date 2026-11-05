@@ -53,6 +53,7 @@ function caja(inicial, fn = ['_purgeQueueMark']) {
     _loadSyncQueue: () => est.cola.slice(),
     _saveSyncQueue: (x) => { est.cola = x; est.escrituras++; },
     SYNCQ_MAX: 50,
+    _lastSyncFingerprint: new Map(),
     _COLA_CON_VERSION: COLA_CON_VERSION, isFinite,
   });
   return { ...api, est };

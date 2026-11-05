@@ -1800,6 +1800,8 @@ function _colaClaveCubierta(kind, supKeys, k){
 // 🔴 2026-10-04 · DEVUELVE si el envío QUEDÓ en la cola (true también si ya estaba): false = no cupo en el almacenamiento.
 function _enqueueSync(payload, reqId, url, mark){
   if(!payload || !Array.isArray(payload.rows) || payload.rows.length === 0) return true;   // nada que proteger
+  // 2026-11-04 (pauta A4) · Con algo de esta hoja en la cola, lo último enviado deja de ser lo último: el antidoble clic ya no puede contestar «ya está».
+  _lastSyncFingerprint.delete(payload.sheetName || "_default");
   let q = _loadSyncQueue();
   // Evita acumular el mismo envío (misma huella) más de una vez.
   /* PE1.2 (2026-09-16) · pero si es de una ficha de Maduración, la entrada del registro del SEGUNDO guardado tiene
@@ -1873,9 +1875,11 @@ function _purgeQueueMark(mark){
   }catch(_){}
 }
 
-/* 2026-11-03 (pauta 1.2) · ¿Espera en la cola un envío con ALGUNA de estas llaves, y otras que éste no lleva? Entonces no puede salir
-   directo: _purgeQueueMark no retira ese lote —se perderían los demás— y al vaciarse volvería a escribir sobre lo de ahora los datos
-   viejos de las llaves compartidas, con la app diciendo «enviado». La salida es respetar el orden: ver postPayload.
+/* 2026-11-03 (pauta 1.2) · ¿Espera en la cola un envío con ALGUNA de estas llaves? Entonces no puede salir directo: si lleva otras que éste
+   no lleva, _purgeQueueMark no lo retira —se perderían los demás— y al vaciarse volvería a escribir sobre lo de ahora los datos viejos de
+   las llaves compartidas, con la app diciendo «enviado». La salida es respetar el orden: ver postPayload.
+   2026-11-04 (pauta A4, usuario: «las tres piezas») · Y aunque éste lo cubra entero (_enqueueSync lo retira): un envío directo y un vaciado
+   no pueden coincidir sobre lo mismo, porque en el aire cualquiera de los dos podría escribir el último.
    2026-11-04 (pauta A1) · Si las marcas no dicen qué registros tocan (_colaSinLlaves), basta con que sea la misma hoja. */
 function _colaSolapa(mark, hoja){
   if(hoja && _loadSyncQueue().some(it => it && it.payload && it.payload.sheetName === hoja && _colaSinLlaves(it.mark, mark))) return true;
@@ -1884,8 +1888,7 @@ function _colaSolapa(mark, hoja){
   const cubre = (k) => _colaClaveCubierta(mark.kind, supKeys, k);
   return _loadSyncQueue().some(it => {
     if(!it || !it.mark || it.mark.kind !== mark.kind || !Array.isArray(it.mark.keys)) return false;
-    const comunes = it.mark.keys.filter(cubre).length;   // alguna, y no todas
-    return comunes > 0 && comunes < it.mark.keys.length;
+    return it.mark.keys.filter(cubre).length > 0;
   });
 }
 /* 2026-11-04 (pauta A1) · Dos envíos de una hoja cuyas marcas no dicen si tocan los mismos registros: un formulario de Maduración marca
@@ -2198,6 +2201,9 @@ async function flushSyncQueue(opts){
       // El motivo se recoge también aquí: sin él, un rechazo por despliegue y uno por
       // datos son indistinguibles, y son la noche y el día para quien está en carretera.
       const _info = {};
+      /* 2026-11-04 (pauta A4) · Este bucle recorre la foto del principio y entre un envío y otro pasa tiempo: lo que algo más nuevo retiró
+         de la cola mientras tanto (_enqueueSync) no sale, o escribiría lo viejo encima, con la app diciendo «enviado». */
+      if(!_loadSyncQueue().some(x => x && _claveCola(x) === _claveCola(it))) continue;
       const res = await _postOnce(body, finalUrl, _info);
       if(res === "ok"){
         sent++;

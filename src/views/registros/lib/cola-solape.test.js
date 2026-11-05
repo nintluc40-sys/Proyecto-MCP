@@ -220,13 +220,13 @@ describe('🔵 lo que no se solapa sigue saliendo directo', () => {
     expect(cola().length).toBe(1);
   });
 
-  it('🔴 `_colaSolapa`: alguna llave compartida y alguna que no', () => {
+  it('🔴 `_colaSolapa`: alguna llave compartida, aunque cubra el lote entero (pauta A4)', () => {
     expect(H._colaSolapa(MARK('a'))).toBe(false);
     lote();
     expect(H._colaSolapa(MARK('a'))).toBe(true);
     expect(H._colaSolapa(MARK('b', 'z'))).toBe(true);
-    expect(H._colaSolapa(MARK('a', 'b'))).toBe(false);
-    expect(H._colaSolapa(MARK('a', 'b', 'c'))).toBe(false);
+    expect(H._colaSolapa(MARK('a', 'b'))).toBe(true);
+    expect(H._colaSolapa(MARK('a', 'b', 'c'))).toBe(true);
     expect(H._colaSolapa(MARK('z'))).toBe(false);
     expect(H._colaSolapa({ kind: 'tras', keys: ['a'] })).toBe(false);
     expect(H._colaSolapa(null)).toBe(false);
