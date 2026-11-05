@@ -32486,7 +32486,7 @@ function exportBackup(){
     const bytes = json.length;
     if(bytes > 5 * 1024 * 1024){
       const mb = (bytes / (1024*1024)).toFixed(1);
-      if(!confirm("⚠ El backup pesa ~"+mb+" MB (incluye fotos/videos). ¿Descargar de todas formas?")) return;
+      if(!confirm("⚠ El backup pesa ~"+mb+" MB (incluye fotos/videos). ¿Descargar de todas formas?")) return false;
     }
     const blob = new Blob([json], {type: "application/json"});
     const url = URL.createObjectURL(blob);
@@ -32498,10 +32498,50 @@ function exportBackup(){
     document.body.removeChild(a);
     setTimeout(()=>URL.revokeObjectURL(url), 1500);
     toast("📥 Backup exportado: "+dump.count+" elemento(s)","ok",4000);
+    return true;
   }catch(err){
     console.error("[backup] export error:", err);
     toast("Error al generar backup","err",4000);
+    return false;
   }
+}
+
+/* A13 (2026-11-05, usuario: «Juntarlas») · La cola de un respaldo se suma a la de aquí: lo que espera en este dispositivo no
+   se pierde, y lo que ya espera (misma huella; sin huella, misma hora) no se repite. En orden de hora y con el tope de
+   siempre: cae lo más viejo. Contrapartida aceptada: de un respaldo viejo, un envío puede volver a salir y pisar una
+   corrección posterior en la hoja. */
+function _colaDelRespaldo(texto){
+  let deFuera = [];
+  try{ const a = JSON.parse(texto); if(Array.isArray(a)) deFuera = a; }catch(_){}
+  const aqui = _loadSyncQueue().filter(Boolean);
+  const ya = function(it){ return aqui.some(function(x){ return it.reqId ? x.reqId === it.reqId : _claveCola(x) === _claveCola(it); }); };
+  const junta = aqui.concat(deFuera.filter(function(it){ return it && !ya(it); })).sort(function(a, b){ return (a.ts || 0) - (b.ts || 0); });
+  const sobra = Math.max(0, junta.length - SYNCQ_MAX);
+  return { texto: JSON.stringify(junta.slice(sobra)), fuera: junta.slice(0, sobra) };
+}
+/* A13 · Todo o nada: null si algo no se pudo escribir, y entonces queda como estaba. Al deshacer se retira PRIMERO todo lo
+   escrito: así lo de antes cabe seguro, aunque alguna clave crezca al volver. */
+function _aplicarRespaldo(items, claves){
+  const antes = new Map();
+  let ok = 0, fail = 0, fuera = [];
+  try{
+    claves.forEach(function(k){
+      let v = items[k];
+      if(typeof v !== "string"){ fail++; return; }
+      if(k === SYNCQ_KEY){ const c = _colaDelRespaldo(v); v = c.texto; fuera = c.fuera; }
+      antes.set(k, localStorage.getItem(k));
+      localStorage.setItem(k, v);
+      // Y LEÍDA TRAS ESCRIBIR, como _lsSet: el modo privado de algunos navegadores acepta setItem sin guardar nada.
+      if(localStorage.getItem(k) !== v) throw new Error("no se guardó");
+      ok++;
+    });
+  }catch(_){
+    antes.forEach(function(_v, k){ try{ localStorage.removeItem(k); }catch(_e){} });
+    antes.forEach(function(v, k){ if(v !== null){ try{ localStorage.setItem(k, v); }catch(_e){} } });
+    return null;
+  }
+  try{ if(fuera.length) _colaAvisaDescartes(fuera, "la cola llegó a su tope de " + SYNCQ_MAX); }catch(_){}
+  return { ok: ok, fail: fail };
 }
 
 function importBackup(file){
@@ -32529,17 +32569,15 @@ function importBackup(file){
       toast("No hay claves válidas en el backup","warn"); return;
     }
     const tsLabel = dump.iso ? new Date(dump.iso).toLocaleString("es-EC") : "(sin fecha)";
-    if(!confirm("¿Importar "+allowedKeys.length+" elemento(s) del backup de "+tsLabel+"?\n\nSe SOBRESCRIBEN las claves locales con el mismo nombre. Las claves no incluidas en el backup se conservan.")) return;
-    let ok = 0, fail = 0;
-    allowedKeys.forEach(k => {
-      try{
-        const v = dump.items[k];
-        if(typeof v === "string"){ localStorage.setItem(k, v); ok++; }
-        else fail++;
-      }catch(_){ fail++; }
-    });
+    if(!confirm("¿Importar "+allowedKeys.length+" elemento(s) del backup de "+tsLabel+"?\n\nSe SOBRESCRIBEN las claves locales con el mismo nombre. Las claves no incluidas en el backup se conservan.\n\nAntes se descarga una copia de lo que hay ahora, para poder volver atrás. Los envíos en cola se juntan con los del respaldo.")) return;
+    // A13 · Con la cola enviando, su final escribiría encima de lo importado.
+    if(_flushingQueue){ toast("Hay un envío de la cola en curso: importa cuando termine.","warn",6000); return; }
+    // A13 (usuario: «Copia automática antes») · Lo pendiente creado después del respaldo se sobrescribe: sin copia no se toca nada.
+    if(!exportBackup()){ toast("No se importó nada: falta la copia de lo que hay ahora.","err",8000); return; }
+    const r = _aplicarRespaldo(dump.items, allowedKeys);
+    if(!r){ toast("No se importó nada: no cabe en este navegador. Todo queda como estaba.","err",8000); return; }
     try{ _invalidateFotosCache(); }catch(_){}
-    toast("📤 Importados "+ok+" elemento(s)"+(fail>0?" ("+fail+" fallaron)":"")+". Recarga la página para refrescar.","ok",6500);
+    toast("📤 Importados "+r.ok+" elemento(s)"+(r.fail>0?" ("+r.fail+" fallaron)":"")+". Recarga la página para refrescar.",r.fail>0?"warn":"ok",6500);
   };
   reader.readAsText(file);
 }
