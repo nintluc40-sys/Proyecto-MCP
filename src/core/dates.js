@@ -50,10 +50,15 @@ export function parseAnyDate(raw) {
       // 3) ISO yyyy-mm-dd
       const p = s.substring(0, 10).split('-');
       result = strictYMD(+p[0], +p[1], +p[2]);
+    } else if (/^-?\d+(?:\.\d+)?$/.test(s)) {
+      // 4) Una cifra suelta fuera de la ventana del serial NO es una fecha. A32 (2026-11-06): caía al parser nativo, que
+      //    lee «20000» como el AÑO 20000; una celda así en `Fecha` llevaba «lo más reciente» del store (latestDateMs) a
+      //    ese año, y los atajos 7 y 30 días quedaban vacíos.
+      result = null;
     } else {
-      // 4) Fallback nativo
+      // 5) Fallback nativo, sólo con un año verosímil (por la misma razón).
       const d = new Date(s);
-      if (d && !isNaN(d.getTime())) {
+      if (d && !isNaN(d.getTime()) && d.getFullYear() >= 1900 && d.getFullYear() <= 2100) {
         if (d.getHours() === 0) d.setHours(12);
         result = d;
       }

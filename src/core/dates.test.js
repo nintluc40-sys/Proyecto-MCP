@@ -39,13 +39,15 @@ describe('parseAnyDate', () => {
     expect(parseAnyDate('no-es-fecha')).toBeNull();
   });
 
-  it('un serial fuera de la ventana cae al parser nativo (quirk D2)', () => {
-    // Caracteriza D2: '20000' NO entra en la rama de serial Excel (asNum <= 25569),
-    // así que `new Date('20000')` lo interpreta como el AÑO 20000, no como una fecha
-    // de calendario plausible. Comportamiento actual a corregir en Fase B.
-    const d = parseAnyDate('20000');
-    expect(d).toBeInstanceOf(Date);
-    expect(d.getFullYear()).toBe(20000);
+  it('A32 (2026-11-06) · una cifra fuera de la ventana del serial NO es una fecha (antes, quirk D2: el AÑO 20000)', () => {
+    // '20000' no entra en la rama de serial Excel (asNum <= 25569), y `new Date('20000')` lo leía como el AÑO 20000:
+    // en `Fecha`, llevaba «lo más reciente» del store a ese año.
+    for (const s of ['20000', '0', '2026', '-5', '99999', '1730000000000']) expect(parseAnyDate(s), s).toBeNull();
+    // ni un texto que el parser nativo entienda con un año inverosímil
+    expect(parseAnyDate('January 1, 20000')).toBeNull();
+    // y lo que sí es fecha sigue entrando
+    expect(parseAnyDate('45000').getFullYear()).toBe(2023);
+    expect(parseAnyDate('Oct 5, 2026').getDate()).toBe(5);
   });
 
   it('cachea: misma cadena devuelve la misma instancia', () => {
