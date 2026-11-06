@@ -24,7 +24,8 @@
      ⟳ y la primera carga no preguntan para SALTAR la descarga (siempre bajan); pero ⟳ y la píldora
      (2026-10-07, auditoría A2) leen la marca ANTES, esperando como mucho MARCA_MANUAL_MS, y la anotan
      si lo descargado se aplicó: sin eso, el ciclo siguiente volvía a bajar los ~14 MB sin cambios.
-     A5 (2026-10-11, usuario): en los dos casos, sólo una descarga CON cambios anota la marca (ver check).
+     A5 (2026-10-11, usuario): en los dos casos, sólo una descarga CON cambios anota la marca (ver check), y al
+     APLICARSE (A32, 2026-11-06); sin cambios, el ciclo la anota a la 2.ª vez seguida con la misma marca.
    Portado de silentRefresh + _markInteracting del original; política de refresco del
    2026-09-24 (P2 del plan de carga y refresco).
    ============================================================ */
@@ -46,8 +47,15 @@ let pending = null;  // { d, ts }: descarga nueva (d = { sheets, huellas, fp }) 
 let started = false;
 // P4: mientras lo que se ve es el libro GUARDADO y aún no se ha confirmado: «de las hh:mm» / «del dd/mm hh:mm».
 let datosDe = '';
-// Punto 8: la marca de modificación leída ANTES de la última descarga procesada (null = ninguna).
+// Punto 8: la marca de modificación leída ANTES de la última descarga APLICADA (null = ninguna). A32 (2026-11-06): antes
+// se anotaba al quedar pendiente, y si ese pendiente no llegaba a la pantalla (⟳ lo descarta y su descarga falla), los
+// ciclos siguientes decían «sin cambios» con la pantalla vieja; ahora viaja en el pendiente y se anota al aplicarlo.
 let marcaVista = null;
+// A32 (usuario: «A la 2.ª vez igual»): la marca de la última descarga SIN cambios. Si el ciclo siguiente trae la misma
+// marca y vuelve a bajar lo mismo, la exportación ya tuvo un ciclo entero para ponerse al día: se da por vista. Antes
+// (A5) no se anotaba nunca sin cambios, y tras abrir la app —la primera carga no lee la marca— se bajaba el libro cada
+// 5 min hasta el primer cambio real.
+let marcaSinCambios = null;
 // A3 (2026-10-11, usuario): el refresco automático en curso (la promesa de check), si se pulsó ⟳ durante él y si llegó
 // a bajar el libro (si no —marca sin cambios o fallo—, ⟳ descarga al terminar).
 let ciclo = null;
@@ -103,12 +111,13 @@ function tryApply(forzar = false) {
     applyTimer = setTimeout(tryApply, APPLY_RETRY_MS);
     return false;
   }
-  const { d, ts, extra = '' } = pending;
+  const { d, ts, extra = '', marca = null } = pending;
   pending = null;
   // aplicarDescarga fija la huella (y las de cada hoja) al APLICAR: el siguiente ciclo se
   // compara con lo que de verdad está en pantalla, no con un pendiente que quizá nunca llegó
-  // a aplicarse.
+  // a aplicarse. Y la marca, igual (A32).
   if (!aplicarDescarga(d)) return false;
+  if (marca !== null) marcaVista = marca;   // A5: trae cambios, y ya están en pantalla: lo aplicado es al menos así de nuevo
   datosDe = '';
   emit(EV.DATA, { firstLoad: false, manual: forzar });   // A1: forzado = lo pidió ⟳ (A3)
   emit(EV.CONN, { state: 'connected', label: etiqueta(ts, extra) });
@@ -125,6 +134,11 @@ async function check() {
     const marca = await marcaDelLibro();
     if (marca !== null && marca === marcaVista) {
       emit(EV.CONN, { state: 'connected', label: etiqueta(hora(), pending ? ' · datos nuevos en espera' : ' · sin cambios') });
+      return;
+    }
+    // A32: lo pendiente ya es de esta misma marca: bajarlo otra vez traería lo mismo.
+    if (marca !== null && pending && pending.marca === marca) {
+      emit(EV.CONN, { state: 'connected', label: etiqueta(hora(), ' · datos nuevos en espera') });
       return;
     }
     const d = await descargarLibro();
@@ -145,18 +159,22 @@ async function check() {
       emit(EV.CONN, { state: 'connected', label: etiqueta(ts, textoFaltan(faltan, false)) });
       return;
     }
-    // A5 (2026-10-11, usuario): la marca (la de ANTES de bajar) se anota SÓLO si lo descargado trae cambios. Si la marca
-    // se movió pero la exportación aún no trae lo escrito (Google puede servirla atrasada), anotarla haría decir «sin
-    // cambios» a los ciclos siguientes hasta la próxima escritura; así se vuelve a descargar hasta que llegue.
+    // A5 (2026-10-11, usuario): la marca (la de ANTES de bajar) se anota si lo descargado trae cambios, al APLICARLO
+    // (tryApply). Si la marca se movió pero la exportación aún no trae lo escrito (Google puede servirla atrasada),
+    // anotarla a la primera haría decir «sin cambios» a los ciclos siguientes hasta la próxima escritura; por eso, sin
+    // cambios, sólo a la 2.ª vez seguida con la misma marca (A32, usuario: «A la 2.ª vez igual»).
     if (d.fp === getLastFingerprint()) {
       pending = null; // lo que está en pantalla ya es lo último: un pendiente anterior sobra
       clearTimeout(applyTimer);
       applyTimer = null;
       datosDe = ''; // lo guardado ERA lo último
+      if (marca !== null) {
+        if (marca === marcaSinCambios) marcaVista = marca;
+        else marcaSinCambios = marca;
+      }
       emit(EV.CONN, { state: 'connected', label: etiqueta(ts, ' · sin cambios') });
     } else {
-      if (marca !== null) marcaVista = marca;   // A5: trae cambios: lo descargado es al menos así de nuevo
-      pending = { d, ts, extra: textoFaltan(faltan, true) };
+      pending = { d, ts, extra: textoFaltan(faltan, true), marca };
       if (!tryApply(pedidoManual)) emit(EV.CONN, { state: 'connected', label: etiqueta(ts, ' · datos nuevos en espera') });
     }
   } catch (_) {
@@ -290,6 +308,7 @@ export function stopAutoRefresh() {
   interactingUntil = 0;
   datosDe = '';
   marcaVista = null;
+  marcaSinCambios = null;
   asegurando = false;
   ciclo = null;
   pedidoManual = false;

@@ -528,18 +528,48 @@ describe('auto-refresco · consulta ligera antes de descargar (punto 8, 2026-10-
     expect(descargarLibro).toHaveBeenCalledTimes(3);
   });
 
-  it('A5 (2026-10-11): una descarga SIN cambios no anota la marca (exportación atrasada): se vuelve a descargar hasta que lleguen', async () => {
+  it('A5 (2026-10-11): una descarga SIN cambios no anota la marca a la primera (exportación atrasada): el ciclo siguiente vuelve a descargar y trae lo escrito', async () => {
     marcaDelLibro.mockResolvedValue(100);
     descargarLibro.mockResolvedValue(descarga(set(1)));   // la marca se movió, pero lo exportado aún es lo aplicado
     await vi.advanceTimersByTimeAsync(5 * MIN);
     expect(etiquetas.at(-1)).toMatch(/sin cambios/);
+    descargarLibro.mockResolvedValue(descarga(set(2)));   // ya llegó lo escrito
     await vi.advanceTimersByTimeAsync(5 * MIN);           // la misma marca: como no se anotó, descarga otra vez
     expect(descargarLibro).toHaveBeenCalledTimes(2);
-    descargarLibro.mockResolvedValue(descarga(set(2)));   // ya llegó lo escrito
-    await vi.advanceTimersByTimeAsync(5 * MIN);
     expect(valor()).toBe(2);
     await vi.advanceTimersByTimeAsync(5 * MIN);           // ahora sí, anotada: no descarga
+    expect(descargarLibro).toHaveBeenCalledTimes(2);
+  });
+
+  it('A32 (usuario: «A la 2.ª vez igual»): con la misma marca y nada nuevo, se descarga dos veces y no más', async () => {
+    marcaDelLibro.mockResolvedValue(100);                 // p. ej. tras abrir la app: la primera carga no leyó la marca
+    descargarLibro.mockResolvedValue(descarga(set(1)));   // lo exportado es lo que ya está en pantalla
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(descargarLibro).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(15 * MIN);          // antes, una descarga más cada 5 min, sin fin
+    expect(descargarLibro).toHaveBeenCalledTimes(2);
+    expect(etiquetas.at(-1)).toMatch(/sin cambios/);
+    marcaDelLibro.mockResolvedValue(200);                 // una escritura de verdad
+    descargarLibro.mockResolvedValue(descarga(set(3)));
+    await vi.advanceTimersByTimeAsync(5 * MIN);
     expect(descargarLibro).toHaveBeenCalledTimes(3);
+    expect(valor()).toBe(3);
+  });
+
+  it('A32: la marca se anota al APLICAR: si ⟳ descarta lo pendiente y su descarga falla, el ciclo siguiente vuelve a bajarlo (no dice «sin cambios» con la pantalla vieja)', async () => {
+    marcaDelLibro.mockResolvedValue(100);
+    const el = campo('text');   // un campo con el foco retiene lo nuevo
+    descargarLibro.mockResolvedValue(descarga(set(2)));
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(etiquetas.at(-1)).toMatch(/datos nuevos en espera/);
+    connectSheets.mockResolvedValue(false);   // ⟳ descarta el pendiente y su descarga falla
+    await refrescoManual();
+    expect(valor()).toBe(1);
+    el.blur();
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(descargarLibro).toHaveBeenCalledTimes(2);
+    expect(valor()).toBe(2);
   });
 
   it('si al saltar la descarga hay un pendiente, se conserva y la píldora lo sigue diciendo', async () => {
