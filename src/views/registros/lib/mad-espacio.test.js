@@ -853,6 +853,67 @@ describe('🔴 dejar una grilla con lo tecleado sin poder guardarse', () => {
   });
 });
 
+/* 2026-11-06 (auditoría de la A, usuario: «Que no borre la marca») · La marca de «tecleado sin guardar» es una, la de la grilla A LA VISTA, y
+   todas las grillas están en la página. ☁️ de Tanques, al terminar, repinta Tanques aunque se haya pasado a Salas mientras enviaba: borraba
+   la marca de lo tecleado en Salas, y entonces 🔄 lo repintaba encima, cerrar no avisaba y, sin espacio, salir no preguntaba. */
+describe('🔴 la marca de «sin guardar» es la de la grilla a la vista', () => {
+  let preguntas;
+  let decir;
+  beforeEach(() => {
+    preguntas = [];
+    decir = true;
+    globalThis.confirm = (t) => { preguntas.push(String(t)); return decir; };
+  });
+  const teclear = (el, v) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
+  const celdaSalas = () => document.querySelector('#fp-salas [name="sg_0_temp_02"]');
+  const irASalas = () => { H.setVista(H.MAD_MOD, 'salas'); document.getElementById('fp-salas').innerHTML = ''; H.renderMadSalas(); };
+
+  it('🔴 repintar Tanques, que no está a la vista, no borra la marca de lo tecleado en Salas', () => {
+    irASala('Sala 2');   // sin sala, Tanques no pinta grilla y no llega a tocar la marca: la prueba no ejercería nada
+    irASalas();
+    teclear(celdaSalas(), '28');
+    expect(H.dirty()).toBe(true);
+    H.renderMadTanques();
+    expect(H.dirty()).toBe(true);
+  });
+
+  it('🔵 repintar la grilla a la vista sí la limpia: refleja lo guardado', () => {
+    irASalas();
+    teclear(celdaSalas(), '28');
+    H.renderMadSalas();
+    expect(H.dirty()).toBe(false);
+  });
+
+  it('🔴 el caso: ☁️ en Tanques, se pasa a Salas y se teclea mientras envía; al terminar, sin espacio, dejar Salas pregunta', async () => {
+    let soltar;
+    const puerta = new Promise((r) => { soltar = r; });
+    H.setPostOnce(async (b) => { envios.push(JSON.parse(JSON.stringify(b))); await puerta; return 'ok'; });
+    try {
+      irASala('Sala 2');
+      teclear(celda(), '3');
+      const enviando = H.syncMadTanquesGrid();
+      for (let i = 0; i < 500 && !envios.length; i++) await Promise.resolve();
+      expect(envios.length, 'el envío de Tanques está en camino').toBe(1);
+      H.selTab('salas');
+      expect(H.vista().tab).toBe('salas');
+      teclear(celdaSalas(), '28');
+      soltar();
+      await enviando;
+      expect(H.dirty(), 'lo tecleado en Salas sigue sin guardar').toBe(true);
+      almacen.dejarLibres(5);
+      decir = false;
+      preguntas.length = 0;
+      H.selTab('tanques');
+      expect(preguntas).toHaveLength(1);
+      expect(preguntas[0]).toContain('PERDERLO');
+      expect(H.vista().tab).toBe('salas');
+      expect(celdaSalas().value).toBe('28');
+    } finally {
+      H.setPostOnce(async (b) => { envios.push(JSON.parse(JSON.stringify(b))); return respuesta; });
+    }
+  });
+});
+
 /* 2026-11-05 (pauta A8, usuario: «No caduca sola») · Un formulario se limpia al encolarse, y ésa es su única copia: a los 7 días la cola lo
    descartaba, también el Historial, y el aviso decía «revísalos» sin que quedara nada que revisar. */
 describe('🔴 lo que espera en la cola no caduca', () => {

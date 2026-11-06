@@ -6612,7 +6612,10 @@ function _madAfterRender(ficha){
      trabajo NUEVO (se lleva al día elegido) de corregir un día que ya tenía datos (se pregunta). Ver _madGridLlevar. */
   _madRendered[ficha] = { sala, fecha, conDatos: loadMad(ficha).some(_madGridDelDia(ficha, fecha, sala))
     || (ficha === "salas" && loadMad("zonas").some(_madZonasDelDia(fecha))) };   // 2026-10-27 · las zonas, en la misma grilla
-  _madGridDirty = false;   // la grilla recién renderizada refleja lo persistido (limpio)
+  /* La grilla recién renderizada refleja lo persistido (limpio). 2026-11-06 (auditoría de la A, usuario: «Que no borre la marca») · pero la
+     marca es la de la grilla A LA VISTA, y todas están en la página: ☁️ de Tanques, al terminar, repinta Tanques aunque se haya pasado a
+     Salas mientras enviaba, y borraba la marca de lo tecleado allí (🔄 lo repintaba encima; sin espacio, salir no preguntaba). */
+  if(ficha === curTab) _madGridDirty = false;
 }
 /** Las filas que la grilla PINTA para (fecha, sala): en Salas, las del día de las salas del selector; en Tanques, las
  *  del parte abierto de esa sala (las cerradas no se pintan: ver renderMadTanques). */
