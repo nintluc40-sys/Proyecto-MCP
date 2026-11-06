@@ -395,17 +395,20 @@ describe('Service worker · instalar y activar', () => {
     expect(guardadas.some((k) => k.endsWith('/registros/engine.js'))).toBe(true);
   });
 
-  it('🔴 al activar se borran las cachés de versiones anteriores', async () => {
+  it('🔴 al activar se borran las cachés de versiones anteriores, y SÓLO las propias (A32)', async () => {
+    /* A32 (2026-11-06): las cachés son del ORIGEN entero, que comparten los demás proyectos publicados en Pages. Antes
+       esta prueba exigía borrar también 'otra-app'. */
     sw = montarSW({ red: async () => ok() });
     await sw.cachesFalso.api.open('mcp-v0');
     await sw.cachesFalso.api.open('otra-app');
+    await sw.cachesFalso.api.open('workbox-precache-v2');
     await sw.cachesFalso.api.open('mcp-v1');
 
     let esperar;
     sw.manejadores.activate({ waitUntil: (p) => { esperar = p; } });
     await esperar;
 
-    expect([...sw.cachesFalso.almacenes.keys()]).toEqual(['mcp-v1']);
+    expect([...sw.cachesFalso.almacenes.keys()].sort()).toEqual(['mcp-v1', 'otra-app', 'workbox-precache-v2']);
   });
 
   it('🔴 NO llama a skipWaiting: no se cambia de versión a media sesión', async () => {

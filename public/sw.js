@@ -178,10 +178,15 @@ self.addEventListener('install', (e) => {
   })()]));
 });
 
+/* A32 (2026-11-06): las cachés son de TODO el origen (`nintluc40-sys.github.io`), que comparten los demás proyectos
+   publicados en Pages; antes, al activarse, éste borraba también las suyas. Sólo se borran las propias (prefijo `mcp-`)
+   de versiones anteriores. */
+const PREFIJO = 'mcp-';
+
 self.addEventListener('activate', (e) => {
   e.waitUntil((async () => {
     const nombres = await caches.keys();
-    await Promise.all(nombres.map((n) => (n === CACHE ? null : caches.delete(n))));
+    await Promise.all(nombres.map((n) => (n === CACHE || n.indexOf(PREFIJO) !== 0 ? null : caches.delete(n))));
     // Toma el control de las pestañas ya abiertas. En la PRIMERA instalación esto
     // evita que la app se quede sin service worker hasta la siguiente recarga.
     await self.clients.claim();
