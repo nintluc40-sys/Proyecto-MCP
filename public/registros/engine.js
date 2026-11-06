@@ -6398,7 +6398,7 @@ function loadMad(ficha){
     return Array.isArray(arr) ? arr : [];
   }catch(x){ return []; }
 }
-function saveMadList(ficha, list){
+function saveMadList(ficha, list, callado){   // `callado` (2026-11-05): quien llama da su propio aviso (↩ Recuperar)
   if(!MAD_FICHAS.includes(ficha)) return false;
   // Persistencia VERIFICADA (igual que Mic/Bio/AsT): _lsSet hace lectura-tras-
   // escritura + reclaim y devuelve false si el navegador NO persistió (cuota /
@@ -6413,7 +6413,7 @@ function saveMadList(ficha, list){
   }
   /* 2026-11-03 · aquí decía «Usa ☁️ Guardar y sincronizar para no perderlos»: en estas grillas el ☁️ guarda primero y, si no
      puede, no envía, así que el consejo no llevaba a ningún sitio. */
-  if(!ok && !_reclaiming) toast("❌ No se pudo guardar: el espacio de este navegador está lleno, aun quitando lo antiguo (o tiene el guardado bloqueado). Lo tecleado sigue en pantalla: no cambies de pestaña ni recargues, y anótalo. Lo que ocupa el espacio, en ⚙ Config.","err",9000);
+  if(!ok && !_reclaiming && !callado) toast("❌ No se pudo guardar: el espacio de este navegador está lleno, aun quitando lo antiguo (o tiene el guardado bloqueado). Lo tecleado sigue en pantalla: no cambies de pestaña ni recargues, y anótalo. Lo que ocupa el espacio, en ⚙ Config.","err",9000);
   return ok;
 }
 
@@ -6769,19 +6769,34 @@ function recoverMadGrid(){
   const ts = new Date(rec.ts).toLocaleString("es-EC");
   const recZonas = (rec.ficha==="salas" && Array.isArray(rec.zonas)) ? rec.zonas : [];   // 2026-10-27 · las de las zonas
   if(!confirm("¿Recuperar las "+(rec.rows.length + recZonas.length)+" fila(s) autoguardadas el "+ts+"?\nSe combinarán con la grilla guardada.")) return;
-  if(rec.ficha==="tanques") _madTanquesSala = rec.sala;
+  /* 2026-11-05 (auditoría de la A, usuario: «No recuperar y avisar») · Recuperar repinta la grilla: lo tecleado en ella se guarda antes
+     y, si no cabe, se pregunta (pauta A7). Y SIN ESPACIO NO SE TOCA NADA: antes no se miraba si `saveMadList` guardaba; se borraba la
+     copia, se decía «✅ recuperadas» y las filas se perdían. Ahora la copia se queda (hasta su hora) y se dice qué hacer. Salas y sus
+     zonas van juntas: si las zonas no caben, las salas vuelven a como estaban. */
+  if(!_madGridSePuedeDejar()) return;
   const list = loadMad(rec.ficha);
   let entraron = rec.rows.length + recZonas.length;
   if(rec.ficha==="tanques") entraron = _madRecTanques(list, rec);   // 2026-09-30 · a la ronda abierta, y lo ya guardado no
   else rec.rows.forEach(data=>{
     _madMergeRow(list, rec.ficha, data);
   });
-  saveMadList(rec.ficha, list);
-  if(recZonas.length){
+  let antes = null;
+  try{ antes = localStorage.getItem(madKey(rec.ficha)); }catch(_){}
+  let cupo = !entraron || saveMadList(rec.ficha, list, true);
+  if(cupo && recZonas.length){
     const zl = loadMad("zonas");
     recZonas.forEach(function(data){ _madMergeRow(zl, "zonas", data); });
-    saveMadList("zonas", zl);
+    if(!saveMadList("zonas", zl, true)){
+      cupo = false;
+      try{ if(antes === null) localStorage.removeItem(madKey(rec.ficha)); else localStorage.setItem(madKey(rec.ficha), antes); }catch(_){}
+    }
   }
+  if(!cupo){
+    const hasta = new Date(rec.ts + RTTL).toLocaleTimeString("es-EC",{hour:"2-digit",minute:"2-digit"});
+    toast("No hay espacio en este equipo para recuperar el autoguardado: no se ha recuperado nada, y la copia se conserva (hasta las "+hasta+"). Libera espacio (🧹 en ⚙ Config) y vuelve a pulsar ↩ Recuperar.","err",12000);
+    return;
+  }
+  if(rec.ficha==="tanques") _madTanquesSala = rec.sala;
   try{ localStorage.removeItem(MAD_RECOV_KEY); }catch(_){}
   _madGridDirty = false;
   renderMad(rec.ficha);

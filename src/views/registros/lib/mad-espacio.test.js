@@ -21,7 +21,7 @@ const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['pickMod', 'enter', 'goBack', 'PINS', 'MAD_MOD', 'MAD_FICHAS', 'madKey', 'loadMad', 'saveMadList', 'renderMadTanques', 'renderMadSalas',
   'saveMadTanquesGrid', 'saveMadSalasGrid', 'syncMadTanquesGrid', 'syncMadSalasGrid', 'madTanquesSalaChange', 'MAD_RETENCION_DIAS', '_madPodarEnviados',
   '_madHistPodar', '_madLimpiezaDeEspacio', '_soltarCopiaMatriz', '_REPRO_CACHE_KEY', '_reproCacheSave', 'MAD_HIST_KEY', 'MAD_HIST_PANEL_PRE',
-  '_madHistGuardar', 'madHistLeer', '_madHistGrillas', 'renderMadHistorial', 'openCfg', 'closeCfg', 'liberarEspacio', '_espacioMedir', 'ESPACIO_TOPE', '_gasVersionLocal', 'safeSetItem', '_madTqConfirmarRepetidas', '_loadSyncQueue', 'MAD_RECOV_KEY', 'loadMadRecovery', '_lastSyncFingerprint', 'selTab', 'goBack', 'madTanquesFechaChange', 'madSalasFechaChange', '_madCommitActive', '_madGridFechaAuto', 'madMovGuardar', 'renderMadMovimientos', 'madMovSalaChange', '_loadSyncQueue', 'flushSyncQueue', 'SYNCQ_KEY', '_madTqDiaQuitado', 'syncAll'];
+  '_madHistGuardar', 'madHistLeer', '_madHistGrillas', 'renderMadHistorial', 'openCfg', 'closeCfg', 'liberarEspacio', '_espacioMedir', 'ESPACIO_TOPE', '_gasVersionLocal', 'safeSetItem', '_madTqConfirmarRepetidas', '_loadSyncQueue', 'MAD_RECOV_KEY', 'loadMadRecovery', '_lastSyncFingerprint', 'selTab', 'goBack', 'madTanquesFechaChange', 'madSalasFechaChange', '_madCommitActive', '_madGridFechaAuto', 'madMovGuardar', 'renderMadMovimientos', 'madMovSalaChange', '_loadSyncQueue', 'flushSyncQueue', 'SYNCQ_KEY', '_madTqDiaQuitado', 'syncAll', 'recoverMadGrid', 'saveMadRecovery'];
 const H = {};
 const avisos = [];
 const envios = [];
@@ -739,6 +739,116 @@ describe('🔴 dejar una grilla con lo tecleado sin poder guardarse', () => {
       expect(H._madCommitActive()).toBe(true);
       H.setVista(1, 'calidad');
       expect(H._madCommitActive()).toBe(true);
+    });
+  });
+
+  /* 2026-11-05 (auditoría de la A, usuario: «No recuperar y avisar») · ↩ Recuperar sin espacio decía «✅ Filas recuperadas», no guardaba
+     nada y borraba la copia: las filas se perdían. Y repintaba la grilla sin preguntar por lo tecleado en ella. */
+  describe('↩ Recuperar sin espacio', () => {
+    /** Una copia del autoguardado de la Sala 2, y la grilla como tras recargar: sin lo tecleado. */
+    const copiaDeSala2 = () => {
+      irASala('Sala 2');
+      teclear(celda(), '7');
+      H.saveMadRecovery();
+      expect(H.loadMadRecovery(), 'el autoguardado se tomó').toBeTruthy();
+      document.getElementById('fp-tanques').innerHTML = '';
+      H.renderMadTanques();
+      expect(H.dirty(), 'como tras recargar: nada tecleado').toBe(false);
+    };
+    const conSiete = () => H.loadMad('tanques').some((r) => r.data.sala === 'Sala 2' && String(r.data.hembras_muertas) === '7');
+    const dijoQueNo = () => avisos.some((a) => a.includes('no se ha recuperado nada') && a.includes('la copia se conserva (hasta las'));
+
+    it('🔴 no recupera, conserva la copia y dice qué hacer', () => {
+      copiaDeSala2();
+      almacen.dejarLibres(5);
+      respuesta = true;
+      H.recoverMadGrid();
+      expect(conSiete(), 'no cabía').toBe(false);
+      expect(H.loadMadRecovery(), 'la copia se conserva').toBeTruthy();
+      expect(dijoQueNo()).toBe(true);
+      expect(avisos.some((a) => a.includes('no se ha recuperado nada') && a.includes('🧹') && a.includes('↩ Recuperar'))).toBe(true);
+      expect(avisos.some((a) => a.includes('Filas recuperadas')), 'no dice que recuperó').toBe(false);
+      expect(avisos.some((a) => a.includes('Lo tecleado sigue en pantalla')), 'el aviso del guardado de la grilla no sirve aquí').toBe(false);
+    });
+
+    it('🔴 al liberar espacio, volver a pulsar ↩ las recupera', () => {
+      copiaDeSala2();
+      almacen.dejarLibres(5);
+      respuesta = true;
+      H.recoverMadGrid();
+      almacen.dejarLibres(1e6);
+      H.recoverMadGrid();
+      expect(conSiete()).toBe(true);
+      expect(H.loadMadRecovery()).toBeNull();
+      expect(avisos.some((a) => a.includes('Filas recuperadas'))).toBe(true);
+    });
+
+    it('🔴 sin espacio, la grilla no se va a la sala de la copia', () => {
+      copiaDeSala2();
+      irASala('Sala 3');
+      almacen.dejarLibres(5);
+      respuesta = true;
+      H.recoverMadGrid();
+      H.renderMadTanques();
+      expect(sala()).toBe('Sala 3');
+    });
+
+    it('🔴 Salas: si las zonas no caben, las salas vuelven a como estaban, y la copia se queda', () => {
+      poner('salas', [rec(hace(3), { id: 's-antes' })]);
+      irASalas();
+      teclear(celdaSalas(), '28');
+      teclear(document.querySelector('#fp-zonas [name="zg_0_temp_02"]'), '27');
+      H.saveMadRecovery();
+      expect(H.loadMadRecovery().zonas, 'la copia lleva sus zonas').toHaveLength(1);
+      irASalas();
+      almacen.bloquear(H.madKey('zonas'));
+      respuesta = true;
+      H.recoverMadGrid();
+      almacen.bloquear(null);
+      expect(ids('salas')).toEqual(['s-antes']);
+      expect(H.loadMad('zonas')).toEqual([]);
+      expect(H.loadMadRecovery()).toBeTruthy();
+      expect(dijoQueNo()).toBe(true);
+    });
+
+    it('🔴 lo tecleado en la grilla sin poder guardarse: pregunta antes, y «Cancelar» lo deja en pantalla', () => {
+      copiaDeSala2();
+      irASala('Sala 3');
+      lleno();
+      teclear(celda(), '4');
+      globalThis.confirm = (t) => { preguntas.push(String(t)); return preguntas.length === 1; };   // sí a recuperar; no a perder lo tecleado
+      H.recoverMadGrid();
+      expect(preguntas).toHaveLength(2);
+      expect(preguntas[1]).toContain('PERDERLO');
+      expect(celda().value).toBe('4');
+      expect(H.loadMadRecovery()).toBeTruthy();
+    });
+
+    it('🔵 sin espacio, si todo ya estaba guardado no hace falta escribir: lo dice y suelta la copia', () => {
+      irASala('Sala 2');
+      teclear(celda(), '7');
+      expect(H.saveMadTanquesGrid({ silent: true })).toBeGreaterThan(0);
+      H.saveMadRecovery();   // un autoguardado de lo que ya está guardado
+      expect(H.loadMadRecovery()).toBeTruthy();
+      document.getElementById('fp-tanques').innerHTML = '';
+      H.renderMadTanques();
+      almacen.dejarLibres(5);
+      respuesta = true;
+      H.recoverMadGrid();
+      expect(avisos.some((a) => a.includes('ya estaba guardado'))).toBe(true);
+      expect(dijoQueNo()).toBe(false);
+      expect(H.loadMadRecovery()).toBeNull();
+    });
+
+    it('🔵 con espacio, lo tecleado en la grilla se guarda antes de recuperar', () => {
+      copiaDeSala2();
+      irASala('Sala 3');
+      teclear(celda(), '4');
+      respuesta = true;
+      H.recoverMadGrid();
+      expect(preguntas).toHaveLength(1);
+      expect(H.loadMad('tanques').some((r) => r.data.sala === 'Sala 3' && String(r.data.hembras_muertas) === '4'), 'lo de la Sala 3').toBe(true);
+      expect(conSiete(), 'y lo recuperado').toBe(true);
     });
   });
 });
