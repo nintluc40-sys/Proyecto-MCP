@@ -512,6 +512,7 @@ describe('A9 · abrir o repetir no pisa lo que no se ha guardado', () => {
     expect(vistas[0]).toContain('Se sustituiría: TQ 1.');
   });
 
+  // A10 (2026-11-06, usuario: «Preguntar cada vez») · antes, la pregunta de A10 (¿corrección u otra?) y, después, la de A9.
   it('🔴 llevar una evaluación a la llave de otra también pregunta: la de allí no se pisa', () => {
     evaluar({ 1: 2 });
     H.scoreGuardar();
@@ -519,10 +520,12 @@ describe('A9 · abrir o repetir no pisa lo que no se ha guardado', () => {
     evaluar({ 2: 3 }, '599');
     H.scoreGuardar();
     campo('corrida', '598');
-    const no = responder(false);
+    const no = [], resp = [true, false];   // «es una corrección», pero «no» a pisar la de allí
+    window.confirm = (m) => { no.push(m); return resp.shift(); };
     H.scoreGuardar();
-    expect(no).toHaveLength(1);
-    expect(no[0]).toContain('Se perdería, sin llegar a la hoja: TQ 1.');
+    expect(no).toHaveLength(2);
+    expect(no[0]).toContain('CORRECCIÓN');
+    expect(no[1]).toContain('Se perdería, sin llegar a la hoja: TQ 1.');
     expect(H._scoreRaw()).toHaveLength(2);
     expect(tanquesDe('598')).toEqual([1]);
   });

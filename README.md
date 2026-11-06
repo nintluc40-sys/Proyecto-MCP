@@ -1221,6 +1221,12 @@ sin avisar**:
   sólo cambia con 🧹 y un análisis reutilizado otro día la comparte (usuario: «Sí, así»). Las anulaciones esperan en
   `lab_anular_v1` hasta salir con el siguiente envío de su hoja. El sistema no carga las filas «⛔ ANULADA»
   (`filaAnulada`, `src/core/sheets.js`). Las sesiones heredadas (sin número) siguen como antes.
+  **🎯 Score:** un tanque ya enviado que se vacía (🧹, siguiendo con la misma evaluación) viaja **anulado**: el mismo ID,
+  sin puntos y «⛔ ANULADA · tanque vaciado» en Interpretación. Cambiar la fecha, el módulo o la corrida de la evaluación
+  abierta pregunta: **corrección** (sus filas enviadas viajan anuladas, «pasó al …», y la de antes sale del dispositivo),
+  **otra evaluación** (se queda) o **cancelar**. Sólo se anula lo que llegó a la hoja (`enviados` de cada evaluación; lo
+  que espera, en `anular`). Una evaluación NUEVA que cae sobre una enviada no la toca (A9: lo que falta sigue en la
+  hoja). Tras recargar la página, la app no sabe qué evaluación se continúa (A9): para anular, ábrela con ✏️.
 - **Reproductivo · elegir la hembra:** si el envío falla de verdad, los microchips elegidos **siguen** en la lista
   para reintentar (entregado o en cola, salen como antes).
 

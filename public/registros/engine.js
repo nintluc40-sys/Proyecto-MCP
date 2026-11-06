@@ -21251,7 +21251,10 @@ function scoreFilas(d){
 }
 function buildScorePayload(records){
   const rows = [];
-  (records || []).forEach(function(r){ if(r && r.data) scoreFilas(r.data).forEach(function(f){ rows.push(f); }); });
+  (records || []).forEach(function(r){
+    if(r && r.data) scoreFilas(r.data).forEach(function(f){ rows.push(f); });
+    if(r && Array.isArray(r.anular)) r.anular.forEach(function(a){ if(a && a.id) rows.push(_scoreFilaAnulada(a)); });   // A10
+  });
   return { sheetName: SCORE_SHEET, headers: SCORE_HEADERS.slice(), rows: rows };
 }
 
@@ -21333,7 +21336,11 @@ function scoreExtra(el){
 function scoreVaciarTanque(){
   const m = _scoreActual(), n = _scoreTq;
   if(scoreEstado(m.tanques[n]) === "vacio"){ toast("El TQ " + n + " ya está vacío.", "info", 2500); return; }
-  if(!confirm("¿Vaciar el TQ " + n + "?\nSe borran sus criterios y sus extras; el resto de la evaluación no cambia.")) return;
+  // A10 · si ya está en la hoja (siguiendo con la misma evaluación), dice que allí quedará anulado al guardar y enviar.
+  const sigue = _scoreOrigen === _scoreEvalId(m) ? _scoreRaw().find(function(r){ return r && r.id === _scoreOrigen; }) : null;
+  const enHoja = !!sigue && _scoreEnviados(sigue).indexOf(n) !== -1;
+  if(!confirm("¿Vaciar el TQ " + n + "?\nSe borran sus criterios y sus extras; el resto de la evaluación no cambia."
+    + (enHoja ? "\n\nYa se envió: al guardar y enviar, en la hoja quedará ANULADO." : ""))) return;
   delete m.tanques[n];
   _scoreGuardarBorrador();
   renderScore();
@@ -21426,18 +21433,70 @@ function _scoreLoQuePisa(previa, m){
   return _llaveCamposPisa(previa, m, [["camaronera","Camaronera"], ["laboratorio","Laboratorio"], ["realizado","Realizado por"],
     ["revisado","Revisado por"], ["observaciones","Observaciones"]], { faltan: faltan, cambian: cambian });
 }
+/* A10 (2026-11-06, usuario: «Sin tocar el Apps Script» y «Preguntar cada vez») · LO QUE SE QUITA DE UNA EVALUACIÓN YA
+   ENVIADA. La hoja se escribe por el ID de cada fila (fecha·módulo·corrida·tanque) y el Apps Script no borra: un tanque
+   vaciado dejaba de viajar y seguía en la hoja, y una evaluación abierta con otra fecha, módulo o corrida salía con otros
+   ID y la de antes se quedaba. Ahora esas filas viajan ANULADAS: el mismo ID, sin puntos y «⛔ ANULADA · …» en
+   Interpretación (el sistema no las carga: filaAnulada, src/core/sheets.js). Sólo lo que llegó a la hoja: `enviados`
+   (los tanques de ESTA evaluación que salieron; en una enviada de antes, los completos) y `anular` (lo que espera). */
+function _scoreDescribir(d){
+  const f = String((d && d.fecha) || "");
+  const fecha = /^\d{4}-\d{2}-\d{2}$/.test(f) ? f.slice(8, 10) + "/" + f.slice(5, 7) + "/" + f.slice(0, 4) : f;
+  return fecha + " · " + String((d && d.modulo) || "") + " · corrida " + _scoreCorrida(d || {});
+}
+function _scoreEnviados(rec){
+  if(!rec) return [];
+  const ya = Array.isArray(rec.enviados) ? rec.enviados.slice() : [];
+  // Enviada (también la que la cola dio por entregada, que no pasa por syncAllPendingScore): sus tanques completos están en la hoja.
+  if((rec.synced || rec.syncedAt) && rec.data) scoreFilas(rec.data).forEach(function(f){ if(ya.indexOf(f[5]) === -1) ya.push(f[5]); });   // f[5]: Tanque
+  return ya;
+}
+function _scoreAnulacion(d, tq, motivo){
+  return { id: scoreRowId(d, tq), fecha: sanitizeStr(d.fecha, 10), modulo: sanitizeStr(d.modulo, 10), corrida: _scoreCorrida(d), tq: tq, motivo: motivo };
+}
+function _scoreFilaAnulada(a){
+  const v = { "Fecha": a.fecha, "Módulo": a.modulo, "Corrida": a.corrida, "Tanque": a.tq, "Interpretación": "⛔ ANULADA · " + a.motivo, "ID": a.id };
+  return SCORE_HEADERS.map(function(h){ return Object.prototype.hasOwnProperty.call(v, h) ? v[h] : ""; });
+}
+
 // Valida y guarda la evaluación en el dispositivo como PENDIENTE (la misma fecha·módulo·corrida la sustituye).
 function _scoreRegistrar(){
   const m = _scoreActual();
   const err = scoreValidar(m);
   if(err.length){ toast("⚠ " + err.join(" · "), "warn", 8000); return null; }
   const id = _scoreEvalId(m);
+  const raw0 = _scoreRaw();
+  // A10 · La abierta (o ya guardada) cambió de fecha, módulo o corrida: ¿corrección u otra evaluación?
+  const orig = (_scoreOrigen && _scoreOrigen !== id) ? raw0.find(function(r){ return r && r.id === _scoreOrigen; }) : null;
+  let moverDe = null;
+  if(orig){
+    const viejo = _scoreDescribir(orig.data), nuevo = _scoreDescribir(m);
+    if(confirm("Esta evaluación estaba guardada como del " + viejo + ".\n\n¿Es una CORRECCIÓN y pasa a ser del " + nuevo + "?\n"
+      + "(Aceptar: se corrige; en la hoja, lo del " + viejo + " queda anulado.)")) moverDe = orig;
+    else if(!confirm("¿La guardas como OTRA evaluación del " + nuevo + ", aparte de la del " + viejo + "?\n(Cancelar: no se guarda nada.)")) return null;
+  }
   // A9 · Otra evaluación con esta llave: lo suyo no se pisa sin preguntar. Seguir con la misma no pregunta.
-  const previa = _scoreOrigen === id ? null : _scoreRaw().find(function(r){ return r && r.id === id; });
+  const previa = _scoreOrigen === id ? null : raw0.find(function(r){ return r && r.id === id; });
   const pregunta = previa ? _preguntaPorLlave("una evaluación de esta fecha, módulo y corrida", previa, _scoreLoQuePisa(previa.data, m)) : "";
   if(pregunta && !confirm(pregunta)) return null;
-  const list = _scoreRaw().filter(function(r){ return r && r.id !== id; });
-  const rec = { id: id, ts: Date.now(), synced: false, data: JSON.parse(JSON.stringify(m)) };
+  // A10 · Lo que hay que anular en la hoja: lo que ya esperaba (salvo lo que vuelve a tener puntos), los tanques enviados de ESTA
+  // evaluación que ahora están vacíos (sólo siguiendo con ella: una NUEVA sobre una enviada no la toca, A9) y, en una corrección,
+  // lo enviado de la de antes.
+  const continua = _scoreOrigen === id ? raw0.find(function(r){ return r && r.id === id; }) : null;
+  const vivos = new Set(scoreFilas(m).map(function(f){ return f[f.length - 1]; }));
+  const anular = [], vistos = new Set();
+  const poner = function(a){ if(!a || !a.id || vivos.has(a.id) || vistos.has(a.id)) return; vistos.add(a.id); anular.push(a); };
+  [continua, previa, moverDe].forEach(function(r){ if(r && Array.isArray(r.anular)) r.anular.forEach(poner); });
+  if(continua) _scoreEnviados(continua).forEach(function(tq){ if(scoreEstado(m.tanques[tq]) === "vacio") poner(_scoreAnulacion(continua.data, tq, "tanque vaciado")); });
+  if(moverDe){
+    const hacia = "pasó al " + _scoreDescribir(m);
+    _scoreEnviados(moverDe).forEach(function(tq){ poner(_scoreAnulacion(moverDe.data, tq, hacia)); });
+  }
+  const fuera = moverDe ? moverDe.id : null;
+  const list = raw0.filter(function(r){ return r && r.id !== id && r.id !== fuera; });
+  // `enviados`, sólo de la que continúa: lo de una que se pisa sigue en la hoja (A9) y no se anulará después.
+  const rec = { id: id, ts: Date.now(), synced: false, data: JSON.parse(JSON.stringify(m)),
+    enviados: continua ? _scoreEnviados(continua) : [], anular: anular };
   list.push(rec);
   if(!_scoreSave(list)) return null;
   _scoreOrigen = id;
@@ -21517,7 +21576,15 @@ async function syncAllPendingScore(){
     if(!entregado){ fallo = opts; break; }
     const l2 = _scoreRaw();
     const j = l2.findIndex(function(x){ return x && x.id === rec.id && x.ts === rec.ts; });
-    if(j >= 0){ l2[j].synced = true; l2[j].syncedAt = Date.now(); _scoreSave(l2); }
+    if(j >= 0){
+      l2[j].synced = true; l2[j].syncedAt = Date.now();
+      // A10 · lo que ya está en la hoja: sus tanques con puntos, menos los suyos que salieron anulados; lo anulado ya salió.
+      const salieron = scoreFilas(rec.data).map(function(f){ return f[5]; });
+      const anulados = (rec.anular || []).filter(function(a){ return a && a.id === scoreRowId(rec.data, a.tq); }).map(function(a){ return a.tq; });
+      l2[j].enviados = _scoreEnviados(rec).concat(salieron).filter(function(tq, i, a){ return a.indexOf(tq) === i && anulados.indexOf(tq) === -1; });
+      l2[j].anular = [];
+      _scoreSave(l2);
+    }
     enviados++;
   }
   if(!fallo){
