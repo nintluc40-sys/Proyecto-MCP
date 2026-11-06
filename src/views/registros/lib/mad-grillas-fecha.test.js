@@ -55,6 +55,9 @@ beforeAll(async () => {
     + '\ntry{ H.setToast=function(f){toast=f;}; }catch(_){}'
     // `curMod`/`curTab` son `let` del monolito: sin ellos `_madCommitActive` —guardar en el día que se deja— no actúa.
     + '\ntry{ H.setVista=function(m,t){ curMod=m; curTab=t; }; }catch(_){}'
+    // 2026-11-05 (auditoría) · para el envío en vuelo de 🔄: lo que se envía, sin red.
+    + '\ntry{ H.enVuelo=function(){ return _madIdsEnVuelo; }; H.syncAll=syncAll; H.setTqEnviar=function(f){ _madTanquesEnviar=f; };'
+    + ' H.setRepetidas=function(f){ _madTqConfirmarRepetidas=f; }; H.setGasAlDia=function(f){ _madIngGasAlDia=f; }; H.setCola=function(f){ flushSyncQueue=f; }; }catch(_){}'
     + '\n})();';
   globalThis.__ENG = H;
   new Function('window', 'document', 'localStorage', 'globalThis', readFileSync(ENGINE, 'utf8') + epilogo)(
@@ -265,6 +268,35 @@ describe('🔴 Tanques · lo que espera en la cola no cambia de día (pauta A12)
     expect(filasT(AYER)).toHaveLength(0);
     expect(resumenT(HOY())).toEqual([[7, 3, 1, false], [8, 2, 1, false]]);
     expect(filasT(HOY()).find((r) => r.data.tanque === 7).id, 'conserva su fila: es la que espera la cola').toBe(f.id);
+  });
+
+  /* 2026-11-05 (auditoría) · lo que 🔄 está enviando ahora no está todavía ni en la cola ni enviado. */
+  it('🔴 el parte que 🔄 está enviando se queda en su día y se dice; lo tecleado va al mismo parte', () => {
+    const f = fila({ fecha: HOY(), sala: SALA, tanque: 7, machos_muertos: 3, parte: 1, hora: '06:00', cerrado: 0 });
+    H.saveMadList('tanques', [f]);
+    H.enVuelo().add(f.id);
+    try {
+      abrirT();
+      teclearT(8, 'machos_muertos', '2');
+      fechaT(AYER);
+    } finally { H.enVuelo().clear(); }
+    expect(avisos.some((a) => a.includes('se está enviando ahora')), 'no avisó').toBe(true);
+    expect(filasT(AYER)).toHaveLength(0);
+    expect(resumenT(HOY())).toEqual([[7, 3, 1, false], [8, 2, 1, false]]);
+  });
+
+  it('🔴 🔄 apunta lo que envía mientras viaja, y lo suelta al terminar', async () => {
+    const f = fila({ fecha: HOY(), sala: SALA, tanque: 7, machos_muertos: 3, parte: 1, hora: '06:00', cerrado: 0 });
+    H.saveMadList('tanques', [f]);
+    H.setVista(MAD, 'salas');
+    let visto = null;
+    H.setRepetidas(async () => true);
+    H.setGasAlDia(async () => true);
+    H.setCola(async () => {});
+    H.setTqEnviar(async () => { visto = [...H.enVuelo()]; return true; });
+    await H.syncAll();
+    expect(visto, 'mientras viaja').toEqual([f.id]);
+    expect([...H.enVuelo()], 'al terminar').toEqual([]);
   });
 
   it('🔴 basta UNA fila del parte en la cola: el día no se parte', () => {

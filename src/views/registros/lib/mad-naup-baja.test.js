@@ -81,6 +81,9 @@ describe('🔬 el recuadro de arriba dice lo mismo que la ficha', () => {
     expect(recuadro()).toContain('vacía las revisiones que no se hayan hecho');
     expect(recuadro()).not.toContain('rellena sólo las revisiones hechas');
   });
+  it('🔴 nombra las siete variables de la tabla (auditoría: faltaban Fototropismo y Aireación)', () => {
+    ['Deformidad', 'Actividad', 'Hongos', 'Fototropismo', 'Aireación', 'Salinidad', 'Temperatura'].forEach((v) => expect(recuadro(), v).toContain(v));
+  });
 });
 
 describe('🔬 lo elegido en Entrada baja', () => {

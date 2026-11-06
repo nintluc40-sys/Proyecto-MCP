@@ -299,6 +299,30 @@ describe('A9 · ✏️ Abrir no pisa lo que no se ha guardado', () => {
     expect($(celda('BLW-02', 'horometro')).value).toBe('1028,42');
   });
 
+  /* 2026-11-05 (auditoría) · al corregir una ronda, vaciar un equipo lo ANULA en la hoja: una ronda abierta y vaciada entera también es
+     algo por guardar. Sólo se miraba si quedaba alguna lectura. */
+  it('🔴 una ronda guardada, abierta y vaciada entera, también pregunta antes de irse', () => {
+    const abrir = () => H.mntRondaAbrirEl($('#fp-mntronda button[data-mnt-id][onclick*="Abrir"]'));
+    teclear(celda('BLW-02', 'horometro'), '1028,42');
+    H.mntRondaGuardar();
+    responder(true);
+    abrir();
+    teclear(celda('BLW-02', 'horometro'), '');
+    const no = responder(false);
+    H.mntRondaNueva();
+    expect(no).toHaveLength(1);
+    expect(no[0]).toContain('NO se ha guardado');
+    const vistas = responder(false);
+    abrir();
+    expect(vistas, 'abrir otra también pregunta').toHaveLength(1);
+  });
+
+  it('🔴 una ronda en blanco que no es de ninguna guardada no pregunta', () => {
+    const vistas = responder(false);
+    H.mntRondaNueva();
+    expect(vistas).toEqual([]);
+  });
+
   it('🔴 «Nuevo trabajo», con lo anotado sin guardar, pregunta: «no» deja la pantalla; «sí» empieza en blanco', () => {
     trabajoCompleto();
     const no = responder(false);

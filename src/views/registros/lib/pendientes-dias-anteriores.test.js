@@ -142,6 +142,24 @@ describe('«☁️ Enviarlas»', () => {
     expect(avisos.some((a) => a.tipo === 'ok' && /Enviado lo de días anteriores/.test(a.msg))).toBe(true);
   });
 
+  /* 2026-11-05 (auditoría de la B) · las de Datos de un mismo día guardado iban juntas en UN envío, con una sola fecha: la Calidad de
+     anteayer, guardada ayer junto a la Población de ayer, caía en la fila de ayer. Como el 🔄 de hoy (A12): un envío por fecha. */
+  it('🔴 dos fichas de un mismo día guardado con fechas distintas: un envío por fecha, cada una en su fila', async () => {
+    ponFicha(1, 'poblacion', ayer, { fecha: ayer, corrida: '602', tec: 'Persona de prueba', 'po_0': '12', 'sv_0': '80' });
+    ponFicha(1, 'calidad', ayer, { fecha: anteayer, 'mo_0': '7' });   // sin corrida ni técnico: los de su día
+    await H.previasEnviar();
+    const datos = envios.filter((p) => /^Datos Larvicultura/.test(p.sheetName));
+    const col = (p, h) => p.rows[0][p.headers.indexOf(h)];
+    expect(datos.map((p) => p.rows[0][0])).toEqual([anteayer, ayer]);
+    expect(col(datos[0], '% Mortalidad')).toBe('7');
+    expect(col(datos[0], 'Población'), 'la Población no viaja con la Calidad de anteayer').toBe('');
+    expect(col(datos[0], 'Corrida')).toBe('602');
+    expect(col(datos[0], 'Técnico')).toBe('Persona de prueba');
+    expect(col(datos[1], '% Mortalidad'), 'la Calidad de anteayer no cae en la fila de ayer').toBe('');
+    expect([ficha(1, 'poblacion', ayer).synced, ficha(1, 'calidad', ayer).synced]).toEqual([true, true]);
+    expect(avisos.some((a) => a.tipo === 'ok' && /\(2 envío\(s\)\)/.test(a.msg))).toBe(true);
+  });
+
   it('🔴 con la red caída va a la COLA, sigue pendiente, y la entrega lo concilia en SU día', async () => {
     // otro dato que la prueba anterior: un envío IDÉNTICO en menos de 30 s, postPayload lo da por ya enviado (doble clic)
     ponFicha(1, 'calidad', ayer, { corrida: '601', 'mo_0': '6' });

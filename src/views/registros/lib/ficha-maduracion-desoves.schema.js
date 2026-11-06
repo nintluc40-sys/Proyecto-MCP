@@ -156,7 +156,9 @@ export function aMiles(v) {
 
 /** Normaliza como el resto de Maduración: dos grafías del mismo valor parten los filtros
  *  y, aquí, producirían DOS filas para el mismo desove. */
-export const normLote = (s) => mixCanonico(sanitizeStr(s, 40).toUpperCase().replace(/\s+/g, ''));
+// 2026-11-05 (auditoría) · los espacios se quitan ANTES de cortar a 40: cortando antes, un MIX escrito con espacios que sin ellos cabe se
+// guardaba sin cerrar, y `textoMal`, que mide sin espacios, no lo veía.
+export const normLote = (s) => mixCanonico(sanitizeStr(String(s === null || s === undefined ? '' : s).replace(/\s+/g, ''), 40).toUpperCase());
 /* A17 (2026-11-04, usuario: «Ordenarlo solo; si está mal, error») · un MIX escrito a mano: «mix(bo, bn)» es MIX(BN,BO), la misma llave que el de 📥 Cargar;
    y dos veces el mismo lote no es un MIX (decisión del 03-11), queda ese lote. Gemelo: `_madDesMixCanon`, en el motor. */
 function mixCanonico(l) {

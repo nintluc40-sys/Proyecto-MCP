@@ -431,8 +431,10 @@ volver a abrir esto, esto es lo que ya se midió:
   tanque en pantalla (decisión del usuario, 2026-10-04; «🗑 Nueva evaluación» vacía la entera) y «📄 PDF» imprime la
   evaluación en pantalla: A4 horizontal, una fila por tanque evaluado, con observaciones y firmas. «✏️ Abrir» pregunta si
   hay algo sin guardar, y una evaluación nueva con la llave de otra guardada pregunta antes de reemplazarla, diciendo qué
-  tanques se perderían o cambiarían (decisión del usuario, 2026-11-04). Igual en 🧾 Auditoría, por sus filas; en
-  🔧 Mantenimiento sólo «✏️ Abrir» pregunta, porque cada ronda y trabajo lleva su propio ID.
+  tanques se perderían o cambiarían (decisión del usuario, 2026-11-04), y también los datos de la evaluación entera
+  —observaciones, laboratorio, camaronera, quién la hizo y quién la revisó— que cambian o se vacían (2026-11-05: «Contarlas
+  también»). Igual en 🧾 Auditoría, por sus filas, sus observaciones y quién registra; en 🔧 Mantenimiento sólo «✏️ Abrir»
+  pregunta, porque cada ronda y trabajo lleva su propio ID, también con una ronda abierta y vaciada entera (anularía sus equipos).
   Y **🧾 Auditoría** (2026-10-03): las planillas «AUDITORIAS (MES) Cxxx» de una corrida y su módulo como ficha —la
   **siembra** (origen, guía, cantidad, toneladas del tanque, lote, código genético y el ingreso de reproductores: su
   fecha y sus guías, tecleados), la **transferencia** origen → destino (cantidad, estadío, PL/g y % de larvas pequeñas)
@@ -516,8 +518,9 @@ app lo perdía. Desde ese día, en las siete fichas y en las grillas de Salas y 
   abrirlo) y el día elegido tampoco tiene nada, **se lleva** al elegido; si no, **se pregunta**
   (Aceptar lo lleva; Cancelar lo deja en su día y enseña el elegido); sin teclear nada, la fecha
   enseña lo guardado de cada día, como antes;
-- en las grillas, lo **ya enviado no se mueve** (la hoja lo tiene con su fecha), **ni lo que espera en la cola**,
-  que saldrá con la suya (2026-11-05, usuario: «No mover»): se dice y se queda en su día; en Tanques la ronda
+- en las grillas, lo **ya enviado no se mueve** (la hoja lo tiene con su fecha), **ni lo que espera en la cola** ni lo
+  que 🔄 está enviando en ese momento, que saldrá con la suya (2026-11-05, usuario: «No mover»): se dice y se queda en su
+  día, con lo tecleado; en Tanques la ronda
   llevada es un **parte de ese día** —los partes cerrados son otras rondas y no cuentan como
   conflicto— y conserva la hora con que se abrió.
 
@@ -1198,12 +1201,14 @@ sin avisar**:
   enviarlo o borrarlo. Las fotos de un viaje caducan con su viaje.
 - **Larvicultura y Lab. Algas: lo de días anteriores.** Se guardan por día y la app lee los de hoy, así que lo no
   enviado dejaba de verse a medianoche y la limpieza lo borraba. Ahora la limpieza no lo toca y, al abrir el módulo,
-  un aviso dice qué quedó y de qué día, con **«☁️ Enviarlas»** (cada ficha a su hoja con SU fecha) y
-  **«🗑 Descartarlas»**.
-- **🔄 envía cada cosa con SU fecha** (2026-11-05). En Larvicultura, si las fichas llevan fechas distintas, sale un
-  envío por fecha, sólo con lo pendiente y de la más vieja a la más nueva: antes, una Calidad de ayer junto a la
-  Población de hoy se escribía en la fila de hoy. Con una sola fecha, el envío de siempre. En Biomol, 🔄 envía también
-  los análisis pendientes de OTROS días (usuario: «Enviar todo») y vuelve al que estaba en pantalla.
+  un aviso dice qué quedó y de qué día, con **«☁️ Enviarlas»** (cada ficha a su hoja con SU fecha: las de Datos de un
+  mismo día, un envío por fecha) y **«🗑 Descartarlas»**. Si sólo queda eso, 🔄 lo dice en vez de «No hay datos pendientes».
+- **🔄 envía cada cosa con SU fecha** (2026-11-05). En Larvicultura, un envío por fecha, de la más vieja a la más nueva, y
+  **sólo con lo pendiente**: antes, una Calidad de ayer junto a la Población de hoy se escribía en la fila de hoy, y lo ya
+  enviado volvía a viajar sin ir en la marca, así que desde la cola podía escribir un valor viejo encima de una corrección.
+  Cada envío se arma justo antes de salir, con su marca, para que lo guardado mientras sale el anterior viaje en el suyo.
+  En Biomol, 🔄 envía también los análisis pendientes de OTROS días (usuario: «Enviar todo») y vuelve al que estaba en
+  pantalla; pasado el tope de 15 envíos por minuto, lo que queda se dice una vez y se envía en el siguiente 🔄.
 - **Reproductivo · elegir la hembra:** si el envío falla de verdad, los microchips elegidos **siguen** en la lista
   para reintentar (entregado o en cola, salen como antes).
 
@@ -1436,12 +1441,16 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
 - **🔀 MIX: un desove de varios lotes** (usuario, 2026-11-03). Las copuladas de tanques de lotes distintos se juntan al desovar y
   sus huevos, N2 y N5 ya no se pueden separar. En Desoves e Inf. Supervisor, **📥 Cargar** trae una opción fija **MIX (-,-)**:
   pregunta qué lotes participan, dos o más, y rellena el lote —`MIX(BN,BO)`, en orden fijo: la misma mezcla, la misma llave—, los
-  códigos y las piscinas. Dos códigos del MISMO lote no son un MIX: queda ese lote con los códigos juntos, porque las cifras sí son
-  suyas. En la hoja es una fila más: el GAS no cambia. En el **saldo**, las hembras muertas de un MIX se reparten entre sus lotes
-  según las hembras vivas de cada uno, la regla de un tanque mezclado. En la **vista** va en su propia fila y sin repartir: cuenta
-  en el total de la planta y no suma a ninguno de sus lotes, códigos ni piscinas; con uno de esos filtros puestos se queda fuera de
-  las cifras y se dice aparte («🔀 Además…»), y la ficha y los reportes de cada lote dicen en qué MIX participó, con sus cifras. Con
-  una sala, cuenta en las salas de sus lotes. No tiene fila en 🧬 Lotes, que es de animales, y 🛢 Tanques no cambia. Lo vigilan
+  códigos y las piscinas. Escrito a mano se ordena solo (`mix(bo, bn)` es `MIX(BN,BO)`), y uno sin cerrar o de más de 40
+  caracteres, o un código de más de 200 o una piscina de más de 60, es un error (2026-11-04). Dos códigos del MISMO lote no son
+  un MIX: queda ese lote con los códigos juntos, porque las cifras sí son suyas. En la hoja es una fila más: el GAS no cambia. En
+  el **saldo**, las hembras muertas de un MIX se reparten entre sus lotes según las hembras vivas de cada uno, la regla de un
+  tanque mezclado, y el 📊 Saldo lo enseña con su tarjeta y su fila, que suma al total, mientras alguno de sus lotes siga en él
+  («Con su fila y en el total»). En la **vista** va en su propia fila y sin repartir: cuenta en el total de la planta —también en
+  la Tasa de desove, sobre las hembras de sus lotes— y no suma a ninguno de sus lotes, códigos ni piscinas; con uno de esos
+  filtros puestos se queda fuera de las cifras y se dice aparte («🔀 Además…»), salvo si el elegido es el propio MIX, que se sigue
+  ofreciendo en el filtro con su aviso. La ficha y los reportes de cada lote dicen en qué MIX participó, con sus cifras. Con una
+  sala, cuenta en las salas de sus lotes. No tiene fila en 🧬 Lotes, que es de animales, y 🛢 Tanques no cambia. Lo vigilan
   `mad-mix.test.js`, `operativo.mix.test.js` y su banco `mutar-mad-mix`.
 - **Los botones lentos leen en PARALELO.** Medido contra el GAS vivo: 13,5 s → 3,4 s.
 

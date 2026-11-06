@@ -223,7 +223,7 @@ describe('E · el resumen de syncAll', () => {
 
   it('hay una rama propia para «sólo quedó en cola»', () => {
     expect(cuerpo).toMatch(/else if\(!fail\)\{/);
-    expect(cuerpo).toContain('hoja(s) en cola');
+    expect(cuerpo).toContain('envío(s) en cola');   // 2026-11-05 · se cuentan envíos, no hojas
   });
 
   it('ninguna rama de syncAll cuenta un encolado como fallo', () => {

@@ -41,7 +41,7 @@ import { diasEntre } from '../registros/lib/mad-resumen.js';
 import { normPiscina } from '../registros/lib/ficha-maduracion-broodstock.schema.js';   // punto 5 · la piscina canónica
 import { fechaDeFila } from './operativo.data.js';
 import { cociente } from './operativo.indicadores.js';
-import { kpiReproduccion, desoveEnCodigo, loteElegido, hayPiscina, hayCamaronera, origenEnFiltro, filtrosNoAplicados } from './operativo.tablero.js';
+import { kpiReproduccion, desoveEnCodigo, desoveEnOrigen, loteElegido, filtrosNoAplicados } from './operativo.tablero.js';
 import { reproduccionDeLote } from './operativo.lotes.js';
 
 const txt = (v) => String(v == null ? '' : v).trim();
@@ -77,7 +77,8 @@ function enFiltro(r, F) {
   if (!F) return true;
   if (!loteElegido(r.Lote, F)) return false;
   if (!desoveEnCodigo(r, F)) return false;   // 🔀 un MIX no es de ningún código (ver `desoveEnCodigo`)
-  if (F.indice && (hayPiscina(F) || hayCamaronera(F)) && !origenEnFiltro(F.indice.origen.get(normLote(r.Lote)), F)) return false;
+  // 2026-11-05 (auditoría de la B) · la regla del tablero, que mira el origen de un MIX elegido en sus lotes: por su nombre no tiene Ingreso.
+  if (!desoveEnOrigen(r, F)) return false;
   return true;
 }
 

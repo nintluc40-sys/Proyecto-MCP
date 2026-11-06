@@ -14,7 +14,7 @@ import { join } from 'node:path';
 
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
-const EXPORTAR = ['saveE', 'loadE', 'getStatus', 'syncAll', 'buildDatosPayload', 'today', '_invalidateLoadE'];
+const EXPORTAR = ['saveE', 'loadE', 'getStatus', 'syncAll', 'buildDatosPayload', 'today', '_invalidateLoadE', 'PRE'];
 const H = {};
 const avisos = [];
 const envios = [];
@@ -191,6 +191,26 @@ describe('🔄 Datos Larvicultura · cada ficha va a la fila de SU fecha', () =>
     expect(avisos.some((a) => a.includes('quedaron en cola'))).toBe(true);
   });
 
+  /* 2026-11-05 (auditoría) · los datos de cada envío se copiaban todos al empezar y la marca se leía al salir: una corrección guardada
+     mientras salía el primero viajaba vieja con la marca nueva, y quedaba «enviada» sin haber viajado. */
+  it('🔴 lo guardado mientras sale el primer envío viaja en el segundo, con su marca', async () => {
+    H.saveE(1, 'poblacion', pob(hoy));
+    H.saveE(1, 'calidad', cal(ayer));
+    alPost = (p) => { if (p.rows[0][0] === ayer) H.saveE(1, 'poblacion', pob(hoy, { po_0: '13' })); return true; };
+    await H.syncAll();
+    expect(fechas()).toEqual([ayer, hoy]);
+    expect(celda(envios[1], 'Población'), 'viaja la corregida').toBe(13 * 1000);
+    expect(H.getStatus(1, 'poblacion')).toBe('synced');
+  });
+
+  it('🔴 una ficha que cambió de fecha mientras salía el primer envío va con su fecha nueva', async () => {
+    H.saveE(1, 'poblacion', pob(hoy));
+    H.saveE(1, 'calidad', cal(ayer));
+    alPost = (p) => { if (p.rows[0][0] === ayer) H.saveE(1, 'poblacion', pob(anteayer)); return true; };
+    await H.syncAll();
+    expect(fechas()).toEqual([ayer, anteayer]);
+  });
+
   it('🔴 una ficha sin valores por tanque no se envía ni se da por enviada; la otra sale', async () => {
     H.saveE(1, 'poblacion', pob(hoy));
     H.saveE(1, 'calidad', cal(ayer, { mo_0: '' }));
@@ -201,16 +221,27 @@ describe('🔄 Datos Larvicultura · cada ficha va a la fila de SU fecha', () =>
   });
 });
 
-describe('🔄 Datos Larvicultura · con una sola fecha, nada cambia', () => {
-  it('todas de hoy: un solo envío, igual que siempre, y con lo ya enviado dentro', async () => {
+describe('🔄 Datos Larvicultura · con una sola fecha, un solo envío', () => {
+  /* 2026-11-05 (auditoría; usuario: «Lo incluyo yo») · viaja SÓLO lo pendiente, lo que lleva la marca. Antes viajaban también las ya
+     enviadas: si ese envío se quedaba en la cola y luego se corregía una de ellas, la entrega escribía encima su valor viejo (el GAS
+     escribe toda celda no vacía) y la app decía «enviado», porque la marca no llevaba esa ficha. */
+  it('🔴 todas de hoy: un solo envío, y lo ya enviado no vuelve a viajar', async () => {
     H.saveE(1, 'poblacion', pob(hoy), true);
     H.saveE(1, 'calidad', cal(hoy));
-    const esperado = H.buildDatosPayload(1);
     await H.syncAll();
     expect(envios).toHaveLength(1);
-    expect(envios[0].p).toEqual(esperado);
-    expect(celda(envios[0], 'Población'), 'control: el envío único lleva también lo ya enviado').not.toBe('');
-    expect(envios[0].t.mark.keys, 'pero marca sólo lo pendiente').toEqual([`1|calidad|${hoy}`]);
+    expect(fechas()).toEqual([hoy]);
+    expect(celda(envios[0], '% Mortalidad')).toBe('5');
+    expect(celda(envios[0], 'Población'), 'la Población ya enviada no viaja').toBe('');
+    expect(envios[0].t.mark.keys).toEqual([`1|calidad|${hoy}`]);
+  });
+
+  it('🔴 lo que viaja es lo que marca, también con la corrida heredada', async () => {
+    H.saveE(1, 'poblacion', pob(hoy), true);
+    H.saveE(1, 'calidad', cal(hoy, { corrida: '', tec: '' }));
+    await H.syncAll();
+    expect(celda(envios[0], 'Corrida')).toBe('C-7');
+    expect(celda(envios[0], 'Técnico')).toBe('Técnico de prueba');
   });
 
   it('todas de ayer: un solo envío, a la fila de ayer', async () => {
@@ -233,6 +264,22 @@ describe('🔄 Datos Larvicultura · con una sola fecha, nada cambia', () => {
     H.saveE(1, 'poblacion', pob(hoy), true);
     await H.syncAll();
     expect(envios).toHaveLength(0);
+  });
+
+  /* 2026-11-05 (auditoría; usuario: «Decirlo bien») · 🔄 no envía lo de días anteriores (eso es «☁️ Enviarlas»), pero tampoco puede
+     decir «No hay datos pendientes» mientras la cabecera y el aviso dicen que sí. */
+  it('🔴 con sólo lo de días anteriores, lo dice y la cabecera lo sigue contando', async () => {
+    mapa.set(H.PRE + 'M01_calidad_' + ayer, JSON.stringify({ mod: 1, ficha: 'calidad', date: ayer, savedAt: 1, updatedAt: 1, synced: false, data: cal(ayer) }));
+    await H.syncAll();
+    expect(envios).toHaveLength(0);
+    expect(avisos.some((a) => /No hay datos pendientes/.test(a)), 'no puede decir que no hay nada').toBe(false);
+    expect(avisos.some((a) => /días anteriores/.test(a) && /Enviarlas/.test(a))).toBe(true);
+    expect(document.getElementById('slbl').textContent).not.toMatch(/Sin datos nuevos|Todo sincronizado/);
+  });
+
+  it('sin nada de hoy ni de antes, el aviso de siempre', async () => {
+    await H.syncAll();
+    expect(avisos.some((a) => /No hay datos pendientes/.test(a))).toBe(true);
   });
 
   it('sin ninguna fecha, un envío con la de hoy', async () => {

@@ -343,7 +343,9 @@ describe('🔀 A17 · un MIX a mano, y lo que no cabe', () => {
   const mort = (o) => ({ fecha: FECHA, lotes: [{ lote: 'BN', codigoGenetico: 'CA', desove: { entran: 10, muertas: 1 }, recuperacion: {}, ...o }] });
 
   const NOMBRES = [['mix(bo, bn)', 'MIX(BN,BO)'], ['MIX(BO,BN)', 'MIX(BN,BO)'], [' mix ( bn , bo ) ', 'MIX(BN,BO)'], ['MIX(BQ,BN,BO)', 'MIX(BN,BO,BQ)'], ['MIX(BO,BN,BO)', 'MIX(BN,BO)'],
-    ['MIX(BN,BN)', 'BN'], ['MIX(BN)', 'BN'], ['MIX(BN,)', 'BN'], ['bn', 'BN'], ['MIX', 'MIX'], ['MIX OLF', 'MIXOLF'], ['MIXTO', 'MIXTO'], ['MIX(BN,BO', 'MIX(BN,BO'], ['', '']];
+    ['MIX(BN,BN)', 'BN'], ['MIX(BN)', 'BN'], ['MIX(BN,)', 'BN'], ['bn', 'BN'], ['MIX', 'MIX'], ['MIX OLF', 'MIXOLF'], ['MIXTO', 'MIXTO'], ['MIX(BN,BO', 'MIX(BN,BO'], ['', ''],
+    // 2026-11-05 (auditoría) · con espacios pasa de 40 y sin ellos cabe: se cortaba ANTES de quitarlos y quedaba sin cerrar, sin error.
+    ['mix(bw, bv, bu, bt, bs, br, bq, bp, bo, bn)', 'MIX(BN,BO,BP,BQ,BR,BS,BT,BU,BV,BW)']];
   it.each(NOMBRES)('🔴 «%s» queda «%s», en el motor y en el esquema', (escrito, queda) => {
     expect(normLote(escrito)).toBe(queda);
     expect(H.madDesNormLote(escrito)).toBe(queda);
@@ -447,6 +449,15 @@ describe('🔀 A18 · 📊 Saldo', () => {
   });
   it('🔴 el de lotes que ya no están en el Saldo no sale: la lista no crece sin fin', () => {
     expect(R().mix.map((m) => m.lote)).toEqual([MIX]);
+  });
+  /* 2026-11-05 (auditoría) · la de arriba usa lotes que nunca existieron: no prueba un lote que SALE del Saldo al cerrarse. */
+  it('🔴 un MIX sale cuando sus lotes se cierran; con uno aún en el Saldo, se queda', () => {
+    const conCierres = (cerrados) => resumenMaduracion({ ...F, cierres: cerrados.map((Lote) => ({ Fecha: '2026-01-25', Lote, Tipo: 'Total', Machos: '', Hembras: '' })) }, { hoy: HOY });
+    expect(conCierres(['BO']).lotes.map((l) => l.lote), 'control: BO cerrado ya no está en el Saldo').not.toContain('BO');
+    expect(conCierres(['BO']).mix.map((m) => m.lote), 'BN sigue: el MIX se queda').toEqual([MIX]);
+    expect(conCierres(['BN', 'BO']).lotes.map((l) => l.lote), 'control').not.toContain('BN');
+    expect(conCierres(['BN', 'BO']).mix, 'cerrados los dos, sale').toEqual([]);
+    expect(H.madResumenMaduracion({ ...F, cierres: [{ Fecha: '2026-01-25', Lote: 'BN', Tipo: 'Total' }, { Fecha: '2026-01-25', Lote: 'BO', Tipo: 'Total' }] }, { hoy: HOY }).mix, 'en el motor también').toEqual([]);
   });
   it('🔴 el motor da lo mismo que el módulo', () => {
     expect(H.madResumenMaduracion(F, { hoy: HOY }).mix).toEqual(R().mix);

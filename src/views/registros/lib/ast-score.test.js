@@ -414,6 +414,37 @@ describe('A9 · abrir o repetir no pisa lo que no se ha guardado', () => {
     expect(H.SCORE_CRITERIOS.map((c) => t[c.k]), '«no» conserva los puntos').toEqual(H.SCORE_CRITERIOS.map((c) => c.pts[2]));
   });
 
+  /* 2026-11-05 (auditoría; usuario: «Contarlas también») · los datos de la evaluación entera viajan en cada fila: con los mismos tanques y
+     otras observaciones no preguntaba, y al enviarla la hoja se quedaba con las nuevas, o vacías. */
+  it('🔴 los mismos tanques con otras observaciones, o vaciadas, también preguntan y lo dicen', () => {
+    evaluar({ 1: 2 });
+    campo('observaciones', 'Nota de prueba');
+    campo('camaronera', 'Camaronera de prueba');
+    H.scoreGuardar();
+    H.scoreNueva();
+    evaluar({ 1: 2 });
+    campo('observaciones', 'Otra nota');
+    const no = responder(false);
+    H.scoreGuardar();
+    expect(no).toHaveLength(1);
+    expect(no[0]).toContain('Observaciones');
+    expect(no[0]).toContain('Camaronera');
+    expect(no[0]).not.toContain('TQ 1');
+    expect(H._scoreRaw()[0].data.observaciones, '«no» las conserva').toBe('Nota de prueba');
+  });
+
+  it('🔴 rellenar un dato que la guardada no tenía no pisa nada: no pregunta', () => {
+    evaluar({ 1: 2 });
+    H.scoreGuardar();
+    H.scoreNueva();
+    evaluar({ 1: 2 });
+    campo('observaciones', 'Nota nueva');
+    const vistas = responder(false);
+    H.scoreGuardar();
+    expect(vistas).toEqual([]);
+    expect(H._scoreRaw()[0].data.observaciones).toBe('Nota nueva');
+  });
+
   it('🔴 ya ENVIADA: lo que falta sigue en la hoja y no pregunta; lo que cambia sí, y dice que se corrige allí', () => {
     evaluar({ 1: 2 });
     H.scoreGuardar();

@@ -155,7 +155,7 @@
         <label>Backup local (mitigación de pérdida de datos)</label>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:3px">
           <button class="btn bs" type="button" onclick="exportBackup()" title="Descarga un JSON con TODOS los datos locales (fichas pendientes, historial, fotos, notas, CS, nombres TQ, config)">📥 Exportar todo</button>
-          <button class="btn bo" type="button" onclick="pickAndImportBackup()" title="Restaura un backup previamente exportado. Sobrescribe las claves coincidentes; no toca las demás">📤 Importar</button>
+          <button class="btn bo" type="button" onclick="pickAndImportBackup()" title="Restaura un backup previamente exportado. Antes descarga una copia de lo que hay; la cola se junta (sin lo de más de 7 días), el resto de lo coincidente se reemplaza y no toca lo demás">📤 Importar</button>
         </div>
         <span style="font-size:10.5px;color:var(--tx3);margin-top:3px;line-height:1.5">
           Datos como <b>Cantidad Sembrada</b> y <b>nombres de tanques</b> SOLO existen localmente — exporta periódicamente para no perderlos si el navegador limpia el almacenamiento.

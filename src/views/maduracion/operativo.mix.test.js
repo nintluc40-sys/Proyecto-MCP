@@ -407,6 +407,25 @@ describe('🔀 A19 · la Tasa de desove, los avisos y las notas', () => {
       expect(kpiReproduccion(M.fuentes.desoves, P, F({ lote: MIX, piscina: 'P3' })).desoves).toBe(0);
       expect(kpiReproduccion(M.fuentes.desoves, P, F({ piscina: 'P1' })).desoves, 'sin elegirlo, no es de la piscina').toBe(2);
     });
+    /* 2026-11-05 (auditoría de la B) · la tabla de 🥚 Reproducción miraba el origen por el nombre del MIX, que no tiene Ingreso: la tarjeta
+       daba sus desoves y la tabla, los pendientes y los destinos lo perdían. */
+    it('🔴 su origen tampoco lo saca de la tabla, de los pendientes de N5 ni de los destinos', () => {
+      const f = F({ lote: MIX, piscina: 'P1' });
+      expect(tablaDeReproduccion(M, P, f).map((x) => x.lote)).toEqual([MIX]);
+      expect(totalesDeReproduccion(M, P, f).desoves).toBe(4);
+      expect(tablaDeReproduccion(M, P, F({ lote: MIX, piscina: 'P3' }))).toEqual([]);
+      expect(tablaDeReproduccion(M, P, F({ piscina: 'P1' })).map((x) => x.lote), 'sin elegirlo, sigue fuera').not.toContain(MIX);
+    });
+    it('🔴 y sus pendientes de N5 cuentan con el origen de sus lotes', () => {
+      // Un MIX aún sin su N5: el del fixture ya lo tiene.
+      const M2 = modeloOperativo([...PLANTA, DES('2026-09-18', MIX, 'CA/CB', 'P1/P2', 2, 100000, 50000, '')], { fecha: FOTO, hoy: FOTO });
+      const P2 = periodoDe('30d', FOTO, M2.fuentes);
+      const IX2 = indiceDeFiltro(M2);
+      const conMix = (o) => pendientesDeN5(M2.fuentes, P2, normalizarFiltro(o, IX2), FOTO).filas.filter((x) => x.lote === MIX).length;
+      expect(conMix({ lote: MIX }), 'control: el MIX tiene un pendiente').toBe(1);
+      expect(conMix({ lote: MIX, piscina: 'P1' })).toBe(1);
+      expect(conMix({ lote: MIX, piscina: 'P3' })).toBe(0);
+    });
     it('🔴 `loteEnFiltro`: elegido él, se mira en las posiciones de sus lotes', () => {
       expect(loteEnFiltro(M.libro, MIX, F({ lote: MIX, codigo: 'CA/CB' }))).toBe(true);
       expect(loteEnFiltro(M.libro, MIX, F({ lote: MIX, codigo: 'CC' }))).toBe(false);

@@ -39,7 +39,7 @@ const EXPORTAR = ['renderBiomol', '_collectBioGrid', 'buildBioPayload', 'bioGrid
   'saveBioGrid', 'syncBioGrid', 'bioSesCrear', 'bioSidActivo', 'bioSes', 'bioSesDelDia',
   'bioSesNombre', 'bioSesEtiqueta', '_bioSesAll', '_bioSesSave', '_bioRaw', '_bioSave',
   'loadBioRpt', 'saveBioRpt', '_bioMigrarSesiones', 'BIO_GRID_HEADERS',
-  'bioVerSes', 'bioNuevoAnalisis', '_bioSesEnBlanco', 'syncAllPendingBio', 'bioSesEtiqueta', 'today'];
+  'bioVerSes', 'bioNuevoAnalisis', '_bioSesEnBlanco', 'syncAllPendingBio', 'bioSesEtiqueta', 'today', '_rl'];
 const H = {};
 const toasts = [];
 let enviados = [];
@@ -440,6 +440,40 @@ describe('Biomol · el botón global cubre también los OTROS días (pauta A12, 
     expect(enviados).toHaveLength(0);
     expect(fechaEnPantalla()).toBe('2026-08-18');
     expect(fp().querySelector('[name="bg_1_codigo"]').value, 'lo tecleado sigue ahí').toBe('TEC-1');
+  });
+
+  /* 2026-11-05 (auditoría) · el tope de 15 envíos por minuto: pasado, cada análisis avisaba «Demasiados intentos» y el de pantalla no salía. */
+  it('🔴 con el tope por minuto, sale lo que cabe, el resto se dice UNA vez y nada se pierde', async () => {
+    ponDia('2026-08-16'); H.renderBiomol();
+    analisisCon('2026-08-16', 'Uno', { codigo: 'U-1' });
+    ponDia('2026-08-17'); H.renderBiomol();
+    analisisCon('2026-08-17', 'Dos', { codigo: 'D-1' });
+    ponDia('2026-08-18'); H.renderBiomol();
+    analisisCon('2026-08-18', 'Pantalla', { codigo: 'P-1' });
+    // El tope de verdad: queda UN envío en este minuto (se agota dentro del recorrido, no sólo en el de pantalla).
+    H._rl.count = 14; H._rl.reset = Date.now() + 60000;
+    H.setRate(() => { if (H._rl.count >= 15) { toasts.push('Demasiados intentos. Espera 1 minuto.'); return false; } H._rl.count++; return true; });
+    try {
+      await H.syncAllPendingBio();
+    } finally {
+      H.setRate(() => true); H._rl.count = 0; H._rl.reset = 0;
+    }
+    expect(fechasEnviadas()).toEqual(['2026-08-16']);
+    expect(toasts.filter((t) => /Demasiados intentos/.test(t))).toHaveLength(0);
+    expect(toasts.filter((t) => /Quedan 2 análisis por enviar/.test(t))).toHaveLength(1);
+    expect(H._bioRaw().filter((r) => !r.synced).map((r) => r.data.codigo).sort(), 'lo que no cupo sigue pendiente').toEqual(['D-1', 'P-1']);
+    expect(fechaEnPantalla()).toBe('2026-08-18');
+  });
+
+  it('🔴 los recorridos dicen de qué día son, sin prometer una grilla en blanco', async () => {
+    ponDia('2026-08-17'); H.renderBiomol();
+    analisisCon('2026-08-17', 'De ayer', { codigo: 'AYE-1' });
+    ponDia('2026-08-18'); H.renderBiomol();
+    await H.syncAllPendingBio();
+    const del = toasts.filter((t) => /muestra\(s\) de/.test(t));
+    expect(del).toHaveLength(1);
+    expect(del[0]).toContain('(del 2026-08-17)');
+    expect(del[0]).not.toContain('grilla en blanco');
   });
 
   it('sin nada pendiente en ningún día, el aviso de siempre', async () => {

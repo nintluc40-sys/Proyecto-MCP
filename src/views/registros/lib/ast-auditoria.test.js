@@ -631,7 +631,7 @@ describe('A9 · abrir o repetir no pisa lo que no se ha guardado', () => {
     expect(guardada().data.siembras.map((f) => f.tanque)).toEqual(['2']);
   });
 
-  it('🔴 la misma fila con otro dato se dice aparte; otras observaciones o quien registra no son un cambio', () => {
+  it('🔴 la misma fila con otro dato se dice aparte', () => {
     poner({ siembras: [SI({})], cosechas: [CO({ cantidad: '1,000' })] });
     H.audGuardar();
     H.audNueva();
@@ -643,12 +643,27 @@ describe('A9 · abrir o repetir no pisa lo que no se ha guardado', () => {
     expect(no[0]).not.toContain('Cosecha');
     expect(no[0]).not.toContain('Se perdería');
     expect(guardada().data.siembras[0].guia, '«no» conserva la fila').toBe('1001');
+  });
+
+  /* 2026-11-05 (auditoría; usuario: «Contarlas también») · las observaciones y quien registra viajan en cada fila: cambiarlas también pisa. */
+  it('🔴 otras observaciones o quien registra también preguntan y lo dicen; rellenarlas, no', () => {
+    poner({ siembras: [SI({})] });
+    H.audGuardar();
     H.audNueva();
-    poner({ obs: 'otra nota', registrado: 'Otra persona', siembras: [SI({})], cosechas: [CO({ cantidad: '1,000' })] });
+    poner({ obs: 'otra nota', siembras: [SI({})] });   // vacías en la guardada: rellenarlas no pisa nada
     const vistas = responder(false);
     H.audGuardar();
     expect(vistas).toEqual([]);
     expect(guardada().data.obs).toBe('otra nota');
+    H.audNueva();
+    poner({ obs: 'tercera nota', registrado: 'Otra persona', siembras: [SI({})] });
+    const no = responder(false);
+    H.audGuardar();
+    expect(no).toHaveLength(1);
+    expect(no[0]).toContain('Observaciones');
+    expect(no[0]).toContain('Registrado por');
+    expect(no[0]).not.toContain('Siembra');
+    expect(guardada().data.obs, '«no» las conserva').toBe('otra nota');
   });
 
   it('🔴 ya ENVIADA: lo que falta sigue en la hoja y no pregunta; lo que cambia sí, y dice que se corrige allí', () => {

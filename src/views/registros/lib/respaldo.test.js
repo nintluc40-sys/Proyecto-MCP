@@ -49,7 +49,8 @@ beforeAll(async () => {
     + EXPORTAR.map((n) => `try{ H[${JSON.stringify(n)}] = ${n}; }catch(_){}`).join('\n')
     + '\ntry{ H.setToast=function(f){toast=f;}; }catch(_){}'
     + '\ntry{ H.enviando=function(v){_flushingQueue=v;}; }catch(_){}'
-    + '\ntry{ H.alInvalidarFotos=function(f){_invalidateFotosCache=f;}; }catch(_){}\n})();';
+    + '\ntry{ H.alInvalidarFotos=function(f){_invalidateFotosCache=f;}; }catch(_){}'
+    + '\ntry{ H.huellas=function(){ return _lastSyncFingerprint; }; var _colaAseguraReal=_colaAsegura; H.alArrancarCola=function(f){ _colaAsegura = f || _colaAseguraReal; }; }catch(_){}\n})();';
   globalThis.__ENG = H;
   new Function('window', 'document', 'localStorage', 'globalThis', readFileSync(ENGINE, 'utf8') + epilogo)(window, document, almacen, globalThis);
   H.setToast((msg, tipo) => { avisos.push({ msg: String(msg), tipo: tipo || 'info' }); });
@@ -73,8 +74,11 @@ beforeEach(() => {
 const respaldo = (items, extra = {}) => JSON.stringify({ v: H.BACKUP_VERSION, ts: 1, iso: '2026-10-02T12:00:00.000Z', appHost: 'prueba', count: Object.keys(items).length, items, ...extra });
 const ultimo = () => avisos[avisos.length - 1] || { msg: '', tipo: '' };
 const COLA = () => H.SYNCQ_KEY;
-const envio = (reqId, ts) => ({ payload: { sheetName: 'Hoja ' + reqId, headers: ['a'], rows: [['1']] }, reqId, url: '', ts, mark: null });
+/* La hora de un envío, contada desde hace una hora: desde el 2026-11-05 lo de más de 7 días de un respaldo no se junta, y una hora de 1970 lo sería. */
+const BASE = Date.now() - 3600000;
+const envio = (reqId, ts) => ({ payload: { sheetName: 'Hoja ' + reqId, headers: ['a'], rows: [['1']] }, reqId, url: '', ts: BASE + ts, mark: null });
 const cola = () => JSON.parse(mapa.get(COLA()) || '[]');
+const horas = () => cola().map((x) => x.ts - BASE);
 const contenidoDe = async (blob) => JSON.parse(await blob.text());
 
 describe('A13 · 📥 Exportar', () => {
@@ -250,12 +254,12 @@ describe('A13 · la cola se junta', () => {
   it('🔴 el mismo envío con otra hora no se repite: su huella ya espera aquí', () => {
     mapa.set(COLA(), JSON.stringify([envio('a', 30)]));
     H.importBackup(respaldo({ [COLA()]: JSON.stringify([envio('a', 10)]) }));
-    expect(cola().map((x) => x.ts)).toEqual([30]);
+    expect(horas()).toEqual([30]);
   });
   it('🔴 sin huella, los distingue la hora', () => {
     mapa.set(COLA(), JSON.stringify([envio('', 30)]));
     H.importBackup(respaldo({ [COLA()]: JSON.stringify([envio('', 30), envio('', 10)]) }));
-    expect(cola().map((x) => x.ts)).toEqual([10, 30]);
+    expect(horas()).toEqual([10, 30]);
   });
   it('🔴 aquí vacía (navegador borrado): entra la del respaldo entera', () => {
     H.importBackup(respaldo({ [COLA()]: JSON.stringify([envio('c', 20), envio('b', 10)]) }));
@@ -284,6 +288,56 @@ describe('A13 · la cola se junta', () => {
     expect(cola()).toHaveLength(H.SYNCQ_MAX);
     expect(cola().some((x) => x.reqId === 'viejo')).toBe(false);
     expect(avisos.some((a) => a.msg.includes('Hoja viejo'))).toBe(true);
+  });
+  /* 2026-11-05 (auditoría; usuario: «No importar lo viejo») · la cola ya no caduca (A8): un respaldo viejo reenviaba su cola entera
+     encima de las correcciones posteriores. Lo de más de 7 días del respaldo no se junta, y se dice cuánto. */
+  const DIA = 86400000;
+  const viejo = (reqId, dias) => ({ ...envio(reqId, 0), ts: Date.now() - dias * DIA });
+  it('🔴 lo del respaldo de más de 7 días se queda fuera y se dice cuánto; lo reciente se junta', () => {
+    mapa.set(COLA(), JSON.stringify([envio('a', 30)]));
+    H.importBackup(respaldo({ [COLA()]: JSON.stringify([viejo('v1', 8), viejo('v2', 40), envio('b', 10), viejo('casi', 6)]) }));
+    expect(cola().map((x) => x.reqId)).toEqual(['casi', 'b', 'a']);
+    expect(ultimo().msg).toContain('2 envío(s) de la cola del respaldo');
+    expect(ultimo().msg).toContain('más de 7 días');
+  });
+  it('🔴 lo viejo que ya espera aquí no se toca: sólo se filtra lo que trae el respaldo', () => {
+    mapa.set(COLA(), JSON.stringify([viejo('a', 9)]));
+    H.importBackup(respaldo({ [COLA()]: JSON.stringify([envio('b', 10)]) }));
+    expect(cola().map((x) => x.reqId)).toEqual(['a', 'b']);
+    expect(ultimo().msg).not.toContain('más de 7 días');
+  });
+  it('🔴 un envío del respaldo sin hora se trata como viejo', () => {
+    H.importBackup(respaldo({ [COLA()]: JSON.stringify([{ ...envio('sin', 0), ts: undefined }, envio('b', 10)]) }));
+    expect(cola().map((x) => x.reqId)).toEqual(['b']);
+    expect(ultimo().msg).toContain('1 envío(s) de la cola del respaldo');
+  });
+  /* 2026-11-05 (auditoría) · tras importar, el reintento no arrancaba hasta recargar, y la huella de los últimos 30 s de una hoja dejaba
+     contestar «ya enviado» a un ☁️ que el envío importado pisaría después. */
+  it('🔴 olvida la huella reciente de las hojas que trae la cola, y arranca el reintento', () => {
+    H.huellas().set('Hoja b', { hash: 'x', ts: Date.now() });
+    H.huellas().set('Hoja otra', { hash: 'y', ts: Date.now() });
+    let arranques = 0;
+    H.alArrancarCola(() => { arranques++; });
+    try {
+      H.importBackup(respaldo({ [COLA()]: JSON.stringify([envio('b', 10)]) }));
+    } finally { H.alArrancarCola(null); }
+    expect(H.huellas().has('Hoja b')).toBe(false);
+    expect(H.huellas().has('Hoja otra'), 'las demás, no').toBe(true);
+    expect(arranques).toBe(1);
+    H.huellas().clear();
+  });
+  it('🔴 sin nada nuevo en la cola no arranca nada', () => {
+    let arranques = 0;
+    H.alArrancarCola(() => { arranques++; });
+    try {
+      H.importBackup(respaldo({ larv4_x: '1' }));
+    } finally { H.alArrancarCola(null); }
+    expect(arranques).toBe(0);
+  });
+  it('🔴 el botón 📤 Importar ya no dice que sobrescribe la cola', () => {
+    const b = readFileSync(SHELL, 'utf8').split('\n').find((l) => l.includes('onclick="pickAndImportBackup()"'));
+    expect(b).not.toContain('Sobrescribe las claves coincidentes');
+    expect(b).toContain('la cola se junta');
   });
   it('🔴 si no cabe, no avisa de un descarte que no pasó', () => {
     const aqui = Array.from({ length: H.SYNCQ_MAX }, (_, i) => envio('aqui' + i, 100 + i));

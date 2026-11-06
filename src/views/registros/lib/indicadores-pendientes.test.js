@@ -40,7 +40,8 @@ beforeAll(async () => {
     + '\ntry{ H.setPost=function(f){postPayload=f;}; }catch(_){}'
     + '\ntry{ H.setRate=function(f){syncRateOk=f;}; }catch(_){}'
     + '\ntry{ H.setMod=function(m){curMod=m;}; }catch(_){}'
-    + '\ntry{ H.tecleado=function(v){ _madGridDirty=v; _bioGridDirty=v; _astFormDirty=v; _formDirty=v; }; }catch(_){}\n})();';
+    + '\ntry{ H.tecleado=function(v){ _madGridDirty=v; _bioGridDirty=v; _astFormDirty=v; _formDirty=v; }; }catch(_){}'
+    + '\ntry{ H.marca=function(c,v){ if(c==="mad") _madGridDirty=v; if(c==="bio") _bioGridDirty=v; if(c==="ast") _astFormDirty=v; if(c==="form") _formDirty=v; }; }catch(_){}\n})();';
   globalThis.__ENG = H;
   new Function('window', 'document', 'localStorage', 'globalThis', readFileSync(ENGINE, 'utf8') + epilogo)(window, document, almacen, globalThis);
   H.setToast(() => {});
@@ -241,12 +242,25 @@ describe('A14 · al cerrar la página se avisa de lo pendiente', () => {
       expect(avisa(), 'módulo ' + mod).toBe(true);
     }
   });
-  it('🔴 cada marca sólo vale en su módulo: Microbiología, Lab Algas y Mantenimiento no las miran', () => {
+  it('🔴 Microbiología, Lab Algas y Mantenimiento no miran ninguna de esas marcas', () => {
     H.tecleado(true);
     for (const mod of [H.MIC_MOD, H.LAB_MOD, H.MNT_MOD]) {
       H.setMod(mod);
       expect(avisa(), 'módulo ' + mod).toBe(false);
     }
+  });
+  /* 2026-11-05 (auditoría) · encender las cuatro a la vez no prueba de quién es cada una: si Maduración mirara `_formDirty` en vez de
+     `_madGridDirty`, la prueba de arriba seguía pasando. Una a una. */
+  it.each([['mad', 'MAD_MOD'], ['bio', 'BIO_MOD'], ['ast', 'AST_MOD'], ['form', 1]])('🔴 la marca «%s» sólo vale en su módulo', (cual, suyo) => {
+    const propio = typeof suyo === 'number' ? suyo : H[suyo];
+    H.tecleado(false);
+    H.marca(cual, true);
+    try {
+      for (const mod of [H.MAD_MOD, H.BIO_MOD, H.AST_MOD, 1]) {
+        H.setMod(mod);
+        expect(avisa(), 'módulo ' + mod).toBe(mod === propio);
+      }
+    } finally { H.tecleado(false); }
   });
   it('lo ya enviado no avisa', () => {
     H.setMod(H.AST_MOD);
