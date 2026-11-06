@@ -38,7 +38,7 @@ describe('monthLabelAt (etiquetas, incl. meses virtuales)', () => {
   // Al dar la vuelta al calendario los nombres se repiten. Antes `monthLabelAt(12)`
   // devolvía 'Enero' a secas, indistinguible del mes 0 en el navegador ◀▶ de las
   // 7 vistas que usan esta etiqueta; ahora se desambigua.
-  it('al reiniciar el ciclo añade el AÑO real tomado de las fechas de sus corridas', () => {
+  it('al reiniciar el ciclo añade el AÑO del mes de calendario (año base de las fechas + ciclos de 12)', () => {
     // Mes 12 = 12 meses × 6 corridas desde 544 → corrida 616.
     expect(monthIndexOfCorrida(616)).toBe(12);
     store.globalData = [
@@ -47,6 +47,22 @@ describe('monthLabelAt (etiquetas, incl. meses virtuales)', () => {
     ];
     expect(monthLabelAt(12)).toBe('Enero 2027');
     expect(monthLabelAt(0)).toBe('Enero'); // el mes base no cambia
+  });
+
+  // A32 (2026-11-06): el mes de producción arranca ~2 semanas antes que el de calendario. Con el «Enero» recién
+  // empezado, sus filas son todas de DICIEMBRE, y el año que más se repetía en ellas lo rotulaba «Enero 2026».
+  it('A32: el «Enero» que empieza en diciembre ya es del año siguiente, aunque todas sus filas sean de diciembre', () => {
+    const fila = (cor, fecha) => ({ _SheetOrigin: 'Larvicultura', 'Módulo': 'M06', Corrida: String(cor), Tanque: 'TQ1', Fecha: fecha });
+    store.globalData = [
+      fila(544, '20/01/2026'), fila(544, '22/01/2026'),   // Enero (mes 0)
+      fila(603, '10/11/2026'), fila(603, '12/11/2026'),   // Noviembre (mes 10)
+      fila(609, '28/11/2026'), fila(609, '02/12/2026'),   // Diciembre (mes 11)
+      fila(615, '14/12/2026'), fila(615, '15/12/2026'), fila(615, '16/12/2026'),   // Enero siguiente (mes 12), recién sembrado
+    ];
+    expect(monthIndexOfCorrida(615)).toBe(12);
+    expect(monthLabelAt(12)).toBe('Enero 2027');
+    expect(monthLabelAt(13)).toBe('Febrero 2027');
+    expect(monthLabelAt(11)).toBe('Diciembre');
   });
 
   it('sin fechas utilizables cae al número de ciclo, pero NO repite la etiqueta', () => {

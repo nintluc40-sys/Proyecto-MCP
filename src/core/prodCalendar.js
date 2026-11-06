@@ -51,10 +51,10 @@ const MONTH_NAMES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
 // `.filter().sort()`, `modulesOfCorrida` hace `distinct(...).sort()`); si alguien pierde
 // ese `.filter()` intermedio, un `.sort()` reordenaría el array de las 6 vistas a la vez.
 // El test-guardián de prodCalendar.test.js congela esa invariante.
-let _memo = { src: null, larv: null, stats: new Map(), disp: new Map(), years: new Map(), mods: new Map(), y0: undefined };
+let _memo = { src: null, larv: null, stats: new Map(), disp: new Map(), mods: new Map(), y0: undefined };
 function memoRoot() {
   if (_memo.src !== store.globalData) {
-    _memo = { src: store.globalData, larv: null, stats: new Map(), disp: new Map(), years: new Map(), mods: new Map(), y0: undefined };
+    _memo = { src: store.globalData, larv: null, stats: new Map(), disp: new Map(), mods: new Map(), y0: undefined };
   }
   return _memo;
 }
@@ -151,26 +151,6 @@ export function modulesOfCorrida(cor) {
   return m.mods.get(cor).slice();
 }
 
-/** Año calendario dominante de un mes interno, leído de las FECHAS de sus corridas.
- *  null si no se puede determinar. Memoizado por identidad de store.globalData. */
-function yearOfMonth(mIdx) {
-  const m = memoRoot();
-  if (m.years.has(mIdx)) return m.years.get(mIdx);
-  const counts = new Map();
-  larvRows().forEach((r) => {
-    const n = +getField(r, F.corrida);
-    if (isNaN(n) || monthIndexOfCorrida(n) !== mIdx) return;
-    const d = parseAnyDate(getField(r, F.fecha));
-    if (!d || isNaN(d)) return;
-    const y = d.getFullYear();
-    counts.set(y, (counts.get(y) || 0) + 1);
-  });
-  let best = null, bestN = 0;
-  counts.forEach((n, y) => { if (n > bestN) { bestN = n; best = y; } });
-  m.years.set(mIdx, best);
-  return best;
-}
-
 /** Año de calendario del mes interno 0 (el «Enero» de MESES_PROD), votado por las fechas de las filas CON corrida:
  *  cada una dice «mi año − los ciclos de 12 meses de mi mes». Primero Larvicultura, la fuente del calendario; sin
  *  ella, cualquier hoja con corrida y fecha (Microbiología, Calidad de Agua). null si no hay ninguna.
@@ -237,14 +217,19 @@ function monthNameAt(mIdx) {
  *
  *  A partir del 13.º mes interno (mIdx ≥ 12) los NOMBRES SE REPITEN: sin más contexto,
  *  dos "Enero" de años distintos quedaban indistinguibles en el navegador ◀▶ de las
- *  7 vistas que usan esta etiqueta. Desde ahí se añade el año real tomado de las fechas
- *  de las corridas del mes; si no hay fechas utilizables se cae al número de ciclo, que
- *  al menos los distingue. Los meses 0–11 conservan su etiqueta exacta de siempre. */
+ *  7 vistas que usan esta etiqueta. Desde ahí se añade el año del mes de CALENDARIO que
+ *  le da el nombre —el de `calendarRangeOfMonth`: año base + ciclos de 12—; si no hay año
+ *  base se cae al número de ciclo, que al menos los distingue. Los meses 0–11 conservan
+ *  su etiqueta exacta de siempre.
+ *  ⚠ A32 (2026-11-06): antes era el año que más se repetía en las fechas de las corridas
+ *  del propio mes. El mes de producción arranca ~2 semanas antes que el de calendario, así
+ *  que el «Enero» de la corrida 615 (filas de diciembre de 2026) salía «Enero 2026» hasta
+ *  que sus filas de enero fueran mayoría. */
 export function monthLabelAt(mIdx) {
   const name = monthNameAt(mIdx);
   if (mIdx < 12) return name;
-  const y = yearOfMonth(mIdx);
-  return y === null ? `${name} (ciclo ${Math.floor(mIdx / 12) + 1})` : `${name} ${y}`;
+  const y0 = anioBase();
+  return y0 === null ? `${name} (ciclo ${Math.floor(mIdx / 12) + 1})` : `${name} ${y0 + Math.floor(mIdx / 12)}`;
 }
 
 /** La VENTANA de Maduración de un mes interno: las fechas de las que salen sus nauplios y desoves. Es la regla de
