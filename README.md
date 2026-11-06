@@ -1414,10 +1414,11 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   día no cambian. Pieza común `madPesosDeAlimentacion` (motor) ↔ `pesosDeAlimentacion` (`mad-libro.js`), con
   paridad. Reenviar Alimentación el mismo día tras releer no pierde el peso tecleado.
 - **📜 Historial** (usuario, 2026-10-04; 60 días hasta el 2026-11-03): lo enviado desde ESTE equipo en los últimos
-  **7 días** (hasta 200 POR ficha) de las siete fichas de formulario y de Salas/Tanques (de sus propios registros); Broodstock, fuera. Cada
+  **7 días** (hasta 200 POR ficha) de las siete fichas de formulario y de Salas/Tanques (de sus propios registros); Broodstock, fuera.
+  **Lo que sigue en la cola se queda**, por viejo que sea, con su copia para Editar (2026-11-05). Cada
   envío —directo, en cola o desde 💾— guarda sus filas: se revisa, se imprime (📄) y se borra (🗑, sólo del
   equipo). **✏️ Editar** abre la ficha tal como se envió, en corrección (fecha FIJA y aviso), en los últimos
-  **10** envíos de cada ficha (Alimentación, 3); guardar —con ☁️ o con 💾— reescribe las MISMAS filas (mismo ID) y
+  **10** envíos de cada ficha (Alimentación, 3), y en lo que siga en la cola; guardar —con ☁️ o con 💾— reescribe las MISMAS filas (mismo ID) y
   avisa antes si cambió la llave. Desoves usa su propia corrección (sólo viaja lo cambiado). Un reenvío con las mismas filas
   SUSTITUYE a su entrada («🔁 reenviado»). Sin espacio se liberan primero las copias para Editar y después la mitad
   más vieja del Historial; la cola, nunca.

@@ -833,6 +833,71 @@ describe('🔴 lo que espera en la cola no caduca', () => {
     almacen.setItem(H.SYNCQ_KEY, JSON.stringify(c));
     expect(H.madHistLeer()).toEqual([]);
   });
+
+  /* Auditoría de la A (2026-11-05, usuario: «Con su copia para Editar») · madHistLeer ya lo conservaba, pero la ESCRITURA no: el primer
+     envío de Maduración, o la limpieza al entrar, lo borraba con su copia para Editar, la única forma de corregirlo. */
+  const crudo = () => JSON.parse(almacen.getItem(H.MAD_HIST_KEY) || '[]');
+  const otroMovimiento = async () => {
+    q('.mv-so').value = 'Sala 1'; H.madMovSalaChange(q('.mv-so')); q('.mv-to').value = '4';
+    q('.mv-sd').value = 'Sala 2'; H.madMovSalaChange(q('.mv-sd')); q('.mv-td').value = '17';
+    q('.mv-machos').value = '2'; q('.mv-hembras').value = '2';
+    await H.madMovGuardar();
+  };
+
+  it('🔴 otro envío de Maduración no lo saca del Historial, ni le quita su copia para Editar', async () => {
+    envejecer(8);
+    const [viejo] = crudo();
+    expect(viejo.panel, 'el envío guardó su copia para Editar').toBe(true);
+    H.setPostOnce(SIN_SENAL);
+    await otroMovimiento();
+    expect(crudo()).toHaveLength(2);
+    expect(crudo().map((e) => e.id)).toContain(viejo.id);
+    expect(almacen.getItem(H.MAD_HIST_PANEL_PRE + viejo.id), 'su copia para Editar sigue').not.toBeNull();
+    expect(H.madHistLeer().map((e) => e.id)).toContain(viejo.id);
+  });
+
+  it('🔴 la limpieza al entrar tampoco: se va lo caducado, y lo que espera se queda', () => {
+    envejecer(8);
+    const [viejo] = crudo();
+    almacen.setItem(H.MAD_HIST_KEY, JSON.stringify([...crudo(), { ...viejo, id: 'caducado', envio: 'ya-no-esta', panel: true }]));
+    almacen.setItem(H.MAD_HIST_PANEL_PRE + 'caducado', '<div>x</div>');
+    expect(H._madHistPodar()).toBe(1);
+    expect(crudo().map((e) => e.id)).toEqual([viejo.id]);
+    expect(almacen.getItem(H.MAD_HIST_PANEL_PRE + 'caducado')).toBeNull();
+    expect(almacen.getItem(H.MAD_HIST_PANEL_PRE + viejo.id)).not.toBeNull();
+  });
+
+  it('🔴 su copia para Editar no cuenta en el tope de 10 por ficha: las 10 más nuevas guardan la suya', () => {
+    envejecer(8);
+    const [viejo] = crudo();
+    const nuevas = Array.from({ length: 10 }, (_, i) => ({ ...viejo, id: 'nueva' + i, envio: 'enviada' + i, ts: Date.now() - i * 1000, panel: true }));
+    nuevas.forEach((e) => almacen.setItem(H.MAD_HIST_PANEL_PRE + e.id, '<div>n</div>'));
+    expect(H._madHistGuardar([viejo, ...nuevas])).toBe(true);
+    expect(almacen.getItem(H.MAD_HIST_PANEL_PRE + viejo.id), 'la que espera conserva la suya').not.toBeNull();
+    nuevas.forEach((e) => expect(almacen.getItem(H.MAD_HIST_PANEL_PRE + e.id), e.id).not.toBeNull());
+    expect(crudo().filter((e) => e.panel)).toHaveLength(11);
+  });
+
+  it('🔴 tampoco lo saca el tope de 200 envíos por ficha', () => {
+    envejecer(8);
+    const [viejo] = crudo();
+    const nuevas = Array.from({ length: 200 }, (_, i) => ({ ...viejo, id: 'n' + i, envio: 'e' + i, ts: Date.now() - i * 1000, panel: false }));
+    H._madHistGuardar([viejo, ...nuevas]);
+    expect(crudo()).toHaveLength(201);
+    expect(crudo().map((e) => e.id)).toContain(viejo.id);
+    H._madHistGuardar([viejo, ...nuevas, { ...viejo, id: 'n200', envio: 'e200', ts: Date.now() - 300 * 1000, panel: false }]);
+    expect(crudo().map((e) => e.id), 'el tope sigue para lo demás').not.toContain('n200');
+  });
+
+  it('🔴 en cuanto llega, el siguiente guardado ya lo quita, con su copia', async () => {
+    envejecer(8);
+    const [viejo] = crudo();
+    await H.flushSyncQueue();
+    expect(H._loadSyncQueue()).toEqual([]);
+    H._madHistGuardar(crudo());
+    expect(crudo()).toEqual([]);
+    expect(almacen.getItem(H.MAD_HIST_PANEL_PRE + viejo.id)).toBeNull();
+  });
 });
 
 describe('🔴 el Historial lista lo que la poda deja en el equipo', () => {

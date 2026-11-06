@@ -10086,13 +10086,19 @@ function _purgeMadHistViejo(){
 }
 function _madHistGuardar(l){
   const ahora=Date.now(), porFicha={};
-  const lista=(l||[]).filter(function(e){ return e && (ahora-(e.ts||0)) < MAD_HIST_TTL; })
+  /* 2026-11-05 (auditoría de la A, usuario: «Con su copia para Editar») · Lo que sigue en la cola se queda, por viejo que sea, con la misma
+     regla que al leer (madHistLeer). Antes sólo la lectura lo sabía: el primer envío de Maduración, o la limpieza al entrar, lo borraba con
+     su copia para Editar, que es la única forma de corregirlo (el formulario se limpió al encolarse). Su copia no cuenta en el tope de N. */
+  let enCola=null;
+  const espera=function(e){ if(!enCola) enCola=_madHistEnCola(); return enCola.has(String(e.envio)); };
+  const lista=(l||[]).filter(function(e){ return e && ((ahora-(e.ts||0)) < MAD_HIST_TTL || espera(e)); })
     .sort(function(a,b){ return (b.ts||0)-(a.ts||0); })
-    .filter(function(e){ porFicha[e.ficha]=(porFicha[e.ficha]||0)+1; return porFicha[e.ficha] <= MAD_HIST_MAX; });
+    .filter(function(e){ porFicha[e.ficha]=(porFicha[e.ficha]||0)+1; return porFicha[e.ficha] <= MAD_HIST_MAX || espera(e); });
   // Las copias para Editar: sólo las de los últimos N envíos (con copia) de cada ficha; las demás se liberan.
   const cuenta={}, vivas={};
   lista.forEach(function(e){
     if(!e.panel) return;
+    if(espera(e)){ vivas[e.id]=true; return; }
     cuenta[e.ficha]=(cuenta[e.ficha]||0)+1;
     if(cuenta[e.ficha] <= _madHistEditables(e.ficha)) vivas[e.id]=true; else e.panel=false;
   });
