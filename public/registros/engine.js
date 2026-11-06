@@ -9741,7 +9741,10 @@ async function _madPostConSello(payload, gas, opts){
   if(opts) _marcaSellar(opts.mark);
   if(gas === true) return postPayload(payload, gasUrl(), opts);
   // 🔴 2026-10-04 · sin espacio el envío no queda en la cola: no se da por a salvo y lo tecleado se queda (ver _saveSyncQueue).
-  if(!_enqueueSync(payload, _payloadFingerprint(payload), gasUrl(), opts && opts.mark)){
+  /* 2026-11-05 (auditoría de la A, usuario: «Igual que el resto») · con el reqId de A5 (_reqIdDeEnvio), no con la huella sola: A, B y otra vez
+     A dejaban la hoja en B, porque la cola daba el tercero por ya encolado y el GAS, si el primero ya había llegado, por ya escrito. */
+  const _rid = _reqIdDeEnvio((payload && payload.sheetName) || "_default", _payloadFingerprint(payload));
+  if(!_enqueueSync(payload, _rid, gasUrl(), opts && opts.mark)){
     if(opts){ opts.outcome = "error"; opts.gasMessage = SYNCQ_SIN_ESPACIO; }
     return false;
   }
@@ -12516,7 +12519,8 @@ function _madDesCorregirEnCola(id, k, desove, fecha, campos){
     filas.push(nueva);
   }
   const nuevo=Object.assign({}, p, { rows:filas });
-  q[i]=Object.assign({}, it, { payload:nuevo, reqId:_payloadFingerprint(nuevo) || "" });
+  // 2026-11-05 (auditoría de la A, usuario: «Igual que el resto») · con el reqId de A5: volver a un contenido ya escrito, tras otro, se escribe.
+  q[i]=Object.assign({}, it, { payload:nuevo, reqId:_reqIdDeEnvio(nuevo.sheetName || "_default", _payloadFingerprint(nuevo)) || "" });
   _saveSyncQueue(q);
   return "hecho";
 }

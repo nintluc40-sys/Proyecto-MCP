@@ -19,7 +19,8 @@ import { join } from 'node:path';
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const GAS = join(process.cwd(), 'GAS/Code.gs');
-const EXPORTAR = ['_enqueueSync', '_loadSyncQueue', 'flushSyncQueue', 'postPayload', '_lastSyncFingerprint', '_reqIdDeEnvio', '_reqSesion'];
+const EXPORTAR = ['_enqueueSync', '_loadSyncQueue', 'flushSyncQueue', 'postPayload', '_lastSyncFingerprint', '_reqIdDeEnvio', '_reqSesion',
+  '_madPostConSello'];
 const H = {};
 const hoja = [];
 const idem = new Set();
@@ -194,6 +195,62 @@ describe('🔴 un reintento sigue sin escribir de más', () => {
     await enviar(28);
     await enviar(28);
     expect(peticiones.length).toBe(1);
+  });
+});
+
+/* 2026-11-05 (auditoría de la A, usuario: «Igual que el resto») · Maduración, con el GAS sin confirmar, no envía: encola (_madPostConSello).
+   Ese camino seguía con la huella sola. Cada guardado lleva la marca de SU entrada del historial, así que ninguno retira al anterior. */
+describe('🔴 por la cola, sin el sello confirmado (Maduración)', () => {
+  const MAD = (id) => ({ kind: 'madlog:desoves', keys: [id] });
+  const encolar = async (v, id) => {
+    const o = { mark: MAD(id), silencioso: true };
+    const ok = await H._madPostConSello(P(['a', v]), null, o);
+    return { ok, outcome: o.outcome };
+  };
+
+  it('🔴 28, 29 y otra vez 28 en la cola: llegan los tres, en orden, y queda 28', async () => {
+    expect(await encolar(28, 'e1')).toEqual({ ok: false, outcome: 'queued' });
+    await encolar(29, 'e2');
+    await encolar(28, 'e3');
+    expect(H._loadSyncQueue().length, 'el tercero no es el primero otra vez').toBe(3);
+    await H.flushSyncQueue();
+    expect(enLaHoja()).toEqual({ a: 28 });
+    expect(hoja.length).toBe(3);
+  });
+
+  it('🔴 y si el primero ya llegó: el tercero no se da por ya escrito', async () => {
+    await encolar(28, 'e1');
+    await H.flushSyncQueue();
+    await encolar(29, 'e2');
+    await H.flushSyncQueue();
+    await encolar(28, 'e3');
+    await H.flushSyncQueue();
+    expect(enLaHoja()).toEqual({ a: 28 });
+    expect(hoja.length).toBe(3);
+  });
+
+  it('🔴 y si en medio el 29 salió directo: igual', async () => {
+    await encolar(28, 'e1');
+    await H.flushSyncQueue();
+    await enviar(29);
+    await encolar(28, 'e3');
+    await H.flushSyncQueue();
+    expect(enLaHoja()).toEqual({ a: 28 });
+  });
+
+  it('🔵 el mismo contenido dos veces seguidas: espera una sola vez, y llega una sola', async () => {
+    await encolar(28, 'e1');
+    await encolar(28, 'e2');
+    const c = H._loadSyncQueue();
+    expect(c.length).toBe(1);
+    expect(c[0].mark.keys, 'las dos entradas se enteran de la entrega').toEqual(['e1', 'e2']);
+    await H.flushSyncQueue();
+    expect(hoja.length).toBe(1);
+  });
+
+  it('🔴 lleva la identidad de esta carga de la página, como los demás', async () => {
+    await encolar(28, 'e1');
+    expect(H._loadSyncQueue()[0].reqId.indexOf(H._reqSesion + '.')).toBe(0);
   });
 });
 

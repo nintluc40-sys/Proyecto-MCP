@@ -360,6 +360,19 @@ describe('Desoves · corregir lo que sigue EN COLA: se corrige el envío pendien
     }
   });
 
+  /* 2026-11-05 (auditoría de la A, usuario: «Igual que el resto») · con la huella sola, volver a lo de antes repetía el reqId, y el GAS, que lo
+     recuerda 10 minutos, lo daba por ya escrito (ver cola-volver-atras.test.js). */
+  it('🔴 corregir, otra vez, y volver a lo de antes: cada vez otro reqId (A5)', async () => {
+    sembrar([entrada('e1', 'cola', [DES_A])], [envioEnCola('e1', [DES_A])]);
+    const corregir = async (huevos) => { abrir(0); q('.md-huevos').value = huevos; await H.madDesCorregirGuardar(); return cola()[0].reqId; };
+    const r1 = await corregir('6800');
+    const r2 = await corregir('6900');
+    const r3 = await corregir('6800');
+    expect(cola()).toHaveLength(1);
+    expect(cola()[0].payload.rows[0][col('Total de huevos')], 'la corrección se hizo').toBe(6800000);
+    expect(new Set([r1, r2, r3]).size, 'el tercero no repite el del primero').toBe(3);
+  });
+
   it('🔴 en cola, vaciar SÍ lo quita del envío pendiente (aún no ha llegado)', async () => {
     sembrar([entrada('e1', 'cola', [DES_A])], [envioEnCola('e1', [DES_A])]);
     abrir(0);
