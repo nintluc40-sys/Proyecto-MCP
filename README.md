@@ -1214,6 +1214,13 @@ sin avisar**:
   **Desinfección:** se anota, por módulo y fecha, lo que viajó con contenido (`dx_enviado_v1`, 60 días); un elemento
   que vuelve a «—» sin observación propia viaja **en blanco** (por ☁️, 🔄 de hoy y 🔄 de días anteriores), y con todo
   vuelto a «—» se envía igual: la hoja queda en «—». Lo que ya viajó en blanco se olvida.
+  **Microbiología, Calidad de Agua y Patología:** guardar OTRA fecha o corrida de una sesión ya guardada pregunta
+  (usuario: «Preguntar cada vez»): **corrección** —lo viejo sale del historial y, si llegó a la hoja, su sesión se
+  sustituye allí, en el mismo envío, por UNA fila con «⛔ ANULADA · pasó al …» en Responsable, con su clave exacta—,
+  **otro análisis** —sesión nueva; lo viejo se queda— o **cancelar**. No se reemplaza «por sesión»: el número de sesión
+  sólo cambia con 🧹 y un análisis reutilizado otro día la comparte (usuario: «Sí, así»). Las anulaciones esperan en
+  `lab_anular_v1` hasta salir con el siguiente envío de su hoja. El sistema no carga las filas «⛔ ANULADA»
+  (`filaAnulada`, `src/core/sheets.js`). Las sesiones heredadas (sin número) siguen como antes.
 - **Reproductivo · elegir la hembra:** si el envío falla de verdad, los microchips elegidos **siguen** en la lista
   para reintentar (entregado o en cola, salen como antes).
 

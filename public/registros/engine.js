@@ -26250,6 +26250,82 @@ function micSessionKey(d){
   return d.sid ? comp + "|" + d.sid : comp;
 }
 
+/* ── A10 (2026-11-06) · CORREGIR LA FECHA (O LA CORRIDA) DE UN ANÁLISIS YA GUARDADO · Micro, Calidad y Patología ──
+   La hoja reemplaza cada sesión por su clave (fecha, corrida, [departamento, formato,] sesión). Al cambiar la fecha o la
+   corrida, la clave es otra: la sesión vieja se quedaba en la hoja y en el historial, y el análisis salía dos veces.
+   Usuario: «Preguntar cada vez» (¿corrección u otro análisis?) y, en la hoja, «Sí, así»: la sesión vieja se sustituye
+   por UNA fila con «⛔ ANULADA · pasó al …» en Responsable, con su clave EXACTA. No se reemplaza «por sesión»: el número
+   de sesión sólo cambia con 🧹, y un análisis reutilizado otro día comparte sesión con ése. El sistema no carga esas
+   filas (MARCA_ANULADA y filaAnulada, src/core/sheets.js). Las anulaciones esperan en LAB_ANULAR_KEY hasta que salen
+   (entregadas o en la cola) junto con el siguiente envío de su hoja. Las sesiones heredadas (sin sesión) no entran. */
+const LAB_ANULAR_KEY = "lab_anular_v1";
+const LAB_MARCA_ANULADA = "⛔ ANULADA";
+function _labAnulacionesTodas(){
+  try{ const o = JSON.parse(localStorage.getItem(LAB_ANULAR_KEY) || "{}"); return (o && typeof o === "object" && !Array.isArray(o)) ? o : {}; }
+  catch(_){ return {}; }
+}
+function _labAnulaciones(tipo){ const l = _labAnulacionesTodas()[tipo]; return Array.isArray(l) ? l : []; }
+function _labAnulacionesGuardar(tipo, lista){
+  const o = _labAnulacionesTodas();
+  if(lista.length) o[tipo] = lista; else delete o[tipo];
+  return _lsSet(LAB_ANULAR_KEY, JSON.stringify(o));
+}
+// «06/11/2026 · corrida 601»: cómo se nombra una sesión en la pregunta y en la marca.
+function _labDescribir(d){
+  const f = String(d.fechaMuestreo || ""), c = String(d.corrida || "").trim();
+  const fecha = /^\d{4}-\d{2}-\d{2}$/.test(f) ? f.slice(8, 10) + "/" + f.slice(5, 7) + "/" + f.slice(0, 4) : f;
+  return fecha + (c ? " · corrida " + c : "");
+}
+/** ¿Lo que se va a guardar es OTRA fecha o corrida de una sesión ya guardada? Si sí, pregunta. `mismaSesion(a, b)`: el
+ *  resto de la sesión (departamento y formato; en Patología, nada). → { accion: "nada"|"corregir"|"otro"|"cancelar", previos } */
+function _labCambioDeClave(lista, nuevos, mismaSesion, clave){
+  const n0 = nuevos.length ? nuevos[0].data : null;
+  if(!n0 || !n0.sid) return { accion:"nada", previos:[] };
+  const kNueva = clave(n0);
+  const previos = (lista || []).filter(function(r){
+    return r && r.data && r.data.sid === n0.sid && mismaSesion(r.data, n0) && clave(r.data) !== kNueva;
+  });
+  if(!previos.length) return { accion:"nada", previos:[] };
+  const viejo = _labDescribir(previos[0].data), nuevo = _labDescribir(n0);
+  if(confirm("Este análisis ya está guardado como del " + viejo + ".\n\n¿Es una CORRECCIÓN y pasa a ser del " + nuevo + "?\n"
+    + "(Aceptar: se corrige; en la hoja, lo del " + viejo + " queda anulado.)")) return { accion:"corregir", previos:previos };
+  if(confirm("¿Lo guardas como OTRO análisis del " + nuevo + ", aparte del del " + viejo + "?\n(Cancelar: no se guarda nada.)"))
+    return { accion:"otro", previos:previos };
+  return { accion:"cancelar", previos:previos };
+}
+/** La corrección: fuera del historial lo de las claves viejas y, de las que llegaron a la hoja, una anulación pendiente.
+ *  `llave(d)`: los campos de la clave de la hoja. Una anulación de una clave a la que se vuelve, sobra. */
+function _labCorregir(tipo, lista, previos, nuevos, clave, llave){
+  const fuera = new Set(previos.map(function(r){ return r.id; }));   // por id: `previos` es de otra lectura de la lista
+  const hacia = _labDescribir(nuevos[0].data);
+  const kNuevas = new Set(nuevos.map(function(r){ return clave(r.data); }));
+  const anul = _labAnulaciones(tipo).filter(function(a){ return a && a.data && !kNuevas.has(clave(a.data)); });
+  const ya = new Set(anul.map(function(a){ return clave(a.data); }));
+  previos.forEach(function(r){
+    if(!(r.synced || r.syncedAt)) return;   // nunca salió: no hay nada que anular en la hoja
+    const k = clave(r.data);
+    if(ya.has(k)) return;
+    ya.add(k);
+    anul.push({ data: llave(r.data), hacia: hacia, ts: Date.now() });
+  });
+  _labAnulacionesGuardar(tipo, anul);
+  return lista.filter(function(r){ return !(r && fuera.has(r.id)); });
+}
+/** Las filas de las anulaciones pendientes de `tipo`, armadas con el MISMO constructor de su hoja: la clave de la sesión
+ *  vieja, «⛔ ANULADA · pasó al …» en Responsable y nada más. → { filas, lista } (lista: las que van). */
+function _labFilasAnuladas(tipo, construir){
+  const lista = _labAnulaciones(tipo);
+  if(!lista.length) return { filas:[], lista:lista };
+  const recs = lista.map(function(a){ return { data: Object.assign({}, a.data, { responsable: LAB_MARCA_ANULADA + " · pasó al " + a.hacia }) }; });
+  return { filas: construir(recs).rows, lista: lista };
+}
+/** Salieron (entregadas o en la cola, que desde A8 no caduca): se quitan las que fueron. */
+function _labAnulacionesSalieron(tipo, lista, clave){
+  if(!lista.length) return;
+  const ido = new Set(lista.map(function(a){ return clave(a.data); }));
+  _labAnulacionesGuardar(tipo, _labAnulaciones(tipo).filter(function(a){ return !(a && a.data && ido.has(clave(a.data))); }));
+}
+
 function loadMicDraft(){
   const def = { meta:{ fechaMuestreo:today(), fechaResultados:"", corrida:"", responsable:"", encabezado:"", hdrModulo:"", hdrEstadio:"", hdrSala:"" }, sections:{}, activeFmt:"larv-muestra" };
   try{ const raw = localStorage.getItem(MIC_DRAFT_KEY); if(raw){ const o = JSON.parse(raw); if(o && typeof o === "object")
@@ -26755,7 +26831,13 @@ function saveMicLocal(){
       newRecords.push({ id: Date.now().toString(36)+Math.random().toString(36).slice(2,6), ts: Date.now(), synced:false, syncedAt:null, data });
     });
   }
+  // A10 · ¿otra fecha o corrida de esta misma sesión? Pregunta: corrección (la vieja se anula) u otro análisis (sesión nueva).
+  const _cambio = _labCambioDeClave(_micRaw(), newRecords, function(a, b){ return a.departamento === b.departamento && a.formato === b.formato; }, micSessionKey);
+  if(_cambio.accion === "cancelar"){ toast("No se guardó nada","info",2500); return -1; }
+  if(_cambio.accion === "otro"){ draft.meta.sid = _micNewSid(); saveMicDraft(draft); newRecords.forEach(function(r){ r.data.sid = draft.meta.sid; }); }
   let list = _micRaw();
+  if(_cambio.accion === "corregir") list = _labCorregir("mic", list, _cambio.previos, newRecords, micSessionKey,
+    function(d){ return { fechaMuestreo:d.fechaMuestreo, corrida:d.corrida, departamento:d.departamento, formato:d.formato, sid:d.sid }; });
   // Reemplazo ESPEJO de la hoja (replaceByKeyRows) SOLO para la(s) clave(s) del
   // formato activo: quita los registros cuya clave de sesión coincida con la de
   // algún registro nuevo y re-añade los nuevos. Otros formatos/fechas/corridas
@@ -26802,14 +26884,19 @@ async function syncMic(){
   const payload = buildMicPayload(toSend);
   if(!payload.rows.length){ toast("No hay filas para enviar","warn",3000); return; }
   setSyncUI("pend","Enviando "+payload.rows.length+" muestra(s)…");
+  // A10 · y, en el mismo envío, las sesiones que una corrección de fecha dejó anuladas (con su clave exacta).
+  const _anul = _labFilasAnuladas("mic", buildMicPayload);
+  if(_anul.filas.length) payload.rows = payload.rows.concat(_anul.filas);
   // F3: marca de reconciliación → si el envío se encola por timeout, al entregarse
   // la cola marcará synced estas sesiones (sin reenvío manual ni "pendiente" eterno).
   const opts = { mark:{ kind:"mic", keys:Array.from(pendKeys) } };
   const sent = await postPayload(payload, url, opts);
+  if(sent || opts.outcome === "queued") _labAnulacionesSalieron("mic", _anul.lista, micSessionKey);
   if(sent){
     _marcarEnviado(opts);
-    setSyncUI("ok", payload.rows.length+" muestra(s) sincronizada(s) ✔");
-    toast("✅ "+payload.rows.length+" muestra(s) enviadas a Microbiología (sesión reemplazada)","ok",4500);
+    const _nMic = payload.rows.length - _anul.filas.length;   // A10: las anuladas no son muestras
+    setSyncUI("ok", _nMic+" muestra(s) sincronizada(s) ✔");
+    toast("✅ "+_nMic+" muestra(s) enviadas a Microbiología (sesión reemplazada)"+(_anul.filas.length ? " · "+_anul.filas.length+" sesión(es) anulada(s) por corrección de fecha" : ""),"ok",4500);
     const ind = document.getElementById("mic-saved-ind");
     if(ind) ind.textContent = "✅ Sincronizado · "+new Date().toLocaleString("es-EC");
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
@@ -28174,7 +28261,13 @@ function saveCalLocal(){
       newRecords.push({ id:Date.now().toString(36)+Math.random().toString(36).slice(2,6), ts:Date.now(), synced:false, syncedAt:null, data });
     });
   }
+  // A10 · ¿otra fecha o corrida de esta misma sesión? (ver _labCambioDeClave)
+  const _cambio = _labCambioDeClave(_calRaw(), newRecords, function(a, b){ return a.departamento === b.departamento && a.formato === b.formato; }, calSessionKey);
+  if(_cambio.accion === "cancelar"){ toast("No se guardó nada","info",2500); return -1; }
+  if(_cambio.accion === "otro"){ draft.meta.sid = _calNewSid(); saveCalDraft(draft); newRecords.forEach(function(r){ r.data.sid = draft.meta.sid; }); }
   let list=_calRaw();
+  if(_cambio.accion === "corregir") list = _labCorregir("cal", list, _cambio.previos, newRecords, calSessionKey,
+    function(d){ return { fechaMuestreo:d.fechaMuestreo, corrida:d.corrida, departamento:d.departamento, formato:d.formato, sid:d.sid }; });
   // Reemplazo espejo de la hoja SOLO para la clave del formato activo: quita las
   // sesiones cuya clave coincide con la de algún registro nuevo y re-añade los
   // nuevos. Otros formatos quedan intactos (conservan su estado synced).
@@ -28226,12 +28319,16 @@ async function syncCal(){
   const payload=buildCalPayload(toSend);
   if(!payload.rows.length){ toast("No hay filas para enviar","warn",3000); return; }
   setSyncUI("pend","Enviando "+payload.rows.length+" muestra(s)…");
+  const _anul = _labFilasAnuladas("cal", buildCalPayload);   // A10 (ver syncMic)
+  if(_anul.filas.length) payload.rows = payload.rows.concat(_anul.filas);
   const opts = { mark:{ kind:"cal", keys:Array.from(pendKeys) } };   // F3: reconciliación al entregar desde cola
   const sent=await postPayload(payload, url, opts);
+  if(sent || opts.outcome === "queued") _labAnulacionesSalieron("cal", _anul.lista, calSessionKey);
   if(sent){
     _marcarEnviado(opts);
-    setSyncUI("ok", payload.rows.length+" muestra(s) sincronizada(s) ✔");
-    toast("✅ "+payload.rows.length+" muestra(s) enviadas a Calidad de Agua (sesión reemplazada)","ok",4500);
+    const _nCal = payload.rows.length - _anul.filas.length;
+    setSyncUI("ok", _nCal+" muestra(s) sincronizada(s) ✔");
+    toast("✅ "+_nCal+" muestra(s) enviadas a Calidad de Agua (sesión reemplazada)"+(_anul.filas.length ? " · "+_anul.filas.length+" sesión(es) anulada(s) por corrección de fecha" : ""),"ok",4500);
     const ind=document.getElementById("cal-saved-ind");
     if(ind) ind.textContent = "✅ Sincronizado · "+new Date().toLocaleString("es-EC");
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
@@ -28833,7 +28930,13 @@ function savePatLocal(){
     data.sid = sid;
     newRecords.push({ id:Date.now().toString(36)+Math.random().toString(36).slice(2,6), ts:Date.now(), synced:false, syncedAt:null, data });
   });
+  // A10 · ¿otra fecha o corrida de esta misma sesión? (ver _labCambioDeClave; en Patología la sesión es sólo su número)
+  const _cambio = _labCambioDeClave(_patRaw(), newRecords, function(){ return true; }, patSessionKey);
+  if(_cambio.accion === "cancelar"){ toast("No se guardó nada","info",2500); return -1; }
+  if(_cambio.accion === "otro"){ draft.meta.sid = _patNewSid(); savePatDraft(draft); newRecords.forEach(function(r){ r.data.sid = draft.meta.sid; }); }
   let list=_patRaw();
+  if(_cambio.accion === "corregir") list = _labCorregir("pat", list, _cambio.previos, newRecords, patSessionKey,
+    function(d){ return { fechaMuestreo:d.fechaMuestreo, corrida:d.corrida, sid:d.sid }; });
   // Reemplazo espejo de la hoja: quita la sesión cuya clave coincide y re-añade.
   const newKeys = new Set(newRecords.map(r=> patSessionKey(r.data)));
   list = list.filter(r=> !(r.data && newKeys.has(patSessionKey(r.data))));
@@ -28891,12 +28994,16 @@ async function syncPat(){
   const payload=buildPatPayload(toSend);
   if(!payload.rows.length){ toast("No hay filas para enviar","warn",3000); return; }
   setSyncUI("pend","Enviando "+payload.rows.length+" muestra(s)…");
+  const _anul = _labFilasAnuladas("pat", buildPatPayload);   // A10 (ver syncMic)
+  if(_anul.filas.length) payload.rows = payload.rows.concat(_anul.filas);
   const opts = { mark:{ kind:"pat", keys:Array.from(pendKeys) } };   // F3: reconciliación al entregar desde cola
   const sent=await postPayload(payload, url, opts);
+  if(sent || opts.outcome === "queued") _labAnulacionesSalieron("pat", _anul.lista, patSessionKey);
   if(sent){
     _marcarEnviado(opts);
-    setSyncUI("ok", payload.rows.length+" muestra(s) sincronizada(s) ✔");
-    toast("✅ "+payload.rows.length+" muestra(s) enviadas a Patología en Fresco (sesión reemplazada)","ok",4500);
+    const _nPat = payload.rows.length - _anul.filas.length;
+    setSyncUI("ok", _nPat+" muestra(s) sincronizada(s) ✔");
+    toast("✅ "+_nPat+" muestra(s) enviadas a Patología en Fresco (sesión reemplazada)"+(_anul.filas.length ? " · "+_anul.filas.length+" sesión(es) anulada(s) por corrección de fecha" : ""),"ok",4500);
     const ind=document.getElementById("pat-saved-ind"); if(ind) ind.textContent="✅ Sincronizado · "+new Date().toLocaleString("es-EC");
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
