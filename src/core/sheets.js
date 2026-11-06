@@ -755,14 +755,31 @@ async function fetchViaCsv(ids, avisar = null) {
 const FUERA_DEL_RANGO = new Set(['Marea', 'Clima', 'Clima horas',
   'Mantenimiento Trabajos', 'Mantenimiento Lecturas', 'Mantenimiento Equipos', 'Mantenimiento Plan']);
 
+/* A10 (2026-11-06, usuario: «Sin tocar el Apps Script») · FILAS ANULADAS. Cuando en Registros se corrige la fecha (o la
+   corrida) de un análisis ya enviado, o se vacía un tanque del Score o se cambia su evaluación de día, el Apps Script no
+   sabe borrar la fila vieja: el envío la SOBRESCRIBE con una que lleva esta marca —en «Responsable» en Microbiología,
+   Calidad de Agua y Patología; en «Interpretación» en el Score—. Se ve en el Sheet, pero el sistema no la carga: ninguna
+   vista la cuenta. Sólo en esas hojas y en esa columna; en cualquier otra, la marca no significa nada. */
+export const MARCA_ANULADA = '⛔ ANULADA';
+const ANULABLES = {
+  'Microbiología': 'Responsable', 'Calidad de Agua': 'Responsable', 'Patología en Fresco': 'Responsable',
+  Registro_Score: 'Interpretación',
+};
+/** ¿Es una fila anulada desde Registros (ver MARCA_ANULADA)? */
+export function filaAnulada(row) {
+  const col = row && ANULABLES[row._SheetOrigin];
+  return !!col && String(getField(row, [col]) || '').trim().startsWith(MARCA_ANULADA);
+}
+
 /** Aplica un set de hojas { name: rows } al store: aplana las filas, limpia la caché
  *  de fechas, fija globalData/sheetNames/latestDateMs y deriva Mortalidad. NO emite
  *  eventos ni toca el estado de conexión/fingerprint: eso lo decide cada caller
  *  (carga inicial vs auto-refresco). No muta el store si el set viene vacío.
+ *  Las filas anuladas (A10, `filaAnulada`) no entran.
  *  Devuelve el nº de filas aplicadas (0 = nada que aplicar). */
 export function applySheets(sheets) {
   const rows = [];
-  for (const name in sheets) rows.push(...sheets[name]);
+  for (const name in sheets) for (const r of sheets[name]) if (!filaAnulada(r)) rows.push(r);
   if (!rows.length) return 0;
 
   clearDateCache();
