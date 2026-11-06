@@ -1089,8 +1089,9 @@ rechazado por su entorno (esquema, hoja no permitida…) lo olvida; entre medias
 
 > 🔒 **Es un fallo seguro, no un error.** Tocar `Code.gs` y no re-desplegar deja esas fichas
 > **sin enviar**: calculan, guardan en el dispositivo y lo avisan. Lo mismo si `?p=ver` no contesta.
-> Nada se pierde — pero **la cola descarta a los 7 días** (avisando qué), así que no conviene dejar
-> pasar días entre publicar el cliente y re-desplegar el GAS.
+> Nada se pierde: la cola no caduca (desde el 2026-11-05), y se entregan solas en cuanto se re-despliega.
+> Aun así no conviene dejar pasar días entre publicar el cliente y re-desplegar el GAS: lo que llega tarde
+> puede pisar una corrección hecha entre medias.
 
 ⚙ Config → **«🔗 Probar conexión»** es quien dice si el sello entró, sin escribir nada.
 
@@ -1178,9 +1179,11 @@ Desde el 2026-09-24 (punto 2a, correcciones A y B, decisiones del usuario):
   dice «Todo sincronizado» con envíos esperando. Desde el 2026-11-05 tampoco con algo sin enviar en el
   módulo, lo pida quien lo pida: la cabecera y el aviso al cerrar cuentan lo mismo (`_pendientesDelModulo`),
   también las fichas de días anteriores, y la baldosa de As Técnico cuenta sus cuatro listas.
-- **Nada sale sin avisar**: lo que lleva **7 días** sin poder salir (antes 24 h, en silencio) o lo que
-  la cola tira al llegar a su tope de 50 se avisa diciendo qué hoja y de cuándo. Contrapartida
-  aceptada: un envío que llega días después puede pisar una corrección hecha a mano entre medias.
+- **Nada sale sin avisar**: lo que la cola tira al llegar a su tope de 50 se avisa diciendo qué hoja y de
+  cuándo. **Lo que espera no caduca** (desde el 2026-11-05: a los 7 días se descartaba, y un formulario
+  no tiene otra copia): se sigue intentando hasta que llegue o la hoja lo rechace por sus datos.
+  Contrapartida aceptada: un envío que llega días después puede pisar una corrección hecha a mano entre
+  medias, y por eso lo que llega con más de 7 días también se avisa.
 - **Vaciarla no pierde nada**: al terminar se relee la cola y sólo se quita lo que ese vaciado
   resolvió; lo que se guardó, se purgó o se sustituyó mientras tanto se respeta.
 
