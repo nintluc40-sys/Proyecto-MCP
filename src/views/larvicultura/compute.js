@@ -7,6 +7,8 @@ import { store } from '../../core/store.js';
 import { avg as mean } from '../../core/util.js';
 import { getField, parseNum, F, isLarviculturaRow, isTanqueRow } from '../../core/fields.js';
 import { parseAnyDate } from '../../core/dates.js';
+import { odLevel, tmpLevel } from '../../core/format.js';
+import { THRESHOLDS } from '../../config.js';
 
 const naturalCmp = (a, b) => {
   const ra = String(a).match(/\d+/), rb = String(b).match(/\d+/);
@@ -54,11 +56,14 @@ export function buildLarviculturaData(state, vars, monthCorridas) {
 }
 
 /* ---- Fisicoquímicos del módulo (T° / OD / Salinidad) ----
-   Bandas de referencia (ajustables). Por cada variable se usan los registros de
-   Larvicultura si los tiene; si no, los de Tomas (hojas Control_Tanque). */
+   Por cada variable se usan los registros de Larvicultura si los tiene; si no, los de
+   Tomas (hojas Control_Tanque). T° y OD se juzgan con la MISMA escala que el Supervisor
+   y Planta (`tmpLevel`/`odLevel`, umbrales de config.js; decisión del usuario, 06-11):
+   antes aquí sólo valía el óptimo, y OD 4,5 con T° 30 salía en rojo en esta vista y
+   «Bueno» en el Supervisor. `band` es el óptimo, sólo como referencia que se enseña. */
 const ENV_VARS = [
-  { key: 'tmp', label: 'Temperatura', short: 'T°', icon: '🌡️', unit: '°C', keys: F.temp, band: [31, 33], color: '#F4511E', axis: 'y' },
-  { key: 'od', label: 'Oxígeno disuelto', short: 'OD', icon: '💧', unit: ' mg/L', keys: F.od, band: [5, 7], color: '#1E88E5', axis: 'y1' },
+  { key: 'tmp', label: 'Temperatura', short: 'T°', icon: '🌡️', unit: '°C', keys: F.temp, band: THRESHOLDS.tmp.optimo, nivelDe: tmpLevel, color: '#F4511E', axis: 'y' },
+  { key: 'od', label: 'Oxígeno disuelto', short: 'OD', icon: '💧', unit: ' mg/L', keys: F.od, band: THRESHOLDS.od.optimo, nivelDe: odLevel, color: '#1E88E5', axis: 'y1' },
   // Salinidad: informativa (no marca alerta ni cuenta para el nivel del módulo).
   { key: 'sal', label: 'Salinidad', short: 'Sal', icon: '🧂', unit: ' ppt', keys: F.salinidad, band: [28, 36], color: '#00838F', axis: 'y', informational: true },
 ];
@@ -84,10 +89,13 @@ export function moduleEnv(modulo, corrida, monthCorridas) {
     const series = days.map((d) => { const a = byDay.get(d); return a.reduce((x, y) => x + y, 0) / a.length; });
     const avg = mean(series);
     const last = series.length ? series[series.length - 1] : null;
+    // nivel: 'excelente' | 'bueno' | 'malo' | 'grave' | 'sin' (null en la informativa).
+    // Fuera de rango = 'malo' o 'grave', lo mismo que alerta el Supervisor (`isAlert`).
+    const nivel = cfg.informational ? null : cfg.nivelDe(last);
     const status = cfg.informational
       ? (last === null ? 'sin' : 'info')
-      : last === null ? 'sin' : (last >= cfg.band[0] && last <= cfg.band[1]) ? 'ok' : 'out';
-    return { ...cfg, days, series, avg, last, srcName, status };
+      : last === null ? 'sin' : (nivel === 'malo' || nivel === 'grave') ? 'out' : 'ok';
+    return { ...cfg, days, series, avg, last, srcName, status, nivel };
   });
   if (!vars.some((v) => v.last !== null)) return null;
   const out = vars.filter((v) => v.status === 'out').length;

@@ -18,7 +18,7 @@ import {
   populationDumbbell, populationTrend, populationForecast, scoreLollipop, algaeChart, mgmtChart, compositionChart, qualityHistogram,
 } from './extra.js';
 import { destroyAllCharts, destroyChart, makeChart } from '../../core/charts.js';
-import { larviColor, larviBg, larviLabel, esc } from '../../core/format.js';
+import { larviColor, larviBg, larviLabel, esc, levelColor, levelLabel } from '../../core/format.js';
 import { modalsShellHTML, setSnapshot, openModal, closeModal, MODAL_IDS } from './modals.js';
 import { presentMonths, corridasOfMonth, monthLabelAt } from '../../core/prodCalendar.js';
 import { registerModalEscape } from '../../ui/modalEscape.js';
@@ -249,18 +249,21 @@ function drawEnv() {
   const env = view.env; if (!env) return;
   const rowsEl = document.getElementById('lqEnvRows'); if (!rowsEl) return;
   rowsEl.innerHTML = env.vars.map((v) => {
-    const stCol = v.status === 'ok' ? '#2E9E5B' : v.status === 'out' ? '#E0413E' : '#90a4ae';
-    const stTxt = v.status === 'ok' ? 'En rango' : v.status === 'out' ? 'Fuera de rango' : v.status === 'info' ? 'Informativo' : 'Sin datos';
+    // T° y OD dicen su nivel con el nombre y el color del Supervisor (Excelente, Bueno, Regular, Grave),
+    // y su valor con 2 decimales: el nivel sale del valor real, y con uno solo un 4,97 se leía «5.0 · Bueno».
+    const conNivel = v.nivel && v.nivel !== 'sin';
+    const stCol = conNivel ? levelColor(v.nivel) : '#90a4ae';
+    const stTxt = conNivel ? levelLabel(v.nivel) : v.status === 'info' ? 'Informativo' : 'Sin datos';
     const showRef = !v.informational; // sin rango de referencia para variables informativas (Salinidad)
     return `<div class="lq-env-row">
       <div class="lq-env-row-head">
         <span class="lq-env-row-ico">${v.icon}</span>
         <div>
           <div class="lq-env-row-lbl">${esc(v.label)}</div>
-          <div class="muted" style="font-size:10px">prom ${v.avg == null ? '—' : v.avg.toFixed(1)}${showRef ? ` · ref ${v.band[0]}–${v.band[1]}` : ''}</div>
+          <div class="muted" style="font-size:10px">prom ${v.avg == null ? '—' : v.avg.toFixed(1)}${showRef ? ` · ref. óptimo ${v.band[0]}–${v.band[1]}` : ''}</div>
         </div>
         <span class="grow"></span>
-        <span class="lq-env-row-val" style="color:${stCol}">${v.last == null ? '—' : v.last.toFixed(1) + v.unit}</span>
+        <span class="lq-env-row-val" style="color:${stCol}">${v.last == null ? '—' : v.last.toFixed(showRef ? 2 : 1) + v.unit}</span>
         <span class="lq-env-row-st" style="color:${stCol}">${stTxt}</span>
       </div>
       <div class="lq-env-row-chart"><canvas id="lqEnvChart_${v.key}"></canvas></div>

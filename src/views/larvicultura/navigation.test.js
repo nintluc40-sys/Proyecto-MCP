@@ -146,6 +146,34 @@ describe('Larvicultura · harness de navegación integral', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('A23 · fisicoquímicos con la escala del Supervisor: OD 4,5 y T° 30 dicen «Bueno», en rango; OD 3,5, «Regular» y fuera', async () => {
+    const ultimaToma = async (od, t) => {
+      store.globalData = synthData().concat(['TQ1', 'TQ2'].map((tq) =>
+        T({ 'Módulo': 'M01', Corrida: '573', Tanque: tq, Fecha: '09/06/2026', OD: String(od), Temperatura: String(t), Salinidad: '31' })));
+      root.innerHTML = '';
+      mountReady();
+      click(root.querySelector('[data-envopen]'));
+      await new Promise((r) => requestAnimationFrame(r));   // el modal se rellena en el siguiente cuadro
+      return { kpi: root.querySelector('[data-envopen]').textContent, modal: root.querySelector('#lqEnvRows').textContent };
+    };
+    const bien = await ultimaToma(4.5, 30);
+    expect(bien.kpi).toContain('✓ en rango');
+    expect(bien.modal).toContain('Bueno');
+    expect(bien.modal).toContain('ref. óptimo 5–7');
+    expect(bien.modal).toContain('ref. óptimo 31–33');
+    expect(bien.modal).not.toContain('Fuera de rango');
+    const mal = await ultimaToma(3.5, 32);
+    expect(mal.kpi).toContain('⚠ fuera de rango');
+    expect(mal.modal).toContain('Regular');
+    // En el borde, el valor va con 2 decimales: 4,97 no se enseña como «5.0» junto a «Bueno».
+    const borde = await ultimaToma(4.97, 33.04);
+    expect(borde.modal).toContain('4.97 mg/L');
+    expect(borde.modal).toContain('33.04°C');
+    expect(borde.modal).toContain('31.0 ppt');   // la salinidad, informativa, sigue con 1 decimal
+
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
   it('interactúa dentro del modal Comparar (toggle tanque) y Comparar corridas (select)', () => {
     mountReady();
     click(root.querySelector('[data-open-modal="lq-modal-comp"]'));
