@@ -2582,6 +2582,7 @@ async function syncAll(){
   setSyncUI("pend","Sincronizando...");
   let ok=0, fail=0, queued=0, total=0;
   let _tqRetenido = false;   // 2026-09-30 · Tanques no se envió porque, ante «¿ronda repetida?», se contestó que no
+  let _tqQuitado = false;    // 2026-11-05 · partes de días ya quitados que no se quisieron enviar (_madTqConfirmarQuitados)
   let _movRetenido = false;  // 2026-11-04 · lo guardado de Movimientos no se envió: ante «¿movimiento repetido?», se contestó que no
   let _desRetenido = false;  // H1 (2026-10-13) · lo guardado de Desoves no se envió: ante «¿desove repetido?», se contestó que no
 
@@ -2619,7 +2620,9 @@ async function syncAll(){
     let _gasLoc;
     // ── Maduración: sincroniza pendientes ficha por ficha (Salas/Tanques/Lotes) ──
     for(const f of MAD_FICHAS){
-      const pending = loadMad(f).filter(r => !r.synced);
+      let pending = loadMad(f).filter(r => !r.synced);
+      // Auditoría de la A (2026-11-05) · los partes de días ya quitados que nadie confirmó: se pregunta, ANTES de dar nada por enviado.
+      if(f === "tanques" && pending.length){ const _n = pending.length; pending = _madTqConfirmarQuitados(loadMad(f), pending); if(pending.length < _n) _tqQuitado = true; }
       if(pending.length === 0) continue;
       /* 2026-11-05 (auditoría) · Mientras viaja, no está ni en la cola ni enviado: cambiar la fecha de la grilla lo movía y la hoja acababa con
          filas en los dos días. Se apunta aquí y `_madGridLlevar` lo deja en su día (☁️ ya bloquea la grilla mientras envía). */
@@ -2783,8 +2786,8 @@ async function syncAll(){
   /* 2026-09-30 · con Tanques retenido ante «¿ronda repetida?», «Sin datos nuevos» y «Todo sincronizado» serían FALSOS:
      queda Tanques pendiente, y se dice. */
   // H1 (2026-10-13) · y lo mismo con Desoves retenido ante «¿desove repetido?»: se dice qué queda pendiente.
-  const _tqPend = [_tqRetenido ? "Tanques pendiente (¿ronda repetida?)" : "", _desRetenido ? "Desoves pendiente (¿desove repetido?)" : "", _movRetenido ? "Movimientos pendiente (¿movimiento repetido?)" : ""].filter(Boolean).join(" · ");
-  _tqRetenido = _tqRetenido || _desRetenido || _movRetenido;
+  const _tqPend = [_tqRetenido ? "Tanques pendiente (¿ronda repetida?)" : "", _tqQuitado ? "Tanques pendiente (días ya quitados)" : "", _desRetenido ? "Desoves pendiente (¿desove repetido?)" : "", _movRetenido ? "Movimientos pendiente (¿movimiento repetido?)" : ""].filter(Boolean).join(" · ");
+  _tqRetenido = _tqRetenido || _tqQuitado || _desRetenido || _movRetenido;
   if(!total && _tqRetenido){ setSyncUI("pend", _tqPend); updateDots(); return; }
   /* 2026-11-05 (auditoría; usuario: «Decirlo bien») · Lo de días anteriores no lo envía 🔄 (es «☁️ Enviarlas»), pero tampoco se puede decir
      «No hay datos pendientes» mientras la cabecera y el aviso lo cuentan. */
@@ -17984,6 +17987,26 @@ async function _madTqConfirmarRepetidas(pendientes){
 function _madTqNoEnviado(){
   toast("Tanques NO enviado: se queda pendiente en este dispositivo. Si era la misma ronda, no hace falta enviarla (🗑 Borrar sala la descarta del dispositivo; lo ya enviado sigue en la hoja).","warn",9000);
 }
+/* 2026-11-05 (auditoría de la A, usuario: «En ☁️ y en 🔄 global») · LOS DÍAS YA QUITADOS DE TODO LO QUE SALE. La pregunta de A8 sólo
+   miraba la grilla en pantalla, y ☁️ y 🔄 envían lo pendiente de TODAS las salas y días: teclear en un día ya quitado y cambiar de
+   sala lo guardaba el autoguardado (que no pregunta, ni cuenta como saber de ese día), y salía sin preguntar desde otra sala: otra
+   fila, y el libro resta dos veces. Una sola pregunta, con los días y las salas. Devuelve lo que se envía: cancelar deja esos partes
+   guardados sin enviar. `lista` es de donde sale `pending` (sin espacio, la de memoria). */
+function _madTqConfirmarQuitados(lista, pending){
+  const quitado = {}, cuales = [];
+  (pending || []).forEach(function(r){
+    const d = r && r.data; if(!d) return;
+    const k = d.fecha + "\u0001" + d.sala;
+    if(quitado[k] === undefined){ quitado[k] = _madTqDiaQuitado(lista, d.fecha, d.sala); if(quitado[k]) cuales.push(d.sala + " del " + d.fecha); }
+  });
+  if(!cuales.length) return pending;
+  cuales.sort();
+  if(confirm("⚠ Hay partes de días que ya no están en este equipo (lo enviado se quita a los 7 días): " + cuales.join(", ") + "."
+    + " Si esas rondas ya se registraron, enviarlas crea OTRA fila y el libro resta dos veces: corrígelas en la hoja."
+    + "\n\nAceptar = son rondas nuevas: enviarlas.\nCancelar = no enviarlas; siguen guardadas en este equipo.")) return pending;
+  toast("No se enviaron los partes de " + cuales.join(", ") + ": siguen pendientes en este equipo. Si eran rondas ya registradas, no hace falta enviarlos (🗑 Borrar sala los descarta del equipo; lo ya enviado sigue en la hoja).","warn",9000);
+  return pending.filter(function(r){ const d = r && r.data; return !(d && quitado[d.fecha + "\u0001" + d.sala]); });
+}
 
 /* 2026-11-04 (pauta A6, usuario: «Enviar lo de pantalla») · La hoja ya tiene esto (o la cola, si cupo allí) y este equipo no tiene sitio para
    anotarlo: lo que guardaba de esos registros se retira, o un envío posterior escribiría lo viejo encima. Una lista más corta siempre cabe;
@@ -18007,8 +18030,10 @@ async function _syncMadTanquesGrid(){
   if(!url){ toast("Configura la URL de Google Apps Script","warn"); openCfg(); return; }
   if(!isValidGasUrl(url)){ toast("URL inválida","err"); return; }
   if(!syncRateOk()) return;
-  const pending = (sinCopia || loadMad("tanques")).filter(r => !r.synced);
+  let pending = (sinCopia || loadMad("tanques")).filter(r => !r.synced);
   if(pending.length === 0){ toast("Sin pendientes","info"); return; }
+  pending = _madTqConfirmarQuitados(sinCopia || loadMad("tanques"), pending);   // auditoría de la A: los días ya quitados de otras salas
+  if(pending.length === 0){ if(!sinCopia) renderMadTanques(); updateDots(); updateSyncUI(); return; }
   if(!(await _madTqConfirmarRepetidas(pending))){ _madTqNoEnviado(); if(!sinCopia) renderMadTanques(); updateDots(); updateSyncUI(); return; }   // 2026-09-30 · ¿ronda repetida?
   setSyncUI("pend","Enviando "+pending.length+" tanque(s)…");
   const payload = buildMadPayload("tanques", pending);

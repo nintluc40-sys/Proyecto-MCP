@@ -21,7 +21,7 @@ const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['pickMod', 'enter', 'goBack', 'PINS', 'MAD_MOD', 'MAD_FICHAS', 'madKey', 'loadMad', 'saveMadList', 'renderMadTanques', 'renderMadSalas',
   'saveMadTanquesGrid', 'saveMadSalasGrid', 'syncMadTanquesGrid', 'syncMadSalasGrid', 'madTanquesSalaChange', 'MAD_RETENCION_DIAS', '_madPodarEnviados',
   '_madHistPodar', '_madLimpiezaDeEspacio', '_soltarCopiaMatriz', '_REPRO_CACHE_KEY', '_reproCacheSave', 'MAD_HIST_KEY', 'MAD_HIST_PANEL_PRE',
-  '_madHistGuardar', 'madHistLeer', '_madHistGrillas', 'renderMadHistorial', 'openCfg', 'closeCfg', 'liberarEspacio', '_espacioMedir', 'ESPACIO_TOPE', '_gasVersionLocal', 'safeSetItem', '_madTqConfirmarRepetidas', '_loadSyncQueue', 'MAD_RECOV_KEY', 'loadMadRecovery', '_lastSyncFingerprint', 'selTab', 'goBack', 'madTanquesFechaChange', 'madSalasFechaChange', '_madCommitActive', '_madGridFechaAuto', 'madMovGuardar', 'renderMadMovimientos', 'madMovSalaChange', '_loadSyncQueue', 'flushSyncQueue', 'SYNCQ_KEY', '_madTqDiaQuitado'];
+  '_madHistGuardar', 'madHistLeer', '_madHistGrillas', 'renderMadHistorial', 'openCfg', 'closeCfg', 'liberarEspacio', '_espacioMedir', 'ESPACIO_TOPE', '_gasVersionLocal', 'safeSetItem', '_madTqConfirmarRepetidas', '_loadSyncQueue', 'MAD_RECOV_KEY', 'loadMadRecovery', '_lastSyncFingerprint', 'selTab', 'goBack', 'madTanquesFechaChange', 'madSalasFechaChange', '_madCommitActive', '_madGridFechaAuto', 'madMovGuardar', 'renderMadMovimientos', 'madMovSalaChange', '_loadSyncQueue', 'flushSyncQueue', 'SYNCQ_KEY', '_madTqDiaQuitado', 'syncAll'];
 const H = {};
 const avisos = [];
 const envios = [];
@@ -1021,6 +1021,89 @@ describe('🔴 un día de Tanques ya quitado del equipo', () => {
     respuesta = true;
     await H.syncMadTanquesGrid();
     expect(envios).toHaveLength(1);
+  });
+
+  /* Auditoría de la A (2026-11-05, usuario: «En ☁️ y en 🔄 global») · la pregunta de arriba sólo miraba la grilla en pantalla, y ☁️ y 🔄
+     envían lo pendiente de TODAS las salas: lo autoguardado de un día ya quitado salía sin preguntar desde otra sala. */
+  describe('lo autoguardado en otra sala', () => {
+    const conSala = (sala) => envios.some((b) => b.rows.some((f) => f.includes(sala)));
+    const autoguardadoEnSala2 = () => {
+      irADia(hace(10));
+      teclear(celda(), '4');
+      irASala('Sala 3');   // cambiar de sala lo guarda en silencio: el autoguardado no pregunta
+      expect(preguntas, 'el autoguardado no pregunta').toEqual([]);
+      expect(deLaSala(), 'lo tecleado quedó guardado, sin enviar').toHaveLength(1);
+      const el = document.getElementById('mad-tanques-fecha');
+      el.value = hace(0);
+      H.madTanquesFechaChange();
+      teclear(celda(), '1');
+    };
+
+    it('🔴 ☁️ pregunta por él, diciendo el día y la sala; «Cancelar» envía sólo lo demás', async () => {
+      autoguardadoEnSala2();
+      await H.syncMadTanquesGrid();
+      expect(preguntas).toHaveLength(1);
+      expect(preguntas[0]).toContain('Sala 2 del ' + hace(10));
+      expect(preguntas[0]).toContain('OTRA fila');
+      expect(envios).toHaveLength(1);
+      expect(conSala('Sala 3'), 'lo de esta sala sale').toBe(true);
+      expect(conSala('Sala 2'), 'lo del día ya quitado, no').toBe(false);
+      expect(deLaSala().every((r) => !r.synced), 'sigue guardado sin enviar').toBe(true);
+      expect(avisos.join(' ')).toContain('No se enviaron los partes de Sala 2 del ' + hace(10));
+    });
+
+    it('🔴 ☁️, «Aceptar»: salen los dos', async () => {
+      autoguardadoEnSala2();
+      respuesta = true;
+      await H.syncMadTanquesGrid();
+      expect(preguntas).toHaveLength(1);
+      expect(conSala('Sala 2')).toBe(true);
+      expect(conSala('Sala 3')).toBe(true);
+    });
+
+    it('🔴 🔄 también pregunta, y «Cancelar» no lo envía', async () => {
+      autoguardadoEnSala2();
+      await H.syncAll();
+      expect(preguntas.filter((p) => p.includes('Sala 2 del ' + hace(10)))).toHaveLength(1);
+      expect(conSala('Sala 2')).toBe(false);
+      expect(deLaSala().every((r) => !r.synced)).toBe(true);
+      expect(avisos.join(' ')).toContain('No se enviaron los partes de Sala 2');
+      expect(document.getElementById('slbl').textContent, 'no dice «Sin datos nuevos»: queda Tanques').toContain('días ya quitados');
+    });
+
+    it('🔴 sin espacio, el día de la grilla, ya respondido al guardarla, no vuelve a preguntar', async () => {
+      irADia(hace(10));
+      teclear(celda(), '4');
+      almacen.dejarLibres(0);
+      respuesta = true;
+      await H.syncMadTanquesGrid();
+      expect(preguntas, 'sólo la de guardar la grilla').toHaveLength(1);
+      expect(conSala('Sala 2')).toBe(true);
+    });
+
+    it('🔴 🔄, «Aceptar»: sale', async () => {
+      autoguardadoEnSala2();
+      respuesta = true;
+      await H.syncAll();
+      expect(conSala('Sala 2')).toBe(true);
+    });
+
+    it('🔵 un día ya quitado que se confirmó con 💾 no vuelve a preguntar desde otra sala', async () => {
+      irADia(hace(10));
+      teclear(celda(), '4');
+      respuesta = true;
+      expect(H.saveMadTanquesGrid()).toBeGreaterThan(0);
+      expect(preguntas).toHaveLength(1);
+      respuesta = false;
+      irASala('Sala 3');
+      const el = document.getElementById('mad-tanques-fecha');
+      el.value = hace(0);
+      H.madTanquesFechaChange();
+      teclear(celda(), '1');
+      await H.syncMadTanquesGrid();
+      expect(preguntas).toHaveLength(1);
+      expect(conSala('Sala 2')).toBe(true);
+    });
   });
 
   it('`_madTqDiaQuitado`: sin fecha o sin sala no hay nada que decir', () => {
