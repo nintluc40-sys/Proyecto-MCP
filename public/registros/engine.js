@@ -2577,9 +2577,13 @@ async function syncAll(){
   if(!isValidGasUrl(url)){ toast("URL de script inválida","err"); openCfg(); return; }
 
   // S3: antes de nada, intenta vaciar lo que haya quedado en la cola offline.
-  try{ await flushSyncQueue(); }catch(_){}
-
+  /* 2026-11-06 (auditoría de la A, usuario: «Esperar máx. 45 s») · con el tope de la pauta A15, como ☁️, y diciendo ya «Sincronizando…»:
+     esperaba el vaciado ENTERO, sin decir nada (con la cola llena y el GAS lento, minutos con el botón como muerto). Pasado el tope, la cola
+     sigue vaciándose sola; lo de aquí que se pise con algo de ella va detrás (_colaSolapa, en postPayload): lo viejo no llega encima. */
   setSyncUI("pend","Sincronizando...");
+  try{ await _colaVaciarConTope(); }catch(_){}
+
+  setSyncUI("pend","Sincronizando...");   // el vaciado, al terminar, pinta su propio estado
   let ok=0, fail=0, queued=0, total=0;
   let _tqRetenido = false;   // 2026-09-30 · Tanques no se envió porque, ante «¿ronda repetida?», se contestó que no
   let _tqQuitado = false;    // 2026-11-05 · partes de días ya quitados que no se quisieron enviar (_madTqConfirmarQuitados)

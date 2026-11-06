@@ -914,6 +914,57 @@ describe('🔴 la marca de «sin guardar» es la de la grilla a la vista', () =>
   });
 });
 
+/* 2026-11-06 (auditoría de la A, usuario: «Esperar máx. 45 s») · 🔄 esperaba a que se vaciara la cola ENTERA antes de enviar nada, sin decir
+   «Sincronizando…»: con la cola llena y el GAS lento, minutos con el botón como muerto. Ahora, como ☁️ (pauta A15), 45 s como mucho. */
+describe('🔴 🔄 no se queda colgado vaciando la cola', () => {
+  const OTRA = { payload: { sheetName: 'Otra hoja', headers: ['ID', 'v'], rows: [['x', 1]] }, reqId: 'r-cola', url: '', ts: Date.now(), mark: null };
+  let soltarCola;
+  beforeEach(() => {
+    soltarCola = null;
+    // Lo de la cola no contesta hasta soltarlo; lo demás llega.
+    H.setPostOnce((b) => {
+      if (b.sheetName === 'Otra hoja') return new Promise((r) => { soltarCola = () => r('ok'); });
+      envios.push(JSON.parse(JSON.stringify(b)));
+      return Promise.resolve('ok');
+    });
+  });
+  afterEach(async () => {
+    if (soltarCola) { soltarCola(); await vi.advanceTimersByTimeAsync(1000); }   // aunque la prueba falle a medias: no deja la cola colgada
+    H.setPostOnce(async (b) => { envios.push(JSON.parse(JSON.stringify(b))); return respuesta; });
+  });
+  const deTanques = () => envios.filter((b) => b.sheetName === 'Maduración Tanques');
+
+  it('🔴 dice «Sincronizando…» desde el principio, y a los 45 s envía lo de aquí; la cola sigue sola', async () => {
+    irASala('Sala 2');
+    celda().value = '3'; celda().dispatchEvent(new Event('input', { bubbles: true }));
+    expect(H.saveMadTanquesGrid({ silent: true })).toBeGreaterThan(0);
+    almacen.setItem(H.SYNCQ_KEY, JSON.stringify([OTRA]));
+    const p = H.syncAll();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(document.getElementById('slbl').textContent).toContain('Sincronizando');
+    await vi.advanceTimersByTimeAsync(44000);
+    expect(deTanques(), 'aún espera a la cola').toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(5000);
+    await p;
+    expect(deTanques(), 'pasado el tope, lo de aquí sale').toHaveLength(1);
+    expect(H._loadSyncQueue().map((it) => it.reqId), 'lo de la cola sigue en ella, a salvo').toEqual(['r-cola']);
+    soltarCola();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(H._loadSyncQueue(), 'y se entrega solo').toEqual([]);
+  });
+
+  it('🔵 con la cola al día no espera nada', async () => {
+    irASala('Sala 2');
+    celda().value = '3'; celda().dispatchEvent(new Event('input', { bubbles: true }));
+    expect(H.saveMadTanquesGrid({ silent: true })).toBeGreaterThan(0);
+    const p = H.syncAll();
+    await vi.advanceTimersByTimeAsync(5000);
+    await p;
+    expect(deTanques()).toHaveLength(1);
+  });
+});
+
 /* 2026-11-05 (pauta A8, usuario: «No caduca sola») · Un formulario se limpia al encolarse, y ésa es su única copia: a los 7 días la cola lo
    descartaba, también el Historial, y el aviso decía «revísalos» sin que quedara nada que revisar. */
 describe('🔴 lo que espera en la cola no caduca', () => {
