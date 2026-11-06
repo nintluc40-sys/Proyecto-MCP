@@ -1209,6 +1209,11 @@ sin avisar**:
   Cada envío se arma justo antes de salir, con su marca, para que lo guardado mientras sale el anterior viaje en el suyo.
   En Biomol, 🔄 envía también los análisis pendientes de OTROS días (usuario: «Enviar todo») y vuelve al que estaba en
   pantalla; pasado el tope de 15 envíos por minuto, lo que queda se dice una vez y se envía en el siguiente 🔄.
+- **Lo que se QUITA también se corrige en la hoja** (A10, 2026-11-06; usuario: «Sin tocar el Apps Script»). El Apps
+  Script escribe por llave y no borra, así que lo que dejaba de viajar se quedaba en la hoja como estaba.
+  **Desinfección:** se anota, por módulo y fecha, lo que viajó con contenido (`dx_enviado_v1`, 60 días); un elemento
+  que vuelve a «—» sin observación propia viaja **en blanco** (por ☁️, 🔄 de hoy y 🔄 de días anteriores), y con todo
+  vuelto a «—» se envía igual: la hoja queda en «—». Lo que ya viajó en blanco se olvida.
 - **Reproductivo · elegir la hembra:** si el envío falla de verdad, los microchips elegidos **siguen** en la lista
   para reintentar (entregado o en cola, salen como antes).
 

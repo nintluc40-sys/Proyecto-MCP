@@ -2774,6 +2774,7 @@ async function syncAll(){
       const dxp = buildDesinfeccionPayload(curMod);
       if(dxp.rows.length > 0){
         const opts = { mark: _marcaFichas(curMod, ["desinfeccion"]) };
+        _dxAnotarEnviado(curMod, dxp);   // A10
         const sent = await postPayload(dxp, url, opts);
         if(sent){
           _marcarEnviado(opts);
@@ -2923,6 +2924,7 @@ async function _previasEnviarFichas(m, url){
       const keys = [], stamps = {};
       g.items.forEach(function(x){ const k = m + "|" + x.ficha + "|" + x.dia; keys.push(k); stamps[k] = x.e.updatedAt; });
       const opts = { mark:{ kind:"fichas", keys:keys, stamps:stamps } };
+      if(g.items[0] && g.items[0].ficha === "desinfeccion") _dxAnotarEnviado(m, g.payload);   // A10
       const sent = await postPayload(g.payload, url, opts);
       if(sent){ _reconcileFichas(opts.mark); r.ok++; }   // la misma conciliación que una entrega de la cola
       else if(opts.outcome === "queued") r.cola++;
@@ -3623,6 +3625,7 @@ async function syncOneFicha(fid){
     // Desinfección → hoja propia "Registro_Desinfección" (formato tidy).
     const dxp = buildDesinfeccionPayload(curMod);
     if(dxp.rows.length > 0){
+      _dxAnotarEnviado(curMod, dxp);   // A10
       sent = await postPayload(dxp, url, opts);
     } else { hadRows = false; }
     if(sent) _marcarEnviado(opts);
@@ -4964,8 +4967,42 @@ function dxFechaChange(v){
   _formDirty = true;
 }
 
+/* A10 (2026-11-06, usuario: «Sin tocar el Apps Script») · LO QUE YA SE MANDÓ DE CADA DÍA. La hoja se escribe por llave
+   (Fecha+Módulo+Tipo+Categoría+Elemento, upsert), y un elemento que vuelve a «—» sin observación propia no viajaba: la hoja
+   se quedaba con su «Sí»/«No» de antes. Se anota, por módulo y fecha, lo que viaja CON contenido; si después falta, viaja
+   en blanco y la fila de la hoja queda en «—». Se anota al enviar (también si se queda en la cola, que desde A8 no caduca);
+   lo que ya viajó en blanco se olvida. Se guardan 60 días. Sin espacio para anotarlo, el envío sigue: sólo se pierde esta
+   corrección. */
+const DX_ENV_KEY = "dx_enviado_v1";
+const DX_ENV_DIAS = 60;
+function _dxEnviados(){
+  try{ const o = JSON.parse(localStorage.getItem(DX_ENV_KEY) || "{}"); return (o && typeof o === "object" && !Array.isArray(o)) ? o : {}; }
+  catch(_){ return {}; }
+}
+// La llave de la fila sin la fecha ni el módulo (ésos ya son el cajón): Tipo · Categoría · Elemento.
+function _dxClave(row){ return JSON.stringify([String(row[3]), String(row[4]), String(row[5])]); }
+function _dxAnotarEnviado(m, payload){
+  if(!payload || !Array.isArray(payload.rows) || !payload.rows.length) return;
+  const o = _dxEnviados(), mm = (o[m] && typeof o[m] === "object") ? o[m] : (o[m] = {});
+  payload.rows.forEach(function(r){
+    const f = String(r[0] || "");
+    if(!isValidDate(f)) return;
+    const l = Array.isArray(mm[f]) ? mm[f] : (mm[f] = []);
+    const k = _dxClave(r), i = l.indexOf(k);
+    const lleno = String(r[6] == null ? "" : r[6]) !== "" || String(r[7] == null ? "" : r[7]) !== "";
+    if(lleno && i === -1) l.push(k);
+    else if(!lleno && i !== -1) l.splice(i, 1);
+    if(!l.length) delete mm[f];
+  });
+  const lim = new Date(Date.now() - DX_ENV_DIAS * 864e5).toISOString().slice(0, 10);
+  Object.keys(mm).forEach(function(f){ if(f < lim) delete mm[f]; });
+  if(!Object.keys(mm).length) delete o[m];
+  _lsSet(DX_ENV_KEY, JSON.stringify(o));
+}
+
 // Construye el payload tidy (1 fila por elemento con estado u observación editada).
 // `dato` (opcional, 2026-10-04): los datos de una ficha concreta —la de un día anterior— en vez de la de hoy.
+// A10: y, en blanco, lo que ya se mandó de esa fecha con contenido y ahora falta (ver _dxAnotarEnviado).
 function buildDesinfeccionPayload(m, dato){
   const e = dato ? null : loadE(m,"desinfeccion"); const d = dato || (e?e.data:{});
   const fecha   = isValidDate(d.fecha||"") ? d.fecha : today();
@@ -4995,6 +5032,16 @@ function buildDesinfeccionPayload(m, dato){
       if(og) rows.push([fecha, mLabel(m), corrida, t.label, "Observaciones generales", "—", "", og, ""]);
     }
   });
+  const ya = (_dxEnviados()[m] || {})[fecha];
+  if(Array.isArray(ya) && ya.length){
+    const hay = new Set(rows.map(_dxClave));
+    ya.forEach(function(k){
+      if(hay.has(k)) return;
+      let p = null;
+      try{ p = JSON.parse(k); }catch(_){ p = null; }
+      if(Array.isArray(p) && p.length === 3) rows.push([fecha, mLabel(m), corrida, p[0], p[1], p[2], "", "", ""]);
+    });
+  }
   return { sheetName: DESINF_SHEET, headers, rows };
 }
 
