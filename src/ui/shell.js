@@ -108,7 +108,8 @@ export function mountShell(appEl) {
   // Con datos nuevos se repinta la vista, salvo la que declare `repintaConDatos: false`
   // (Registros: repintarla se llevaba el foco y lo tecleado). Ver viewRepaintsOnData. Es la MISMA vista: el
   // desplazamiento se queda donde estaba (punto 7, 2026-10-03; antes saltaba ARRIBA).
-  on(EV.DATA, () => { renderDateBar(); if (viewRepaintsOnData(store.currentView)) renderCurrentView({ conservarPosicion: true }); });
+  // A32 (2026-11-06): antes de pintar la barra, un atajo de 7 o 30 días se re-ancla a la fecha más reciente que trae.
+  on(EV.DATA, () => { reanclarAtajo(); renderDateBar(); if (viewRepaintsOnData(store.currentView)) renderCurrentView({ conservarPosicion: true }); });
 }
 
 // Vistas principales del sistema. Las 11 están desarrolladas (la décima, 🏭 Planta, desde el 2026-10-04; la undécima, 🔧
@@ -323,14 +324,28 @@ function dateRangeLabel() {
   return store.dateFrom ? 'Desde ' + fmtShort(store.dateFrom) : 'Hasta ' + fmtShort(store.dateTo);
 }
 
+/* El atajo elegido ('7' o '30'; null = «Todo»). A32 (2026-11-06): el rango se fijaba UNA vez, al pulsar, y con un día
+   nuevo de datos (el refresco) «7 días» seguía siendo la semana de antes, sin el día nuevo, aunque el botón siguiera
+   resaltado. Ahora EV.DATA lo re-ancla a la fecha más reciente (`reanclarAtajo`). */
+let atajo = null;
+
+function fijarRango() {
+  if (!atajo) { store.dateFrom = null; store.dateTo = null; return; }
+  const days = +atajo;
+  const to = store.latestDateMs ? new Date(store.latestDateMs) : new Date();
+  const from = new Date(to); from.setDate(from.getDate() - days + 1);
+  store.dateFrom = from; store.dateTo = to;
+}
+
+/** Con datos nuevos: si sigue puesto un atajo y la fecha más reciente cambió, el rango la sigue. */
+function reanclarAtajo() {
+  if (!atajo || !store.dateFrom || !store.dateTo || !store.latestDateMs) return;
+  if (store.dateTo.getTime() !== store.latestDateMs) fijarRango();
+}
+
 function applyPreset(id) {
-  if (id === 'all') { store.dateFrom = null; store.dateTo = null; }
-  else {
-    const days = +id;
-    const to = store.latestDateMs ? new Date(store.latestDateMs) : new Date();
-    const from = new Date(to); from.setDate(from.getDate() - days + 1);
-    store.dateFrom = from; store.dateTo = to;
-  }
+  atajo = id === 'all' ? null : id;
+  fijarRango();
   renderDateBar();
   renderCurrentView({ conservarPosicion: true });   // la misma vista con otro rango: no salta arriba (usuario, 2026-10-03)
 }
