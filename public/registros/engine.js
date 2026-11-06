@@ -1660,8 +1660,8 @@ const _sleep = (ms) => new Promise(res => setTimeout(res, ms));
    Va contra la regla que este proyecto ya tiene escrita: «Google falla a rachas — reintentar antes
    de dar por roto nada». Y no estaba cubierto: gas-motivos.test.js clasificaba siete mensajes del
    GAS y éste no estaba en ninguna de sus dos listas.
-   ⚠ Si alguna vez fuera un defecto de datos de verdad, tampoco se queda girando: la cola tiene TTL
-   de 24 h y tope de 50, y el envío sigue VISIBLE como «en cola» en vez de desaparecer. */
+   ⚠ Si alguna vez fuera un defecto de datos de verdad, tampoco se queda girando: la cola tiene tope
+   de 50 (desde la pauta A8 ya no caduca), y el envío sigue VISIBLE como «en cola» en vez de desaparecer. */
 const _BUSY_RE = /ocupad|reintenta|demasiadas solicitudes|too many|rate limit|try again|error interno/i;
 async function _postOnce(bodyPayload, finalUrl, info){
   const ctrl  = new AbortController();
@@ -9779,7 +9779,7 @@ function _madLogEstado(ficha, e, colaVacia){
 }
 function _madLogEtiqueta(estado){
   if(estado==="cola") return '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px;white-space:nowrap">📶 en cola</span>';
-  if(estado==="perdido") return '<span style="background:#fee2e2;color:#991b1b;padding:1px 6px;border-radius:4px;white-space:nowrap" title="Salió de la cola sin llegar a la hoja: caducó a los 7 días o la hoja lo rechazó. Vuelve a guardarlo.">⚠ no llegó</span>';
+  if(estado==="perdido") return '<span style="background:#fee2e2;color:#991b1b;padding:1px 6px;border-radius:4px;white-space:nowrap" title="Salió de la cola sin llegar a la hoja: la hoja lo rechazó, o no cupo en la cola (guarda 50 envíos como mucho). Vuelve a guardarlo.">⚠ no llegó</span>';
   return '<span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:4px;white-space:nowrap">✅ enviado</span>';
 }
 /* Entrega confirmada desde la cola: la entrada de ese envío pasa a «ok» y, si su registro está a la vista, se
@@ -17910,7 +17910,7 @@ function saveMadTanquesGrid(opts){
      · el sello es el de esta app → se envía;
      · es OTRO GAS (false) → no se envía, y el motivo viaja en gasMessage para el aviso de siempre;
      · sin confirmar (null) → a la cola, que sólo lo entrega con el sello confirmado (_madHojaPideGasNuevo).
-   🔑 Aquí no se pierde nada aunque la cola caduque: los registros de la grilla viven en el dispositivo y sólo se marcan
+   🔑 Aquí no se pierde nada aunque un envío salga de la cola sin llegar (rechazado, o por el tope de 50): los registros de la grilla viven en el dispositivo y sólo se marcan
    como enviados cuando la entrega se reconcilia (marca «mad:tanques»), así que el siguiente «Sincronizar» los reintenta. */
 async function _madTanquesEnviar(payload, opts, gas){
   if(opts) _marcaSellar(opts.mark);   // antes de preguntar al GAS: lo que se corrija mientras tanto no es lo que viaja

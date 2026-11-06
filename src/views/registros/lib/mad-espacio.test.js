@@ -21,7 +21,7 @@ const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['pickMod', 'enter', 'goBack', 'PINS', 'MAD_MOD', 'MAD_FICHAS', 'madKey', 'loadMad', 'saveMadList', 'renderMadTanques', 'renderMadSalas',
   'saveMadTanquesGrid', 'saveMadSalasGrid', 'syncMadTanquesGrid', 'syncMadSalasGrid', 'madTanquesSalaChange', 'MAD_RETENCION_DIAS', '_madPodarEnviados',
   '_madHistPodar', '_madLimpiezaDeEspacio', '_soltarCopiaMatriz', '_REPRO_CACHE_KEY', '_reproCacheSave', 'MAD_HIST_KEY', 'MAD_HIST_PANEL_PRE',
-  '_madHistGuardar', 'madHistLeer', '_madHistGrillas', 'renderMadHistorial', 'openCfg', 'closeCfg', 'liberarEspacio', '_espacioMedir', 'ESPACIO_TOPE', '_gasVersionLocal', 'safeSetItem', '_madTqConfirmarRepetidas', '_loadSyncQueue', 'MAD_RECOV_KEY', 'loadMadRecovery', '_lastSyncFingerprint', 'selTab', 'goBack', 'madTanquesFechaChange', 'madSalasFechaChange', '_madCommitActive', '_madGridFechaAuto', 'madMovGuardar', 'renderMadMovimientos', 'madMovSalaChange', '_loadSyncQueue', 'flushSyncQueue', 'SYNCQ_KEY', '_madTqDiaQuitado', 'syncAll', 'recoverMadGrid', 'saveMadRecovery'];
+  '_madHistGuardar', 'madHistLeer', '_madHistGrillas', 'renderMadHistorial', 'openCfg', 'closeCfg', 'liberarEspacio', '_espacioMedir', 'ESPACIO_TOPE', '_gasVersionLocal', 'safeSetItem', '_madTqConfirmarRepetidas', '_loadSyncQueue', 'MAD_RECOV_KEY', 'loadMadRecovery', '_lastSyncFingerprint', 'selTab', 'goBack', 'madTanquesFechaChange', 'madSalasFechaChange', '_madCommitActive', '_madGridFechaAuto', 'madMovGuardar', 'renderMadMovimientos', 'madMovSalaChange', '_loadSyncQueue', 'flushSyncQueue', 'SYNCQ_KEY', '_madTqDiaQuitado', 'syncAll', 'recoverMadGrid', 'saveMadRecovery', '_madLogEtiqueta'];
 const H = {};
 const avisos = [];
 const envios = [];
@@ -1540,5 +1540,14 @@ describe('🧹 ⚙ Config: el indicador y el botón', () => {
 
   it('el botón está en el panel', () => {
     expect(readFileSync(SHELL, 'utf8')).toContain('onclick="liberarEspacio()"');
+  });
+});
+
+/* 2026-11-06 (auditoría de la A, usuario: «Rechazo o tope») · Desde A8 la cola no caduca: «⚠ no llegó» decía «caducó a los 7 días». */
+describe('«⚠ no llegó» dice por qué, sin caducar', () => {
+  it('🔴 la hoja lo rechazó, o no cupo en la cola: nada de caducar', () => {
+    const t = H._madLogEtiqueta('perdido');
+    expect(t).toContain('la hoja lo rechazó, o no cupo en la cola (guarda 50 envíos como mucho)');
+    expect(t).not.toMatch(/caduc/i);
   });
 });
