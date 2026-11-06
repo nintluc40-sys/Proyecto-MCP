@@ -195,29 +195,36 @@ self.addEventListener('activate', (e) => {
    pide la franja de versión nueva). */
 const revalidando = (request) => (request.mode === 'navigate' ? request : new Request(request, { cache: 'no-cache' }));
 
-/** Red con tope de tiempo. Si tarda más que `TIMEOUT_RED`, se rechaza y el que
- *  llama tira de caché — pero la petición sigue viva y su resultado se guarda. */
+/** Red con tope de tiempo. `carrera` se rechaza ('timeout') si la red tarda más que `TIMEOUT_RED`, y el que
+ *  llama tira de caché — pero la petición (`red`) sigue viva y su resultado se guarda. */
 function redConTope(request, cache) {
-  return new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error('timeout')), TIMEOUT_RED);
-    fetch(revalidando(request)).then((res) => {
-      clearTimeout(t);
-      // Sólo se guardan respuestas COMPLETAS y correctas. Un 404 o un 206 en caché
-      // es peor que no tener nada: se serviría como si fuera bueno.
-      if (res && res.ok && res.status === 200) cache.put(request, res.clone()).catch(() => {});
-      resolve(res);
-    }).catch((err) => { clearTimeout(t); reject(err); });
+  const red = fetch(revalidando(request)).then((res) => {
+    // Sólo se guardan respuestas COMPLETAS y correctas. Un 404 o un 206 en caché
+    // es peor que no tener nada: se serviría como si fuera bueno.
+    if (res && res.ok && res.status === 200) cache.put(request, res.clone()).catch(() => {});
+    return res;
   });
+  const carrera = new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('timeout')), TIMEOUT_RED);
+    red.then((res) => { clearTimeout(t); resolve(res); }, (err) => { clearTimeout(t); reject(err); });
+  });
+  return { red, carrera };
 }
 
 async function networkFirst(request) {
   const cache = await caches.open(CACHE);
+  const { red, carrera } = redConTope(request, cache);
   try {
-    return await redConTope(request, cache);
-  } catch (_) {
+    return await carrera;
+  } catch (err) {
     const guardada = await cache.match(request, { ignoreSearch: true });
     if (guardada) return guardada;
-    throw _;
+    /* A32 (2026-11-06): sin copia, el tope no tiene a qué caer, así que se sigue esperando a la red. Antes la petición
+       fallaba a los 4 s con la respuesta en camino: con señal lenta, un archivo aún sin guardar (SheetJS, `engine.js`
+       tras una instalación cortada) no llegaba nunca, y la vista no abría. Si la red falla de verdad, el fallo se
+       propaga como siempre. */
+    if (err && err.message === 'timeout') return red;
+    throw err;
   }
 }
 

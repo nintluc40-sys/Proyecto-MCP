@@ -274,6 +274,40 @@ describe('Service worker · sin conexión', () => {
     const r = await pedir(sw, url);
     expect(await r.res.text()).toBe('copia guardada');
   }, 15000);
+
+  it('🔴 A32 (2026-11-06) · con señal lenta y SIN copia, se sigue esperando a la red: no falla a los 4 s', async () => {
+    /* El tope sólo sirve para caer a la copia. Sin ella, rechazar a los 4 s dejaba sin llegar una respuesta que venía en
+       camino: con señal lenta, SheetJS o `engine.js` aún sin guardar no cargaban nunca. */
+    vi.useFakeTimers();   // antes de montar: el service worker lee el reloj al cargarse
+    try {
+      sw = montarSW({ red: () => new Promise((listo) => setTimeout(() => listo(ok('llegó a los 6 s')), 6000)) });
+      let resultado = null;
+      let fallo = null;
+      pedir(sw, BASE + 'vendor/xlsx.full.min.js').then((r) => { resultado = r; }, (e) => { fallo = e; });
+      await vi.advanceTimersByTimeAsync(4500);
+      expect(fallo, 'falló al cumplirse el tope, con la red en camino').toBeNull();
+      expect(resultado).toBeNull();
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(fallo).toBeNull();
+      expect(await resultado.res.text()).toBe('llegó a los 6 s');
+      expect(await (await sw.cachesFalso.api.open('mcp-v1')).match(BASE + 'vendor/xlsx.full.min.js'), 'y se guarda').toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('A32 · con señal lenta, sin copia, y la red que al final falla: el fallo se propaga', async () => {
+    vi.useFakeTimers();
+    try {
+      sw = montarSW({ red: () => new Promise((_, mal) => setTimeout(() => mal(new Error('se cortó')), 6000)) });
+      let fallo = null;
+      pedir(sw, BASE + 'registros/engine.js').catch((e) => { fallo = e; });
+      await vi.advanceTimersByTimeAsync(6500);
+      expect(fallo && fallo.message).toBe('se cortó');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 /* ══════════════════════════════════════════════════════════
