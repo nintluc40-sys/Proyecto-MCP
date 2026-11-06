@@ -709,3 +709,53 @@ describe('Maduración · «de paso» · el % de cópulas y muda de los reportes 
     expect([c.ficha.promedios.pctCopulas, c.ficha.promedios.pctMuda]).toEqual([15, 5]);
   });
 });
+
+/* A21 (2026-11-06, usuario: «Igual que la baldosa») · LA BIOMASA DEL PARTE. `kpiBiomasa` da `totalKg`, `hembrasKg` y
+   `machosKg`, y el parte leía `bm.kg`, que no existe: salía SIEMPRE «Biomasa —». Las pruebas de arriba no lo veían porque
+   su planta no trae pesos (con o sin el fallo, «—»). Aquí, pesos de referencia registrados el 17/09 en la Sala 1 (antes de
+   la víspera: no tocan las cifras del día). */
+describe('Maduración · F7 · A21 · la biomasa del parte, igual que la baldosa del tablero', () => {
+  const PESO = (sala, tanque, pm, ph) => TQ('2026-09-17', sala, tanque, {
+    ...(pm === null ? {} : { 'Peso promedio machos (g)': pm }), ...(ph === null ? {} : { 'Peso promedio hembras (g)': ph }),
+  });
+  const parteCon = (extra) => {
+    const M2 = modeloOperativo([...PLANTA, ...extra], { hoy: HOY, fecha: DIA });
+    return parteDiario(M2, serieDiaria(M2.fuentes, sumarDias(DIA, -1), DIA), diasDeTanque(M2.fuentes.tanques), F({ sala: 'Sala 1' }),
+      { ahora: '20/09/2026 08:30' });
+  };
+  const nf2 = (x) => Number(x).toLocaleString('es-EC', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  const filaBiomasa = (p) => parteDiarioHojas(p)[0].aoa.find((r) => r[0] === 'Biomasa kg');
+
+  it('🔴 con pesos, el papel enseña el total y el desglose ♀/♂ (antes, «Biomasa —»)', () => {
+    const p = parteCon([PESO('Sala 1', 1, 20, 30), PESO('Sala 1', 2, 20, 30)]);
+    const v = p.resumen.vivos;
+    expect(v.machos).toBeGreaterThan(0);
+    expect(v.hembras).toBeGreaterThan(0);
+    const b = p.resumen.biomasa;
+    expect(b.totalKg).toBeCloseTo((v.machos * 20 + v.hembras * 30) / 1000, 2);
+    const html = parteDiarioHtml(p);
+    expect(html).toContain(nf2(b.totalKg) + ' kg');
+    expect(html).toContain(`♀ ${nf2(b.hembrasKg)} · ♂ ${nf2(b.machosKg)} kg`);
+    expect(html).not.toMatch(/sin pesos registrados|sólo un sexo/);
+  });
+
+  it('🔴 y el Excel, la cifra en «Valor» y el desglose en «Detalle»', () => {
+    const p = parteCon([PESO('Sala 1', 1, 20, 30), PESO('Sala 1', 2, 20, 30)]);
+    const b = p.resumen.biomasa;
+    expect(filaBiomasa(p)).toEqual(['Biomasa kg', b.totalKg, `hembras ${b.hembrasKg} kg · machos ${b.machosKg} kg`]);
+  });
+
+  it('con un solo sexo pesado, lo dice (papel y Excel)', () => {
+    const p = parteCon([PESO('Sala 1', 1, 20, null), PESO('Sala 1', 2, 20, null)]);
+    expect(p.resumen.biomasa.parcial).toBe(true);
+    expect(parteDiarioHtml(p)).toContain(`♀ — · ♂ ${nf2(p.resumen.biomasa.machosKg)} kg · sólo un sexo trae peso`);
+    expect(filaBiomasa(p)[2]).toMatch(/^hembras — kg · machos .+ kg · sólo un sexo con peso registrado$/);
+  });
+
+  it('sin pesos, «—» y «sin pesos registrados» (antes, sin explicación)', () => {
+    const p = parteCon([]);
+    expect(p.resumen.biomasa.totalKg).toBe('');
+    expect(parteDiarioHtml(p)).toMatch(/Biomasa<\/div><div class="rp-kpi-v">—<\/div><div class="rp-kpi-s">sin pesos registrados</);
+    expect(filaBiomasa(p)).toEqual(['Biomasa kg', '', 'sin pesos registrados']);
+  });
+});

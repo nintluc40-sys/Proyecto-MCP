@@ -196,7 +196,11 @@ function bloqueResumen(R) {
   const mortTxt = mort.modo === 'tasa' ? pc((mort.dia || {}).pct)
     : mort.modo === 'registradas' ? nf((mort.dia || {}).muertos) + ' reg.'
       : mort.modo === 'no-aplica' ? 'n/a' : '—';
+  /* A21 (2026-11-06, usuario: «Igual que la baldosa») · `kpiBiomasa` da `totalKg`, `hembrasKg` y `machosKg`; aquí se leía
+     `bm.kg`, que no existe, y el parte salía SIEMPRE «Biomasa —» y sin explicación. Ahora dice lo mismo que la baldosa del
+     tablero (operativo.view.js): el total con 2 decimales, el desglose por sexo y el aviso si sólo un sexo trae peso. */
   const bm = R.biomasa || {};
+  const sinBm = bm.totalKg === '' || bm.totalKg === undefined;
   const kpis = [
     ['Vivos', nf((R.vivos || {}).total), `♀ ${nf((R.vivos || {}).hembras)} · ♂ ${nf((R.vivos || {}).machos)}`],
     ['Lotes', nf((R.lotes || {}).total), `prod. ${nf((R.lotes || {}).produccion)} · cuar. ${nf((R.lotes || {}).cuarentena)}`],
@@ -204,7 +208,8 @@ function bloqueResumen(R) {
     ['Ocupación', pc((R.ocupacion || {}).pct), `${nf((R.ocupacion || {}).ocupados)} de ${nf((R.ocupacion || {}).total)}`],
     ['Mortalidad del día', mortTxt, mort.modo === 'tasa' ? `${nf((mort.dia || {}).muertos)} de ${nf((mort.dia || {}).riesgo)}` : mort.modo === 'sin-serie' ? 'sin serie' : ''],
     ['Desoves', nf((R.reproduccion || {}).desoves), `huevos ${nf((R.reproduccion || {}).huevos)} · N5 ${nf((R.reproduccion || {}).n5)}`],
-    ['Biomasa', bm.kg === '' || bm.kg === undefined ? '—' : nf(bm.kg, 1) + ' kg', bm.parcial ? 'sólo un sexo con peso' : bm.kg === '' ? 'sin pesos registrados' : ''],
+    ['Biomasa', sinBm ? '—' : nf(bm.totalKg, 2) + ' kg',
+      sinBm ? 'sin pesos registrados' : `♀ ${nf(bm.hembrasKg, 2)} · ♂ ${nf(bm.machosKg, 2)} kg${bm.parcial ? ' · sólo un sexo trae peso' : ''}`],
   ];
   return `<section class="rp-kpis">${kpis.map(([lb, v, sub]) => `<div class="rp-kpi"><div class="rp-kpi-lb">${esc(lb)}</div><div class="rp-kpi-v">${esc(v)}</div><div class="rp-kpi-s">${esc(sub || '')}</div></div>`).join('')}</section>`;
 }
@@ -751,7 +756,9 @@ export function parteDiarioHojas(parte) {
   const R = p.resumen || {};
   const C = p.cabecera || {};
   const mort = R.mortalidad || {};
-  const bm = R.biomasa || {};
+  const bm = R.biomasa || {};   // A21: `totalKg`, `hembrasKg`, `machosKg` (ver bloqueResumen)
+  const sinBm = bm.totalKg === '' || bm.totalKg === undefined;
+  const kgDe = (v) => (v === '' || v === undefined ? '—' : v);
   const contexto = [
     ['Maduración · Parte diario'],
     ['Día', p.dia || ''],
@@ -770,7 +777,8 @@ export function parteDiarioHojas(parte) {
     ['Desoves', ent((R.reproduccion || {}).desoves), `huevos ${ent((R.reproduccion || {}).huevos)} · N2 ${ent((R.reproduccion || {}).n2)} · N5 ${ent((R.reproduccion || {}).n5)}`],
     ['Fertilidad %', (R.reproduccion || {}).fertilidad === '' ? '' : (R.reproduccion || {}).fertilidad, `nauplios por hembra ${(R.reproduccion || {}).naupliosPorHembra || ''}`],
     ['Desoves pendientes de N5', ent((R.reproduccion || {}).pendientes), ''],
-    ['Biomasa kg', bm.kg === '' || bm.kg === undefined ? '' : bm.kg, bm.parcial ? 'sólo un sexo con peso registrado' : ''],
+    ['Biomasa kg', sinBm ? '' : bm.totalKg,
+      sinBm ? 'sin pesos registrados' : `hembras ${kgDe(bm.hembrasKg)} kg · machos ${kgDe(bm.machosKg)} kg${bm.parcial ? ' · sólo un sexo con peso registrado' : ''}`],
   ];
   const bajas = [
     ['Sala', 'Tanque', 'Natural ♂', 'Natural ♀', 'Descarte ♂', 'Descarte ♀', 'Total', '% del día'],
