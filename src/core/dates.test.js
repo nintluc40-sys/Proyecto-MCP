@@ -11,6 +11,15 @@ describe('parseAnyDate', () => {
     expect(d.getHours()).toBe(12);
   });
 
+  it('A32 (2026-11-06) · dd/mm/yyyy con hora detrás sigue siendo día/mes (antes, el parser nativo leía mes/día)', () => {
+    for (const s of ['05/10/2026 08:30', '05/10/2026 08:30:15', '5/10/2026 8:30:00 a. m.', '05/10/2026T08:30']) {
+      const d = parseAnyDate(s);
+      expect(d, s).toBeInstanceOf(Date);
+      expect([d.getFullYear(), d.getMonth(), d.getDate()], s).toEqual([2026, 9, 5]);   // 5 de octubre, no 10 de mayo
+    }
+    expect(parseAnyDate('31/02/2026 08:30'), 'con hora tampoco entra una fecha imposible').toBeNull();
+  });
+
   it('parsea ISO yyyy-mm-dd', () => {
     const d = parseAnyDate('2024-03-15');
     expect(d.getFullYear()).toBe(2024);

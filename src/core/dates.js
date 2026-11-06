@@ -41,9 +41,10 @@ export function parseAnyDate(raw) {
       let mo = 0; while (mo < 11 && rem >= md[mo]) { rem -= md[mo]; mo++; }
       const d = new Date(y, mo, Math.floor(rem) + 1, 12, 0, 0);
       result = isNaN(d.getTime()) ? null : d;
-    } else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) {
-      // 2) dd/mm/yyyy
-      const p = s.split('/');
+    } else if (/^\d{1,2}\/\d{1,2}\/\d{4}(?:[ T]\d{1,2}:\d{2}\b.*)?$/.test(s)) {
+      // 2) dd/mm/yyyy, con o sin hora detrás («05/10/2026 08:30», «… 8:30:00 a. m.»). A32 (2026-11-06): con hora caía al
+      //    parser nativo, que lee mm/dd: el 5 de octubre salía 10 de mayo. La hora se descarta, como en la rama ISO.
+      const p = s.split(/[ T]/)[0].split('/');
       result = strictYMD(+p[2], +p[1], +p[0]);
     } else if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
       // 3) ISO yyyy-mm-dd
