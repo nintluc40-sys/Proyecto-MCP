@@ -95,11 +95,14 @@ describe('fmtPop', () => {
   it('NaN da "—" y no el texto "NaN"', () => {
     expect(fmtPop(NaN)).toBe('—');
   });
-  it('nulo y ≤0 dan "—" (sin regresión)', () => {
+  it('nulo y negativos dan "—" (sin regresión)', () => {
     expect(fmtPop(null)).toBe('—');
     expect(fmtPop(undefined)).toBe('—');
-    expect(fmtPop(0)).toBe('—');
     expect(fmtPop(-5)).toBe('—');
+  });
+  it('A32 (2026-11-06, usuario: «Mostrar 0»): 0 es un dato (tanque vaciado o agrupado) y se ve «0», no «—»', () => {
+    expect(fmtPop(0)).toBe('0');
+    expect(fmtPop(0.3)).toBe('0');
   });
   it('un número real se formatea con separador de miles', () => {
     expect(fmtPop(1234567)).toBe((1234567).toLocaleString('es-EC'));

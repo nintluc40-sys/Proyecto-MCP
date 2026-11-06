@@ -9,11 +9,14 @@ export function pct(num, dec = 1) {
   return num.toFixed(dec) + '%';
 }
 
-/** Población entera con separador de miles es-EC; "—" para nulo/NaN/≤0.
- *  `isNaN` es imprescindible: `NaN <= 0` es false, así que sin esa guarda un NaN
- *  se colaba hasta `Math.round(NaN).toLocaleString()` y se pintaba el texto "NaN". */
+/** Población entera con separador de miles es-EC; "—" para nulo/NaN/negativo.
+ *  `isNaN` es imprescindible: `NaN < 0` es false, así que sin esa guarda un NaN
+ *  se colaba hasta `Math.round(NaN).toLocaleString()` y se pintaba el texto "NaN".
+ *  A32 (2026-11-06, usuario: «Mostrar 0»): el 0 se ve «0». Antes daba «—», como un tanque sin dato, y un tanque
+ *  vaciado o agrupado (población 0 de verdad: el código usa null para «sin dato») no se distinguía. Las sumas que
+ *  quieren «—» con 0 ya lo piden con `|| null`. */
 export function fmtPop(v) {
-  return (v === null || v === undefined || isNaN(v) || v <= 0) ? '—' : Math.round(v).toLocaleString('es-EC');
+  return (v === null || v === undefined || isNaN(v) || v < 0) ? '—' : Math.round(v).toLocaleString('es-EC');
 }
 
 const inRange = ([a, b], v) => v >= a && v <= b;
