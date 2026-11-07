@@ -21,16 +21,18 @@ const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['savePatLocal', 'syncPat', '_patRaw', 'renderPatNuevo', 'syncMic', '_micRaw', 'renderMicNuevo',
   'syncCal', '_calRaw', 'renderCalNuevo', 'CAL_FORMATS', 'MIC_FORMATS', 'micFmtChange', 'micTypeSet', 'LAB_ANULAR_KEY', '_lastSyncFingerprint',
-  'PAT_SHEET_HEADERS', 'MIC_SHEET_HEADERS', 'CAL_SHEET_HEADERS'];
+  'PAT_SHEET_HEADERS', 'MIC_SHEET_HEADERS', 'CAL_SHEET_HEADERS', 'PAT_REC_KEY', 'MIC_REC_KEY', 'CAL_REC_KEY', 'saveMicLocal', 'saveCalLocal'];
 const H = {};
 const envios = [];
 let respuesta = 'ok';
 
+/** Claves que «no caben»: escribirlas lanza, como un navegador sin espacio. */
+const llenas = new Set();
 const almacen = (() => {
   const m = new Map();
   return {
     getItem: (k) => (m.has(k) ? m.get(k) : null),
-    setItem: (k, v) => { m.set(k, String(v)); },
+    setItem: (k, v) => { if (llenas.has(k)) throw new Error('QuotaExceededError'); m.set(k, String(v)); },
     removeItem: (k) => { m.delete(k); },
     clear: () => { m.clear(); },
     key: (i) => Array.from(m.keys())[i] ?? null,
@@ -70,6 +72,7 @@ const anuladas = (env, cab) => env.rows.filter((r) => String(r[cab.indexOf('Resp
 const pendientes = () => JSON.parse(almacen.getItem(H.LAB_ANULAR_KEY) || '{}');
 
 beforeEach(() => {
+  llenas.clear();
   almacen.clear();
   envios.length = 0;
   respuesta = 'ok';
@@ -232,5 +235,85 @@ describe('A10 · Microbiología y Calidad de Agua: lo mismo, con departamento y 
     expect(an).toHaveLength(1);
     expect([an[0][CH.indexOf('Fecha muestreo')], an[0][CH.indexOf('Departamento')]]).toEqual([D1, 'Larvicultura']);
     expect(H._calRaw().map((r) => r.data.fechaMuestreo)).toEqual([D2]);
+  });
+});
+
+/* Revisión de la B (2026-11-07, usuario: «Todo o nada») · LA ANULACIÓN Y LA CORRECCIÓN, JUNTAS O NINGUNA. La anulación se
+   guardaba antes que el análisis corregido: sin espacio para éste, quedaba sola, y el siguiente envío anulaba la fecha vieja
+   en la hoja sin que la nueva existiera en ninguna parte. */
+describe('A10 · corregir sin espacio en el equipo: todo o nada', () => {
+  const patNuevo = (fecha) => {
+    H.micTypeSet('pat'); H.renderPatNuevo();
+    campo('pat-fm', fecha); campo('pat-corr', '585'); campo('pat-resp', 'Analista A');
+    celda('pat_1_muestra', 'Camarón 1');
+  };
+
+  it('🔴 Patología: si el análisis corregido no cabe, no queda ninguna anulación (antes quedaba sola)', async () => {
+    patNuevo(D1);
+    await H.syncPat();
+    H.renderPatNuevo(); campo('pat-fm', D2);
+    respuestas = [true];
+    llenas.add(H.PAT_REC_KEY);
+    expect(H.savePatLocal()).toBe(-2);
+    llenas.clear();
+    expect(pendientes().pat).toBeUndefined();
+    expect(H._patRaw().map((r) => r.data.fechaMuestreo)).toEqual([D1]);   // sigue como estaba
+  });
+
+  it('🔴 Patología: si la anulación no cabe, tampoco se guarda la corrección (antes salía dos veces en la hoja)', async () => {
+    patNuevo(D1);
+    await H.syncPat();
+    H.renderPatNuevo(); campo('pat-fm', D2);
+    respuestas = [true];
+    llenas.add(H.LAB_ANULAR_KEY);
+    expect(H.savePatLocal()).toBe(-2);
+    llenas.clear();
+    expect(H._patRaw().map((r) => r.data.fechaMuestreo)).toEqual([D1]);
+    expect(pendientes().pat).toBeUndefined();
+  });
+
+  it('🔴 Microbiología: sin espacio para el análisis, ninguna anulación', async () => {
+    H.micTypeSet('bact'); H.renderMicNuevo();
+    campo('mic-fm', D1); campo('mic-corr', '585'); campo('mic-resp', 'Analista A');
+    const ns = Array.from(document.querySelectorAll('[name^="mic_larv-muestra_1_"]')).map((e) => e.name);
+    celda(ns.find((x) => /vamar/.test(x)) || ns.at(-1), '5');
+    await H.syncMic();
+    H.renderMicNuevo(); campo('mic-corr', '586');
+    respuestas = [true];
+    llenas.add(H.MIC_REC_KEY);
+    expect(H.saveMicLocal()).toBe(-2);
+    llenas.clear();
+    expect(pendientes().mic).toBeUndefined();
+    expect(H._micRaw().map((r) => r.data.corrida)).toEqual(['585']);
+  });
+
+  it('🔴 Calidad de Agua: sin espacio para el análisis, ninguna anulación', async () => {
+    H.micTypeSet('cal'); H.renderCalNuevo();
+    campo('cal-fm', D1); campo('cal-corr', '585'); campo('cal-resp', 'Analista A');
+    celda('cal_larv_1_' + H.CAL_FORMATS.larv.params[0], '7');
+    await H.syncCal();
+    H.renderCalNuevo(); campo('cal-fm', D2);
+    respuestas = [true];
+    llenas.add(H.CAL_REC_KEY);
+    expect(H.saveCalLocal()).toBe(-2);
+    llenas.clear();
+    expect(pendientes().cal).toBeUndefined();
+    expect(H._calRaw().map((r) => r.data.fechaMuestreo)).toEqual([D1]);
+  });
+
+  it('una anulación que ya esperaba no se pierde por un intento que no cupo', async () => {
+    patNuevo(D1);
+    await H.syncPat();
+    H.renderPatNuevo(); campo('pat-fm', D2);
+    respuestas = [true];
+    expect(H.savePatLocal()).toBe(1);                       // corregida: la anulación de D1 espera
+    expect(pendientes().pat).toHaveLength(1);
+    H.renderPatNuevo(); campo('pat-corr', '586');           // otra corrección, que no cabe
+    respuestas = [true];
+    llenas.add(H.PAT_REC_KEY);
+    expect(H.savePatLocal()).toBe(-2);
+    llenas.clear();
+    expect(pendientes().pat).toHaveLength(1);              // la de antes sigue, igual
+    expect(pendientes().pat[0].data.fechaMuestreo).toBe(D1);
   });
 });

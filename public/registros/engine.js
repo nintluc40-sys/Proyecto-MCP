@@ -26392,7 +26392,8 @@ function _labCambioDeClave(lista, nuevos, mismaSesion, clave){
   return { accion:"cancelar", previos:previos };
 }
 /** La corrección: fuera del historial lo de las claves viejas y, de las que llegaron a la hoja, una anulación pendiente.
- *  `llave(d)`: los campos de la clave de la hoja. Una anulación de una clave a la que se vuelve, sobra. */
+ *  `llave(d)`: los campos de la clave de la hoja. Una anulación de una clave a la que se vuelve, sobra.
+ *  → { lista, anul }. NO guarda nada: lo guarda `_labGuardarJunto`, las dos cosas o ninguna. */
 function _labCorregir(tipo, lista, previos, nuevos, clave, llave){
   const fuera = new Set(previos.map(function(r){ return r.id; }));   // por id: `previos` es de otra lectura de la lista
   const hacia = _labDescribir(nuevos[0].data);
@@ -26406,8 +26407,23 @@ function _labCorregir(tipo, lista, previos, nuevos, clave, llave){
     ya.add(k);
     anul.push({ data: llave(r.data), hacia: hacia, ts: Date.now() });
   });
-  _labAnulacionesGuardar(tipo, anul);
-  return lista.filter(function(r){ return !(r && fuera.has(r.id)); });
+  return { lista: lista.filter(function(r){ return !(r && fuera.has(r.id)); }), anul: anul };
+}
+/* Revisión de la B (2026-11-07, usuario: «Todo o nada») · LA ANULACIÓN Y LA CORRECCIÓN SE GUARDAN JUNTAS. La anulación se
+   guardaba ANTES que el análisis corregido: sin espacio para éste, quedaba la anulación sola, y el envío siguiente anulaba en
+   la hoja la fecha vieja sin que la nueva existiera en ninguna parte. Ahora, si no cabe una de las dos, no se guarda ninguna
+   y el análisis sigue como estaba. `guardar()` guarda la lista y dice si cupo; sin `anul` (no es corrección), sólo eso. */
+function _labGuardarJunto(tipo, anul, guardar){
+  if(!anul) return guardar();
+  let antes = null;
+  try{ antes = localStorage.getItem(LAB_ANULAR_KEY); }catch(_){}
+  if(!_labAnulacionesGuardar(tipo, anul)){
+    toast("❌ No se guardó la corrección: no cabe en este navegador. El análisis sigue como estaba. Libera espacio y vuelve a intentarlo.","err",8000);
+    return false;
+  }
+  if(guardar()) return true;
+  try{ if(antes === null) localStorage.removeItem(LAB_ANULAR_KEY); else localStorage.setItem(LAB_ANULAR_KEY, antes); }catch(_){}
+  return false;
 }
 /** Las filas de las anulaciones pendientes de `tipo`, armadas con el MISMO constructor de su hoja: la clave de la sesión
  *  vieja, «⛔ ANULADA · pasó al …» en Responsable y nada más. → { filas, lista } (lista: las que van). */
@@ -26933,9 +26949,12 @@ function saveMicLocal(){
   const _cambio = _labCambioDeClave(_micRaw(), newRecords, function(a, b){ return a.departamento === b.departamento && a.formato === b.formato; }, micSessionKey);
   if(_cambio.accion === "cancelar"){ toast("No se guardó nada","info",2500); return -1; }
   if(_cambio.accion === "otro"){ draft.meta.sid = _micNewSid(); saveMicDraft(draft); newRecords.forEach(function(r){ r.data.sid = draft.meta.sid; }); }
-  let list = _micRaw();
-  if(_cambio.accion === "corregir") list = _labCorregir("mic", list, _cambio.previos, newRecords, micSessionKey,
-    function(d){ return { fechaMuestreo:d.fechaMuestreo, corrida:d.corrida, departamento:d.departamento, formato:d.formato, sid:d.sid }; });
+  let list = _micRaw(), _anul = null;
+  if(_cambio.accion === "corregir"){
+    const _c = _labCorregir("mic", list, _cambio.previos, newRecords, micSessionKey,
+      function(d){ return { fechaMuestreo:d.fechaMuestreo, corrida:d.corrida, departamento:d.departamento, formato:d.formato, sid:d.sid }; });
+    list = _c.lista; _anul = _c.anul;
+  }
   // Reemplazo ESPEJO de la hoja (replaceByKeyRows) SOLO para la(s) clave(s) del
   // formato activo: quita los registros cuya clave de sesión coincida con la de
   // algún registro nuevo y re-añade los nuevos. Otros formatos/fechas/corridas
@@ -26945,7 +26964,7 @@ function saveMicLocal(){
   list = list.filter(r=> !(r.data && newKeys.has(micSessionKey(r.data))));
   list = list.concat(newRecords);
   const saved = newRecords.length;
-  const _ok = _micSave(list);
+  const _ok = _labGuardarJunto("mic", _anul, function(){ return _micSave(list); });
   updateDots(); updateSyncUI(); buildGrid();
   if(!_ok) return -2;                  // almacenamiento lleno: NO mentir "guardado"
   return saved;
@@ -28363,9 +28382,12 @@ function saveCalLocal(){
   const _cambio = _labCambioDeClave(_calRaw(), newRecords, function(a, b){ return a.departamento === b.departamento && a.formato === b.formato; }, calSessionKey);
   if(_cambio.accion === "cancelar"){ toast("No se guardó nada","info",2500); return -1; }
   if(_cambio.accion === "otro"){ draft.meta.sid = _calNewSid(); saveCalDraft(draft); newRecords.forEach(function(r){ r.data.sid = draft.meta.sid; }); }
-  let list=_calRaw();
-  if(_cambio.accion === "corregir") list = _labCorregir("cal", list, _cambio.previos, newRecords, calSessionKey,
-    function(d){ return { fechaMuestreo:d.fechaMuestreo, corrida:d.corrida, departamento:d.departamento, formato:d.formato, sid:d.sid }; });
+  let list=_calRaw(), _anul=null;
+  if(_cambio.accion === "corregir"){
+    const _c = _labCorregir("cal", list, _cambio.previos, newRecords, calSessionKey,
+      function(d){ return { fechaMuestreo:d.fechaMuestreo, corrida:d.corrida, departamento:d.departamento, formato:d.formato, sid:d.sid }; });
+    list = _c.lista; _anul = _c.anul;
+  }
   // Reemplazo espejo de la hoja SOLO para la clave del formato activo: quita las
   // sesiones cuya clave coincide con la de algún registro nuevo y re-añade los
   // nuevos. Otros formatos quedan intactos (conservan su estado synced).
@@ -28373,7 +28395,7 @@ function saveCalLocal(){
   list = list.filter(r=> !(r.data && newKeys.has(calSessionKey(r.data))));
   list = list.concat(newRecords);
   const saved = newRecords.length;
-  const _ok = _calSave(list);
+  const _ok = _labGuardarJunto("cal", _anul, function(){ return _calSave(list); });
   updateDots(); updateSyncUI(); buildGrid();
   if(!_ok) return -2;
   return saved;
@@ -29032,15 +29054,18 @@ function savePatLocal(){
   const _cambio = _labCambioDeClave(_patRaw(), newRecords, function(){ return true; }, patSessionKey);
   if(_cambio.accion === "cancelar"){ toast("No se guardó nada","info",2500); return -1; }
   if(_cambio.accion === "otro"){ draft.meta.sid = _patNewSid(); savePatDraft(draft); newRecords.forEach(function(r){ r.data.sid = draft.meta.sid; }); }
-  let list=_patRaw();
-  if(_cambio.accion === "corregir") list = _labCorregir("pat", list, _cambio.previos, newRecords, patSessionKey,
-    function(d){ return { fechaMuestreo:d.fechaMuestreo, corrida:d.corrida, sid:d.sid }; });
+  let list=_patRaw(), _anul=null;
+  if(_cambio.accion === "corregir"){
+    const _c = _labCorregir("pat", list, _cambio.previos, newRecords, patSessionKey,
+      function(d){ return { fechaMuestreo:d.fechaMuestreo, corrida:d.corrida, sid:d.sid }; });
+    list = _c.lista; _anul = _c.anul;
+  }
   // Reemplazo espejo de la hoja: quita la sesión cuya clave coincide y re-añade.
   const newKeys = new Set(newRecords.map(r=> patSessionKey(r.data)));
   list = list.filter(r=> !(r.data && newKeys.has(patSessionKey(r.data))));
   list = list.concat(newRecords);
   const saved = newRecords.length;
-  const _ok = _patSave(list);
+  const _ok = _labGuardarJunto("pat", _anul, function(){ return _patSave(list); });
   updateDots(); updateSyncUI(); buildGrid();
   if(!_ok) return -2;
   return saved;
