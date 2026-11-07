@@ -398,14 +398,23 @@ export function promediosDeLote(M, lote, periodo, presencia = null) {
   let phDen = 0;
   let copulas = 0;
   let muda = 0;
+  /* A26 (2026-11-06, usuario: «Rotular y corregir») · con la presencia diaria, un PESO cuenta sólo si ese día el lote estaba
+     en ese tanque. Antes, en un tanque reutilizado, el pesaje del lote anterior entraba en el promedio de éste (medido:
+     67,5 g en la ficha y en los informes semanal y de cierre, 35 g en el Saldo). Sin presencia, como siempre. */
+  const pesoDelLote = (fecha, uk) => {
+    if (!presencia) return true;
+    const Tq = (presencia.get(fecha) || { tanques: new Map() }).tanques.get(uk);
+    return !!Tq && Tq.lotes.has(clave);
+  };
   for (const r of (M.fuentes || {}).tanques || []) {
     const uk = ubicKey(r.Sala, ent(r.Tanque));
     const c = cuota.get(uk);
     if (!c || !enPeriodo(fechaDeFila('tanques', r), periodo)) continue;
     const pm = num(r['Peso promedio machos (g)']);
     const ph = num(r['Peso promedio hembras (g)']);
-    if (pm !== null && c.machos > 0) { pmNum += pm * c.machos; pmDen += c.machos; }
-    if (ph !== null && c.hembras > 0) { phNum += ph * c.hembras; phDen += c.hembras; }
+    const suyo = pesoDelLote(fechaDeFila('tanques', r), uk);
+    if (suyo && pm !== null && c.machos > 0) { pmNum += pm * c.machos; pmDen += c.machos; }
+    if (suyo && ph !== null && c.hembras > 0) { phNum += ph * c.hembras; phDen += c.hembras; }
     copulas += ent(r.Cópulas) * c.parte;
     muda += ent(r.Muda) * c.parte;
   }
@@ -414,6 +423,7 @@ export function promediosDeLote(M, lote, periodo, presencia = null) {
   for (const r of pesosDeAlimentacion((M.fuentes || {}).alimentacion, (M.fuentes || {}).tanques)) {
     const c = cuota.get(ubicKey(r.Sala, ent(r.Tanque)));
     if (!c || !enPeriodo(fechaDeFila('tanques', r), periodo)) continue;
+    if (!pesoDelLote(fechaDeFila('tanques', r), ubicKey(r.Sala, ent(r.Tanque)))) continue;   // A26 · como arriba
     const pm = num(r['Peso promedio machos (g)']);
     const ph = num(r['Peso promedio hembras (g)']);
     if (pm !== null && c.machos > 0) { pmDen += c.machos; pmNum += c.machos * pm; }

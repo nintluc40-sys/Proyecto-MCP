@@ -23,6 +23,7 @@ import {
   indiceDeFiltro, cicloDelLote, etiquetasDeFiltro, DIMENSIONES_FILTRO, kpiBiomasa,
 } from './operativo.tablero.js';
 import { modeloOperativo, serieDiaria, diasDeTanque, SALAS_VISIBLES } from './operativo.data.js';
+import { graficoMortalidad } from './operativo.kpis.js';   // A26 · la mortalidad del gráfico, con la regla de la tarjeta
 import { MAD_OP_HOJAS, MAD_OP_ORIGEN } from './operativo.fuentes.js';
 import { sumarDias } from '../registros/lib/mad-libro.js';
 import { RESUMEN_TEMPS, RESUMEN_OXIGENOS } from '../registros/lib/mad-resumen.js';
@@ -184,14 +185,61 @@ describe('Maduración · tablero · la mortalidad (regla del ⚖️ Saldo)', () 
 
   it('con lote, la del lote (canónico); con código, no aplica; sin la víspera en la serie, no se inventa', () => {
     expect(kpiMortalidad(serie, p, F({ lote: 'qb' }), partes)).toMatchObject({ dia: { muertos: 2, riesgo: 40, pct: 5 }, periodo: { pct: 5 } });
-    expect(kpiMortalidad(serie, p, F({ codigo: 'CA' }), partes)).toEqual({ modo: 'no-aplica' });
-    expect(kpiMortalidad(serieDiaria(m.fuentes, p.desde, p.hasta), p, SIN, partes)).toEqual({ modo: 'sin-serie' });
+    expect(kpiMortalidad(serie, p, F({ codigo: 'CA' }), partes)).toEqual({ modo: 'no-aplica', ignora: [] });
+    expect(kpiMortalidad(serieDiaria(m.fuentes, p.desde, p.hasta), p, SIN, partes)).toEqual({ modo: 'sin-serie', ignora: [] });
   });
 
   it('con sala o tanque, las muertes REGISTRADAS en la hoja Tanques, sin descartes ni mortalidad en desove', () => {
-    expect(kpiMortalidad(serie, p, F({ sala: 'Sala 1' }), partes)).toEqual({ modo: 'registradas', dia: { muertos: 1 }, periodo: { muertos: 7 } });
-    expect(kpiMortalidad(serie, p, F({ sala: 'Sala 4', tanque: 1 }), partes)).toEqual({ modo: 'registradas', dia: { muertos: 2 }, periodo: { muertos: 2 } });
-    expect(kpiMortalidad(serie, p, F({ sala: 'Sala 1', tanque: 2 }), partes)).toEqual({ modo: 'registradas', dia: { muertos: 0 }, periodo: { muertos: 0 } });
+    expect(kpiMortalidad(serie, p, F({ sala: 'Sala 1' }), partes)).toEqual({ modo: 'registradas', dia: { muertos: 1 }, periodo: { muertos: 7 }, ignora: [] });
+    expect(kpiMortalidad(serie, p, F({ sala: 'Sala 4', tanque: 1 }), partes)).toEqual({ modo: 'registradas', dia: { muertos: 2 }, periodo: { muertos: 2 }, ignora: [] });
+    expect(kpiMortalidad(serie, p, F({ sala: 'Sala 1', tanque: 2 }), partes)).toEqual({ modo: 'registradas', dia: { muertos: 0 }, periodo: { muertos: 0 }, ignora: [] });
+  });
+
+  /* A26 (2026-11-06, usuario: «Aplicar los que se puedan»; el sexo sigue la D2 del 18-10) · la tasa es por lote: la piscina
+     y la camaronera se aplican por el ORIGEN de cada lote; el estado no cabe y se DICE (`ignora`); el sexo no se aplica y lo
+     dice su propia nota del gráfico, no `ignora`. Antes, con «Piscina 901», la tarjeta daba la tasa de toda la planta. */
+  describe('A26 · con piscina, camaronera, estado o sexo', () => {
+    const ORI = (fecha, lote, sala, tanque, n, piscina, camaronera) => ({ ...ING(fecha, lote, sala, tanque, n, n),
+      'Piscina Broodstock': piscina, 'Camaronera origen': camaronera });
+    const FILAS2 = [
+      ORI('2026-09-01', 'PA', 'Sala 1', 1, 50, '901', 'X'),
+      ORI('2026-09-01', 'PB', 'Sala 2', 1, 50, '902', 'Y'),
+      TQ('2026-09-19', 'Sala 1', 1, { 'Hembras muertas': 1 }),
+      TQ('2026-09-19', 'Sala 2', 1, { 'Hembras muertas': 4 }),
+    ];
+    const m2 = modeloOperativo(FILAS2, { hoy: FOTO, fecha: FOTO });
+    const serie2 = serieDiaria(m2.fuentes, sumarDias(p.desde, -1), p.hasta);
+    const partes2 = diasDeTanque(m2.fuentes.tanques);
+    const Fi = (o) => normalizarFiltro(o, indiceDeFiltro(m2));
+
+    it('la piscina y la camaronera, por el origen del lote: cada una da la tasa de SU lote', () => {
+      expect(kpiMortalidad(serie2, p, Fi({}), partes2).dia).toEqual({ muertos: 5, riesgo: 200, pct: 2.5 });
+      expect(kpiMortalidad(serie2, p, Fi({ piscina: '901' }), partes2)).toMatchObject({ modo: 'tasa', dia: { muertos: 1, riesgo: 100, pct: 1 }, ignora: [] });
+      expect(kpiMortalidad(serie2, p, Fi({ camaronera: 'Y' }), partes2)).toMatchObject({ dia: { muertos: 4, riesgo: 100, pct: 4 } });
+      expect(kpiMortalidad(serie2, p, Fi({ piscina: '999' }), partes2).dia).toEqual({ muertos: 0, riesgo: 0, pct: '' });
+    });
+
+    it('el estado no se aplica y se dice; el sexo, tampoco, pero lo dice la nota de la D2 (no va en `ignora`)', () => {
+      const conEstado = kpiMortalidad(serie2, p, Fi({ estado: 'Producción' }), partes2);
+      expect(conEstado.ignora).toEqual(['estado']);
+      expect(conEstado.dia).toEqual({ muertos: 5, riesgo: 200, pct: 2.5 });
+      const conSexo = kpiMortalidad(serie2, p, Fi({ sexo: 'hembras' }), partes2);
+      expect(conSexo.ignora).toEqual([]);
+      expect(conSexo.dia).toEqual({ muertos: 5, riesgo: 200, pct: 2.5 });   // los dos sexos (D2)
+    });
+
+    it('con sala: las registradas, y lo que no se aplica a un parte (lote, piscina…) se dice', () => {
+      expect(kpiMortalidad(serie2, p, Fi({ sala: 'Sala 1', piscina: '902' }), partes2)).toEqual({ modo: 'registradas', dia: { muertos: 1 }, periodo: { muertos: 1 }, ignora: ['piscina'] });
+      expect(kpiMortalidad(serie2, p, Fi({ sala: 'Sala 1', lote: 'PA', sexo: 'machos' }), partes2).ignora).toEqual(['lote']);
+    });
+
+    it('el gráfico aplica la misma regla que la tarjeta, y lo dice igual', () => {
+      const g = graficoMortalidad(serie2, p, Fi({ piscina: '901' }), partes2);
+      expect(g.series[0].datos.at(-1)).toBe(1);
+      expect(g.resumen).toMatchObject({ hembras: 1, machos: 0, total: 1 });
+      expect(graficoMortalidad(serie2, p, Fi({ estado: 'Producción' }), partes2).ignora).toEqual(['estado']);
+      expect(graficoMortalidad(serie2, p, Fi({ sala: 'Sala 1', camaronera: 'X' }), partes2).ignora).toEqual(['camaronera']);
+    });
   });
 });
 
@@ -261,6 +309,28 @@ describe('Maduración · tablero · el mapa de planta', () => {
     expect(t41.salas.flatMap((s) => s.tanques.filter((t) => t.enFiltro).map((t) => t.sala + '·' + t.tanque))).toEqual(['Sala 4·1']);
     expect(celda('Sala 1', 1, t41).enFiltro).toBe(false);
     expect(mapa.salas.every((s) => s.tanques.every((t) => t.enFiltro))).toBe(true);
+  });
+
+  /* A26 (2026-11-06, usuario) · el mapa resalta con la MISMA regla que las cifras (`posicionEnFiltro`). Antes sólo miraba
+     lote y código: con una piscina, una camaronera, un estado o un sexo elegidos, resaltaba también lo que no casaba. */
+  it('🔴 A26 · resalta con piscina, camaronera, sexo y estado como las cifras; un tanque vacío no casa con ellos', () => {
+    const ORI = (fecha, lote, sala, tanque, machos, hembras, piscina, camaronera) => ({ ...ING(fecha, lote, sala, tanque, machos, hembras),
+      'Piscina Broodstock': piscina, 'Camaronera origen': camaronera });
+    const mR = modeloOperativo([
+      ORI('2026-09-01', 'PA', 'Sala 1', 1, 10, 10, '901', 'X'),
+      ORI('2026-09-01', 'PB', 'Sala 2', 16, 10, 0, '902', 'Y'),   // sólo machos
+    ], { hoy: FOTO, fecha: FOTO });
+    const Fi = (o) => normalizarFiltro(o, indiceDeFiltro(mR));
+    const resaltados = (o) => mapaDePlanta(mR.libro, Fi(o)).salas.flatMap((s) => s.tanques.filter((t) => t.enFiltro).map((t) => t.sala + '·' + t.tanque));
+    expect(resaltados({ piscina: '901' })).toEqual(['Sala 1·1']);
+    expect(resaltados({ camaronera: 'Y' })).toEqual(['Sala 2·16']);
+    expect(resaltados({ sexo: 'hembras' })).toEqual(['Sala 1·1']);
+    expect(resaltados({ piscina: '999' })).toEqual([]);
+    // cuadra con las cifras: los vivos de lo resaltado son los del KPI
+    expect(kpiVivos(mR.libro, Fi({ piscina: '901' })).total).toBe(20);
+    // sólo la ubicación: los tanques vacíos de esa sala siguen resaltados, como siempre
+    expect(resaltados({ sala: 'Sala 1' }).length).toBe(MAD_TANQUES_POR_SALA['Sala 1'].length);
+    expect(resaltados({ sala: 'Sala 1', piscina: '901' })).toEqual(['Sala 1·1']);
   });
 
   it('un tanque ocupado fuera del catálogo se enseña (marcado); uno vacío, no; un lote sin fecha de ingreso, «Sin estado»', () => {

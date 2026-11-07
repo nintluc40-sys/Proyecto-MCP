@@ -1063,24 +1063,30 @@ describe('Maduración · operativo · 🧬 Lotes · el peso de cada lote (4)', (
 
   /* Punto 4 de la tanda (2026-10-14) · entre ♀:♂ y los pesos entran Fertilidad, N2 y N5, y antes Ingreso y un vivo más: los
      pesos pasan de la 9–10 a la 15–16. */
-  it('🔴 dos columnas, Peso ♀ y Peso ♂, entre N5 y Edad; en gramos, con la fecha del peso en el globo; «—» sin peso', async () => {
+  /* A26 (2026-11-06, usuario: «Rotular y corregir») · las columnas dicen «Último peso» y llevan su fecha a la vista: la ficha
+     del lote enseña otro número (el promedio del período) y sin la fecha parecían el mismo dato en desacuerdo. */
+  it('🔴 dos columnas, Último peso ♀ y ♂, entre N5 y Edad; en gramos, con su fecha a la vista y en el globo; «—» sin peso', async () => {
     await montar(PLANTA_F3);
     click(root.querySelector('[data-mop-sub="lotes"]'));
-    expect(cab().slice(11)).toEqual(['♀:♂', 'Fertilidad', 'N2', 'N5', 'Peso ♀', 'Peso ♂', 'Edad']);
-    expect(txt('LA').slice(15, 17)).toEqual(['40 g', '30 g']);
-    expect(celdas('LA')[15].getAttribute('title')).toBe('último peso: 18/09/2026');
-    expect(txt('LB').slice(15, 17), 'LB sólo pesó machos').toEqual(['—', '25 g']);
+    expect(cab().slice(11)).toEqual(['♀:♂', 'Fertilidad', 'N2', 'N5', 'Último peso ♀', 'Último peso ♂', 'Edad']);
+    expect(txt('LA').slice(15, 17)).toEqual(['40 g 18/09', '30 g 18/09']);
+    expect(celdas('LA')[15].getAttribute('title')).toBe('último pesaje: 18/09/2026');
+    expect(txt('LB').slice(15, 17), 'LB sólo pesó machos').toEqual(['—', '25 g 18/09']);
     expect(celdas('LB')[15].getAttribute('title')).toBeNull();
     expect(root.querySelector('.mop-lotes').closest('.mc-card').querySelector('.mc-note').textContent).toContain('el del ⚖️ Saldo');
+    // y la ficha dice que el suyo es OTRO dato: el promedio del período
+    click(filaLote('LA'));
+    const pesoFicha = [...root.querySelectorAll('.mop-sc-fila')].find((x) => x.querySelector('.mop-sc-l') && x.querySelector('.mop-sc-l').textContent === 'Peso');
+    expect(pesoFicha.textContent).toContain('promedio del período');
   });
 
   it('🔴 con filtro de sexo, sólo el peso de ese sexo (como ♀:♂, la tabla habla de ese sexo)', async () => {
     await montar(PLANTA_F3);
     click(root.querySelector('[data-mop-sub="lotes"]'));
     cambiar(filtro('sexo'), 'hembras');
-    expect(txt('LA').slice(15, 17)).toEqual(['40 g', '—']);
+    expect(txt('LA').slice(15, 17)).toEqual(['40 g 18/09', '—']);
     cambiar(filtro('sexo'), 'machos');
-    expect(txt('LA').slice(15, 17)).toEqual(['—', '30 g']);
+    expect(txt('LA').slice(15, 17)).toEqual(['—', '30 g 18/09']);
   });
 });
 
@@ -2725,6 +2731,22 @@ describe('Maduración · operativo · 0f · 5 · el gráfico de cada KPI', () =>
     expect(panel().textContent).not.toContain(NOTA);
   });
 
+  /* A26 (2026-11-06, usuario: «Aplicar los que se puedan») · la mortalidad no se aplica al ESTADO (la tasa es por lote): la
+     tarjeta y su gráfico lo DICEN, con las mismas cifras. Las notas de un desove («un desove no lo registra») no salen aquí. */
+  it('A26 · Mortalidad con Estado: la tarjeta y el gráfico dicen «sin filtro de estado», y las cifras no cambian', async () => {
+    await montar(PLANTA);
+    click(tarjeta('mortalidad'));
+    const valor = () => tarjeta('mortalidad').querySelector('.mc-kpi-v').textContent;
+    const sub = () => tarjeta('mortalidad').querySelector('.mc-kpi-sub').textContent;
+    const antes = valor();
+    expect(sub()).not.toContain('sin filtro de');
+    cambiar(filtro('estado'), 'Producción');
+    expect(sub()).toContain('sin filtro de estado');
+    expect(valor()).toBe(antes);
+    expect(panel().textContent).toContain('La mortalidad no se separa por estado: ese filtro no se aplica.');
+    expect(panel().textContent).not.toContain('un desove no lo registra');
+  });
+
   /* Pauta 3.1 (2026-10-19, usuario: «decirlo») · 🥚 Reproducción no aplica el Estado ni el Sexo (un desove no lleva estado
      y es siempre de hembras): la tarjeta lo dice en su rótulo y su gráfico con una nota por filtro; las cifras no cambian. */
   it('3.1 · Reproducción con Estado y Sexo: la tarjeta y su gráfico lo DICEN, con las mismas cifras', async () => {
@@ -3171,6 +3193,20 @@ describe('Maduración · operativo · 🥚 Por lote: el reparto por destino', ()
     expect(t).toContain('QA');
     expect(t).toContain('NO suman');
     expect(t).toContain('1 registro(s) de desove sin destino');
+  });
+
+  /* A26 (2026-11-06, usuario) · con un código elegido, el gráfico usa los MISMOS desoves que la fila (que ya iba con el
+     filtro, pauta 11): un desove de QA con otro código y otro destino no sale. */
+  it('🔴 A26 · con un código elegido, el gráfico desplegado es el de los desoves de ese código, como su fila', async () => {
+    await montar([...PLANTA_Q3, DES('16/09/2026', 'QA', 2, 200000, { 'Código genético': 'CB', N2: 100000, N5: 90000, Despacho: 'Incamar' })]);
+    abrirRepro();
+    click(filaRepro('QA'));
+    let l = reparto();
+    expect(l[l.length - 1][1].data.labels, 'control: sin filtro, Incamar sale').toContain('Incamar');
+    marcar('codigo', ['CA']);
+    if (filaRepro('QA').getAttribute('aria-expanded') !== 'true') click(filaRepro('QA'));
+    l = reparto();
+    expect(l[l.length - 1][1].data.labels).toEqual(['Mar Bravo M07', 'Tabasca', 'Hisenor', 'SanLab']);
   });
 
   it('🔴 volver a pulsarla la cierra; y con el teclado (Enter) se abre', async () => {

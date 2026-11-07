@@ -204,7 +204,12 @@ function bloqueResumen(R) {
   const kpis = [
     ['Vivos', nf((R.vivos || {}).total), `♀ ${nf((R.vivos || {}).hembras)} · ♂ ${nf((R.vivos || {}).machos)}`],
     ['Lotes', nf((R.lotes || {}).total), `prod. ${nf((R.lotes || {}).produccion)} · cuar. ${nf((R.lotes || {}).cuarentena)}`],
-    ['Salas', nf((R.salas || {}).total), (R.salas || {}).difieren ? `${nf(R.salas.difieren)} con estado distinto` : 'estados al día'],
+    /* A26 (2026-11-06, usuario) · «estados al día» sólo si ninguna sala difiere NI está sin registro: antes una sala sin
+       estado registrado salía «al día», y la baldosa del tablero la contaba («N sin registro»). */
+    ['Salas', nf((R.salas || {}).total), [
+      (R.salas || {}).difieren ? `${nf(R.salas.difieren)} con estado distinto` : '',
+      (R.salas || {}).sinRegistro ? `${nf(R.salas.sinRegistro)} sin registro` : '',
+    ].filter(Boolean).join(' · ') || 'estados al día'],
     ['Ocupación', pc((R.ocupacion || {}).pct), `${nf((R.ocupacion || {}).ocupados)} de ${nf((R.ocupacion || {}).total)}`],
     ['Mortalidad del día', mortTxt, mort.modo === 'tasa' ? `${nf((mort.dia || {}).muertos)} de ${nf((mort.dia || {}).riesgo)}` : mort.modo === 'sin-serie' ? 'sin serie' : ''],
     ['Desoves', nf((R.reproduccion || {}).desoves), `huevos ${nf((R.reproduccion || {}).huevos)} · N5 ${nf((R.reproduccion || {}).n5)}`],
@@ -597,7 +602,7 @@ export function semanalPaginaHtml(pg, opts = {}) {
     ['Bajas de la semana', nf((p.bajasTotales || {}).total), `natural ${nf(((p.bajasTotales || {}).natural || {}).total)} · descarte ${nf(((p.bajasTotales || {}).descarte || {}).total)}`],
     ['Mortalidad', mort.modo === 'tasa' ? pc((mort.periodo || {}).pct) : mort.modo === 'registradas' ? nf((mort.periodo || {}).muertos) + ' reg.' : '—', mort.modo === 'tasa' ? `${nf((mort.periodo || {}).muertos)} de ${nf((mort.periodo || {}).riesgo)}` : ''],
     ['Desoves', nf(R.desoves), `huevos ${nf(R.huevos)} · N5 ${nf(R.n5)}`],
-    ['Peso ♀', PR.pesoHembras === '' || PR.pesoHembras === undefined ? '—' : nf(PR.pesoHembras, 2) + ' g', PR.pesoMachos === '' || PR.pesoMachos === undefined ? '' : '♂ ' + nf(PR.pesoMachos, 2) + ' g'],
+    ['Peso ♀ promedio', PR.pesoHembras === '' || PR.pesoHembras === undefined ? '—' : nf(PR.pesoHembras, 2) + ' g', PR.pesoMachos === '' || PR.pesoMachos === undefined ? '' : '♂ ' + nf(PR.pesoMachos, 2) + ' g'],
     ['Cópulas', pc(PR.pctCopulas), `muda ${pc(PR.pctMuda)}`],
   ];
   const filasEv = (p.eventos || []).map((e) => `<tr>${celdas([dm(e.fecha), esc(e.etiqueta), nf(e.machos + e.hembras)])}</tr>`);
@@ -644,7 +649,7 @@ export function cierreHtml(rep, opts = {}) {
     ['Fin de Ciclo', nf(RF.total), `registrado, no se resta · diferencia ${nf((C.diferencia || {}).total)}`],
     ['Días', nf(r.periodo.dias), esIso(f.ingreso) ? 'desde ' + dma(f.ingreso) : ''],
     ['Desoves', nf(R.desoves), `N5 ${nf(R.n5)} · fertilidad ${pc(R.fertilidad)}`],
-    ['Peso ♀', PR.pesoHembras === '' || PR.pesoHembras === undefined ? '—' : nf(PR.pesoHembras, 2) + ' g', PR.pesoMachos === '' || PR.pesoMachos === undefined ? '' : '♂ ' + nf(PR.pesoMachos, 2) + ' g'],
+    ['Peso ♀ promedio', PR.pesoHembras === '' || PR.pesoHembras === undefined ? '—' : nf(PR.pesoHembras, 2) + ' g', PR.pesoMachos === '' || PR.pesoMachos === undefined ? '' : '♂ ' + nf(PR.pesoMachos, 2) + ' g'],
   ];
   const filasCuadre = (C.filas || []).map((fi) => `<tr class="${fi.id === 'vivos' ? 'rp-cuadre-fin' : ''}">${celdas([
     esc(fi.signo + ' ' + fi.etiqueta), nf(fi.machos), nf(fi.hembras), `<b>${nf(fi.total)}</b>`,

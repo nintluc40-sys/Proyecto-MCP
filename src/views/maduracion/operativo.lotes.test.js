@@ -321,6 +321,43 @@ describe('Maduración · lotes · la ficha', () => {
     expect(qj.tanques).toBe(1);
   });
 
+  /* A26 (2026-11-06, usuario: «Rotular y corregir») · un TANQUE REUTILIZADO: VIEJO pesó 100 g ♀ el 05/09 y murió entero el
+     10; NUEVO entra el 12 y pesa 35 g ♀ el 15. Con la presencia diaria, el peso del 05 no es de NUEVO (su ficha decía 67,5 g,
+     y el Saldo, 35). Sin presencia, como siempre. */
+  it('🔴 A26 · tanque reutilizado: el pesaje del lote anterior no entra en el promedio del nuevo', () => {
+    const PL = [
+      ING('2026-09-01', 'VIEJO', 'Sala 1', 1, 10, 10),
+      TQ('2026-09-05', 'Sala 1', 1, { 'Peso promedio machos (g)': 90, 'Peso promedio hembras (g)': 100 }),
+      TQ('2026-09-10', 'Sala 1', 1, { 'Machos muertos': 10, 'Hembras muertas': 10 }),
+      ING('2026-09-12', 'NUEVO', 'Sala 1', 1, 10, 10),
+      TQ('2026-09-15', 'Sala 1', 1, { 'Peso promedio machos (g)': 25, 'Peso promedio hembras (g)': 35 }),
+    ];
+    const MR = modeloOperativo(PL, { hoy: FOTO, fecha: FOTO });
+    const PR = periodoDe('30d', FOTO, MR.fuentes);
+    const presR = presenciaDiaria(MR.fuentes, sumarDias(PR.desde, -1), PR.hasta);
+    expect(promediosDeLote(MR, 'NUEVO', PR, presR)).toMatchObject({ pesoHembras: 35, pesoMachos: 25 });
+    expect(promediosDeLote(MR, 'NUEVO', PR)).toMatchObject({ pesoHembras: 67.5, pesoMachos: 57.5 });   // sin presencia: lo de antes
+    // y la ficha (la que pintan la vista y los informes) lo usa con su presencia
+    expect(fichaDeLote(MR, [], 'NUEVO', PR, null, presR).promedios).toMatchObject({ pesoHembras: 35, pesoMachos: 25 });
+  });
+
+  it('🔴 A26 · lo mismo con un peso tecleado en 🍤 Alimentación (cuenta como del tanque): el del lote anterior no entra', () => {
+    const ALI = (fecha, ph, pm) => ({ _SheetOrigin: O, Fecha: fecha, Sala: 'Sala 1', Tanque: 1, 'Peso hembras (g)': ph,
+      'Peso machos (g)': pm, 'Fuente del peso': '♀ Manual · ♂ Manual', ID: fecha + '-S1-T1' });
+    const PL = [
+      ING('2026-09-01', 'VIEJO', 'Sala 1', 1, 10, 10),
+      ALI('2026-09-05', 100, 90),
+      TQ('2026-09-10', 'Sala 1', 1, { 'Machos muertos': 10, 'Hembras muertas': 10 }),
+      ING('2026-09-12', 'NUEVO', 'Sala 1', 1, 10, 10),
+      TQ('2026-09-15', 'Sala 1', 1, { 'Peso promedio machos (g)': 25, 'Peso promedio hembras (g)': 35 }),
+    ];
+    const MR = modeloOperativo(PL, { hoy: FOTO, fecha: FOTO });
+    const PR = periodoDe('30d', FOTO, MR.fuentes);
+    const presR = presenciaDiaria(MR.fuentes, sumarDias(PR.desde, -1), PR.hasta);
+    expect(promediosDeLote(MR, 'NUEVO', PR)).toMatchObject({ pesoHembras: 67.5, pesoMachos: 57.5 });   // control: sin presencia entra
+    expect(promediosDeLote(MR, 'NUEVO', PR, presR)).toMatchObject({ pesoHembras: 35, pesoMachos: 25 });
+  });
+
   it('🔴 «de paso» (2026-09-26) · el % de cópulas y de muda es POR DÍA, con la regla del Saldo (no el período ÷ la foto)', () => {
     const qh = promediosDeLote(M, 'QH', P30, PRES);
     // Dos partes del tanque 4 (40 hembras, de QH y QI): (6 + 10) cópulas ÷ (40 + 40) hembras-día. Dividiendo las

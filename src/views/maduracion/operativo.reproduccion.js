@@ -234,12 +234,12 @@ function ordenarPartes(partes, division) {
 
 /**
  * 0q·3 (2026-09-27, usuario) · los N2 y N5 de UN lote por destino, para el gráfico que se despliega en «Por lote».
- * Los MISMOS desoves que su fila de la tabla —el lote y el período, como `reproduccionDeLote`: sin el filtro—, de más a
+ * Los MISMOS desoves que su fila de la tabla —el lote, el período y, desde A26 (2026-11-06), el filtro `F` de la fila—, de más a
  * menos N5 (en el empate, más N2; luego el catálogo). ⚠ Un desove con varios destinos cuenta ENTERO en cada uno —la regla
  * de «A dónde fueron»: la hoja no dice cuánto fue a cada uno—, y `n2Compartido`/`n5Compartido` dicen cuánto de cada
  * barra viene de desoves así. Los que no tienen destino no van a ninguna barra: se cuentan aparte, con su N5.
  */
-export function repartoDeLotePorDestino(fuentes, lote, periodo) {
+export function repartoDeLotePorDestino(fuentes, lote, periodo, F = null) {
   const clave = normLote(lote);
   const m = new Map();
   let compartidos = 0;
@@ -247,6 +247,9 @@ export function repartoDeLotePorDestino(fuentes, lote, periodo) {
   let n5SinDestino = 0;
   for (const r of (fuentes || {}).desoves || []) {
     if (normLote(r.Lote) !== clave || !enPeriodo(fechaDeFila('desoves', r), periodo)) continue;
+    // A26 (2026-11-06, usuario) · con el filtro de su fila (`tablaDeReproduccion`, pauta 11): con un código, una piscina o
+    // una camaronera elegidos, la fila ya sumaba sólo esos desoves y el gráfico seguía con el lote entero.
+    if (F && !enFiltro(r, F)) continue;
     const destinos = despachoLista(r.Despacho);
     if (!destinos.length) { sinDestino++; n5SinDestino += ent(r.N5); continue; }
     const varios = destinos.length > 1;

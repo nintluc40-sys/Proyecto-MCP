@@ -295,4 +295,22 @@ describe('Maduración · operativo · 🥚 el reparto de un lote por destino (0q
     expect(r.filas).toEqual([]);
     expect([r.compartidos, r.sinDestino, r.n5SinDestino]).toEqual([0, 0, 0]);
   });
+
+  /* A26 (2026-11-06, usuario) · con el filtro de su FILA: con un código elegido, la fila de la tabla ya sumaba sólo sus desoves
+     (pauta 11) y el gráfico desplegado seguía con el lote entero. Aquí, un desove del código CB a otro destino. */
+  it('🔴 A26 · con un código elegido, los mismos desoves que su fila: el destino de otro código no sale', () => {
+    const PL2 = [...PL, DES('2026-09-13', 'RD', 2, 2000, { 'Código genético': 'CB', N2: 400, N5: 300, Despacho: 'Incamar' })];
+    const M2 = modeloOperativo(PL2, { fecha: FOTO, hoy: FOTO });
+    const P2 = periodoDe('30d', FOTO, M2.fuentes);
+    const Fca = normalizarFiltro({ lote: 'RD', codigo: 'CA' });
+    const conFiltro = repartoDeLotePorDestino(M2.fuentes, 'RD', P2, Fca);
+    expect(conFiltro.filas.map((f) => f.destino)).not.toContain('Incamar');
+    expect(conFiltro.filas.map((f) => f.destino)).toEqual(['Tabasca', 'Mar Bravo M01', 'Hisenor', 'Punta Carnero']);
+    // cuadra con los destinos de su fila en la tabla
+    const fila = tablaDeReproduccion(M2, P2, Fca).find((x) => x.lote === 'RD');
+    expect([...conFiltro.filas.map((f) => f.destino)].sort()).toEqual([...fila.destinos].sort());
+    // sin filtro (o con el código CB), el Incamar sí
+    expect(repartoDeLotePorDestino(M2.fuentes, 'RD', P2).filas.map((f) => f.destino)).toContain('Incamar');
+    expect(repartoDeLotePorDestino(M2.fuentes, 'RD', P2, normalizarFiltro({ lote: 'RD', codigo: 'CB' })).filas.map((f) => f.destino)).toEqual(['Incamar']);
+  });
 });

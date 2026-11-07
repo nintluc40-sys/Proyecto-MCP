@@ -21,7 +21,7 @@
 import { ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_MIXTO, sumarDias, ubicKey } from '../registros/lib/mad-libro.js';
 import { SALAS_VISIBLES } from './operativo.data.js';
 import { tasaEntre, kpiBiomasa, posicionEnFiltro, desoveEnCodigo, loteElegido, hayLote, hayCodigo, haySala, hayTanque, salaElegida, tanqueElegido,
-  hayPiscina, hayCamaronera, desoveEnOrigen, ignoraDeDesoves, kpiCopula } from './operativo.tablero.js';
+  hayPiscina, hayCamaronera, desoveEnOrigen, ignoraDeDesoves, kpiCopula, loteDeLaTasa, ignoraDeMortalidad } from './operativo.tablero.js';
 
 /** Las tarjetas que tienen gráfico, en su orden, con su título. */
 export const KPIS_CON_GRAFICO = [
@@ -180,7 +180,7 @@ export function graficoMortalidad(serie, periodo, F, partes) {
     let acum = 0;
     const acumulada = ds.map((f) => { acum += porDia.get(f) || 0; return acum; });
     return {
-      aplica: true, tipo: 'barrasYLinea', unidad: 'muertes', etiquetas: ds,
+      aplica: true, tipo: 'barrasYLinea', unidad: 'muertes', etiquetas: ds, ignora: ignoraDeMortalidad(F),   // A26 · lo que no aplica, dicho
       series: [
         { clave: 'dia', etiqueta: 'Muertes del día (registradas)', datos: ds.map((f) => porDia.get(f) || 0) },
         { clave: 'acumulada', etiqueta: 'Acumuladas', datos: acumulada },
@@ -194,24 +194,25 @@ export function graficoMortalidad(serie, periodo, F, partes) {
   if (!antes) return noAplica('Sin la serie del período no hay tasa que dibujar.');
   const ds = fechas(periodo).filter((f) => porFecha.has(f) && porFecha.has(sumarDias(f, -1)));
   const valor = (x) => (vacio(x.pct) ? null : x.pct);
+  const pasa = loteDeLaTasa(F);   // A26 · la piscina y la camaronera, por el origen de cada lote (como la tarjeta)
   return {
-    aplica: true, tipo: 'barrasYLinea', unidad: '%', etiquetas: ds,
+    aplica: true, tipo: 'barrasYLinea', unidad: '%', etiquetas: ds, ignora: ignoraDeMortalidad(F),   // A26
     series: [
-      { clave: 'dia', etiqueta: 'Tasa del día (%)', datos: ds.map((f) => valor(tasaEntre(porFecha.get(sumarDias(f, -1)), porFecha.get(f), F.lotes))) },
-      { clave: 'acumulada', etiqueta: 'Acumulada del período (%)', datos: ds.map((f) => valor(tasaEntre(antes, porFecha.get(f), F.lotes))) },
+      { clave: 'dia', etiqueta: 'Tasa del día (%)', datos: ds.map((f) => valor(tasaEntre(porFecha.get(sumarDias(f, -1)), porFecha.get(f), F.lotes, pasa))) },
+      { clave: 'acumulada', etiqueta: 'Acumulada del período (%)', datos: ds.map((f) => valor(tasaEntre(antes, porFecha.get(f), F.lotes, pasa))) },
     ],
-    resumen: !ds.length ? null : muertosDelPeriodo(antes, porFecha.get(ds[ds.length - 1]), F.lotes, ds[0], ds[ds.length - 1]),
+    resumen: !ds.length ? null : muertosDelPeriodo(antes, porFecha.get(ds[ds.length - 1]), F.lotes, ds[0], ds[ds.length - 1], pasa),
   };
 }
 
 /** Punto 3 (2026-10-14) · los muertos ♀/♂ entre dos cierres con la regla de `tasaEntre` —la de la tarjeta—, sin
  *  copiarla: se le pasa cada sexo por separado (sólo sus muertos) y su numerador es el de ese sexo. El total es el
  *  numerador de la tasa acumulada que dibuja el gráfico. */
-function muertosDelPeriodo(a, b, lotes, desde, hasta) {
+function muertosDelPeriodo(a, b, lotes, desde, hasta, pasa = null) {
   const soloSexo = (d, s) => ({ porLote: Object.fromEntries(Object.entries((d && d.porLote) || {})
     .map(([l, x]) => [l, { muertos: { [s]: ((x && x.muertos) || {})[s] } }])) });
-  const hembras = tasaEntre(soloSexo(a, 'hembras'), soloSexo(b, 'hembras'), lotes).muertos;
-  const machos = tasaEntre(soloSexo(a, 'machos'), soloSexo(b, 'machos'), lotes).muertos;
+  const hembras = tasaEntre(soloSexo(a, 'hembras'), soloSexo(b, 'hembras'), lotes, pasa).muertos;
+  const machos = tasaEntre(soloSexo(a, 'machos'), soloSexo(b, 'machos'), lotes, pasa).muertos;
   return { desde, hasta, hembras, machos, total: hembras + machos };
 }
 

@@ -560,11 +560,13 @@ function estadoHTML(M, memo, p, F) {
   if (s.sinRegistro) partesSalas.push(`${nf(s.sinRegistro)} sin registro`);
 
   let mort;
+  // A26 (2026-11-06) · lo que la mortalidad no aplica, dicho en la tarjeta (como Reproducción y Cópula)
+  const mortIgn = (m.ignora || []).length ? ` · <span class="mop-nota">sin filtro de ${esc(m.ignora.join(', '))}</span>` : '';
   if (m.modo === 'tasa') {
-    mort = tile('Mortalidad', `día ${pc(m.dia.pct)}`, `${nf(m.dia.muertos)} de ${nf(m.dia.riesgo)} · ${esc(etiquetaPeriodo(p))}: ${pc(m.periodo.pct)}`, 'is-mort',
+    mort = tile('Mortalidad', `día ${pc(m.dia.pct)}`, `${nf(m.dia.muertos)} de ${nf(m.dia.riesgo)} · ${esc(etiquetaPeriodo(p))}: ${pc(m.periodo.pct)}${mortIgn}`, 'is-mort',
       'Muertos ÷ animales en riesgo (vivos de la víspera + los que ingresaron), la regla del ⚖️ Saldo; el período cuenta desde la víspera de su primer día. Los descartes de selección no son muertes.', 'mortalidad');
   } else if (m.modo === 'registradas') {
-    mort = tile('Mortalidad', `${nf(m.dia.muertos)} muertes`, `registradas el ${esc(dm(p.hasta))} · ${nf(m.periodo.muertos)} en ${esc(etiquetaPeriodo(p))}`, 'is-mort',
+    mort = tile('Mortalidad', `${nf(m.dia.muertos)} muertes`, `registradas el ${esc(dm(p.hasta))} · ${nf(m.periodo.muertos)} en ${esc(etiquetaPeriodo(p))}${mortIgn}`, 'is-mort',
       'Con sala o tanque: las muertes registradas en la hoja Tanques, de todos sus lotes. La tasa es por lote, porque el libro lleva las bajas por lote.', 'mortalidad');
   } else {
     mort = tile('Mortalidad', '—', m.modo === 'no-aplica' ? 'por lote: no aplica al código genético' : 'sin datos del período', 'is-mort',
@@ -1307,6 +1309,8 @@ function kpiPanelHTML(M, memo, p, F) {
       : 'Con sala o tanque: las muertes REGISTRADAS en la hoja Tanques, de todos sus lotes.');
     // D2 (auditoría del 1.1, 2026-10-18, usuario: opción b) · el filtro de sexo no llega a la mortalidad: se dice
     if (F.sexo) notas.push('La mortalidad no se separa por sexo: la tarjeta, el gráfico y la fila de muertos cuentan los dos sexos.');
+    // A26 (2026-11-06) · lo demás que no se le aplica, dicho (la piscina y la camaronera sí: por el origen de cada lote)
+    if ((g.ignora || []).length) notas.push('La mortalidad no se separa por ' + g.ignora.join(', ') + ': ese filtro no se aplica.');
   }
   /* 🥚 Reproducción (el único gráfico con `ignora`): una nota por filtro que un desove no puede honrar (pauta 3.1, 2026-10-19). */
   /* 2026-10-27 (ronda 8 · tarea 4) · Cópula: su regla, sus huecos y lo que no separa; las notas de abajo son las de un DESOVE. */
@@ -1317,7 +1321,7 @@ function kpiPanelHTML(M, memo, p, F) {
     if ((F.lotes || []).length || (F.codigos || []).length) notas.push('Con lote o código genético, cuentan enteros los tanques que los tienen: una cópula no es de un lote.');
     if (g.ignora.length) notas.push('La tasa de cópula no se separa por ' + g.ignora.join(', ') + ': ese filtro no se aplica.');
   }
-  const ign = (g.aplica && k.clave !== 'copula' && g.ignora) || [];
+  const ign = (g.aplica && k.clave !== 'copula' && k.clave !== 'mortalidad' && g.ignora) || [];   // A26 · la mortalidad, arriba
   if (ign.includes('sala')) notas.push('Un desove es de su lote y código genético, no de una sala: el filtro de sala no se aplica.');
   if (ign.includes('estado')) notas.push('El estado es el de un lote en una sala al cierre del día y un desove no lo registra: el filtro de estado no se aplica.');
   if (ign.includes('sexo')) notas.push('Un desove es siempre de hembras: el filtro de sexo no se aplica.');
@@ -2120,7 +2124,9 @@ function tablaLotesHTML(filas, F) {
   /* 4 (2026-09-29, usuario) · el peso del ⚖️ Saldo, con su fecha en el globo; con filtro de sexo, sólo el de ese sexo. */
   const pesoCelda = (x, sexo) => {
     if (F.sexo && F.sexo !== sexo) return '<td class="r"><span class="muted" title="Con filtro de sexo, sólo el peso de ese sexo">—</span></td>';
-    return vacio(x.valor) ? '<td class="r">—</td>' : `<td class="r" title="último peso: ${esc(dma(x.fecha))}">${nf(x.valor, 1)} g</td>`;
+    // A26 (2026-11-06, usuario) · el ÚLTIMO pesaje del ⚖️ Saldo, con su fecha a la vista: la ficha da otro número (el
+    // promedio del período) y sin la fecha parecían el mismo dato en desacuerdo.
+    return vacio(x.valor) ? '<td class="r">—</td>' : `<td class="r" title="último pesaje: ${esc(dma(x.fecha))}">${nf(x.valor, 1)} g <span class="mop-nota">${esc(dm(x.fecha))}</span></td>`;
   };
   /* Punto 4 de la tanda del 13-10 (usuario, 2026-10-14) · en la misma fila: cada ingreso con su piscina, los vivos ♀ y ♂
      por separado (con filtro de sexo, el otro como «—»), los muertos acumulados (♀/♂ en el globo) y la fertilidad, N2 y
@@ -2159,7 +2165,7 @@ function tablaLotesHTML(filas, F) {
         <th class="r" title="${esc(definicion('tasaDescarte'))}">Descarte</th>
         <th class="r" title="${esc(definicion('proporcionHM'))}">♀:♂</th>
         <th class="r" title="N2 ÷ huevos, de los desoves que traen los dos (la regla del ⚖️ Saldo), en el ciclo del lote">Fertilidad</th><th class="r">N2</th><th class="r">N5</th>
-        <th class="r">Peso ♀</th><th class="r">Peso ♂</th><th class="r">Edad</th></tr></thead>
+        <th class="r" title="El último pesaje del lote (⚖️ Saldo), con su fecha">Último peso ♀</th><th class="r" title="El último pesaje del lote (⚖️ Saldo), con su fecha">Último peso ♂</th><th class="r">Edad</th></tr></thead>
       <tbody>${filas.map(fila).join('')}</tbody></table></div>
     <p class="mc-note">INGRESO: cada fecha del Ingreso con su piscina. MUERTOS: los acumulados hasta la foto, sin los descartes (♀ y ♂ en el globo). FERTILIDAD, N2 y N5: los del CICLO del lote, de su ingreso a la foto o a su cierre (la comparativa de abajo, los del período). La EDAD va del ingreso a la foto; en un lote cerrado, hasta su cierre. El PESO es el del ⚖️ Saldo: el promedio de sus tanques en la última fecha con peso, hasta la foto (su fecha, en el globo). ⚠ en un lote = su cascada no cuadra.${F.sexo ? ' Con filtro de sexo estas cifras son de ese sexo; la CASCADA de la ficha sigue entera, porque es un cuadre y a medias no cuadraría.' : ''}</p>
   </div>`;
@@ -2230,7 +2236,7 @@ function fichaLoteHTML(f, p) {
       ${mixNotaHTML(f.mix, 'Además participó en')}
       <p class="mc-note">La fertilidad sale sólo de los desoves que TRAEN su N2 y sus huevos contados; el N5 se cuenta aparte y NO se compara con el N2.</p>
       <h5 class="mop-det-h">Promedios de sus tanques</h5>
-      <div class="mop-sc-fila"><span class="mop-sc-l">Peso</span><span>♂ ${nf(pr.pesoMachos, 2)} g · ♀ ${nf(pr.pesoHembras, 2)} g</span></div>
+      <div class="mop-sc-fila"><span class="mop-sc-l">Peso</span><span>♂ ${nf(pr.pesoMachos, 2)} g · ♀ ${nf(pr.pesoHembras, 2)} g <span class="mop-nota">promedio del período</span></span></div>
       <div class="mop-sc-fila"><span class="mop-sc-l">Cópulas</span><span>${nf(pr.copulas)} en el período · ${pc(pr.pctCopulas)} de sus hembras por día</span></div>
       <div class="mop-sc-fila"><span class="mop-sc-l">Muda</span><span>${nf(pr.muda)} en el período · ${pc(pr.pctMuda)} de sus hembras por día</span></div>
       <p class="mc-note">El % es POR DÍA de parte, con la regla del ⚖️ Saldo: cópulas (o mudas) ÷ hembras de los tanques que tenían el lote ese día.</p>
@@ -2992,7 +2998,7 @@ function reproduccionHTML(M, p, F) {
   const dest = destinosDeDespacho(M.fuentes, p, F, vOp.destDividir);
   // 0q·3 · el lote desplegado; si el filtro o el período lo quitan de la tabla, se suelta (como la ficha de un lote).
   if (vOp.reproLote && !filas.some((x) => x.lote === vOp.reproLote)) vOp.reproLote = '';
-  _reparto = vOp.reproLote ? repartoDeLotePorDestino(M.fuentes, vOp.reproLote, p) : null;
+  _reparto = vOp.reproLote ? repartoDeLotePorDestino(M.fuentes, vOp.reproLote, p, F) : null;   // A26 · con el filtro de su fila
   return totalesReproHTML(T, p) + pendientesHTML(pend) + tablaReproHTML(filas, F, _reparto) + destinosHTML(dest);
 }
 /* 0q·3 · el reparto del lote desplegado, para dibujarlo tras pintar (el lienzo tiene que estar en el DOM). */

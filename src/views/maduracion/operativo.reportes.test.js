@@ -708,6 +708,15 @@ describe('Maduración · «de paso» · el % de cópulas y muda de los reportes 
     const c = cierreDeLote(MC, serieDiaria(MC.fuentes, '2026-09-13', DIA), 'QC', {});
     expect([c.ficha.promedios.pctCopulas, c.ficha.promedios.pctMuda]).toEqual([15, 5]);
   });
+
+  /* A26 (2026-11-06, usuario: «Rotular y corregir») · el peso de los informes es el PROMEDIO del período (el de la ficha),
+     no el último pesaje de la tabla: lo dice su rótulo, en el semanal y en el cierre. */
+  it('🔴 A26 · semanal y cierre rotulan el peso como promedio', () => {
+    const pg = semanalPorLote(MC, SC, diasDeTanque(MC.fuentes.tanques), SIN, {}).paginas[0];
+    expect(semanalPaginaHtml(pg)).toContain('<div class="rp-kpi-lb">Peso ♀ promedio</div>');
+    const c = cierreDeLote(MC, serieDiaria(MC.fuentes, '2026-09-13', DIA), 'QC', {});
+    expect(cierreHtml(c)).toContain('<div class="rp-kpi-lb">Peso ♀ promedio</div>');
+  });
 });
 
 /* A21 (2026-11-06, usuario: «Igual que la baldosa») · LA BIOMASA DEL PARTE. `kpiBiomasa` da `totalKg`, `hembrasKg` y
@@ -757,5 +766,30 @@ describe('Maduración · F7 · A21 · la biomasa del parte, igual que la baldosa
     expect(p.resumen.biomasa.totalKg).toBe('');
     expect(parteDiarioHtml(p)).toMatch(/Biomasa<\/div><div class="rp-kpi-v">—<\/div><div class="rp-kpi-s">sin pesos registrados</);
     expect(filaBiomasa(p)).toEqual(['Biomasa kg', '', 'sin pesos registrados']);
+  });
+});
+
+/* A26 (2026-11-06, usuario) · la fila «Salas» del parte: «estados al día» SÓLO si ninguna sala difiere ni está sin registro.
+   Antes, una sala sin estado registrado salía «al día», y la baldosa del tablero la contaba («N sin registro»). */
+describe('Maduración · F7 · A26 · la fila Salas del parte dice las salas sin registro', () => {
+  const M3 = modeloOperativo(PLANTA, { hoy: HOY, fecha: DIA });
+  const p = parteDiario(M3, serieDiaria(M3.fuentes, sumarDias(DIA, -1), DIA), diasDeTanque(M3.fuentes.tanques), F({}), { ahora: '20/09/2026 08:30' });
+  const conSalas = (salas) => parteDiarioHtml({ ...p, resumen: { ...p.resumen, salas } });
+  const fila = (html) => (html.match(/Salas<\/div><div class="rp-kpi-v">[^<]*<\/div><div class="rp-kpi-s">([^<]*)</) || [])[1];
+
+  it('🔴 sin registro: lo dice (antes, «estados al día»)', () => {
+    expect(fila(conSalas({ total: 5, difieren: 0, coinciden: 2, sinRegistro: 3 }))).toBe('3 sin registro');
+  });
+  it('con estado distinto y sin registro: las dos cosas', () => {
+    expect(fila(conSalas({ total: 5, difieren: 1, coinciden: 1, sinRegistro: 3 }))).toBe('1 con estado distinto · 3 sin registro');
+  });
+  it('todas registradas y coinciden: «estados al día»', () => {
+    expect(fila(conSalas({ total: 2, difieren: 0, coinciden: 2, sinRegistro: 0 }))).toBe('estados al día');
+  });
+  it('el parte trae de verdad las salas sin registro (de `kpiSalas`)', () => {
+    expect(p.resumen.salas).toHaveProperty('sinRegistro');
+    expect(fila(parteDiarioHtml(p))).toBe(p.resumen.salas.sinRegistro
+      ? [p.resumen.salas.difieren ? `${p.resumen.salas.difieren} con estado distinto` : '', `${p.resumen.salas.sinRegistro} sin registro`].filter(Boolean).join(' · ')
+      : (p.resumen.salas.difieren ? `${p.resumen.salas.difieren} con estado distinto` : 'estados al día'));
   });
 });

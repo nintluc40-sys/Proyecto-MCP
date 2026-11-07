@@ -482,7 +482,7 @@ export function kpiOcupacion(salas, libro, F) {
    primer cierre más los que ingresaron entre los dos—. Para un lote y un día es exactamente la del Saldo; para varios
    lotes se suman numeradores y denominadores; para un período, el primer cierre es la víspera de su primer día.
    Se exporta (0f · 5): el gráfico de la mortalidad la usa día a día, con la misma regla que la cifra de su tarjeta. */
-export function tasaEntre(a, b, lotes) {
+export function tasaEntre(a, b, lotes, pasa = null) {
   const quiere = comoLista(lotes);   // etapa A · uno o varios lotes (vacío = todos): se suman como siempre
   const A0 = a.porLote || {};
   const B0 = b.porLote || {};
@@ -490,6 +490,7 @@ export function tasaEntre(a, b, lotes) {
   let riesgo = 0;
   for (const l of new Set([...Object.keys(A0), ...Object.keys(B0)])) {
     if (quiere.length && !quiere.includes(normLote(l))) continue;
+    if (pasa && !pasa(normLote(l))) continue;   // A26 · la piscina y la camaronera, por el origen del lote (`loteDeLaTasa`)
     const A = A0[l] || {};
     const B = B0[l] || {};
     for (const s of ['machos', 'hembras']) {
@@ -509,7 +510,17 @@ export function tasaEntre(a, b, lotes) {
  *  · Con código genético y sin sala: no aplica (el libro no lleva las bajas por código).
  * `partes`: los de `diasDeTanque`.
  */
+/* A26 (2026-11-06, usuario: «Aplicar los que se puedan») · la tasa es por lote, así que la piscina y la camaronera se
+   aplican por el ORIGEN de cada lote (`origenEnFiltro`, la regla de los KPIs y de 🥚 Reproducción): antes la tarjeta, su
+   gráfico y el parte daban la tasa de toda la planta con «Piscina 901» elegida, sin decirlo. Sin índice (pruebas puras),
+   no se aplican. El ESTADO no cabe en una tasa por lote y se DICE (`ignora`). El SEXO tampoco se aplica y no va en `ignora`:
+   lo dice su propia nota del gráfico (D2, decisión del usuario del 2026-10-18, mantenida el 2026-11-06). */
+export const loteDeLaTasa = (F) => (F && F.indice && (hayPiscina(F) || hayCamaronera(F))
+  ? (l) => origenEnFiltro(F.indice.origen.get(normLote(l)), F) : null);
+export const ignoraDeMortalidad = (F) => filtrosNoAplicados(F, haySala(F) ? ['sala', 'tanque', 'sexo'] : ['lote', 'piscina', 'camaronera', 'sexo']);
+
 export function kpiMortalidad(serie, periodo, F, partes) {
+  const ignora = ignoraDeMortalidad(F);
   if (haySala(F)) {
     let dia = 0;
     let per = 0;
@@ -519,15 +530,16 @@ export function kpiMortalidad(serie, periodo, F, partes) {
       per += n;
       if (d.fecha === periodo.hasta) dia += n;
     }
-    return { modo: 'registradas', dia: { muertos: dia }, periodo: { muertos: per } };
+    return { modo: 'registradas', dia: { muertos: dia }, periodo: { muertos: per }, ignora };
   }
-  if (hayCodigo(F)) return { modo: 'no-aplica' };
+  if (hayCodigo(F)) return { modo: 'no-aplica', ignora: [] };
   const porFecha = new Map((serie || []).map((d) => [d.fecha, d]));
   const cierre = porFecha.get(periodo.hasta);
   const vispera = porFecha.get(sumarDias(periodo.hasta, -1));
   const antes = porFecha.get(sumarDias(periodo.desde, -1));
-  if (!cierre || !vispera || !antes) return { modo: 'sin-serie' };
-  return { modo: 'tasa', dia: tasaEntre(vispera, cierre, F.lotes), periodo: tasaEntre(antes, cierre, F.lotes) };
+  if (!cierre || !vispera || !antes) return { modo: 'sin-serie', ignora: [] };
+  const pasa = loteDeLaTasa(F);
+  return { modo: 'tasa', dia: tasaEntre(vispera, cierre, F.lotes, pasa), periodo: tasaEntre(antes, cierre, F.lotes, pasa), ignora };
 }
 
 /** Los desoves del período (por su fecha de desove), con la fertilidad y los nauplios por hembra con la regla del
@@ -652,9 +664,14 @@ function celdaDeTanque(libro, sala, tanque, fueraDeCatalogo, F) {
   const estado = !comp.length ? ESTADO_VACIO : !estados.length ? ESTADO_SIN : estados.length > 1 ? ESTADO_MIXTO : estados[0];
   const densidad = comp.length ? densidadTanque(sala, tanque, machos, hembras) : '';
   const hm = proporcionHM(hembras, machos);
+  /* A26 (2026-11-06, usuario) · resalta con la MISMA regla que las cifras (`posicionEnFiltro`: lote, código, sexo, estado,
+     piscina y camaronera, todo en la misma posición). Antes sólo miraba lote y código, y con «Piscina 902», una camaronera,
+     un estado o un sexo elegidos resaltaba también los tanques que no casaban. Un tanque vacío sólo casa con la ubicación. */
+  const Fx = F || {};
+  const conContenido = hayLote(Fx) || hayCodigo(Fx) || !!Fx.sexo || !!Fx.estado || hayPiscina(Fx) || hayCamaronera(Fx);
   const enFiltro = salaElegida(sala, F) && tanqueElegido(sala, tanque, F)
-    && (!hayLote(F) || comp.some((c) => loteElegido(c.lote, F)))
-    && (!hayCodigo(F) || comp.some((c) => codigoEnFiltro(c.codigoGenetico, F)));
+    && (!conContenido || comp.some((c) => posicionEnFiltro({ sala, tanque, lote: c.lote, codigoGenetico: c.codigoGenetico,
+      machos: c.machos, hembras: c.hembras }, Fx)));
   return {
     sala, tanque, fueraDeCatalogo, machos, hembras, vivos: machos + hembras, hm, hmEstado: evaluar('proporcionHM', hm),
     lotes, estado, densidad, densidadEstado: evaluar('densidad', densidad), enFiltro,
