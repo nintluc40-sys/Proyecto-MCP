@@ -726,16 +726,17 @@ export function renderTank(ctx, mod, tq) {
         // ⚠ La regla tiene que aplicarse a las DOS, y no sólo a SV, porque aquí `svv` se
         // DERIVA de `popv` (ver arriba: p / popFirst × 100). Son la misma magnitud escalada,
         // así que sus pendientes comparten signo SIEMPRE: aplanando sólo una, el modal
-        // enseñaba dos cifras incompatibles de lo mismo. Medido sobre el módulo M01 real,
-        // 5 de sus 12 series tanque+corrida tienen pendiente de población positiva; en un
-        // caso de ejemplo el KPI «SV +7d» decía 90 % mientras «Pob. +7d» implicaba 100 %.
+        // enseñaba dos cifras incompatibles de lo mismo: con series reales de pendiente
+        // positiva, el KPI «SV +7d» podía decir 90 % mientras «Pob. +7d» implicaba 100 %.
         // Un repunte en el HISTÓRICO sigue siendo plausible (la población es una estimación
         // manual y la vista lo advierte); lo que no cabe es proyectarlo hacia adelante.
         // A24 (2026-11-07, usuario: «Sí, los tres») · la regla vive ahora en core/proyeccion.js, compartida con
         // Larvicultura, y la recta va por DÍAS de calendario (antes, por número de registro).
+        // Revisión de la B (07-11) · y parte del ÚLTIMO DÍA DEL GRÁFICO (`xs` de `fdays`), como antes y como Larvicultura,
+        // aunque ese día no traiga conteo: si partiera del último conteo, «+7d» se quedaría corto.
         const xs = diasDesde(fdays);
-        const svF = proyeccionSinSubir(xs, svv, H);
-        const popF = proyeccionSinSubir(xs, popv, H);
+        const svF = proyeccionSinSubir(xs, svv, H, xs[xs.length - 1]);
+        const popF = proyeccionSinSubir(xs, popv, H, xs[xs.length - 1]);
         const futLabels = Array.from({ length: H }, (_, k) => `+${k + 1}d`);
         const labels = [...fdays, ...futLabels];
         const histLen = fdays.length;

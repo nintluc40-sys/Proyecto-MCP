@@ -111,8 +111,8 @@ describe('T-02 · el pronóstico no proyecta supervivencia creciente', () => {
   //      clamp la disimulaba cortándola a 100 %.
   //   2. Aquí `svv` se DERIVA de `popv` (tank.js: p / popFirst × 100), así que ambas son la
   //      misma magnitud escalada y sus pendientes comparten signo. Aplanar sólo SV dejaba
-  //      dos cifras incompatibles de lo mismo en el mismo modal. Medido sobre el módulo M01
-  //      real: 5 de sus 12 series tanque+corrida tienen pendiente de población positiva.
+  //      dos cifras incompatibles de lo mismo en el mismo modal (con datos reales, hay series
+  //      tanque+corrida con pendiente de población positiva).
   //
   // La regla física («no hay natalidad en el cultivo») se aplica ahora a las DOS curvas.
   it('la POBLACIÓN tampoco se proyecta creciente: no hay natalidad en el cultivo', () => {
