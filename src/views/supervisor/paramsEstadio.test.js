@@ -57,3 +57,23 @@ describe('variables morfológicas medidas en post-larva', () => {
     expect(paramAlerts(rows, 'postl').map((a) => a.key)).not.toContain('nvi');
   });
 });
+
+/* A24 (2026-11-07, usuario: «Solo lo del último día») · la alerta «de hoy» tomaba el último valor MEDIDO de cada variable:
+   Hongos fuera de rango el 01/07 seguía alertando el 05/07, cuando ya no se midió. Datos ficticios. */
+describe('A24 · la alerta «de hoy» es sólo del último día con registro', () => {
+  it('🔴 un valor de días anteriores ya no alerta hoy (antes, sí)', () => {
+    const rows = [
+      L({ Fecha: '01/07/2026', 'Estadío': 'Z3', 'Población': '900000', Hongos: '9' }),
+      L({ Fecha: '05/07/2026', 'Estadío': 'Z3', 'Población': '880000', 'No_Viables': '2' }),
+    ];
+    expect(paramAlerts(rows, 'larv').map((a) => a.key)).not.toContain('hng');
+  });
+
+  it('medido el último día, sí alerta', () => {
+    const rows = [
+      L({ Fecha: '01/07/2026', 'Estadío': 'Z3', 'Población': '900000', Hongos: '1' }),
+      L({ Fecha: '05/07/2026', 'Estadío': 'Z3', 'Población': '880000', Hongos: '9' }),
+    ];
+    expect(paramAlerts(rows, 'larv').map((a) => a.key)).toContain('hng');
+  });
+});

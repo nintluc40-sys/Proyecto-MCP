@@ -198,9 +198,13 @@ export function iclSeries(rows) {
 
 /** Alertas del último día: variables (con umbral) fuera de rango, con severidad.
  *  `alta` = la transgresión supera el 50% del umbral; `media` en caso contrario. */
+/* A24 (2026-11-07, usuario: «Solo lo del último día») · el valor de cada variable es el del ÚLTIMO DÍA con registro, no
+   el último que se midió: Hongos 9 el 01/06 seguía alertando «hoy» el 20/06 aunque ese día no se midió. Lo de días
+   anteriores sigue en las gráficas. */
 export function paramAlerts(rows, stageClass) {
-  const { series } = lvDaily(rows);
-  const lastVal = (key) => { const a = series[key] || []; for (let i = a.length - 1; i >= 0; i--) { if (a[i] !== null && a[i] !== undefined) return a[i]; } return null; };
+  const { series, days } = lvDaily(rows);
+  const ult = days.length - 1;
+  const lastVal = (key) => { const a = series[key] || []; const v = ult >= 0 ? a[ult] : null; return v === null || v === undefined ? null : v; };
   const out = [];
   LV_VARS.forEach((v) => {
     if (!v.ref || !(v.stage === stageClass || v.stage === 'both')) return;
