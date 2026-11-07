@@ -1096,9 +1096,13 @@ function loadAlgHist(){
     return arr;
   }catch(x){ _silent("loadAlgHist", x); return []; }
 }
+/* A11 (2026-11-06) · Devuelve si se GUARDÓ, comprobándolo (`_lsSet`: lee tras escribir y, antes de rendirse, hace sitio con
+   lo que se puede volver a bajar, como las demás fichas). Antes no lo decía: sin espacio avisaba del error, pero
+   «➕ Agregar» seguía, vaciaba el formulario y tapaba el aviso con «✅ Agregado». Lo tecleado se perdía. */
 function saveAlgHist(list){
-  try{ localStorage.setItem(algHistKey(), JSON.stringify(list||[])); }
-  catch(x){ toast("No se pudo guardar el historial (espacio insuficiente).","err"); }
+  if(_lsSet(algHistKey(), JSON.stringify(list||[]))) return true;
+  if(!_reclaiming) toast("❌ No hay espacio en este equipo para el historial de Lab. Algas: NO se guardó. Lo tecleado sigue en el formulario; libera espacio (🧹 en ⚙ Config) y vuelve a pulsar.","err",9000);
+  return false;
 }
 // Id de sesión por registro de Lab. Algas (como Microbiología). Estable a lo largo de
 // ediciones → el upsert por la columna "Sesión" ACTUALIZA la fila en vez de duplicarla
@@ -1117,8 +1121,7 @@ function pushAlgHist(data){
     ts: Date.now(),
     data: data
   });
-  saveAlgHist(list);
-  return true;
+  return saveAlgHist(list);   // A11 · sin espacio, false: quien llama no vacía el formulario
 }
 function removeAlgHistById(id){
   const list = loadAlgHist().filter(x => x.id !== id);
@@ -3791,7 +3794,7 @@ function addToAlgHist(){
     const idx  = list.findIndex(h => h.id === _algEditingId);
     if(idx >= 0){
       list[idx] = { id: list[idx].id, ts: Date.now(), data: data };
-      saveAlgHist(list);
+      if(!saveAlgHist(list)) return;   // A11 · sin espacio: sigue editando, con lo tecleado en pantalla
       _algEditingId = null;
       const preserved = {
         fecha:        data.fecha        || today(),
