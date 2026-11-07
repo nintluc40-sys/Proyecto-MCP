@@ -1303,6 +1303,11 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
 - **Sin la MATRIZ no se arma nada.** Ni eventos ni traslados: con Google caído se trabaja sobre la
   copia local, que guarda **la misma proyección que se le pide al GAS** y anota cuáles; una copia a
   la que le falte alguna de esas columnas no se usa.
+- **El TR-ID no se repite** (A11, 2026-11-06; usuario: «Releer y no repetir»). Antes de numerar un traslado se
+  **relee** «Maduración Transferencias», y el número es uno más que el MAYOR entre esa lectura, la del tablero y el
+  último que dio el equipo (`larv4_mad_trseq`, que nunca retrocede y se reserva al enviar). Antes valía la lectura
+  vieja y el contador sólo contaba sin ninguna: dos traslados seguidos sacaban el mismo número (medido el 04-11: 2
+  de 10 TR-ID en dos fechas; esos datos los corrige el usuario). Si la relectura falla, sigue con lo que tenía.
 - **Un chip con DOS hembras vivas: el SISTEMA no elige; elige el USUARIO** (D17, R5). El evento sólo
   trae el Trovan, así que apuntarlo a una sería una convención — y sin las columnas de fecha (que la
   lectura no pidió hasta el 2026-09-24) el desempate caería en «la de más abajo en la hoja». Así que el

@@ -16055,7 +16055,24 @@ function _madReproShowAltaReport(rep, okSent){
 // TR-ID secuencial (TR-000NNN). El que manda es el siguiente al máximo de la hoja de traslados
 // (nextTrIdFromRows, en madReproTransfer); este contador en localStorage sólo se usa si no se pudo leer.
 function _reproNextTrId(){ const last=localStorage.getItem("larv4_mad_trseq")||""; return window.__rgLib.nextTrId(last?[last]:[]); }
-function _reproBumpTrSeq(trId){ try{ localStorage.setItem("larv4_mad_trseq", trId); }catch(_){} }
+function _reproBumpTrSeq(trId){
+  // A11 · nunca hacia atrás: el contador guarda el MAYOR que ha dado este equipo.
+  try{
+    const last=localStorage.getItem("larv4_mad_trseq")||"";
+    if(window.__rgLib.nextTrId([last, trId])===window.__rgLib.nextTrId([last])) return;
+    localStorage.setItem("larv4_mad_trseq", trId);
+  }catch(_){}
+}
+/* A11 (2026-11-06, usuario: «Releer y no repetir») · el siguiente TR-ID: uno más que el MAYOR entre la hoja releída, la
+   del tablero y el último que dio este equipo. Antes, con filas leídas, el contador del equipo no contaba: un traslado
+   recién enviado que la lectura aún no traía volvía a salir con el mismo número. */
+function _reproTrIdSiguiente(){
+  const t=_REPRO_SHEETS.transfer, ids=[];
+  _reproStoreRows(t).concat((_reproSheets && _reproSheets[t]) || []).forEach(function(r){ ids.push(r && r["TR-ID"]); });
+  const last=localStorage.getItem("larv4_mad_trseq")||"";
+  if(last) ids.push(last);
+  return window.__rgLib.nextTrId(ids);
+}
 function madReproAddDest(){ const c=document.getElementById("repro-t-dests"); if(c) c.insertAdjacentHTML("beforeend", _reproDestBlockHTML()); }
 function madReproDelDest(btn){
   const b=btn.closest(".repro-dest"); const c=document.getElementById("repro-t-dests");
@@ -16106,7 +16123,13 @@ async function madReproTransfer(){
     ? destinos.map(function(d){ return { sala:d.sala, tanque:d.tanque, ids:d.ids.filter(function(id){ return _muertasSC.indexOf(id)===-1; }) }; })
     : destinos;
   _reproPaso("repro-t-paso", "Leyendo los traslados…");
-  await _reproEnsureSheet(_REPRO_SHEETS.transfer);
+  /* A11 (2026-11-06, usuario: «Releer y no repetir») · SE RELEE la hoja antes de numerar. Sin `force` valía la lectura de
+     antes (o la del tablero, de hasta 5 min): dos traslados seguidos sacaban el MISMO «siguiente» (medido el 04-11: 2 de
+     10 TR-ID en dos fechas). Si la relectura falla, sigue con lo que tenía (y el contador del equipo), como antes: sin
+     `force`, una lectura vieja también se usaba; el aviso de hoja recortada (D11) no cambia. */
+  const _trAntes = _reproSheets && _reproSheets[_REPRO_SHEETS.transfer];
+  await _reproEnsureSheet(_REPRO_SHEETS.transfer, null, true);
+  if(_trAntes && !(_reproSheets && _reproSheets[_REPRO_SHEETS.transfer])) _reproPutRows(_REPRO_SHEETS.transfer, _trAntes);
   _reproPaintMatrixBanner();
   /* ⚠⚠ D11 · CON EL LEDGER RECORTADO NO HAY TR-ID SEGURO, y aquí no basta con avisar. Hasta el
      2026-10-19 el máximo salía de las filas más ANTIGUAS, así que el TR-ID «siguiente» ya existía
@@ -16120,8 +16143,7 @@ async function madReproTransfer(){
     _reproNada("repro-t-paso", "No se envió: Google devolvió incompleta la lista de traslados, y el número del próximo traslado podría repetir uno que ya existe. Hay que ampliar el límite de lectura del GAS; lo pegado sigue aquí.", 9000);
     return;
   }
-  const _trRows=_reproReadRows(_REPRO_SHEETS.transfer);
-  const trId=_trRows.length?window.__rgLib.nextTrIdFromRows(_trRows):_reproNextTrId();
+  const trId=_reproTrIdSiguiente();
   const res=window.__rgLib.buildTransferBatch({ fecha:fecha, tipo:tipo, origen:origen, destinos:_destinos, composicion:composicion, matrixIndex:_reproMatrixIndex(), trId:trId });
   if(res.error){ _reproNada("repro-t-paso", res.error, 3500); return; }
   res.report.sinConfirmar=_scT;
@@ -16134,6 +16156,7 @@ async function madReproTransfer(){
     destinos:_destinos.map(function(d){ return { sala:d.sala, tanque:d.tanque, ids:d.ids.filter(function(id){ return _vv.indexOf(id)!==-1; }) }; }).filter(function(d){ return d.ids.length; }) } : null;
   if(!res.transfer){ _madReproShowTransferReport(res.report, trId, false); _reproNadaOElegir("repro-t-paso", _vv.length, "No hay individuos válidos para transferir.", atencion, 4000); return; }
   if(_vv.length) atencion.push(_reproElegirTxt(_vv.length));   // lo demás se mueve; ésos esperan
+  _reproBumpTrSeq(trId);   // A11 · reservado AL ENVIAR: lo que se quede en la cola también lo lleva (un hueco no hace daño; repetirlo, sí)
   _reproPaso("repro-t-paso", "Enviando el traslado "+trId+"…");
   let okAll=true; const _t1={ sinAvisos:true }, _t2={ sinAvisos:true };
   if(res.matriz){ okAll=(await postPayload(res.matriz, gasUrl(), _t1)) && okAll; }
