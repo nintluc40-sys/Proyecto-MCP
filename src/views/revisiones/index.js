@@ -16,7 +16,7 @@ import { getField, parseNum, F, obsFindings } from '../../core/fields.js';
 import { parseAnyDate, fmtShort, dayNum, rangeLabel } from '../../core/dates.js';
 import { esc } from '../../core/format.js';
 import { fmtPct } from '../../core/util.js';
-import { monthIndexOfCorrida, monthLabelAt } from '../../core/prodCalendar.js';
+import { monthIndexOfCorrida, monthLabelAt, numeroDeCorrida } from '../../core/prodCalendar.js';
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import {
   QUANT, QUANT_KEYS, KPI_ORDER, CHART_SERIES, chartKeys,
@@ -298,11 +298,12 @@ export function revisionesView(root) {
   }
 
   // ── Barra de mes (alineada con Supervisor vía corrida→mes). Default = mes más
-  //    reciente con datos; acota las corridas/módulos a ese mes. ──
+  //    reciente con datos; acota las corridas/módulos a ese mes. A29 (2026-11-06) · `numeroDeCorrida`: «581-582» cuenta en
+  //    el mes de la 581 (con `+c` no caía en ninguno). ──
   const allCorridas = [...new Set(all.map(gCor).filter(Boolean))];
-  const months = [...new Set(allCorridas.map((c) => monthIndexOfCorrida(+c)).filter((i) => i >= 0))].sort((a, b) => a - b);
+  const months = [...new Set(allCorridas.map((c) => monthIndexOfCorrida(numeroDeCorrida(c))).filter((i) => i >= 0))].sort((a, b) => a - b);
   if (vState.month == null || !months.includes(vState.month)) vState.month = months.length ? months[months.length - 1] : 0;
-  const monthCorridas = allCorridas.filter((c) => monthIndexOfCorrida(+c) === vState.month).sort(numCmp);
+  const monthCorridas = allCorridas.filter((c) => monthIndexOfCorrida(numeroDeCorrida(c)) === vState.month).sort(numCmp);
   const monthSet = new Set(monthCorridas);
   const inMonth = (r) => !monthSet.size || monthSet.has(gCor(r));
 
@@ -537,9 +538,9 @@ function treemapHTML(entries, total, type) {
 function getFilteredRows() {
   const all = store.globalData.filter(isRevisionRow);
   const allCorridas = [...new Set(all.map(gCor).filter(Boolean))];
-  const months = [...new Set(allCorridas.map((c) => monthIndexOfCorrida(+c)).filter((x) => x >= 0))].sort((a, b) => a - b);
+  const months = [...new Set(allCorridas.map((c) => monthIndexOfCorrida(numeroDeCorrida(c))).filter((x) => x >= 0))].sort((a, b) => a - b);
   const month = (vState.month != null && months.includes(vState.month)) ? vState.month : (months.length ? months[months.length - 1] : 0);
-  const monthSet = new Set(allCorridas.filter((c) => monthIndexOfCorrida(+c) === month));
+  const monthSet = new Set(allCorridas.filter((c) => monthIndexOfCorrida(numeroDeCorrida(c)) === month));
   return all.filter((r) => rowMatchesFilters(r, monthSet));
 }
 
@@ -1059,9 +1060,9 @@ function moduleDetailHTML(mod) {
   // Acotado al MISMO mes que la vista: el timeline desde donde se abre está por mes,
   // así que sumar revisiones de otros meses inflaría las cifras del detalle.
   const allRev = store.globalData.filter(isRevisionRow);
-  const months = [...new Set(allRev.map(gCor).filter(Boolean).map((c) => monthIndexOfCorrida(+c)).filter((x) => x >= 0))].sort((a, b) => a - b);
+  const months = [...new Set(allRev.map(gCor).filter(Boolean).map((c) => monthIndexOfCorrida(numeroDeCorrida(c))).filter((x) => x >= 0))].sort((a, b) => a - b);
   const month = (vState.month != null && months.includes(vState.month)) ? vState.month : (months.length ? months[months.length - 1] : 0);
-  const monthSet = new Set(allRev.map(gCor).filter(Boolean).filter((c) => monthIndexOfCorrida(+c) === month));
+  const monthSet = new Set(allRev.map(gCor).filter(Boolean).filter((c) => monthIndexOfCorrida(numeroDeCorrida(c)) === month));
   const rows = allRev.filter((r) => gMod(r) === mod &&
     (!monthSet.size || monthSet.has(gCor(r))) &&
     inGlobalDate(r) &&
@@ -1274,7 +1275,7 @@ function bind(root) {
     const mnav = e.target.closest('[data-month-nav]');
     if (mnav && !mnav.disabled) {
       const all = store.globalData.filter(isRevisionRow);
-      const ms = [...new Set(all.map(gCor).filter(Boolean).map((c) => monthIndexOfCorrida(+c)).filter((i) => i >= 0))].sort((a, b) => a - b);
+      const ms = [...new Set(all.map(gCor).filter(Boolean).map((c) => monthIndexOfCorrida(numeroDeCorrida(c))).filter((i) => i >= 0))].sort((a, b) => a - b);
       const ni = ms.indexOf(vState.month) + Number(mnav.dataset.monthNav);
       if (ni >= 0 && ni < ms.length) { vState.month = ms[ni]; vState.corrida = null; vState.mod = null; revisionesView(root); }
     }

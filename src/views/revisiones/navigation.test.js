@@ -220,3 +220,19 @@ describe('Revisiones · harness de navegación integral', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 });
+
+/* A29 (2026-11-06, usuario: «El de su primer número») · una corrida escrita como RANGO («573-574») cuenta en el mes de la
+   573: sale en el filtro de corridas de ese mes. Antes, `+c` = NaN y el rango no caía en ningún mes. */
+describe('Revisiones · A29 · una corrida escrita como rango', () => {
+  it('«573-574» sale en las corridas del mes de la 573', () => {
+    store.globalData = [...synthData(), R({ Corrida: '573-574', 'Módulo': 'Módulo 3', Siembra: '1', Supervisor: 'Ana', Fecha: '07/06/2026',
+      'Estadío_observado': 'M1', 'Tipo_revisión': 'Matutina', 'Deformidad_%': '3' })];
+    mount();
+    // el mes es un estado del módulo: otra prueba puede dejarlo en el anterior. Al último mes (el de la 573).
+    for (let i = 0; i < 5; i++) { const b = root.querySelector('[data-month-nav="1"]'); if (!b || b.disabled) break; click(b); }
+    const sel = root.querySelector('[data-rvfilter="corrida"]');
+    expect(sel, 'hay filtro de corrida').toBeTruthy();
+    expect([...sel.options].map((o) => o.value)).toEqual(expect.arrayContaining(['573', '573-574']));
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+});

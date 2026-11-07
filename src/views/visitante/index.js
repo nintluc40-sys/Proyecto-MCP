@@ -9,7 +9,8 @@ import { esc, fmtPop, wqiBand, wqiSpans } from '../../core/format.js';
 import { store } from '../../core/store.js';
 import { getField, parseNum, F, isLarviculturaRow, obsFindings } from '../../core/fields.js';
 import { fmtPct } from '../../core/util.js';
-import { presentMonths, corridasOfMonth, modulesOfCorrida, modCorStats, monthLabelAt, monthIndexOfCorrida, ventanaDeMaduracion } from '../../core/prodCalendar.js';
+import { presentMonths, corridasOfMonth, modulesOfCorrida, modCorStats, monthLabelAt, monthIndexOfCorrida, ventanaDeMaduracion, numeroDeCorrida } from '../../core/prodCalendar.js';
+import { THRESHOLDS } from '../../config.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { SIN_RED } from '../../ui/vistaDiferida.js';
 // Capas de datos PURAS de laboratorio (ya en el bundle base vía la vista Microbiología →
@@ -114,7 +115,8 @@ function monthDataCompute(mIdx) {
    ============================================================ */
 const modNum = (s) => { const m = String(s).match(/\d+/); return m ? +m[0] : null; };
 // Mes (bucket por corrida) de una fila cualquiera con columna Corrida.
-const rowMonth = (r) => { const n = parseInt(String(getField(r, F.corrida)).replace(/\D/g, ''), 10); return Number.isNaN(n) ? -1 : monthIndexOfCorrida(n); };
+// A29 (2026-11-06) · `numeroDeCorrida`: un rango («581-582») cuenta en el mes de su primer número (antes, «581582»: ningún mes).
+const rowMonth = (r) => { const n = numeroDeCorrida(getField(r, F.corrida)); return Number.isNaN(n) ? -1 : monthIndexOfCorrida(n); };
 
 // `obsFindings` (qué texto de Observaciones cuenta como HALLAZGO) vive en core/fields.js:
 // la lee también la vista Revisiones, que es la dueña de esa hoja. Tenerlo por copia era
@@ -221,7 +223,7 @@ const ALG_KEYS = {
 export const ALG_SYS_CATS = ['Masivos', 'Premasivos', 'Fundas', 'Carboys', 'PBR', 'Otros'];
 export function algSysCat(s) { const u = String(s || '').trim().toUpperCase(); if (!u) return null; if (u.startsWith('PBR')) return 'PBR'; if (u.startsWith('PM')) return 'Premasivos'; if (/^F[MP]?\d*$/.test(u)) return 'Fundas'; if (/^C\d/.test(u)) return 'Carboys'; if (/^M\d/.test(u)) return 'Masivos'; return 'Otros'; }
 const algIsDesc = (r) => /^s[ií]$/i.test(String(getField(r, ALG_KEYS.descartado)).trim());
-function algMonthOf(r) { const n = parseInt(String(getField(r, ALG_KEYS.corrida)).replace(/\D/g, ''), 10); return Number.isNaN(n) ? -1 : monthIndexOfCorrida(n); }
+function algMonthOf(r) { const n = numeroDeCorrida(getField(r, ALG_KEYS.corrida)); return Number.isNaN(n) ? -1 : monthIndexOfCorrida(n); }   // A29 · como `rowMonth`
 function algRowsOfMonth(mIdx) { return store.globalData.filter((r) => r._SheetOrigin === 'Lab_Algas' && algMonthOf(r) === mIdx); }
 
 /** Resumen de microalgas del mes (densidad, cultivos activos, descarte, protozoarios). */
@@ -379,6 +381,10 @@ function labCalMonth(mIdx) {
   const [y, m] = best.split('-').map(Number);
   return { year: y, month: m };
 }
+/* A29 (2026-11-06, usuario) · el panel dice el mes de calendario de sus muestras: con la regla V2 (la moda), un mes de
+   producción «Noviembre» puede tomar las de octubre, y el título sólo decía «Noviembre». */
+const MESES_CAL = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const mesDeCalendario = (cm) => MESES_CAL[cm.month] + ' ' + cm.year;
 const inCalMonth = (r, cm) => { if (!cm) return false; const d = labDate(r); return !!d && !isNaN(d) && d.getFullYear() === cm.year && d.getMonth() === cm.month; };
 
 /** Resumen de laboratorio del mes (micro: % de muestras en alerta · agua: WQI y % en rango). */
@@ -390,7 +396,9 @@ function labSummaryCompute(mIdx) {
   const micRows = store.globalData.filter((r) => isMicroRow(r) && inCalMonth(r, cm));
   const micAlert = micRows.filter((r) => micMelt(r).some((m) => micIsAlerta(m.nivel))).length;
   const micPct = micRows.length ? Math.round(micAlert / micRows.length * 100) : null;
-  const micTier = !micRows.length ? 'x' : micAlert === 0 ? 'v' : micPct <= 20 ? 'a' : 'r';
+  // A29 (2026-11-06, usuario: «La de Microbiología») · rojo desde la cota de config.js (15 %), la MISMA de Microbiología
+  // (`THRESHOLDS.alertaMicro`); antes, desde el 20 %: un 18 % era ámbar aquí y «crítico» allí.
+  const micTier = !micRows.length ? 'x' : micAlert === 0 ? 'v' : micPct >= THRESHOLDS.alertaMicro.critico ? 'r' : 'a';
   // Con muchas muestras y muy pocas alertas el redondeo daba 0 → el chip salía ÁMBAR
   // diciendo «0% en alerta», contradiciéndose con su propio color y con el conteo de al
   // lado. Solo el TEXTO cambia: `micPct` (y por tanto el semáforo) se conserva intacto.
@@ -419,7 +427,7 @@ function labSummaryBlock(mIdx) {
   if (!s.micRows.length && !s.calRows.length) return ''; // sin datos de laboratorio este mes
   const AC = '#00838f';
   return `<div class="card vt-card">
-    <div class="vt-card-title" style="color:${AC}">🧫 Laboratorio de agua y sanidad · ${esc(monthLabelAt(mIdx))} <span class="muted" style="font-weight:600;font-size:12px">· microbiología y calidad de agua</span></div>
+    <div class="vt-card-title" style="color:${AC}">🧫 Laboratorio de agua y sanidad · ${esc(monthLabelAt(mIdx))} <span class="muted" style="font-weight:600;font-size:12px">· microbiología y calidad de agua${s.cm ? ' · muestras de ' + esc(mesDeCalendario(s.cm)) : ''}</span></div>
     <div style="display:flex;gap:12px;flex-wrap:wrap">
       ${sumCard('🧫', 'Microbiología', s.micRows.length ? semChip(s.micTier, `${s.micPctTxt} en alerta`) : semChip('x', 'Sin muestras'), s.micRows.length ? `${s.micRows.length} muestra(s) · ${s.micAlert} en nivel alto` : 'Sin análisis microbiológicos', 'labMicro', AC)}
       ${sumCard('💧', 'Calidad del agua', s.calRows.length ? semChip(s.calTier, `${s.calPctTxt} en rango`) : semChip('x', 'Sin muestras'), s.calRows.length ? `${s.calRows.length} muestra(s) · WQI ${s.wqi == null ? '—' : s.wqi}` : 'Sin análisis de agua', 'labAgua', AC)}

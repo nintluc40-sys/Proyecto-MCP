@@ -111,6 +111,64 @@ describe('C-02 · el porcentaje en alerta no se contradice con su semáforo', ()
   });
 });
 
+/* A29 (2026-11-06, usuario: «La de Microbiología») · el rojo de la alerta micro empieza en la cota de config.js (15 %), la
+   misma de Microbiología; antes, en el 20 %: un 18 % era ámbar aquí y «crítico» allí. Y el panel dice el mes de calendario
+   de sus muestras (la regla V2 toma el de la moda; el título sólo decía el mes de producción). */
+describe('A29 · el panel 🧫 de Visitante: la cota de la alerta y el mes de sus muestras', () => {
+  const conAlertas = (nAlerta, total) => {
+    const rows = [];
+    for (let i = 0; i < total; i++) rows.push(micro(i < nAlerta ? { 'V.Amarillos Nivel': 'Elevado' } : { 'V.Amarillos Nivel': 'Mínimo' }));
+    return rows;
+  };
+  const chip = () => root.querySelector('[data-sum="labMicro"]').innerHTML;
+
+  it('🔴 18 % en alerta es ROJO (antes, ámbar); 10 % sigue ámbar', () => {
+    store.globalData = [...base(), ...conAlertas(9, 50)];   // 18 %
+    visitanteView(root);
+    expect(chip()).toContain('🔴 18% en alerta');
+    store.globalData = [...base(), ...conAlertas(5, 50)];   // 10 %
+    visitanteView(root);
+    expect(chip()).toContain('🟡 10% en alerta');
+  });
+
+  it('el borde es el de config.js: 15 % ya es rojo; 14 %, ámbar', () => {
+    store.globalData = [...base(), ...conAlertas(15, 100)];
+    visitanteView(root);
+    expect(chip()).toContain('🔴 15% en alerta');
+    store.globalData = [...base(), ...conAlertas(14, 100)];
+    visitanteView(root);
+    expect(chip()).toContain('🟡 14% en alerta');
+  });
+
+  it('🔴 una corrida de Algas escrita como rango («544-545») cuenta en el mes de la 544 (antes, en ninguno)', () => {
+    const alga = (cel) => ({ _SheetOrigin: 'Lab_Algas', Corrida_Larv: '544-545', Modulo_Larv: 'M01', Sistema: 'M1', Fecha: '04/06/2026', Cel_ml: String(cel), Protozoarios: '2', Descartado: 'No' });
+    store.globalData = [...base(), alga(20000), alga(30000)];
+    visitanteView(root);
+    const t = [...root.querySelectorAll('.vt-card-title')].find((x) => x.textContent.includes('Microalgas'));
+    expect(t, 'el bloque de microalgas sale en el mes de la 544').toBeTruthy();
+    expect(root.textContent).toContain('densidad prom.');
+  });
+
+  it('🔴 una revisión de supervisión con la corrida escrita como rango («544-545») cuenta en el mes de la 544', () => {
+    const rev = (corrida, obs) => ({ _SheetOrigin: 'Registro_Supervision', 'Módulo': 'M01', Corrida: corrida, Fecha: '05/06/2026', Observaciones: obs });
+    store.globalData = [...base(), rev('544-545', 'Malla rota'), rev('544-545', 'Fuga en la línea')];
+    visitanteView(root);
+    const card = root.querySelector('[data-sum="revisiones"]');
+    expect(card, 'la tarjeta de revisiones sale').toBeTruthy();
+    expect(card.textContent).not.toContain('Sin revisiones');
+    expect(card.textContent).not.toContain('Sin novedades');   // sus hallazgos cuentan: están en el mes
+    // y en el MISMO mes que la corrida 544 (con la lectura vieja, «544545», iban a un mes virtual lejano, sin módulos)
+    expect(root.querySelector('[data-sum="cobertura"]').textContent.replace(/\s+/g, ' ')).toContain('1 de 1 módulos revisados');
+  });
+
+  it('el título dice el mes de calendario de las muestras', () => {
+    store.globalData = [...base(), ...conAlertas(0, 3)];
+    visitanteView(root);
+    const t = [...root.querySelectorAll('.vt-card-title')].find((x) => x.textContent.includes('Laboratorio de agua y sanidad'));
+    expect(t.textContent).toContain('· muestras de junio 2026');
+  });
+});
+
 describe('C-04 · «Sin novedad» no puntúa peor que dejarlo en blanco', () => {
   const rev = (obs) => ({ _SheetOrigin: 'Registro_Supervision', 'Módulo': 'M01', Corrida: '544', Fecha: '05/06/2026', Observaciones: obs });
   const tarjeta = (rows) => { store.globalData = [...base(), ...rows]; visitanteView(root); return root.querySelector('[data-sum="revisiones"]').textContent; };

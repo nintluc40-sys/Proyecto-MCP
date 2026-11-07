@@ -354,3 +354,30 @@ describe('ventanaDeMaduracion · su mes de calendario o, si aún no empieza, el 
     expect(ventanaDeMaduracion(8, '2026-08-20')).toEqual({ ventana: null, adelantado: null });
   });
 });
+
+/* A29 (2026-11-06, usuario: «El de su primer número») · una corrida escrita como RANGO («581-582») cuenta en el mes de su
+   PRIMER número, la regla que ya seguía Microbiología. Antes: con `+c`, NaN (ningún mes: Algas, Revisiones, Desinfección);
+   quitando lo que no es cifra, 581582 (ningún mes: Visitante). */
+describe('A29 · numeroDeCorrida', () => {
+  it('el primer número: «581» y «581-582» → 581; «C581» sigue siendo 581; un número, tal cual', async () => {
+    const { numeroDeCorrida } = await import('./prodCalendar.js');
+    expect(numeroDeCorrida('581')).toBe(581);
+    expect(numeroDeCorrida(' 581 ')).toBe(581);
+    expect(numeroDeCorrida('581-582')).toBe(581);
+    expect(numeroDeCorrida('581 - 582')).toBe(581);
+    expect(numeroDeCorrida('C581')).toBe(581);
+    expect(numeroDeCorrida(581)).toBe(581);
+  });
+  it('sin cifras, NaN (ningún mes, como antes)', async () => {
+    const { numeroDeCorrida } = await import('./prodCalendar.js');
+    for (const v of ['', null, undefined, 'sin corrida']) expect(Number.isNaN(numeroDeCorrida(v)), String(v)).toBe(true);
+  });
+  it('el rango cae en el mes de su primer número, no en ninguno', async () => {
+    const { numeroDeCorrida } = await import('./prodCalendar.js');
+    expect(monthIndexOfCorrida(numeroDeCorrida('581-582'))).toBe(monthIndexOfCorrida(581));
+    expect(monthIndexOfCorrida(numeroDeCorrida('581-582'))).toBeGreaterThanOrEqual(0);
+    expect(monthIndexOfCorrida(+'581-582'), 'control: así se leía en Algas').toBe(-1);
+    // control: así se leía en Visitante: 581582 cae en un mes VIRTUAL absurdo (decenas de miles), que nadie elige
+    expect(monthIndexOfCorrida(parseInt('581-582'.replace(/\D/g, ''), 10)), 'control: así, en Visitante').toBeGreaterThan(1000);
+  });
+});

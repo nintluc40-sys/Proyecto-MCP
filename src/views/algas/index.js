@@ -13,7 +13,7 @@ import { getField, parseNum, normalizeTecnico } from '../../core/fields.js';
 import { parseAnyDate, fmtShort } from '../../core/dates.js';
 import { esc } from '../../core/format.js';
 import { avg, natCmp } from '../../core/util.js';
-import { monthIndexOfCorrida, monthLabelAt } from '../../core/prodCalendar.js';
+import { monthIndexOfCorrida, monthLabelAt, numeroDeCorrida } from '../../core/prodCalendar.js';
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import { toast } from '../../ui/toast.js';
 import { drawGrowth, drawGrowthBar, drawGrowthMini, drawTasa, drawProto, drawDaily, drawUsoSistema, drawModuloBiomasa, drawCellQuality, drawDispatchBars, drawSanitBars, drawDescClases, CAT_COLOR, algColor, fmtK } from './charts.js';
@@ -624,10 +624,11 @@ export function algasView(root) {
   }
 
   // ── Barra de mes (corrida→mes, alineada con Supervisor/Larvicultura) ──
+  //    A29 (2026-11-06) · `numeroDeCorrida`: «581-582» cuenta en el mes de la 581 (con `+c` no caía en ninguno).
   const allCorridas = [...new Set(all.map((r) => g(r, 'corrida')).filter(Boolean))];
-  const months = [...new Set(allCorridas.map((c) => monthIndexOfCorrida(+c)).filter((i) => i >= 0))].sort((a, b) => a - b);
+  const months = [...new Set(allCorridas.map((c) => monthIndexOfCorrida(numeroDeCorrida(c))).filter((i) => i >= 0))].sort((a, b) => a - b);
   if (vState.month == null || !months.includes(vState.month)) vState.month = months.length ? months[months.length - 1] : 0;
-  const monthCorridas = allCorridas.filter((c) => monthIndexOfCorrida(+c) === vState.month).sort((a, b) => (+a) - (+b));
+  const monthCorridas = allCorridas.filter((c) => monthIndexOfCorrida(numeroDeCorrida(c)) === vState.month).sort((a, b) => numeroDeCorrida(a) - numeroDeCorrida(b));
   const monthSet = new Set(monthCorridas);
   const inMonth = (r) => !monthSet.size || monthSet.has(g(r, 'corrida'));
 
@@ -1184,11 +1185,11 @@ function daySummaryBody(days, idx) {
 /** Meses (índices) presentes en TODO el histórico de Lab_Algas (asc). */
 function algMonthsList() {
   const cor = [...new Set(algaeRows().map((r) => g(r, 'corrida')).filter(Boolean))];
-  return [...new Set(cor.map((c) => monthIndexOfCorrida(+c)).filter((i) => i >= 0))].sort((a, b) => a - b);
+  return [...new Set(cor.map((c) => monthIndexOfCorrida(numeroDeCorrida(c))).filter((i) => i >= 0))].sort((a, b) => a - b);
 }
 /** Filas de Lab_Algas cuyo mes (por corrida) es `monthIdx`. */
 function algMonthRows(monthIdx) {
-  return algaeRows().filter((r) => { const c = g(r, 'corrida'); return c && monthIndexOfCorrida(+c) === monthIdx; });
+  return algaeRows().filter((r) => { const c = g(r, 'corrida'); return c && monthIndexOfCorrida(numeroDeCorrida(c)) === monthIdx; });
 }
 // Rango de fechas [lo, hi] del mes de producción `monthIdx`, expandido a los límites de
 // los meses-calendario que toca. ⚠ Las muestras de Microbiología y Calidad de Agua de
@@ -1864,7 +1865,7 @@ function bind(root) {
     const nav = e.target.closest('[data-month-nav]');
     if (!nav || nav.disabled) return;
     const allRows = algaeRows();
-    const ms = [...new Set(allRows.map((r) => g(r, 'corrida')).filter(Boolean).map((c) => monthIndexOfCorrida(+c)).filter((i) => i >= 0))].sort((a, b) => a - b);
+    const ms = [...new Set(allRows.map((r) => g(r, 'corrida')).filter(Boolean).map((c) => monthIndexOfCorrida(numeroDeCorrida(c))).filter((i) => i >= 0))].sort((a, b) => a - b);
     const ni = ms.indexOf(vState.month) + Number(nav.dataset.monthNav);
     if (ni >= 0 && ni < ms.length) {
       vState.month = ms[ni];

@@ -108,6 +108,16 @@ export function modCorDispatched(mod, cor) {
   return m.disp.get(k);
 }
 
+/** A29 (2026-11-06, usuario: «El de su primer número») · el número de una corrida tal como viene escrita: «581» → 581, y un
+ *  RANGO («581-582») → su PRIMER número, la regla que ya seguía Microbiología. Antes, Algas, Revisiones y Desinfección lo
+ *  leían con `+c` (NaN: ningún mes) y Visitante quitando lo que no es cifra (581582: ningún mes). Se toma la PRIMERA tira de
+ *  cifras, así que «C581» sigue siendo 581, como lo leía Visitante. NaN si no lleva ninguna cifra. */
+export function numeroDeCorrida(c) {
+  if (typeof c === 'number') return c;
+  const m = /\d+/.exec(String(c === null || c === undefined ? '' : c));
+  return m ? Number(m[0]) : NaN;
+}
+
 export function monthIndexOfCorrida(num) {
   if (isNaN(num)) return -1;
   let idx = -1;

@@ -9,7 +9,7 @@
 import { store } from '../../core/store.js';
 import { getField, F, isLarviculturaRow } from '../../core/fields.js';
 import { parseAnyDate } from '../../core/dates.js';
-import { monthIndexOfCorrida } from '../../core/prodCalendar.js';
+import { monthIndexOfCorrida, numeroDeCorrida } from '../../core/prodCalendar.js';
 
 const TIPO_KEYS = ['Tipo de Registro', 'Tipo_de_Registro', 'Tipo de registro', 'tipo de registro', 'TipoRegistro'];
 
@@ -61,7 +61,7 @@ export function desinfeccionEnCurso() {
   return [...map.values()].map((e) => ({
     mod: e.mod,
     corrida: e.corrida,
-    monthIdx: monthIndexOfCorrida(+e.corrida),
+    monthIdx: monthIndexOfCorrida(numeroDeCorrida(e.corrida)),   // A29 · «581-582», el mes de la 581
     lastDate: e.dates.length ? new Date(Math.max(...e.dates)) : null,
     count: e.count,
   }));

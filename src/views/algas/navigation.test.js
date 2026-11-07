@@ -349,3 +349,17 @@ describe('Algas · la Δ del mes compara lo comparable y dice contra qué', () =
     expect(desc).not.toContain('por día');   // la Δ en puntos porcentuales no lleva ese matiz
   });
 });
+
+/* A29 (2026-11-06, usuario: «El de su primer número») · una corrida escrita como RANGO («573-574») cuenta en el mes de la
+   573: sale en el filtro de corridas de ese mes. Antes, `+c` = NaN y el rango no caía en ningún mes: sus filas no salían. */
+describe('Algas · A29 · una corrida escrita como rango', () => {
+  it('«573-574» sale en las corridas del mes de la 573', () => {
+    store.globalData = [...synthData(), A({ Fecha: '05/06/2026', Corrida_Larv: '573-574', Modulo_Larv: 'M01', 'Área_Algas': 'A1',
+      Sistema: 'M2', Dia_Proceso: '2', Cel_ml: '1500', Protozoarios: '2', Especie: 'TW', Descartado: 'No', 'Técnico': 'Ana' })];
+    mount();
+    const sel = root.querySelector('[data-algfilter="corrida"]');
+    expect(sel, 'hay filtro de corrida').toBeTruthy();
+    expect([...sel.options].map((o) => o.value)).toEqual(expect.arrayContaining(['573', '573-574']));
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+});

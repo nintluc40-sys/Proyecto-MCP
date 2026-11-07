@@ -66,3 +66,15 @@ describe('desinfeccionDetalle', () => {
     expect(desinfeccionDetalle('M09', '999')).toBeNull();
   });
 });
+
+/* A29 (2026-11-06) · una corrida escrita como rango («580-581») va al mes de su primer número; antes, `+c` = NaN: ningún mes. */
+describe('A29 · desinfección con la corrida escrita como rango', () => {
+  it('«580-581» cae en el mes de la 580', () => {
+    store.globalData = [
+      dz('Registro_Desinfección', { 'Módulo': 'M02', Corrida: '580-581', 'Tipo de Registro': 'Desinfección de módulo larvicultura', Fecha: '10/06/2026' }),
+    ];
+    const res = desinfeccionEnCurso();
+    expect(res).toHaveLength(1);
+    expect(res[0].monthIdx).toBe(6);   // como la 580
+  });
+});
