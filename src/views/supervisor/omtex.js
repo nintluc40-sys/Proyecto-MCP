@@ -9,7 +9,7 @@
    tanque (OT2), selector + tendencia temporal por marca (OT3/OT4) y
    veredicto compuesto (OT5).
    ============================================================ */
-import { tankStats, tanksOf } from './stats.js';
+import { tankStats, tanksOf, rowsOutOfDispatch } from './stats.js';
 import { iclSeries } from './params.js';
 import { colorFor, breadcrumb, fmtPop } from './ui.js';
 import { esc } from '../../core/format.js';
@@ -141,6 +141,11 @@ export function renderOmTex(ctx, mod) {
   // empatados y sesgaba un veredicto que se usa para decidir proveedor. Ahora se apartan
   // y se declaran en pantalla con sus nombres.
   const unclassified = [];
+  /* A24 (2026-11-07, usuario: «Dejarlos fuera») · los tanques AGRUPADOS o DESCARTADOS (anotados así en Observaciones) no
+     entran en la comparación de marcas: su 0 % es una decisión de manejo, no la calidad de la marca. Un tanque al 80 %
+     junto a uno agrupado daba 40 % y hacía «perder» a su marca. La regla es la de la Vista Ejecutiva (rowsOutOfDispatch);
+     se declaran con sus nombres, como los «sin marca clara». */
+  const fuera = [];
   tanks.forEach((tq) => {
     const ts = tankStats(ctx, mod, tq, corrida);
     // Filas DE ESTE TANQUE. `tankStats.lRows` incluye además las filas de Larvicultura sin
@@ -166,6 +171,7 @@ export function renderOmTex(ctx, mod) {
     // Tanque SIN ningún lote anotado: no es un caso dudoso, simplemente no hay materia
     // que comparar → fuera, sin ruido.
     if (!c.TEX && !c.OM && !anyLote) return;
+    if (rowsOutOfDispatch(ownRows)) { fuera.push(tq); return; }   // A24 · agrupado o descartado
     // Tiene lotes pero ninguno resultó clasificable, o hay empate exacto entre marcas
     // → se declara en vez de adivinar.
     if ((!c.TEX && !c.OM) || c.TEX === c.OM) { unclassified.push(tq); return; }
@@ -202,8 +208,14 @@ export function renderOmTex(ctx, mod) {
     <div class="sv-card-sub">🔄 ${corrida ? 'Corrida: ' + esc(corrida) : 'Todas las corridas'} · Promedio por tanque</div>
   </div>`;
 
+  const notaFuera = fuera.length
+    ? `<div class="sv-modal-note" style="margin:0 0 12px">ℹ️ <b>${fuera.length} tanque(s) agrupado(s) o descartado(s)</b>:
+      ${fuera.sort(natCmp).map(esc).join(' · ')}. Quedan <b>fuera</b> de promedios, tabla y veredicto: su 0 % es una
+      decisión de manejo, no la calidad de la marca (como en la Vista Ejecutiva).</div>`
+    : '';
+
   if (!agg.TEX.n && !agg.OM.n) {
-    html += `<div class="empty-state">Sin lotes clasificables (Texcumar / Omarsa) para esta selección.</div>`;
+    html += `<div class="empty-state">Sin lotes clasificables (Texcumar / Omarsa) para esta selección.</div>${notaFuera}`;
     return { html };
   }
 
@@ -236,6 +248,7 @@ export function renderOmTex(ctx, mod) {
       ${unclassified.map(esc).join(' · ')}.
       Quedan <b>excluidos</b> de promedios, tabla y veredicto.</div>`;
   }
+  html += notaFuera;
 
   if (agg.TEX.n && agg.OM.n) html += verdictHTML(agg, uncShare);
 

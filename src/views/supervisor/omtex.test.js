@@ -208,3 +208,35 @@ describe('omtexTie · empate por el valor mostrado', () => {
     expect(omtexTie(sv, null, null)).toBe(false);
   });
 });
+
+/* A24 (2026-11-07, usuario: «Dejarlos fuera») · un tanque AGRUPADO o DESCARTADO pesaba con su 0 % en su marca: Texcumar
+   con un tanque al 80 % y otro agrupado salía al 40 % y «perdía» frente a Omarsa al 70 %. Ahora queda fuera, como en la
+   Vista Ejecutiva, y se dice cuál. Datos ficticios. */
+describe('A24 · OM vs Tex sin los tanques agrupados o descartados', () => {
+  beforeEach(() => { store.dateFrom = null; store.dateTo = null; });
+  const filas = (obsTq3) => [
+    row({ Tanque: '1', Fecha: '2026-06-01', Lote: 'L1', 'Población': '1000000' }),
+    row({ Tanque: '1', Fecha: '2026-06-05', Lote: 'L1', 'Población': '800000' }),
+    row({ Tanque: '2', Fecha: '2026-06-01', Lote: 'CD', 'Población': '1000000' }),
+    row({ Tanque: '2', Fecha: '2026-06-05', Lote: 'CD', 'Población': '700000' }),
+    row({ Tanque: '3', Fecha: '2026-06-01', Lote: 'L1', 'Población': '1000000' }),
+    row({ Tanque: '3', Fecha: '2026-06-05', Lote: 'L1', 'Población': '0', Observaciones: obsTq3 }),
+  ];
+
+  it('🔴 el tanque agrupado no baja la supervivencia de su marca (antes, 40 % frente a 80 %)', () => {
+    const { html } = renderOmTex(ctxFor(filas('Agrupado en TQ 1')), 'M01');
+    expect(html).toContain('80.0%');
+    expect(html).not.toContain('40.0%');
+    expect(html).toContain('1 tanque(s) agrupado(s) o descartado(s)');
+    expect(html).toMatch(/agrupado\(s\) o descartado\(s\)<\/b>:\s*3\./);
+  });
+
+  it('🔴 un descartado, igual; un tanque en 0 sin esa nota sigue contando', () => {
+    const desc = renderOmTex(ctxFor(filas('Descartado')), 'M01').html;
+    expect(desc).not.toContain('40.0%');
+    expect(desc).toContain('1 tanque(s) agrupado(s) o descartado(s)');
+    const sinNota = renderOmTex(ctxFor(filas('')), 'M01').html;
+    expect(sinNota).toContain('40.0%');
+    expect(sinNota).not.toContain('agrupado(s) o descartado(s)');
+  });
+});
