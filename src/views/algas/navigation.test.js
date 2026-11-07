@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../core/charts.js', () => ({
-  makeChart: () => null,
+  makeChart: vi.fn(() => null),   // A30 · vi.fn para leer las etiquetas del gráfico del descarte
   destroyChart: () => {},
   destroyAllCharts: () => {},
   Chart: class {},
@@ -14,6 +14,7 @@ vi.mock('../../core/charts.js', () => ({
 
 import { store } from '../../core/store.js';
 import { algasView } from './index.js';
+import { makeChart } from '../../core/charts.js';
 
 if (typeof globalThis.requestAnimationFrame !== 'function') {
   globalThis.requestAnimationFrame = (cb) => { cb(); return 0; };
@@ -361,5 +362,31 @@ describe('Algas · A29 · una corrida escrita como rango', () => {
     expect(sel, 'hay filtro de corrida').toBeTruthy();
     expect([...sel.options].map((o) => o.value)).toEqual(expect.arrayContaining(['573', '573-574']));
     expect(errSpy).not.toHaveBeenCalled();
+  });
+});
+
+/* A30 (2026-11-06) · Algas: «Contar días» (la lista para vigilar cuenta DÍAS con protozoarios ≥ 5, no registros) y la tendencia
+   diaria del descarte por DÍA (el mismo día escrito de dos formas daba dos barras). */
+describe('Algas · A30 · días, no registros', () => {
+  const extra = (fecha, lote) => A({ Fecha: fecha, Corrida_Larv: '573', Modulo_Larv: 'M01', 'Área_Algas': 'A1', Sistema: 'M3', Lote: lote,
+    Dia_Proceso: '1', Cel_ml: '1000', Protozoarios: '7', Especie: 'TW', Descartado: 'Sí', 'Técnico': 'Ana' });
+  it('dos lotes con protozoarios ≥ 5 el MISMO día son «1 día», no 2', () => {
+    store.globalData = [...synthData(), extra('03/06/2026', 'X'), extra('2026-06-03', 'Y')];
+    mount();
+    const item = [...root.querySelectorAll('.alg-watch-item')].find((x) => x.querySelector('.alg-watch-sys').textContent === 'M3');
+    expect(item, 'M3 está en la lista para vigilar').toBeTruthy();
+    expect(item.textContent).toContain('1 día con protozoarios ≥ 5');
+  });
+  it('la tendencia del descarte junta el mismo día escrito de dos formas', async () => {
+    store.globalData = [...synthData(), extra('03/06/2026', 'X'), extra('2026-06-03', 'Y')];
+    mount();
+    makeChart.mockClear();
+    click(root.querySelector('[data-alg-open="desc"]'));
+    await new Promise((r) => requestAnimationFrame(r));   // el gráfico se dibuja en el siguiente cuadro
+    const llamada = makeChart.mock.calls.filter(([id]) => id === 'algDescLine').at(-1);
+    expect(llamada, 'se dibujó la tendencia').toBeTruthy();
+    const etiquetas = llamada[1].data.labels;
+    expect(etiquetas.filter((l) => l === '03/06/2026' || l === '2026-06-03')).toEqual(['03/06/2026']);
+    expect(new Set(etiquetas).size).toBe(etiquetas.length);
   });
 });

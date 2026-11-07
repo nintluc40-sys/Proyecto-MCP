@@ -383,7 +383,9 @@ export function revisionesView(root) {
     : `<div class="rv-phase rv-phase-1">📋 Panorama general del mes <span class="muted">· elige un <b>módulo</b> en el filtro para ver su detalle</span></div>`;
 
   // Comparativa de periodos (Punto 5)
-  html += periodSection(rows);
+  // A30 (2026-11-06, usuario: «Previo con todo el registro») · la comparativa cuenta por FECHA sobre todo el registro con los
+  // demás filtros (corrida, módulo, siembra): con sólo las filas del mes, el periodo previo salía casi vacío (cambio falso).
+  html += periodSection(rows, all.filter((r) => rowMatchesFilters(r, new Set())));
 
   // Observaciones + Acciones (treemap · área = frecuencia · clic = desglose por módulo).
   const obsEntries = obsCounts(rows);
@@ -692,10 +694,10 @@ function openDrill(typeLabel, value, keys, rows) {
 /* ============================================================
    COMPARATIVA DE PERIODOS (Punto 5)
    ============================================================ */
-function periodSection(rows) {
+function periodSection(rows, todas = rows) {
   const days = pState.cmpDays;
   const pills = CMP_PILLS.map((p) => `<button class="rv-cmp-pill ${days === p.id ? 'is-active' : ''}" data-cmp-days="${p.id}">${p.label}</button>`).join('');
-  const pc = periodCompare(rows, days);
+  const pc = periodCompare(rows, days, todas);
   const head = `<div class="rv-cmp-head">
       <div class="rv-chart-title" style="margin:0">📅 Comparativa de periodos <span class="rv-chart-sub">${pc ? pc.label : 'actual vs. anterior'}</span></div>
       <div class="rv-cmp-pills">${pills}</div>
@@ -705,7 +707,8 @@ function periodSection(rows) {
   return `<div class="card rv-mt">${head}${body}</div>`;
 }
 
-function periodCompare(rows, days) {
+/** `rows`: las del mes (fijan el último día); `todas`: el registro entero con los demás filtros, del que salen los DOS periodos. */
+function periodCompare(rows, days, todas = rows) {
   let maxMs = 0;
   rows.forEach((r) => { const d = parseAnyDate(gFec(r)); if (d) maxMs = Math.max(maxMs, d.getTime()); });
   if (!maxMs) return null;
@@ -714,8 +717,8 @@ function periodCompare(rows, days) {
   const prevEnd = curStart - dayMs;
   const prevStart = curStart - days * dayMs;
   const inR = (r, a, b) => { const d = parseAnyDate(gFec(r)); return d && d.getTime() >= a && d.getTime() <= b; };
-  const cur = rows.filter((r) => inR(r, curStart, maxMs));
-  const prev = rows.filter((r) => inR(r, prevStart, prevEnd));
+  const cur = todas.filter((r) => inR(r, curStart, maxMs));
+  const prev = todas.filter((r) => inR(r, prevStart, prevEnd));
   const findings = (rs) => rs.reduce((s, r) => s + obsFindings(r).length, 0);
   const actions = (rs) => rs.reduce((s, r) => s + splitMulti(g(r, K.accion)).length, 0);
   const intT = (v) => String(v);

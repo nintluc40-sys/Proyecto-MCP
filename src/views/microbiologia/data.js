@@ -210,8 +210,9 @@ export function luminPresence(row) {
 // añada o renombre un formato, hay que traerlo aquí o sus muestras caen en la regla genérica
 // que más se le parezca (así «Larvicultura · Despacho» acabó con umbrales ambientales).
 // ⚠⚠ Pero NO se porta a ciegas: el área `algas` de abajo lleva los umbrales YA ESCALADOS por
-// los factores de dilución vigentes, y ahí el motor es el que está desactualizado (medido:
-// la hoja trae Bact. Totales de Algas Mensual con factor ×20 y el motor declara ×10).
+// los factores de dilución vigentes. (Se medía que la hoja traía Bact. Totales de Algas Mensual
+// con ×20 y el motor declara ×10; el 2026-11-06 el usuario confirmó que el laboratorio usa hoy
+// ×10 y ×5, los de la ficha: Mensual pasa a su área propia, 'algas-mensual'.)
 export const MIC_FORMATS = {
   'larv-muestra':       { label: 'Larvicultura · Muestra',        area: (t) => (t === 'Agua' ? 'larv-agua' : 'larv-animal') },
   // Larvicultura · Despacho: muestra de agua o animal, igual que «Larvicultura · Muestra»,
@@ -244,7 +245,10 @@ export const MIC_FORMATS = {
   hisopados:            { label: 'Hisopados',                    area: () => 'ambiental' },
   'hisopados-despacho': { label: 'Hisopados (despacho)',         area: () => 'ambiental' },
   algas:                { label: 'Algas Hisopado',               area: () => 'algas' },
-  'algas-mensual':      { label: 'Algas Mensual',                area: () => 'algas' },
+  // A30 (2026-11-06, usuario: «×10 y ×5, como la ficha») · Algas Mensual con SU área, la de la ficha de captura (Bacterias
+  // totales ×10, Pseudomonas y Aeromonas ×5). Antes compartía 'algas' (×20) por la nota de arriba, y el nivel de un mismo
+  // conteo podía no ser el que daba la captura.
+  'algas-mensual':      { label: 'Algas Mensual',                area: () => 'algas-mensual' },
   'algas-r':            { label: 'Algas Fundas y Masivos',       area: () => 'algas' },
 };
 export const FORMATO_LABEL = Object.fromEntries(Object.entries(MIC_FORMATS).map(([k, v]) => [k, v.label]));
@@ -396,13 +400,20 @@ const MIC_DR_BASE = {
     pseudo: { l: 50, m: 100, e: 200 }, aero: { l: 100, m: 500, e: 1000 },
     btot: { l: 10000, m: 100000, e: 1000000 }, bnar: { l: 1000, m: 5000, e: 10000 },
   },
-  // Departamento Algas (Hisopado · Mensual · Fundas y Masivos). Umbrales ESCALADOS por
+  // Departamento Algas (Hisopado · Fundas y Masivos; Mensual tiene la suya, abajo). Umbrales ESCALADOS por
   // el factor de dilución que aplica la app de captura (colonias ×5, Pseudomonas /
   // Aeromonas / Bacterias totales ×20): así el UFC que llega ya multiplicado conserva
   // el mismo nivel Leve/Moderado/Elevado que antes del cambio de factores.
   algas: {
     vamar: { l: 5, m: 10, e: 50 }, vverd: { l: 5, m: 10, e: 50 }, vtot: { l: 5, m: 10, e: 50 },
     pseudo: { l: 20, m: 40, e: 200 }, aero: { l: 20, m: 40, e: 200 }, btot: { l: 200, m: 2000, e: 10000 },
+  },
+  // A30 (2026-11-06) · Algas · Mensual: los umbrales de su área en la ficha de captura (public/registros/engine.js,
+  // "algas-mensual"), con sus factores (colonias ×5, Bacterias totales ×10, Pseudomonas y Aeromonas ×5). Una misma placa
+  // conserva el nivel que tenía en 'algas'; cambia sólo la escala del UFC.
+  'algas-mensual': {
+    vamar: { l: 5, m: 10, e: 50 }, vverd: { l: 5, m: 10, e: 50 }, vtot: { l: 5, m: 10, e: 50 },
+    btot: { l: 100, m: 1000, e: 5000 }, pseudo: { l: 5, m: 10, e: 50 }, aero: { l: 5, m: 10, e: 50 },
   },
   // Maduración · DESPACHO. Se llamaba 'mad-agua', y ese nombre era una trampa: el editor
   // ⚙️ Rangos lo ofrecía como «Maduración · Agua» cuando en realidad gobierna las muestras
@@ -462,7 +473,8 @@ export const MIC_AREAS = [
   { key: 'mad-hisopado', label: 'Maduración · Hisopado' },
   { key: 'agua-limpia-mar', label: 'Agua Limpia y Mar' },
   { key: 'ras-agua', label: 'RAS · Agua' },
-  { key: 'algas', label: 'Algas (Hisopado · Mensual · Fundas y Masivos)' },
+  { key: 'algas', label: 'Algas (Hisopado · Fundas y Masivos)' },
+  { key: 'algas-mensual', label: 'Algas · Mensual' },   // A30 · su área propia, como en la ficha
 ];
 let _thrCache = null;
 let _thrRaw = null; // firma (string crudo de localStorage) del set cacheado

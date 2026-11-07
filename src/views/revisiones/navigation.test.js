@@ -236,3 +236,22 @@ describe('Revisiones · A29 · una corrida escrita como rango', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 });
+
+/* A30 (2026-11-06, usuario: «Previo con todo el registro») · la comparativa cuenta por FECHA sobre todo el registro (con los
+   demás filtros). Antes sólo veía las revisiones del mes, y el periodo previo, en días del mes anterior, salía vacío o casi. */
+describe('Revisiones · A30 · la comparativa con todo el registro', () => {
+  it('el periodo previo cuenta las revisiones de días del mes anterior', () => {
+    // dos revisiones de la corrida de mayo (567) el 30/05: caen en los 7 días previos al 02–08/06
+    store.globalData = [...synthData(),
+      R({ Corrida: '567', 'Módulo': 'Módulo 1', Siembra: '1', Supervisor: 'Ana', Fecha: '30/05/2026', 'Tipo_revisión': 'Matutina' }),
+      R({ Corrida: '567', 'Módulo': 'Módulo 2', Siembra: '1', Supervisor: 'Beto', Fecha: '31/05/2026', 'Tipo_revisión': 'Matutina' })];
+    mount();
+    for (let i = 0; i < 5; i++) { const b = root.querySelector('[data-month-nav="1"]'); if (!b || b.disabled) break; click(b); }
+    click(root.querySelector('[data-cmp-days="7"]'));
+    const card = root.querySelector('.rv-cmp-card');
+    expect(card.querySelector('.rv-cmp-lbl').textContent).toBe('Revisiones');
+    expect(card.querySelector('.rv-cmp-val').textContent).toBe('8');            // 02, 04, 06 y 08/06 × 2 módulos
+    expect(card.querySelector('.rv-cmp-prev').textContent).toBe('prev: 2');     // antes: «prev: —» (sólo el mes)
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+});

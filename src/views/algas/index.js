@@ -269,6 +269,8 @@ const isDescartado = (r) => esDescartado(g(r, 'descartado'));
 const claseDe = (r) => claseDescarte(g(r, 'descartado'), g(r, 'obs'));
 const cuentaDesc = (R) => conteoDescartes(R.map(claseDe));
 const dCell = (r) => { const d = parseAnyDate(g(r, 'fecha')); return d ? fmtShort(d) : esc(g(r, 'fecha') || '—'); };
+/** A30 (2026-11-06) · la clave de un día: «dd/mm/aaaa», la MISMA para el día escrito de cualquier forma (y que `parseAnyDate` relee). */
+const fmtDiaAlg = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 const cellTxt = (v) => (v === '' || v === null || v === undefined) ? '<span class="muted">—</span>' : esc(v);
 
 // Estado persistente entre re-render. `sub` = subvista de sistema (pestaña activa);
@@ -801,9 +803,11 @@ export function algasView(root) {
   const sanMap = new Map();
   rows.forEach((r) => {
     const s = g(r, 'sistema'); if (!s) return;
-    if (!sanMap.has(s)) sanMap.set(s, { proto: 0, protoMax: 0, desc: 0 });
+    if (!sanMap.has(s)) sanMap.set(s, { proto: 0, protoMax: 0, desc: 0, protoDias: new Set() });
     const o = sanMap.get(s);
-    const p = num(r, 'protozoarios'); if (p !== null) { if (p >= 5) o.proto++; if (p > o.protoMax) o.protoMax = p; }
+    // A30 (2026-11-06, usuario: «Contar días») · DÍAS distintos con protozoarios ≥ 5, como dice el texto: antes contaba
+    // registros, y dos lotes del mismo día eran «2 días».
+    const p = num(r, 'protozoarios'); if (p !== null) { if (p >= 5) { const d = parseAnyDate(g(r, 'fecha')); o.protoDias.add(d ? d.toDateString() : String(g(r, 'fecha'))); o.proto = o.protoDias.size; } if (p > o.protoMax) o.protoMax = p; }
     if (isDescartado(r)) o.desc++;
   });
   const watch = [...sanMap.entries()].map(([s, o]) => ({ s, ...o }))
@@ -1555,7 +1559,8 @@ function fillDescModal(root) {
   const R = ctx.rows;
   // Por día
   const byDay = new Map();
-  R.forEach((r) => { const f = g(r, 'fecha'); if (!f) return; if (!byDay.has(f)) byDay.set(f, { d: 0, t: 0, bueno: 0, nouso: 0, calidad: 0 }); const o = byDay.get(f); o.t++; const k = claseDe(r); if (k) { o.d++; o[k]++; } });
+  // A30 (2026-11-06) · por DÍA: el mismo día escrito de dos formas (`04/06/2026`, `2026-06-04`) daba dos barras.
+  R.forEach((r) => { const f0 = g(r, 'fecha'); if (!f0) return; const d0 = parseAnyDate(f0); const f = d0 ? fmtDiaAlg(d0) : f0; if (!byDay.has(f)) byDay.set(f, { d: 0, t: 0, bueno: 0, nouso: 0, calidad: 0 }); const o = byDay.get(f); o.t++; const k = claseDe(r); if (k) { o.d++; o[k]++; } });
   const days = [...byDay.keys()].sort((a, b) => (parseAnyDate(a) || 0) - (parseAnyDate(b) || 0));
   /* 2026-09-26 · cada día, el % de sus registros descartados, APILADO por clase: la altura es la tasa de siempre. */
   const serieDia = Object.fromEntries(DESCARTE_CLASES.map((x) => [x.clave, days.map((k) => { const o = byDay.get(k); return o.t ? o[x.clave] / o.t * 100 : 0; })]));

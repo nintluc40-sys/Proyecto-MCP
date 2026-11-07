@@ -90,9 +90,10 @@ describe('classifyFormato', () => {
     expect(classifyFormato('Hisopados')).toBe('hisopados');
     expect(classifyFormato('Hisopados (despacho)')).toBe('hisopados-despacho');
   });
-  it('los 3 formatos de Algas comparten el área "algas" y viven en el departamento Algas', () => {
+  /* A30 (2026-11-06, usuario: «×10 y ×5, como la ficha») · Mensual tiene su área propia, la de la ficha; los otros dos siguen en 'algas'. */
+  it('Hisopado y Fundas y Masivos comparten el área "algas"; Mensual tiene la suya; los 3 viven en el departamento Algas', () => {
     ['algas', 'algas-mensual', 'algas-r'].forEach((k) => {
-      expect(areaForFormat(k)).toBe('algas');
+      expect(areaForFormat(k)).toBe(k === 'algas-mensual' ? 'algas-mensual' : 'algas');
       expect(deptoOfFormato(k)).toBe('Algas');
     });
     expect(FORMATO_LABEL.algas).toBe('Algas Hisopado');
@@ -161,7 +162,7 @@ describe('areaForFormat', () => {
     expect(areaForFormat('ras', '')).toBe('ras-agua');
     // Los 3 formatos del departamento Algas comparten área (antes el swab iba a 'ambiental').
     expect(areaForFormat('algas', '')).toBe('algas');
-    expect(areaForFormat('algas-mensual', '')).toBe('algas');
+    expect(areaForFormat('algas-mensual', '')).toBe('algas-mensual');   // A30 · su área propia
     expect(areaForFormat('algas-r', '')).toBe('algas');
     expect(areaForFormat('hisopados', '')).toBe('ambiental');  // los de planta siguen en ambiental
     // El hisopado de Maduración tiene área PROPIA: sus umbrales son ~10× los de 'ambiental'.
@@ -377,5 +378,16 @@ describe('loadMicThresholds · guard de claves peligrosas', () => {
     store0[MIC_FACTORS_KEY] = JSON.stringify({ [area]: { [param]: { leve: 12345 } } });
     const thr = loadMicThresholds();
     expect(thr[area][param].leve).toBe(12345);
+  });
+});
+
+/* A30 (2026-11-06, usuario: «×10 y ×5, como la ficha») · Algas Mensual se clasifica con SU área ('algas-mensual', la de la
+   ficha de captura): Pseudomonas ×5 → 10 UFC es Moderado (2 colonias). Con la de Hisopado ('algas', ×20) sería Mínimo. */
+describe('A30 · Algas Mensual con su área propia', () => {
+  const fila = (formato) => ({ _SheetOrigin: 'Microbiología', Formato: formato, 'Pseudomonas UFC': '10' });
+  it('10 UFC de Pseudomonas: Moderado en Mensual, Mínimo en Hisopado', () => {
+    const nivel = (formato) => (meltRow(fila(formato)).find((r) => r.key === 'pseudo') || {}).nivel;
+    expect(nivel('Algas Mensual')).toBe('Moderado');
+    expect(nivel('Algas Hisopado')).toBe('Mínimo');
   });
 });
