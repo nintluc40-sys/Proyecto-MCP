@@ -52,6 +52,8 @@ describe('A24 · el lote de cada lectura de Control_Tanque', () => {
     expect(loteDeLectura(t1)).toBe('AB');
     expect(loteDeLectura(t2)).toBe('L1');
     expect(loteDeLectura(t3)).toBe('');
+    // El tanque, por su número: «2» es el «TQ 2» de Larvicultura.
+    expect(loteDeLectura(T({ Tanque: '2', Fecha: '01/06/2026', OD: '5' }))).toBe('L1');
   });
 
   it('🔴 comparar dos lotes en OXÍGENO ya no da «Sin datos» (antes, siempre)', () => {
