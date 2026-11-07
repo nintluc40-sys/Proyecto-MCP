@@ -148,6 +148,16 @@ export function horometros(lecturas, trabajos, equipos) {
 }
 /** El horómetro actual de un equipo: el MAYOR conocido (como el Excel), con su fecha; null si no hay ninguno. Si varias
  *  lecturas dan ese valor, la MÁS RECIENTE (2026-10-30, usuario: «La más reciente»; antes, la primera de la hoja). */
+/** A31 (2026-11-07, usuario: «La lectura de ese día») · la lectura del horómetro de un equipo en una fecha: la del MISMO día o la
+ *  anterior más reciente (en el mismo día, la mayor). null si no hay ninguna hasta esa fecha. */
+export function horometroEnFecha(lista, codigo, fecha) {
+  let u = null;
+  (lista || []).forEach((x) => {
+    if (x.equipo !== codigo || !x.fecha || x.fecha > fecha) return;
+    if (!u || x.fecha > u.fecha || (x.fecha === u.fecha && x.h > u.h)) u = x;
+  });
+  return u;
+}
 export function horometroActual(lista, codigo) {
   let u = null;
   (lista || []).forEach((x) => { if (x.equipo === codigo && (!u || x.h > u.h || (x.h === u.h && orden(x, u) > 0))) u = x; });
@@ -169,13 +179,18 @@ export function proximos({ equipos, plan, trabajos, lista, hoy }) {
       const hechos = (trabajos || []).filter((t) => t.equipo === e.codigo && t.actividad === p.actividad && t.estado === 'Completado');
       let ultimo = null;
       hechos.forEach((t) => { if (!ultimo || t.fecha > ultimo.fecha || (t.fecha === ultimo.fecha && (t.horometro || 0) > (ultimo.horometro || 0))) ultimo = t; });
-      const ultimoH = ultimo ? horasReales(ultimo.horometro, eq.get(e.codigo), ultimo.fecha) : null;
+      let ultimoH = ultimo ? horasReales(ultimo.horometro, eq.get(e.codigo), ultimo.fecha) : null;
+      /* A31 (2026-11-07, usuario: «La lectura de ese día») · un Completado sin horómetro toma la lectura del equipo de ese día (o la
+         anterior). Antes se calculaba como si nunca se hubiera hecho: con 10 000 h y un intervalo de 2 000, «VENCIDO −8 000 h». */
+      let deLectura = false;
+      if (ultimo && ultimoH == null) { const l = horometroEnFecha(lista, e.codigo, ultimo.fecha); if (l) { ultimoH = l.h; deLectura = true; } }
       let base = 'Sin intervalo', proxH = null, proxF = '';
       if (conPlan) {
-        if (ultimo) base = 'Último registro';
+        if (ultimo) base = ultimoH == null && p.horas != null ? 'Último registro sin horómetro' : deLectura ? 'Último registro · horómetro de ese día' : 'Último registro';
         else if (p.primer != null) base = 'Primer cambio';
         else base = 'Desde 0 h (estimado)';
-        if (p.horas != null) proxH = ultimo && ultimoH != null ? ultimoH + p.horas : (p.primer != null ? p.primer : p.horas);
+        // Hecho sin ninguna lectura que sirva: no se estima por horas (SIN DATOS, con su motivo en `base`), en vez de «desde 0».
+        if (p.horas != null) proxH = ultimo ? (ultimoH != null ? ultimoH + p.horas : null) : (p.primer != null ? p.primer : p.horas);
         if (p.dias != null && ultimo) proxF = masDias(ultimo.fecha, p.dias);
       }
       const faltanH = proxH != null && actual ? r2(proxH - actual.h) : null;
@@ -242,10 +257,14 @@ export function serie(lecturas, equipos, codigo, param) {
 
 /* ── 📊 Indicadores ─────────────────────────────────────── */
 const suma = (l, k) => r2(l.reduce((a, x) => a + (x[k] || 0), 0));
+/* A31 (2026-11-07, usuario: «Sólo los Completados») · los indicadores, el mes a mes y «por actividad» cuentan sólo los trabajos
+   Completados: un Pendiente o En proceso sumaba su parada y su costo, y un correctivo pendiente bajaba el MTBF. */
+const completados = (trabajos) => (trabajos || []).filter((t) => t.estado === 'Completado');
 /** Por equipo y de la flota, como la hoja «Estadísticas» del Excel. Horas operadas = horómetro actual (arrancaron en 0 h). */
 export function indicadores({ equipos, trabajos, lista }) {
+  const hechos = completados(trabajos);
   const porEquipo = (equipos || []).map((e) => {
-    const t = (trabajos || []).filter((x) => x.equipo === e.codigo);
+    const t = hechos.filter((x) => x.equipo === e.codigo);
     const corr = t.filter((x) => x.tipo === 'Correctivo');
     const prev = t.filter((x) => x.tipo === 'Preventivo').length;
     const actual = horometroActual(lista, e.codigo);
@@ -256,7 +275,8 @@ export function indicadores({ equipos, trabajos, lista }) {
     return { equipo: e.codigo, ubicacion: e.ubicacion, fueraDeServicio: e.fueraDeServicio, horas, preventivos: prev, correctivos: corr.length,
       total: t.length, pctPreventivo: prev + corr.length ? Math.round(prev / (prev + corr.length) * 100) : null,
       paradaTotal: suma(t, 'parada'), paradaFallas, mtbf, mttr,
-      disponibilidad: mtbf != null && mtbf + mttr > 0 ? r2(mtbf / (mtbf + mttr) * 100) : 100, costo: suma(t, 'costo') };
+      // A31 · sin ninguna lectura del horómetro no se sabe (null, «—»); con lecturas y sin fallas, 100 %.
+      disponibilidad: horas == null ? null : mtbf != null && mtbf + mttr > 0 ? r2(mtbf / (mtbf + mttr) * 100) : 100, costo: suma(t, 'costo') };
   });
   const tot = (k) => r2(porEquipo.reduce((a, x) => a + (x[k] || 0), 0));
   const corr = tot('correctivos'), prev = tot('preventivos');
@@ -267,14 +287,15 @@ export function indicadores({ equipos, trabajos, lista }) {
     pctPreventivo: prev + corr ? Math.round(prev / (prev + corr) * 100) : null, paradaTotal: tot('paradaTotal'),
     horas: tot('horas'), mtbf: corr ? r2(tot('horas') / corr) : null, mttr: corr ? r2(tot('paradaFallas') / corr) : null,
     disponibilidad: disp.length ? r2(disp.reduce((a, b) => a + b, 0) / disp.length) : null, costo: tot('costo'),
-    masFallas: peor ? peor.equipo : '' } };
+    masFallas: peor ? peor.equipo : '',
+    sinCompletar: (trabajos || []).length - hechos.length } };   // A31 · los que no cuentan, para decirlo
 }
 /** Los años con trabajos, del más reciente al más viejo. */
 export function anios(trabajos) { return [...new Set((trabajos || []).map((t) => +t.fecha.slice(0, 4)))].sort((a, b) => b - a); }
 /** Mes a mes de un año: preventivos, correctivos, total, parada y costo. */
 export function mensual(trabajos, anio) {
   const meses = Array.from({ length: 12 }, (_, i) => ({ mes: i + 1, preventivos: 0, correctivos: 0, total: 0, parada: 0, costo: 0 }));
-  (trabajos || []).forEach((t) => {
+  completados(trabajos).forEach((t) => {   // A31 · sólo los Completados
     if (+t.fecha.slice(0, 4) !== anio) return;
     const m = meses[+t.fecha.slice(5, 7) - 1];
     m.total++;
@@ -290,7 +311,7 @@ export function porActividad(trabajos, plan) {
   const nombres = (plan || []).map((p) => p.actividad);
   (trabajos || []).forEach((t) => { if (t.actividad && nombres.indexOf(t.actividad) === -1) nombres.push(t.actividad); });
   return nombres.map((a) => {
-    const l = (trabajos || []).filter((t) => t.actividad === a);
+    const l = completados(trabajos).filter((t) => t.actividad === a);   // A31 · sólo los Completados
     return { actividad: a, veces: l.length, parada: suma(l, 'parada'), costo: suma(l, 'costo') };
   });
 }

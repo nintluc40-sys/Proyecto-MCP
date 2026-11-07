@@ -258,3 +258,37 @@ describe('Mantenimiento · ⬇ el Excel', () => {
     expect(h[2][1][0]).toContain('MTBF (h)');
   });
 });
+
+/* A31 (2026-11-07, decisiones del usuario) · un Completado sin horómetro toma «La lectura de ese día»; los indicadores cuentan
+   «Sólo los Completados»; y sin ninguna lectura del horómetro, la disponibilidad no se sabe («—»). */
+describe('Mantenimiento · A31', () => {
+  it('🔴 un cambio Completado SIN horómetro toma la lectura del equipo de ese día (antes: «desde 0», VENCIDO)', () => {
+    // BLW-04: el 22/10 lee 513,38 h, y ese mismo día se cambia el aceite sin anotar el horómetro
+    const m = modelo(LIBRO.concat([T('22/10/2026', 'BLW-04', 'Preventivo', 'Cambio de aceite', '', { ID: 'MT-sin' })]));
+    const p = uno(proximos({ ...m, hoy: '2026-10-25' }), 'BLW-04');
+    expect(p).toMatchObject({ ultimoH: 513.38, proxH: 3513.38, estado: MNT_ESTADO.AL_DIA, base: 'Último registro · horómetro de ese día' });
+  });
+  it('sin ninguna lectura hasta ese día, SIN DATOS y lo dice (no VENCIDO)', () => {
+    const m = modelo(LIBRO.concat([T('1/10/2026', 'BLW-05', 'Preventivo', 'Cambio de aceite', '', { ID: 'MT-sin2' })]));
+    const p = uno(proximos({ ...m, hoy: '2026-10-25' }), 'BLW-05');
+    expect(p).toMatchObject({ ultimoFecha: '2026-10-01', proxH: null, estado: MNT_ESTADO.SIN_DATOS, base: 'Último registro sin horómetro' });
+  });
+  it('🔴 los indicadores, el mes a mes y «por actividad» cuentan sólo los Completados, y dicen cuántos no', () => {
+    const extra = [T('20/10/2026', 'BLW-02', 'Correctivo', 'Otro', '1000', { Estado: 'Pendiente', 'Parada (h)': '5', 'Costo (USD)': '300', ID: 'MT-p' }),
+      T('20/10/2026', 'BLW-02', 'Correctivo', 'Otro', '1000', { Estado: 'En proceso', 'Parada (h)': '2', 'Costo (USD)': '100', ID: 'MT-q' })];
+    const antes = indicadores(modelo()), despues = indicadores(modelo(LIBRO.concat(extra)));
+    expect(despues.porEquipo.find((x) => x.equipo === 'BLW-02')).toMatchObject(
+      { correctivos: 0, paradaTotal: antes.porEquipo.find((x) => x.equipo === 'BLW-02').paradaTotal, costo: antes.porEquipo.find((x) => x.equipo === 'BLW-02').costo });
+    expect(despues.flota.sinCompletar).toBe(2);
+    expect(antes.flota.sinCompletar).toBe(0);
+    const trab = modelo(LIBRO.concat(extra)).trabajos;
+    expect(mensual(trab, 2026)[9].correctivos).toBe(0);
+    expect(porActividad(trab, []).find((x) => x.actividad === 'Otro').costo).toBe(porActividad(modelo().trabajos, []).find((x) => x.actividad === 'Otro').costo);
+  });
+  it('sin ninguna lectura del horómetro, la disponibilidad es «—» (null); con lecturas y sin fallas, 100 %', () => {
+    const m = modelo(LIBRO.concat([E('BLW-99', 'FB 441 C')]));
+    const ind = indicadores(m);
+    expect(ind.porEquipo.find((x) => x.equipo === 'BLW-99').disponibilidad).toBeNull();
+    expect(ind.porEquipo.find((x) => x.equipo === 'BLW-02').disponibilidad).toBe(100);
+  });
+});

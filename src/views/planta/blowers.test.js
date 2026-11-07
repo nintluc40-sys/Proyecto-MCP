@@ -150,7 +150,7 @@ describe('(4) la próxima parada del módulo, estimada, y si su próximo cambio 
   const aceite = (over = {}) => ({ actividad: 'Cambio de aceite', estado: MNT_ESTADO.AL_DIA, proxH: 3000, proxF: '', ...over });
 
   it('en cultivo: su siembra + la duración típica del módulo, con cuántas corridas salió', () => {
-    expect(proximaParada(CM, null, null, HOY)).toEqual({ fecha: '2026-11-10', pasada: false, dias: 21, n: 6, cae: null });
+    expect(proximaParada(CM, null, null, HOY)).toEqual({ fecha: '2026-11-10', pasada: false, dias: 21, n: 6, cae: null, actividad: '' });
   });
   it('🔴 el horómetro se proyecta a 24 h por día de cultivo: según lo que le falte, cae antes o después', () => {
     const lect = { h: 2700, fecha: '2026-10-25' };   // 16 días hasta el 10/11 = 384 h → 3 084 h
@@ -189,8 +189,27 @@ describe('(4) la próxima parada del módulo, estimada, y si su próximo cambio 
   it('blowersPlanta la lleva con el próximo cambio y el horómetro de su blower', () => {
     const crono = { modulos: { M4: { ...CM, inicio: '2026-10-10' }, M1: { tipo: 'despachado' } } };
     const { porModulo } = blowersPlanta(LIBRO, crono, HOY);
-    expect(porModulo.M4[0].parada, 'BLW-04: su aceite ya venció').toEqual({ fecha: '2026-10-30', pasada: false, dias: 21, n: 6, cae: null });
+    expect(porModulo.M4[0].parada, 'BLW-04: su aceite ya venció').toEqual({ fecha: '2026-10-30', pasada: false, dias: 21, n: 6, cae: null, actividad: '' });
     expect(porModulo.M1[0].parada).toEqual({ ahora: true });
     expect(blowersPlanta(LIBRO, null, HOY).porModulo.M4[0].parada, 'sin cronograma').toBe(null);
+  });
+});
+
+/* A31 (2026-11-07) · el «cae antes/después» se juzga con la más urgente que TENGA horas o fecha: una actividad nunca hecha y sin
+   dato (SIN DATOS va antes que AL DÍA) ya no tapa el aviso de otra que sí cae ANTES de la parada, y se nombra de cuál habla. */
+describe('A31 · la parada con la actividad que tenga dato', () => {
+  const CM = { tipo: 'cultivo', inicio: '2026-10-21', ciclo: { dias: 21, n: 6 } };   // parada estimada: 10/11
+  it('una «Limpieza» nunca hecha y sin intervalo en horas no tapa al aceite, que cae ANTES', () => {
+    const plan = [...PLAN, { _SheetOrigin: 'Mantenimiento Plan', Actividad: 'Limpieza general', 'Intervalo (días)': '30' }];
+    const libro = LIBRO.filter((r) => r._SheetOrigin !== 'Mantenimiento Plan').concat(plan);
+    // BLW-11 (Módulo 1): 164 h el 22/10; su aceite toca a las 500 h (AL DÍA hoy), pero con 24 h por día de cultivo llega antes del 10/11
+    const { porModulo } = blowersPlanta(libro, { modulos: { M1: CM } }, HOY);
+    const b = porModulo.M1[0];
+    expect(b.proximo.actividad, 'la más urgente es la nunca hecha (SIN DATOS)').toBe('Limpieza general');
+    expect(b.parada).toMatchObject({ cae: 'antes', actividad: 'Cambio de aceite' });
+  });
+  it('con algo vencido, como siempre: no hay «cae» (lo vencido manda)', () => {
+    const { porModulo } = blowersPlanta(LIBRO, { modulos: { M4: { ...CM, inicio: '2026-10-10' } } }, HOY);
+    expect(porModulo.M4[0].parada).toMatchObject({ cae: null, actividad: '' });
   });
 });

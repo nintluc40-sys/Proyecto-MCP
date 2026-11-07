@@ -100,7 +100,8 @@ export function proximaParada(cm, proximo, horometro, hoy) {
     if (proximo.proxF) { sabe = true; antes = antes || proximo.proxF <= fecha; }
     if (sabe) cae = antes ? 'antes' : 'despues';
   }
-  return { fecha, pasada, dias: cm.ciclo.dias, n: cm.ciclo.n, cae };
+  // A31 · `actividad`: de cuál habla `cae` (puede no ser la más urgente del blower: ver `blowersPlanta`).
+  return { fecha, pasada, dias: cm.ciclo.dias, n: cm.ciclo.n, cae, actividad: cae ? proximo.actividad : '' };
 }
 
 /**
@@ -128,7 +129,10 @@ export function blowersPlanta(rows, crono, hoy) {
       codigo: e.codigo, modelo: e.modelo, horometro,
       proximo: suyos[0] || null, vencidos: suyos.filter((p) => p.estado === MNT_ESTADO.VENCIDO),
       noAvanza: horometroNoAvanza(lista, e.codigo, cm, hoy),
-      parada: proximaParada(cm, suyos[0] || null, horometro, hoy),
+      /* A31 (2026-11-07) · el «cae antes/después» se juzga con la más urgente que TENGA horas o fecha (o esté vencida, que manda
+         como siempre): la más urgente a secas podía ser una actividad nunca hecha y sin dato (SIN DATOS va antes que AL DÍA), y
+         entonces se perdía el aviso de otra que sí cae ANTES de la parada. */
+      parada: proximaParada(cm, suyos.find((p) => p.estado === MNT_ESTADO.VENCIDO || p.proxH != null || p.proxF) || suyos[0] || null, horometro, hoy),
     });
   });
   return { porModulo };

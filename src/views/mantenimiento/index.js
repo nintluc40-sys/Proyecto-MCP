@@ -178,7 +178,7 @@ function indicadoresHTML(m) {
     + '<td class="mn-num">' + x.correctivos + '</td><td class="mn-num">' + x.total + '</td><td class="mn-num">' + pctTxt(x.pctPreventivo) + '</td>'
     + '<td class="mn-num">' + fmtH(x.paradaTotal) + '</td><td class="mn-num">' + fmtH(x.paradaFallas) + '</td>'
     + '<td class="mn-num">' + fmtH(x.mtbf) + '</td><td class="mn-num">' + fmtH(x.mttr) + '</td>'
-    + '<td class="mn-num' + (x.disponibilidad < META.disponibilidad ? ' mn-fuera' : '') + '">' + fmtH(x.disponibilidad) + ' %</td><td class="mn-num">' + usd(x.costo) + '</td></tr>').join('');
+    + '<td class="mn-num' + (x.disponibilidad != null && x.disponibilidad < META.disponibilidad ? ' mn-fuera' : '') + '">' + pctTxt(x.disponibilidad == null ? null : fmtH(x.disponibilidad)) + '</td><td class="mn-num">' + usd(x.costo) + '</td></tr>').join('');
   const listaAnios = anios(m.trabajos);
   if (!listaAnios.includes(+vState.anio)) vState.anio = String(listaAnios[0] || new Date().getFullYear());
   const mes = mensual(m.trabajos, +vState.anio);
@@ -192,7 +192,9 @@ function indicadoresHTML(m) {
     + act.map((x) => '<tr><td>' + esc(x.actividad) + '</td><td class="mn-num">' + x.veces + '</td><td class="mn-num">' + fmtH(x.parada) + '</td><td class="mn-num">' + usd(x.costo) + '</td></tr>').join('')
     + '</tbody></table></div>';
   return '<section class="card mn-card"><h3 class="mn-h3">La flota</h3><p class="mn-nota">Horas operadas = horómetro actual (los equipos arrancaron en 0 h). '
-    + 'MTBF = horas ÷ correctivos; MTTR = parada por fallas ÷ correctivos; disponibilidad = MTBF ÷ (MTBF + MTTR), 100 % mientras no haya fallas.</p>' + kpis + '</section>'
+    + 'MTBF = horas ÷ correctivos; MTTR = parada por fallas ÷ correctivos; disponibilidad = MTBF ÷ (MTBF + MTTR), 100 % mientras no haya fallas (sin ninguna lectura del horómetro, «—»). '
+    // A31 (2026-11-07, usuario: «Sólo los Completados») · lo que no cuenta, dicho
+    + 'Cuentan sólo los trabajos Completados' + (f.sinCompletar ? ': ' + f.sinCompletar + ' pendiente(s) o en proceso no entran todavía.' : '.') + '</p>' + kpis + '</section>'
     + '<section class="card mn-card"><h3 class="mn-h3">Por equipo</h3><div class="mn-scroll"><table class="mn-tabla"><thead><tr><th>Equipo</th><th>Ubicación</th>'
     + '<th>Horas operadas</th><th>Prev.</th><th>Corr.</th><th>Total</th><th>% prev.</th><th>Parada (h)</th><th>Por fallas (h)</th><th>MTBF (h)</th><th>MTTR (h)</th>'
     + '<th>Disponibilidad</th><th>Costo</th></tr></thead><tbody>' + filas + '</tbody></table></div></section>'

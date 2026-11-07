@@ -157,6 +157,16 @@ describe('Mantenimiento · 📊 Indicadores', () => {
     expect([...fila.children].slice(9, 11).map((td) => td.textContent)).toEqual(['550', '4']);
   });
 
+  /* A31 (2026-11-07, usuario: «Sólo los Completados») · un correctivo Pendiente no cuenta (ni su parada ni su costo), y se dice. */
+  it('A31 · un correctivo Pendiente no cuenta en los indicadores, y la nota dice cuántos quedan', () => {
+    abrir(LIBRO.concat([T('27/10/2026', 'BLW-04', 'Correctivo', 'Reparación / correctivo', '520', { Estado: 'Pendiente', 'Parada (h)': '6', 'Costo (USD)': '50', ID: 'MT-pend' })]));
+    expect(kpi('Correctivos')).toBe('0');
+    expect(kpi('Costo total')).toBe('$0,00');
+    expect(root.querySelector('.mn-nota').textContent).toContain('Cuentan sólo los trabajos Completados: 1 pendiente(s) o en proceso no entran todavía.');
+    abrir(LIBRO);
+    expect(root.querySelector('.mn-nota').textContent).toContain('Cuentan sólo los trabajos Completados.');
+  });
+
   it('mes a mes: el año del último trabajo, su tabla y su gráfico', () => {
     abrir(LIBRO.concat(FALLAS));
     expect(root.querySelector('[data-mn-sel="anio"]').value).toBe('2026');

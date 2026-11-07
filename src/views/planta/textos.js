@@ -109,8 +109,9 @@ function txtParada(b) {
   const cuando = p.pasada ? 'Hoy (ya pasó sus ~' + p.dias + ' días típicos, de sus últimas ' + p.n + ' corridas)'
     : '≈ ' + dm(p.fecha) + ' (estimada: ~' + p.dias + ' días, sus últimas ' + p.n + ' corridas)';
   if (b.vencidos.length) return cuando + ' · lo vencido puede hacerse en esa parada';
-  if (!p.cae || !b.proximo) return cuando;
-  return cuando + ' · ' + minus(b.proximo.actividad) + (p.cae === 'antes' ? ' cae ANTES de esa parada' : ' cae después de esa parada');
+  const actividad = p.actividad || (b.proximo && b.proximo.actividad);   // A31 · la actividad de la que habla `cae`
+  if (!p.cae || !actividad) return cuando;
+  return cuando + ' · ' + minus(actividad) + (p.cae === 'antes' ? ' cae ANTES de esa parada' : ' cae después de esa parada');
 }
 /** Los blowers de un módulo para su ficha y «Qué atender hoy»: sólo hoy (un mes pasado se ve como estaba, sin ellos). */
 const blowersDe = (g, ctx) => (ctx.cargado && !ctx.mesPasado && ctx.blowers && ctx.blowers.porModulo ? ctx.blowers.porModulo[g.id] || [] : []);

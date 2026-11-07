@@ -448,6 +448,14 @@ describe('🔧 F3 · el blower del módulo en su ficha y en «Qué atender hoy»
     expect(txt({ proximo: AL_DIA, vencidos: [], parada: { ahora: true } })).toBe('Ahora: módulo sin cultivo');
     expect(txt({ parada: null }), 'sin con qué estimar, no sale la fila').toBeUndefined();
   });
+
+  it('A31 · el aviso nombra la actividad de la que habla la parada (puede no ser la más urgente del blower)', () => {
+    const SIN = { actividad: 'Limpieza general', estado: MNT_ESTADO.SIN_DATOS, intervaloH: null, intervaloD: 30, actualH: 200, faltanH: null, faltanD: null };
+    const txt = (b) => Object.fromEntries(fichaGrupo(modulo(cultivo()), conBlowers(HOY, blower(b))).rows)['Próxima parada'];
+    const P = { fecha: '2026-11-10', pasada: false, dias: 21, n: 6 };
+    expect(txt({ proximo: SIN, vencidos: [], parada: { ...P, cae: 'antes', actividad: 'Cambio de aceite' } }))
+      .toBe('≈ 10/11 (estimada: ~21 días, sus últimas 6 corridas) · cambio de aceite cae ANTES de esa parada');
+  });
   it('el horómetro que no avanza sale en la ficha, con el tramo', () => {
     expect(filasBlower(modulo(cultivo()), conBlowers(HOY, blower({ noAvanza: NO_AVANZA }))).at(-1))
       .toEqual(['⚠ Horómetro', 'sumó 50 h en 5 días con el módulo en cultivo (esperadas ~120) · del 17/10 al 22/10']);
