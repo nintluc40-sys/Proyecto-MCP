@@ -134,18 +134,21 @@ export function monthIndexOfCorrida(corrida) {
   return idx;
 }
 
+// Revisión del 07-11 (usuario: «Sí, sólo esas dos») · los meses con datos y las corridas de un mes leían la corrida con `+c`,
+// así que «581-582» no salía en la lista de meses ni en el selector de corridas (Larvicultura, Planta, Vista Ejecutiva). Ahora
+// pasa entera por `monthIndexOfCorrida` (su primer número, A29) y se ordena por ese número.
 /** Índices de meses (en MESES_PROD) con datos, de viejo a reciente. */
 export function presentMonths() {
   const present = new Set();
-  larvRows().forEach((r) => { const n = +getField(r, F.corrida); if (!isNaN(n)) { const i = monthIndexOfCorrida(n); if (i >= 0) present.add(i); } });
+  larvRows().forEach((r) => { const i = monthIndexOfCorrida(getField(r, F.corrida)); if (i >= 0) present.add(i); });
   return [...present].sort((a, b) => a - b);
 }
 
-/** Corridas (con datos) del mes, ordenadas ascendente. */
+/** Corridas (con datos) del mes, ordenadas ascendente (por su primer número; a igual número, «581» antes que «581-582»). */
 export function corridasOfMonth(mIdx) {
   const set = new Set();
-  larvRows().forEach((r) => { const c = getField(r, F.corrida), n = +c; if (!isNaN(n) && monthIndexOfCorrida(n) === mIdx) set.add(c); });
-  return [...set].sort((a, b) => (+a) - (+b));
+  larvRows().forEach((r) => { const c = getField(r, F.corrida); if (monthIndexOfCorrida(c) === mIdx) set.add(c); });
+  return [...set].sort((a, b) => numeroDeCorrida(a) - numeroDeCorrida(b) || natCmp(a, b));
 }
 
 /** Módulos (con datos) de una corrida, en orden natural. Memoizado por identidad de

@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { store } from './store.js';
-import { monthIndexOfCorrida, monthLabelAt, modCorStats, modCorDispatched, modulesOfCorrida, corridasOfMonth, ventanaDeMaduracion } from './prodCalendar.js';
+import { monthIndexOfCorrida, monthLabelAt, modCorStats, modCorDispatched, modulesOfCorrida, corridasOfMonth, presentMonths, ventanaDeMaduracion } from './prodCalendar.js';
 
 afterEach(() => { store.globalData = []; });
 
@@ -393,5 +393,20 @@ describe('A29 · numeroDeCorrida', () => {
     expect(monthIndexOfCorrida(+'581-582'), 'control: así se leía en Algas').toBe(-1);
     // control: así se leía en Visitante: 581582 cae en un mes VIRTUAL absurdo (decenas de miles), que nadie elige
     expect(monthIndexOfCorrida(parseInt('581-582'.replace(/\D/g, ''), 10)), 'control: así, en Visitante').toBeGreaterThan(1000);
+  });
+});
+
+/* Revisión del 07-11 (usuario: «Sí, sólo esas dos») · los meses con datos y las corridas de un mes leían la corrida con `+c`: una
+   corrida con rango no salía en la lista de meses ni en el selector de corridas (Larvicultura, Planta, Vista Ejecutiva). */
+describe('Revisión del 07-11 · presentMonths y corridasOfMonth con la corrida con rango', () => {
+  const fila = (cor) => ({ _SheetOrigin: 'Larvicultura', 'Módulo': 'M06', Corrida: cor, Tanque: 'TQ1', Fecha: '01/07/2026' });
+  it('🔴 un mes con SÓLO corridas con rango sale en la lista de meses', () => {
+    store.globalData = [fila('581-582'), fila('sin corrida'), fila('')];
+    expect(presentMonths()).toEqual([monthIndexOfCorrida(581)]);
+  });
+  it('🔴 la corrida con rango sale entre las de su mes, por su primer número y tras la suya sola', () => {
+    store.globalData = [fila('583'), fila('581-582'), fila('581'), fila('573'), fila('sin corrida')];
+    expect(corridasOfMonth(monthIndexOfCorrida(581))).toEqual(['581', '581-582', '583']);
+    expect(corridasOfMonth(monthIndexOfCorrida(573)), 'otro mes, sin cambios').toEqual(['573']);
   });
 });
