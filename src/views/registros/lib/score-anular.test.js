@@ -119,6 +119,17 @@ describe('A10 · Score: 🧹 un tanque ya enviado', () => {
     expect(ultimo().rows.map((r) => r[col('Tanque')]).sort()).toEqual([1, 2]);
   });
 
+  it('🔴 vaciado y vuelto a evaluar ANTES de enviar: va con sus puntos, no anulado', async () => {
+    evaluar({ 1: 2, 2: 3 });
+    await enviar();
+    H.scoreTanque(2); H.scoreVaciarTanque();
+    H.scoreGuardar();
+    H.scoreTanque(2); marcarTodo(1);
+    await enviar();
+    expect(anuladas(ultimo())).toHaveLength(0);
+    expect(ultimo().rows.filter((r) => r[col('Tanque')] === 2)).toHaveLength(1);
+  });
+
   it('lo que nunca salió no se anula', async () => {
     evaluar({ 1: 2, 2: 3 });
     H.scoreGuardar();

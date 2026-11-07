@@ -20,7 +20,7 @@ import { join } from 'node:path';
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['savePatLocal', 'syncPat', '_patRaw', 'renderPatNuevo', 'syncMic', '_micRaw', 'renderMicNuevo',
-  'syncCal', '_calRaw', 'renderCalNuevo', 'CAL_FORMATS', 'micTypeSet', 'LAB_ANULAR_KEY', '_lastSyncFingerprint',
+  'syncCal', '_calRaw', 'renderCalNuevo', 'CAL_FORMATS', 'MIC_FORMATS', 'micFmtChange', 'micTypeSet', 'LAB_ANULAR_KEY', '_lastSyncFingerprint',
   'PAT_SHEET_HEADERS', 'MIC_SHEET_HEADERS', 'CAL_SHEET_HEADERS'];
 const H = {};
 const envios = [];
@@ -198,6 +198,25 @@ describe('A10 · Microbiología y Calidad de Agua: lo mismo, con departamento y 
     expect(an[0][MH.indexOf('Formato')]).toBe(ultimo().rows[0][MH.indexOf('Formato')]);   // el formato, con su ROTULO de la hoja
     expect(an[0][MH.indexOf('Responsable')]).toBe('⛔ ANULADA · pasó al 03/11/2026 · corrida 586');
     expect(H._micRaw().map((r) => r.data.corrida)).toEqual(['586']);
+  });
+
+  it('otro FORMATO del mismo análisis, con la misma fecha, no es un cambio de fecha: no pregunta ni anula', async () => {
+    const llenar = (fmt) => {
+      const ns = Array.from(document.querySelectorAll(`[name^="mic_${fmt}_1_"]`)).map((e) => e.name);
+      const p = H.MIC_FORMATS[fmt].params.find((k) => k !== 'vtot' && ns.includes(`mic_${fmt}_1_${k}`));
+      celda(`mic_${fmt}_1_${p}`, '5');
+    };
+    H.micTypeSet('bact'); H.renderMicNuevo();
+    campo('mic-fm', D1); campo('mic-corr', '585'); campo('mic-resp', 'Analista A');
+    llenar('larv-muestra');
+    await H.syncMic();
+    const f2 = Object.keys(H.MIC_FORMATS).find((k) => k !== 'larv-muestra' && H.MIC_FORMATS[k].depto === 'Larvicultura');
+    H.micFmtChange(f2);
+    llenar(f2);
+    await H.syncMic();
+    expect(preguntas).toHaveLength(0);
+    expect(anuladas(ultimo(), H.MIC_SHEET_HEADERS)).toHaveLength(0);
+    expect(H._micRaw().map((r) => r.data.formato).sort()).toEqual(['larv-muestra', f2].sort());
   });
 
   it('🔴 Calidad de Agua', async () => {
