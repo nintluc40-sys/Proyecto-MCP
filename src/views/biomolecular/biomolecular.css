@@ -89,6 +89,8 @@
 
 /* KPI cards */
 .biomol .kpi { padding: 14px 16px; }
+/* A30 (2026-11-06) · la tarjeta de un patógeno apagado en el filtro de diagnóstico: atenuada (su texto dice «fuera del filtro»). */
+.biomol .kpi.is-fuera { opacity: .45; }
 .biomol .kpi-glow { position: absolute; top: -20px; right: -20px; width: 80px; height: 80px; border-radius: 50%; opacity: .07; pointer-events: none; }
 .biomol .kpi-label { font-size: 11px; color: var(--bm-muted); margin-top: 4px; }
 .biomol .kpi-value { font-size: 28px; font-weight: 800; line-height: 1; color: var(--bm-text); }
@@ -221,6 +223,8 @@
 .biomol .report-toggle { background: var(--bm-surface); border: 1px solid var(--bm-border); border-radius: 6px; padding: 4px 11px; font-size: 11px; color: var(--bm-muted); cursor: pointer; font-family: var(--bm-font); transition: all .15s; }
 .biomol .report-toggle:hover { border-color: var(--bm-accent); color: var(--bm-accent); }
 .biomol .report-toggle.on { background: var(--bm-accent-soft); border-color: var(--bm-accent); color: var(--bm-accent); font-weight: 600; }
+/* A30 (2026-11-06) · Promedio y Media Móvil no aplican en «Apilada»: desactivados, se ven así. */
+.biomol .report-toggle:disabled { opacity: .45; cursor: not-allowed; border-color: var(--bm-border); color: var(--bm-muted); }
 .biomol .report-add-btn { margin-left: auto; background: linear-gradient(135deg, #0ea5e9, #6366f1); border: none; border-radius: 6px; padding: 5px 14px; font-size: 11px; font-weight: 600; color: #fff; cursor: pointer; font-family: var(--bm-font); }
 .biomol .report-add-btn:disabled { opacity: .4; cursor: not-allowed; filter: grayscale(.5); }
 .biomol .report-series-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }

@@ -347,6 +347,10 @@ const enFiltroDiag = (r) => {
   const medidos = DIAGS.filter((d) => hasVal(r[d]));
   return !medidos.length || medidos.some((d) => activeDiags.has(d));
 };
+/** A30 (2026-11-06, usuario: «Que lo sigan todos») · las muestras que deja ver la barra ENTERA, también el filtro de
+ *  diagnóstico (`enFiltroDiag`, la regla de los gráficos de filas): el total, su desglose, la tabla y el Excel. Antes
+ *  sólo los gráficos lo seguían, y con un patógeno apagado el total y la tabla contaban también sus muestras. */
+const visibles = () => filtered().filter(enFiltroDiag);
 /** Puntos del gráfico de carga: una muestra CUANTIFICADA por punto, en orden cronológico.
  *  Exportada para poder medir la selección y la clasificación sin D3 de por medio. */
 export function cargaPuntos(rows, foco = QPCR_TODOS) {
@@ -424,23 +428,28 @@ export function qpcrResumen(rows, foco = QPCR_TODOS) {
 function togClass(set, val, btn) { if (set.has(val)) { set.delete(val); btn.classList.remove('on'); } else { set.add(val); btn.classList.add('on'); } }
 
 // ── KPIs (idéntico a BIOMOL.html updateKPI) ──
-function updateKPI(data) {
+/* A30 · `data`: lo filtrado sin el filtro de diagnóstico (para un patógeno ACTIVO da lo mismo que `vis`: sus muestras medidas
+   siempre lo pasan; para uno apagado, su cifra entera, como referencia); `vis`: lo que se ve, para el total y las fechas. */
+function updateKPI(data, vis = data) {
   DIAGS.forEach((d) => {
     const measured = data.filter((r) => hasVal(r[d]));
     const pos = measured.filter((r) => isPos(r[d]));
     const pct = measured.length ? Math.round(pos.length / measured.length * 100) : 0;
     $('kv-' + d).textContent = pct + '%';
-    $('kn-' + d).textContent = `${pos.length} / ${measured.length} muestras`;
+    // A30 · la tarjeta de un patógeno apagado en el filtro se atenúa y lo dice (sus cifras siguen ahí, como referencia)
+    const fuera = !activeDiags.has(d);
+    $('kv-' + d).closest('.kpi').classList.toggle('is-fuera', fuera);
+    $('kn-' + d).textContent = `${pos.length} / ${measured.length} muestras` + (fuera ? ' · fuera del filtro' : '');
     $('kb-' + d).style.width = pct + '%';
   });
-  $('kv-total').textContent = data.length;
-  const dates = [...new Set(data.map((r) => r.f))].sort();
+  $('kv-total').textContent = vis.length;
+  const dates = [...new Set(vis.map((r) => r.f))].sort();
   $('kv-dates').textContent = dates.length;
-  $('sample-label').textContent = data.length + ' muestras';
+  $('sample-label').textContent = vis.length + ' muestras';
   if (dates.length) $('range-label').textContent = fmtD(dates[0]) + (dates.length > 1 ? ' → ' + fmtD(dates[dates.length - 1]) : '');
 }
 
-function render() { updateKPI(filtered()); renderCharts(); drawTable(); }
+function render() { updateKPI(filtered(), visibles()); renderCharts(); drawTable(); }
 
 // ── Filterbar: lugar ──
 function buildLugarList(lugares) {
@@ -510,7 +519,8 @@ function applyPreset(preset, btn) {
   else {
     // Ancla al último día CON DATOS (no a "hoy") → robusto si la carga va con retraso.
     const maxISO = allFechas[allFechas.length - 1] || new Date().toISOString().slice(0, 10);
-    const cutoff = new Date(maxISO + 'T00:00:00Z'); cutoff.setUTCDate(cutoff.getUTCDate() - parseInt(preset, 10));
+    // A30 (2026-11-06) · «7d» son 7 días CONTANDO el último: antes se restaban 7 y con `>=` entraban 8 (14 → 15, 30 → 31).
+    const cutoff = new Date(maxISO + 'T00:00:00Z'); cutoff.setUTCDate(cutoff.getUTCDate() - (parseInt(preset, 10) - 1));
     const cutoffISO = cutoff.toISOString().slice(0, 10);
     allFechas.filter((f) => f >= cutoffISO).forEach((f) => activeFechas.add(f));
     if (!activeFechas.size) allFechas.forEach((f) => activeFechas.add(f));
@@ -563,7 +573,7 @@ const rebuildLugarCheckboxes = () => document.querySelectorAll('#lugar-check-lis
 const MONTHS_ES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const formatMonth = (yyyymm) => { const [y, m] = yyyymm.split('-'); return `${MONTHS_ES[parseInt(m, 10) - 1]} ${y}`; };
 function showTotalBreakdown() {
-  const data = filtered(), modal = $('total-modal'), body = $('total-modal-body'); body.innerHTML = '';
+  const data = visibles(), modal = $('total-modal'), body = $('total-modal-body'); body.innerHTML = '';   // A30
   if (!data.length) { body.innerHTML = '<div style="text-align:center;color:var(--bm-muted);padding:30px;font-size:12px">Sin datos para los filtros activos</div>'; modal.classList.add('open'); document.body.classList.add('modal-open'); return; }
   const byLugar = {}, monthSet = new Set();
   data.forEach((r) => { const m = r.f.slice(0, 7); monthSet.add(m); (byLugar[r.lugar] ||= {})[m] = (byLugar[r.lugar][m] || 0) + 1; });
@@ -1502,7 +1512,7 @@ function setSankeyMode(mode) {
   const oBtn = $('sankey-mode-btn'), pBtn = $('sankey-psm-btn'), title = $('sankey-title');
   if (oBtn) { oBtn.classList.toggle('on', sankeyMode === 'origen'); oBtn.setAttribute('aria-pressed', sankeyMode === 'origen'); }
   if (pBtn) { pBtn.classList.toggle('on', sankeyMode === 'psm'); pBtn.setAttribute('aria-pressed', sankeyMode === 'psm'); }
-  if (title) title.textContent = sankeyMode === 'origen' ? 'Trazabilidad · Sala → Resultado → Lote → Módulo → Resultado' : sankeyMode === 'psm' ? 'Trazabilidad · Piscina → Sala → Análisis → Módulo → Análisis → Precría' : 'Flujo Operativo · Lugar → Diagnóstico → Resultado';
+  if (title) title.textContent = sankeyMode === 'origen' ? 'Trazabilidad · Sala → Resultado → Lote → Módulo → Resultado' : sankeyMode === 'psm' ? 'Trazabilidad · Piscina → Sala → Análisis → Módulo → Análisis' : 'Flujo Operativo · Lugar → Diagnóstico → Resultado';
   updateOriginResetBtn();
   drawSankey();
 }
@@ -1629,19 +1639,21 @@ function drawSankeyPSM() {
   if (!$('sankey') || !data.length) return;
   const el = $('sankey'), W = Math.max(940, el.getBoundingClientRect().width || (el.parentElement && el.parentElement.clientWidth) || 1000), diag = effDiag(sankeyDiag);
   const sup = (type, id) => originSuppressed.has(`psm:${type}|${id}`);
-  const piscOf = (r) => r.piscina || 'Sin piscina', precOf = (r) => r.precria || 'Sin precría';
+  // A30 (2026-11-06, usuario: «Desactivar y quitar») · sin la columna Precría: la hoja BIOMOL no la trae (su cabecera, medida),
+  // así que salía SIEMPRE «Sin precría». El P-S-M termina en el Análisis del módulo.
+  const piscOf = (r) => r.piscina || 'Sin piscina';
   let salaRecs = data.filter((r) => _isSala(r.lugar) && hasVal(r[diag])), modRecs = data.filter((r) => _isModulo(r.lugar) && hasVal(r[diag]));
   salaRecs = salaRecs.filter((r) => !sup('pisc', piscOf(r)) && !sup('sala', r.lugar));
-  modRecs = modRecs.filter((r) => !sup('mod', r.lugar) && !sup('prec', precOf(r)));
+  modRecs = modRecs.filter((r) => !sup('mod', r.lugar));
   if (!salaRecs.length && !modRecs.length) { svg.attr('viewBox', `0 0 ${W} 220`); svg.append('text').attr('x', W / 2).attr('y', 110).attr('fill', TH.muted).attr('text-anchor', 'middle').text(suppressedForMode().length ? 'Todos los elementos ocultos · pulsa Restaurar' : 'Sin datos de Salas/Módulos (Lugares deben iniciar con "Sala" o "Módulo")'); return; }
   const piscCount = {}, piscSala = {}, salaCount = {}, salaRes = {}, resSalaCount = { Positivo: 0, Negativo: 0 }, salaCodeRes = {};
   salaRecs.forEach((r) => { const p = piscOf(r), s = r.lugar, R = r[diag]; piscCount[p] = (piscCount[p] || 0) + 1; piscSala[`${p}|${s}`] = (piscSala[`${p}|${s}`] || 0) + 1; salaCount[s] = (salaCount[s] || 0) + 1; salaRes[`${s}|${R}`] = (salaRes[`${s}|${R}`] || 0) + 1; resSalaCount[R] = (resSalaCount[R] || 0) + 1; if (r.cod) salaCodeRes[`${r.cod}|${R}`] = (salaCodeRes[`${r.cod}|${R}`] || 0) + 1; });
-  const modCount = {}, modRes = {}, resModCount = { Positivo: 0, Negativo: 0 }, precCount = {}, resPrec = {}, codMod = {};
-  modRecs.forEach((r) => { const m = r.lugar, R = r[diag], pr = precOf(r); modCount[m] = (modCount[m] || 0) + 1; modRes[`${m}|${R}`] = (modRes[`${m}|${R}`] || 0) + 1; resModCount[R] = (resModCount[R] || 0) + 1; precCount[pr] = (precCount[pr] || 0) + 1; resPrec[`${R}|${pr}`] = (resPrec[`${R}|${pr}`] || 0) + 1; if (r.cod) codMod[`${r.cod}|${m}`] = (codMod[`${r.cod}|${m}`] || 0) + 1; });
+  const modCount = {}, modRes = {}, resModCount = { Positivo: 0, Negativo: 0 }, codMod = {};
+  modRecs.forEach((r) => { const m = r.lugar, R = r[diag]; modCount[m] = (modCount[m] || 0) + 1; modRes[`${m}|${R}`] = (modRes[`${m}|${R}`] || 0) + 1; resModCount[R] = (resModCount[R] || 0) + 1; if (r.cod) codMod[`${r.cod}|${m}`] = (codMod[`${r.cod}|${m}`] || 0) + 1; });
   const resSalaMod = {}, codTotMod = {};
   Object.entries(codMod).forEach(([k, v]) => { const c = k.split('|')[0]; codTotMod[c] = (codTotMod[c] || 0) + v; });
   Object.entries(salaCodeRes).forEach(([k, sc]) => { const [c, R] = k.split('|'); const tot = codTotMod[c]; if (!tot) return; Object.entries(codMod).forEach(([k2, mc]) => { const [c2, m] = k2.split('|'); if (c2 !== c) return; resSalaMod[`${R}|${m}`] = (resSalaMod[`${R}|${m}`] || 0) + sc * (mc / tot); }); });
-  const piscinas = Object.keys(piscCount).sort(), salas = Object.keys(salaCount).sort(), resSala = ['Positivo', 'Negativo'].filter((r) => resSalaCount[r] > 0), modulos = Object.keys(modCount).sort(), resMod = ['Positivo', 'Negativo'].filter((r) => resModCount[r] > 0), precrias = Object.keys(precCount).sort();
+  const piscinas = Object.keys(piscCount).sort(), salas = Object.keys(salaCount).sort(), resSala = ['Positivo', 'Negativo'].filter((r) => resSalaCount[r] > 0), modulos = Object.keys(modCount).sort(), resMod = ['Positivo', 'Negativo'].filter((r) => resModCount[r] > 0);
   // El nodo de resultado de Sala se dimensiona con TODAS sus muestras, pero solo emite cinta
   // por los lotes que además aparecen en algún módulo: lo que no continúa (lote que no llegó
   // a módulo, o muestra sin código) se evaporaba sin dejar rastro — medido: un nodo de 4
@@ -1660,17 +1672,17 @@ function drawSankeyPSM() {
   const totalNoCont = Object.values(noCont).reduce((s, v) => s + v, 0);
   const modItems = totalNoCont > 0.01 ? [...modulos, NOCONT] : modulos;
   const sum = (arr, f) => arr.reduce((s, k) => s + f(k), 0);
-  const totalPisc = sum(piscinas, (k) => piscCount[k]), totalSala = sum(salas, (k) => salaCount[k]), totalRS = sum(resSala, (k) => resSalaCount[k]), totalMod = sum(modulos, (k) => modCount[k]), totalRM = sum(resMod, (k) => resModCount[k]), totalPrec = sum(precrias, (k) => precCount[k]);
-  const maxCol = Math.max(totalPisc, totalSala, totalRS, totalMod + totalNoCont, totalRM, totalPrec, 1);
+  const totalPisc = sum(piscinas, (k) => piscCount[k]), totalSala = sum(salas, (k) => salaCount[k]), totalRS = sum(resSala, (k) => resSalaCount[k]), totalMod = sum(modulos, (k) => modCount[k]), totalRM = sum(resMod, (k) => resModCount[k]);
+  const maxCol = Math.max(totalPisc, totalSala, totalRS, totalMod + totalNoCont, totalRM, 1);
   const NODE_MIN = 14, GAP = 4, HEADER_Y = 8, LABEL_TOP = 34;
-  const maxItems = Math.max(piscinas.length, salas.length, resSala.length, modItems.length, resMod.length, precrias.length, 1);
+  const maxItems = Math.max(piscinas.length, salas.length, resSala.length, modItems.length, resMod.length, 1);
   const availH = Math.max(140, 420 - (maxItems - 1) * GAP), SCALE = availH / maxCol, hh = (c) => Math.max(NODE_MIN, c * SCALE);
   const positionCol = (items, getCount) => { let y = LABEL_TOP; const pos = {}; items.forEach((id) => { const ht = hh(getCount(id)); pos[id] = { y, h: ht }; y += ht + GAP; }); return { pos, bottom: y }; };
-  const piscPos = positionCol(piscinas, (p) => piscCount[p]), salaPos = positionCol(salas, (s) => salaCount[s]), rsPos = positionCol(resSala, (r) => resSalaCount[r]), modPos = positionCol(modItems, (m) => (m === NOCONT ? totalNoCont : modCount[m])), rmPos = positionCol(resMod, (r) => resModCount[r]), precPos = positionCol(precrias, (p) => precCount[p]);
-  const VH = Math.max(piscPos.bottom, salaPos.bottom, rsPos.bottom, modPos.bottom, rmPos.bottom, precPos.bottom, 240) + 18;
+  const piscPos = positionCol(piscinas, (p) => piscCount[p]), salaPos = positionCol(salas, (s) => salaCount[s]), rsPos = positionCol(resSala, (r) => resSalaCount[r]), modPos = positionCol(modItems, (m) => (m === NOCONT ? totalNoCont : modCount[m])), rmPos = positionCol(resMod, (r) => resModCount[r]);
+  const VH = Math.max(piscPos.bottom, salaPos.bottom, rsPos.bottom, modPos.bottom, rmPos.bottom, 240) + 18;
   const piscMaxLen = piscinas.length ? Math.max(...piscinas.map((p) => p.length)) : 8, mL = Math.min(120, Math.max(60, piscMaxLen * 6.4));
-  const precMaxLen = precrias.length ? Math.max(...precrias.map((p) => p.length)) : 8, mR = Math.min(160, Math.max(70, precMaxLen * 6.4 + 20));
-  const nW = 11, cWidth = W - mL - mR - nW, cx = (i) => mL + cWidth * (i / 5), c0 = cx(0), c1 = cx(1), c2 = cx(2), c3 = cx(3), c4 = cx(4), c5 = cx(5);
+  const mR = 110;   // A30 · a la derecha queda el último Análisis: «Positivo» o «Negativo» y su %
+  const nW = 11, cWidth = W - mL - mR - nW, cx = (i) => mL + cWidth * (i / 4), c0 = cx(0), c1 = cx(1), c2 = cx(2), c3 = cx(3), c4 = cx(4);
   svg.attr('viewBox', `0 0 ${W} ${VH}`); const g = svg.append('g');
   const linkW = (cnt) => Math.max(1.5, (cnt / maxCol) * 30);
   const drawLink = (x1, y1, x2, y2, w, color) => { const mx = (x1 + x2) / 2; g.append('path').attr('fill', 'none').attr('stroke', color).attr('stroke-width', w).attr('opacity', 0.62).attr('d', `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`); };
@@ -1680,7 +1692,6 @@ function drawSankeyPSM() {
   Object.entries(resSalaMod).forEach(([k, cnt]) => { const [R, m] = k.split('|'); if (!rsPos.pos[R] || !modPos.pos[m]) return; drawLink(c2 + nW, rsPos.pos[R].y + rsPos.pos[R].h / 2, c3, modPos.pos[m].y + modPos.pos[m].h / 2, linkW(cnt), 'rgba(167,139,250,.42)'); });
   Object.entries(noCont).forEach(([R, cnt]) => { if (!rsPos.pos[R] || !modPos.pos[NOCONT]) return; drawLink(c2 + nW, rsPos.pos[R].y + rsPos.pos[R].h / 2, c3, modPos.pos[NOCONT].y + modPos.pos[NOCONT].h / 2, linkW(cnt), 'rgba(100,116,139,.32)'); });
   Object.entries(modRes).forEach(([k, cnt]) => { const [m, R] = k.split('|'); if (!modPos.pos[m] || !rmPos.pos[R]) return; drawLink(c3 + nW, modPos.pos[m].y + modPos.pos[m].h / 2, c4, rmPos.pos[R].y + rmPos.pos[R].h / 2, linkW(cnt), resColor(R, true)); });
-  Object.entries(resPrec).forEach(([k, cnt]) => { const [R, pr] = k.split('|'); if (!rmPos.pos[R] || !precPos.pos[pr]) return; drawLink(c4 + nW, rmPos.pos[R].y + rmPos.pos[R].h / 2, c5, precPos.pos[pr].y + precPos.pos[pr].h / 2, linkW(cnt), resColor(R, false)); });
   const nodeTip = (sel, title, rows) => sel.on('mouseenter', (e) => showTip(`<div class="tt-title">${escH(title)}</div>` + rows.map(([k, v, cls]) => `<div class="tt-row"><span class="tt-key">${k}</span><span class="tt-val ${cls || ''}">${v}</span></div>`).join(''), e)).on('mouseleave', hideTip);
   const clickHide = (type, id) => () => { originSuppressed.add(`psm:${type}|${id}`); updateOriginResetBtn(); drawSankey(); };
   const trunc = (s, n) => s.length > n ? s.slice(0, n - 1) + '…' : s;
@@ -1691,14 +1702,13 @@ function drawSankeyPSM() {
   modulos.forEach((m) => { const pos = modPos.pos[m]; const rect = g.append('rect').attr('x', c3).attr('y', pos.y).attr('width', nW).attr('height', pos.h).attr('rx', 3).attr('fill', '#22d3ee').attr('cursor', 'pointer'); nodeTip(rect, `Módulo · ${m}`, [['Muestras', modCount[m]], ['% del total Módulo', totalMod ? Math.round(modCount[m] / totalMod * 100) + '%' : '—'], ['Acción', 'Click para ocultar']]); rect.on('click', clickHide('mod', m)); if (pos.h >= 11) { const lbl = g.append('text').attr('x', c3 + nW + 4).attr('y', pos.y + pos.h / 2).attr('dominant-baseline', 'middle').attr('fill', '#22d3ee').attr('font-size', 9).attr('cursor', 'pointer').text(trunc(m, 14)); lbl.on('click', clickHide('mod', m)); } });
   if (modPos.pos[NOCONT]) { const pos = modPos.pos[NOCONT], n1 = Math.round(totalNoCont * 10) / 10; const rect = g.append('rect').attr('x', c3).attr('y', pos.y).attr('width', nW).attr('height', pos.h).attr('rx', 3).attr('fill', '#64748b').attr('opacity', 0.7); nodeTip(rect, 'Sin módulo', [['Muestras de Sala', n1], ['Motivo', 'su lote no llegó a ningún módulo'], ['% del análisis de Sala', totalRS ? Math.round(totalNoCont / totalRS * 100) + '%' : '—']]); if (pos.h >= 11) g.append('text').attr('x', c3 + nW + 4).attr('y', pos.y + pos.h / 2).attr('dominant-baseline', 'middle').attr('fill', '#64748b').attr('font-size', 9).attr('pointer-events', 'none').text('Sin módulo'); }
   resMod.forEach((R) => { const pos = rmPos.pos[R], isP = R === 'Positivo', fill = isP ? '#ef4444' : '#22c55e'; const rect = g.append('rect').attr('x', c4).attr('y', pos.y).attr('width', nW).attr('height', pos.h).attr('rx', 3).attr('fill', fill); const pct = totalRM ? Math.round(resModCount[R] / totalRM * 100) : 0; nodeTip(rect, `Módulo · ${DLABEL[diag]} ${R}`, [['Muestras', resModCount[R]], ['% del total Módulo', pct + '%', isP ? 'pos-tag' : 'neg-tag']]); if (pos.h >= 14) { const lx = c4 + nW + 4; g.append('text').attr('x', lx).attr('y', pos.y + pos.h / 2).attr('dominant-baseline', 'middle').attr('fill', fill).attr('font-size', 9).attr('font-weight', '600').attr('pointer-events', 'none').text(R); drawPctBadge(lx, R, fill, isP, pos, pct); } });
-  precrias.forEach((p) => { const pos = precPos.pos[p]; const rect = g.append('rect').attr('x', c5).attr('y', pos.y).attr('width', nW).attr('height', pos.h).attr('rx', 3).attr('fill', '#a78bfa').attr('cursor', 'pointer'); nodeTip(rect, `Precría · ${p}`, [['Muestras (Módulo)', precCount[p]], ['% del total Precría', totalPrec ? Math.round(precCount[p] / totalPrec * 100) + '%' : '—'], ['Acción', 'Click para ocultar']]); rect.on('click', clickHide('prec', p)); if (pos.h >= 11) { const lbl = g.append('text').attr('x', c5 + nW + 4).attr('y', pos.y + pos.h / 2).attr('dominant-baseline', 'middle').attr('fill', '#a78bfa').attr('font-size', 9).attr('cursor', 'pointer').text(trunc(p, 14)); lbl.on('click', clickHide('prec', p)); } });
-  [{ x: c0, l: 'Piscina' }, { x: c1, l: 'Sala' }, { x: c2, l: 'Análisis' }, { x: c3, l: 'Módulo' }, { x: c4, l: 'Análisis' }, { x: c5, l: 'Precría' }].forEach(({ x, l }) => g.append('text').attr('x', x + nW / 2).attr('y', HEADER_Y).attr('text-anchor', 'middle').attr('fill', TH.muted).attr('font-size', 9).attr('font-weight', '700').text(l));
+  [{ x: c0, l: 'Piscina' }, { x: c1, l: 'Sala' }, { x: c2, l: 'Análisis' }, { x: c3, l: 'Módulo' }, { x: c4, l: 'Análisis' }].forEach(({ x, l }) => g.append('text').attr('x', x + nW / 2).attr('y', HEADER_Y).attr('text-anchor', 'middle').attr('fill', TH.muted).attr('font-size', 9).attr('font-weight', '700').text(l));
 }
 
 // ── TABLA + export ──
 function drawTable() {
   const tbody = $('table-body'); if (!tbody) return; tbody.innerHTML = '';
-  const data = byDateDesc(filtered());
+  const data = byDateDesc(visibles());   // A30
   const badge = (v) => !hasVal(v) ? '<span class="badge badge-na">—</span>' : isPos(v) ? '<span class="badge badge-pos">✕ POS</span>' : '<span class="badge badge-neg">✓ NEG</span>';
   const frag = document.createDocumentFragment();
   data.forEach((r) => {
@@ -1740,11 +1750,11 @@ export function biomolExportAoa(data) {
   return aoa;
 }
 
-/** Filas a exportar = filtered() acotadas al rango de fechas del modal (r.f es ISO yyyy-mm-dd). */
+/** Filas a exportar = las visibles (A30: también el filtro de diagnóstico) acotadas al rango de fechas del modal (r.f es ISO yyyy-mm-dd). */
 function exportRangeRows() {
   const from = $('bm-export-from')?.value || '';
   const to = $('bm-export-to')?.value || '';
-  return byDateDesc(filtered().filter((r) => (!from || r.f >= from) && (!to || r.f <= to)));
+  return byDateDesc(visibles().filter((r) => (!from || r.f >= from) && (!to || r.f <= to)));   // A30
 }
 function updateBmExportInfo() {
   const info = $('bm-export-info'); if (info) info.textContent = `Se exportarán ${exportRangeRows().length} registro(s) en el rango elegido.`;
@@ -1754,7 +1764,7 @@ function openExportModal() {
   // En modo AUD la exportación SÍ está permitida (es material de entrenamiento), pero el
   // modal avisa y el archivo se autoidentifica como simulación — ver runExport.
   const warn = $('bm-export-aud'); if (warn) warn.style.display = audMode ? '' : 'none';
-  const data = filtered();
+  const data = visibles();   // A30
   if (!data.length) { toast('Sin registros visibles para exportar.', 'warn'); return; }
   const dates = data.map((r) => r.f).filter(Boolean).sort();
   const f = $('bm-export-from'), t = $('bm-export-to');
@@ -1804,6 +1814,18 @@ function syncReportToggles() {
   document.querySelectorAll('#report-modal [data-chart]').forEach((b) => b.classList.toggle('on', b.dataset.chart === reportChart));
   document.querySelectorAll('#report-modal [data-metric]').forEach((b) => b.classList.toggle('on', b.dataset.metric === reportMetric));
   document.querySelectorAll('#report-modal [data-extra]').forEach((b) => b.classList.toggle('on', reportExtras.has(b.dataset.extra)));
+  extrasSegunGrafico();
+}
+/* A30 (2026-11-06, usuario: «Desactivar y quitar») · en «Apilada» la línea de promedio y la media móvil no se dibujan (no
+   tienen sentido sobre barras apiladas): sus botones se desactivan y lo dicen, en vez de encenderse sin hacer nada. */
+const TITULO_EXTRA = { avg: 'Líneas de promedio por serie', ma: 'Media móvil (3 puntos)' };
+function extrasSegunGrafico() {
+  const apilada = reportChart === 'stacked';
+  document.querySelectorAll('#report-modal [data-extra]').forEach((b) => {
+    b.disabled = apilada;
+    b.setAttribute('aria-disabled', String(apilada));
+    b.title = apilada ? 'No aplica en «Apilada»' : (TITULO_EXTRA[b.dataset.extra] || '');
+  });
 }
 function openReport() {
   if (!RAW.length) return;
@@ -2298,7 +2320,7 @@ function shellHTML() {
         <div class="sankey-controls">
           <div class="tab-row" id="sankey-diag-tabs"></div>
           <button type="button" class="sankey-mode-btn" id="sankey-mode-btn" aria-pressed="false" title="Trazabilidad: Sala → Resultado → Lote → Módulo → Resultado">Origen</button>
-          <button type="button" class="sankey-mode-btn" id="sankey-psm-btn" aria-pressed="false" title="Trazabilidad: Piscina → Sala → Análisis → Módulo → Análisis → Precría">P-S-M</button>
+          <button type="button" class="sankey-mode-btn" id="sankey-psm-btn" aria-pressed="false" title="Trazabilidad: Piscina → Sala → Análisis → Módulo → Análisis">P-S-M</button>
           <button type="button" class="sankey-mode-btn" id="sankey-reset-btn" style="display:none" title="Restaurar elementos ocultos">↺ Restaurar</button>
         </div>
         <svg id="sankey" width="100%" style="display:block;min-height:180px;height:100%" preserveAspectRatio="xMidYMid meet"></svg>
@@ -2508,7 +2530,7 @@ function initFilters(reset) {
   const oBtn = $('sankey-mode-btn'), pBtn = $('sankey-psm-btn'), sTitle = $('sankey-title');
   if (oBtn) oBtn.classList.toggle('on', sankeyMode === 'origen');
   if (pBtn) pBtn.classList.toggle('on', sankeyMode === 'psm');
-  if (sTitle) sTitle.textContent = sankeyMode === 'origen' ? 'Trazabilidad · Sala → Resultado → Lote → Módulo → Resultado' : sankeyMode === 'psm' ? 'Trazabilidad · Piscina → Sala → Análisis → Módulo → Análisis → Precría' : 'Flujo Operativo · Lugar → Diagnóstico → Resultado';
+  if (sTitle) sTitle.textContent = sankeyMode === 'origen' ? 'Trazabilidad · Sala → Resultado → Lote → Módulo → Resultado' : sankeyMode === 'psm' ? 'Trazabilidad · Piscina → Sala → Análisis → Módulo → Análisis' : 'Flujo Operativo · Lugar → Diagnóstico → Resultado';
   updateOriginResetBtn();
   updateAudBtn();
   updateChips();
@@ -2551,7 +2573,7 @@ function wire(root) {
   $('add-series-btn').addEventListener('click', () => addReportSeries());
   root.querySelectorAll('#report-modal .report-toggle').forEach((btn) => btn.addEventListener('click', () => {
     if (btn.dataset.agg) { reportAgg = btn.dataset.agg; root.querySelectorAll('#report-modal [data-agg]').forEach((b) => b.classList.toggle('on', b === btn)); }
-    else if (btn.dataset.chart) { reportChart = btn.dataset.chart; root.querySelectorAll('#report-modal [data-chart]').forEach((b) => b.classList.toggle('on', b === btn)); }
+    else if (btn.dataset.chart) { reportChart = btn.dataset.chart; root.querySelectorAll('#report-modal [data-chart]').forEach((b) => b.classList.toggle('on', b === btn)); extrasSegunGrafico(); }
     else if (btn.dataset.metric) { reportMetric = btn.dataset.metric; root.querySelectorAll('#report-modal [data-metric]').forEach((b) => b.classList.toggle('on', b === btn)); }
     else if (btn.dataset.extra) { const x = btn.dataset.extra; if (reportExtras.has(x)) reportExtras.delete(x); else reportExtras.add(x); btn.classList.toggle('on', reportExtras.has(x)); }
     renderReport();

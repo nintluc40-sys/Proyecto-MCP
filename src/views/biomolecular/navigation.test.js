@@ -300,3 +300,60 @@ describe('Biología Molecular · harness de navegación (D3 stubeado)', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 });
+
+/* A30 (2026-11-06) · Biomol: decisiones del usuario «Que lo sigan todos» (el filtro de diagnóstico llega al total, la tabla y
+   el Excel; la tarjeta de un patógeno apagado, atenuada) y «Desactivar y quitar» (Promedio y Media Móvil desactivados en
+   «Apilada»; el P-S-M sin Precría). Y los atajos de fecha, exactos: «7d» eran 8 días. */
+describe('Biología Molecular · A30', () => {
+  const dias = (n) => Array.from({ length: n }, (_, i) => `${String(i + 1).padStart(2, '0')}/06/2026`);
+  it('«7d» son 7 días contando el último con datos (antes 8); «14d», 14', () => {
+    store.globalData = dias(10).map((f, i) => B({ Fecha: f, 'Código': 'BM-' + i, Lugar: 'Módulo 1', Tanque: 'TQ1', IHHNV: 'Negativo' }));
+    biomolecularView(root);
+    click(root.querySelector('[data-preset="7"]'));
+    expect(document.getElementById('kv-dates').textContent).toBe('7');
+    expect(document.getElementById('kv-total').textContent).toBe('7');
+    click(root.querySelector('[data-preset="all"]'));
+    expect(document.getElementById('kv-dates').textContent).toBe('10');
+  });
+
+  it('el filtro de diagnóstico llega al total y a la tabla; la tarjeta apagada se atenúa y lo dice', () => {
+    store.globalData = [
+      B({ Fecha: '02/06/2026', 'Código': 'A', Lugar: 'Módulo 1', Tanque: 'TQ1', IHHNV: 'Positivo' }),            // sólo IHHNV
+      B({ Fecha: '02/06/2026', 'Código': 'B', Lugar: 'Módulo 1', Tanque: 'TQ1', WSSV: 'Negativo' }),             // sólo WSSV
+      B({ Fecha: '02/06/2026', 'Código': 'C', Lugar: 'Módulo 1', Tanque: 'TQ1', IHHNV: 'Negativo', WSSV: 'Negativo' }),
+    ];
+    biomolecularView(root);
+    expect(document.getElementById('kv-total').textContent).toBe('3');
+    click(root.querySelector('#diag-filter .filter-btn[data-diag="IHHNV"]'));   // apaga IHHNV
+    expect(document.getElementById('kv-total').textContent, 'la muestra que sólo midió IHHNV sale').toBe('2');
+    expect(root.querySelectorAll('#table-body tr').length).toBe(2);
+    const kpi = document.getElementById('kv-IHHNV').closest('.kpi');
+    expect(kpi.classList.contains('is-fuera')).toBe(true);
+    expect(document.getElementById('kn-IHHNV').textContent).toContain('fuera del filtro');
+    expect(document.getElementById('kn-IHHNV').textContent).toContain('1 / 2 muestras');   // su cifra entera, de referencia
+    expect(document.getElementById('kv-WSSV').closest('.kpi').classList.contains('is-fuera')).toBe(false);
+    // y lo siguen el desglose del total y el Excel
+    click(document.getElementById('kpi-total'));
+    expect(document.getElementById('total-modal-body').textContent).toContain('2');
+    expect(document.getElementById('total-modal-body').textContent).not.toContain('3');
+    click(document.getElementById('export-xlsx-btn'));
+    expect(document.getElementById('bm-export-info').textContent).toBe('Se exportarán 2 registro(s) en el rango elegido.');
+  });
+
+  it('en «Apilada», Promedio y Media Móvil se desactivan y lo dicen; en las demás, vuelven', () => {
+    biomolecularView(root);
+    click(document.getElementById('report-btn'));
+    const extras = () => [...root.querySelectorAll('#report-modal [data-extra]')];
+    click(root.querySelector('#report-modal [data-chart="stacked"]'));
+    expect(extras().every((b) => b.disabled && b.title === 'No aplica en «Apilada»')).toBe(true);
+    click(root.querySelector('#report-modal [data-chart="bar"]'));
+    expect(extras().some((b) => b.disabled)).toBe(false);
+    expect(extras().map((b) => b.title)).toEqual(['Líneas de promedio por serie', 'Media móvil (3 puntos)']);
+  });
+
+  it('el P-S-M ya no anuncia la columna Precría', () => {
+    biomolecularView(root);
+    expect(root.querySelector('#sankey-psm-btn').getAttribute('title')).toBe('Trazabilidad: Piscina → Sala → Análisis → Módulo → Análisis');
+    expect(root.innerHTML).not.toContain('→ Precría');
+  });
+});
