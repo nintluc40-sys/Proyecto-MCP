@@ -70,10 +70,17 @@ const ultimo = () => desinf().at(-1);
 const fila = (env, elem) => { const r = env.rows.find((x) => x[5] === elem); return r && [r[6], r[7]]; };
 const enviarHoy = async (data) => { H.saveE(MOD, 'desinfeccion', data, false); await H.syncOneFicha('desinfeccion'); };
 
+const POST_OK = async (b) => { envios.push(JSON.parse(JSON.stringify(b))); return 'ok'; };
+/** Google RECHAZA el envío: no llega y no se queda en la cola. */
+const POST_RECHAZO = async (b) => { envios.push(JSON.parse(JSON.stringify(b))); return 'rejected'; };
+/** Lo anotado como enviado con contenido, de MOD en HOY. */
+const anotados = () => ((JSON.parse(almacen.getItem(H.DX_ENV_KEY) || '{}')[String(MOD)] || {})[HOY] || []);
+
 beforeEach(() => {
   almacen.clear();
   H._invalidateLoadE();
   envios.length = 0;
+  H.setPostOnce(POST_OK);
   H._lastSyncFingerprint.clear();
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   globalThis.confirm = () => true;
@@ -143,5 +150,68 @@ describe('A10 · Desinfección: lo que vuelve a «—»', () => {
     H.saveE(MOD, 'desinfeccion', ficha({ [LIN + '_estado']: 'Sí' }), false);
     await H.syncAll();
     expect(fila(ultimo(), 'Reservorio')).toEqual(['', '']);
+  });
+});
+
+/* Revisión de la B (2026-11-07, usuario: «Sí, los cuatro así») · LO ENVIADO SE ANOTA DESPUÉS DE ENVIAR. Se anotaba ANTES:
+   si el envío en blanco fallaba sin quedarse en la cola (rechazado, en curso, sin espacio en la cola), el equipo ya había
+   olvidado el elemento, el siguiente envío no lo llevaba y la hoja se quedaba con su «Sí» para siempre. */
+describe('A10 · Desinfección: el blanco que no llegó se vuelve a mandar', () => {
+  it('🔴 por ☁️: un envío en blanco RECHAZADO se repite en el siguiente (antes se perdía)', async () => {
+    await enviarHoy(ficha({ [RES + '_estado']: 'Sí', [LIN + '_estado']: 'No' }));
+    H.setPostOnce(POST_RECHAZO);
+    await enviarHoy(ficha({ [LIN + '_estado']: 'No' }));
+    expect(fila(ultimo(), 'Reservorio')).toEqual(['', '']);   // viajó en blanco… y Google lo rechazó
+    H.setPostOnce(POST_OK);
+    H._lastSyncFingerprint.clear();
+    await enviarHoy(ficha({ [LIN + '_estado']: 'Sí' }));
+    expect(fila(ultimo(), 'Reservorio')).toEqual(['', '']);
+  });
+
+  it('🔴 por 🔄 de hoy (syncAll)', async () => {
+    H.saveE(MOD, 'desinfeccion', ficha({ [RES + '_estado']: 'Sí' }), false);
+    await H.syncAll();
+    H.setPostOnce(POST_RECHAZO);
+    H._lastSyncFingerprint.clear();
+    H.saveE(MOD, 'desinfeccion', ficha({ [LIN + '_estado']: 'Sí' }), false);
+    await H.syncAll();
+    expect(anotados().some((k) => k.includes('Reservorio'))).toBe(true);   // el rechazo no lo da por corregido
+    H.setPostOnce(POST_OK);
+    H._lastSyncFingerprint.clear();
+    H.saveE(MOD, 'desinfeccion', ficha({ [LIN + '_estado']: 'No' }), false);
+    await H.syncAll();
+    expect(fila(ultimo(), 'Reservorio')).toEqual(['', '']);
+  });
+
+  it('🔴 por 🔄 de los días ANTERIORES', async () => {
+    const clave = H.PRE + 'M01_desinfeccion_' + AYER;
+    const guardar = (data) => {
+      almacen.setItem(clave, JSON.stringify({ mod: MOD, ficha: 'desinfeccion', date: AYER, savedAt: 1, updatedAt: Date.now(), synced: false, data }));
+      H._invalidateLoadE();
+    };
+    const url = 'https://script.google.com/macros/s/AKfycbPRUEBA/exec';
+    guardar({ fecha: AYER, corrida: '601', [RES + '_estado']: 'Sí' });
+    await H._previasEnviarFichas(MOD, url);
+    H.setPostOnce(POST_RECHAZO);
+    H._lastSyncFingerprint.clear();
+    guardar({ fecha: AYER, corrida: '601', [LIN + '_estado']: 'Sí' });
+    await H._previasEnviarFichas(MOD, url);
+    H.setPostOnce(POST_OK);
+    H._lastSyncFingerprint.clear();
+    guardar({ fecha: AYER, corrida: '601', [LIN + '_estado']: 'No' });
+    await H._previasEnviarFichas(MOD, url);
+    expect(fila(ultimo(), 'Reservorio')).toEqual(['', '']);
+  });
+
+  it('lo que se quedó en la COLA sí cuenta como enviado: el blanco no se repite', async () => {
+    await enviarHoy(ficha({ [RES + '_estado']: 'Sí' }));
+    expect(anotados()).toHaveLength(1);
+    H.setPostOnce(async (b) => { envios.push(JSON.parse(JSON.stringify(b))); return 'retry'; });   // sin señal → a la cola
+    const p = enviarHoy(ficha({ [LIN + '_estado']: 'Sí' }));
+    await vi.advanceTimersByTimeAsync(120000);
+    await p;
+    expect(fila(ultimo(), 'Reservorio')).toEqual(['', '']);
+    expect(anotados().some((k) => k.includes('Reservorio'))).toBe(false);
+    expect(anotados().some((k) => k.includes('Líneas de agua'))).toBe(true);
   });
 });

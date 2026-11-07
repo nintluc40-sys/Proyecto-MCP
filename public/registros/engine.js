@@ -2777,8 +2777,8 @@ async function syncAll(){
       const dxp = buildDesinfeccionPayload(curMod);
       if(dxp.rows.length > 0){
         const opts = { mark: _marcaFichas(curMod, ["desinfeccion"]) };
-        _dxAnotarEnviado(curMod, dxp);   // A10
         const sent = await postPayload(dxp, url, opts);
+        if(sent || opts.outcome === "queued") _dxAnotarEnviado(curMod, dxp);   // A10 · sólo lo que llegó o quedó en la cola
         if(sent){
           _marcarEnviado(opts);
           ok++;
@@ -2927,8 +2927,8 @@ async function _previasEnviarFichas(m, url){
       const keys = [], stamps = {};
       g.items.forEach(function(x){ const k = m + "|" + x.ficha + "|" + x.dia; keys.push(k); stamps[k] = x.e.updatedAt; });
       const opts = { mark:{ kind:"fichas", keys:keys, stamps:stamps } };
-      if(g.items[0] && g.items[0].ficha === "desinfeccion") _dxAnotarEnviado(m, g.payload);   // A10
       const sent = await postPayload(g.payload, url, opts);
+      if(g.items[0] && g.items[0].ficha === "desinfeccion" && (sent || opts.outcome === "queued")) _dxAnotarEnviado(m, g.payload);   // A10
       if(sent){ _reconcileFichas(opts.mark); r.ok++; }   // la misma conciliación que una entrega de la cola
       else if(opts.outcome === "queued") r.cola++;
       else { r.malo = { outcome:opts.outcome, gasMessage:opts.gasMessage, nombre:g.nombre }; return r; }
@@ -3628,8 +3628,8 @@ async function syncOneFicha(fid){
     // Desinfección → hoja propia "Registro_Desinfección" (formato tidy).
     const dxp = buildDesinfeccionPayload(curMod);
     if(dxp.rows.length > 0){
-      _dxAnotarEnviado(curMod, dxp);   // A10
       sent = await postPayload(dxp, url, opts);
+      if(sent || opts.outcome === "queued") _dxAnotarEnviado(curMod, dxp);   // A10 · sólo lo que llegó o quedó en la cola
     } else { hadRows = false; }
     if(sent) _marcarEnviado(opts);
   } else if(["calidad","plg","poblacion","calagua","despacho"].includes(fid)){
@@ -4977,7 +4977,8 @@ function dxFechaChange(v){
 /* A10 (2026-11-06, usuario: «Sin tocar el Apps Script») · LO QUE YA SE MANDÓ DE CADA DÍA. La hoja se escribe por llave
    (Fecha+Módulo+Tipo+Categoría+Elemento, upsert), y un elemento que vuelve a «—» sin observación propia no viajaba: la hoja
    se quedaba con su «Sí»/«No» de antes. Se anota, por módulo y fecha, lo que viaja CON contenido; si después falta, viaja
-   en blanco y la fila de la hoja queda en «—». Se anota al enviar (también si se queda en la cola, que desde A8 no caduca);
+   en blanco y la fila de la hoja queda en «—». Se anota cuando el envío LLEGA o se queda en la cola (que desde A8 no caduca),
+   nunca antes: si falla sin quedar en la cola (rechazado, en curso, sin espacio), el siguiente vuelve a llevar el blanco;
    lo que ya viajó en blanco se olvida. Se guardan 60 días. Sin espacio para anotarlo, el envío sigue: sólo se pierde esta
    corrección. */
 const DX_ENV_KEY = "dx_enviado_v1";
