@@ -4619,9 +4619,13 @@ async function recalcSurvivalForCorrida(){
 
   const eP = loadE(curMod, "poblacion");
   if(eP && String((eP.data||{}).corrida||"").trim() === scan.corr){
-    _recalcSvInData(eP.data, cs);
-    saveE(curMod, "poblacion", eP.data, getStatus(curMod,"poblacion") === "synced");
-    _recalcAffected[eP.data.fecha || today()] = eP.data;   // el día de hoy gana su fecha
+    /* A11 (2026-11-06) · loadE devuelve los datos CONGELADOS (Object.freeze, por su caché), y el motor no corre en modo
+       estricto: recalcular sobre ellos no cambiaba nada y no fallaba. La ficha de hoy se guardaba igual y se reenviaba
+       con la supervivencia vieja. Ahora se recalcula sobre una copia. */
+    const dP = Object.assign({}, eP.data);
+    _recalcSvInData(dP, cs);
+    saveE(curMod, "poblacion", dP, getStatus(curMod,"poblacion") === "synced");
+    _recalcAffected[dP.fecha || today()] = dP;   // el día de hoy gana su fecha
     if(curTab === "poblacion") try{ renderPoblacion(); }catch(_){}
   }
 
