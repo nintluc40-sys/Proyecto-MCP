@@ -149,14 +149,21 @@ function dateSpanDays(rows) {
   return Math.round((max - min) / 86400000) + 1;
 }
 
-/** Supervivencia sumando última/primera población por tanque. */
+/** Fecha de una fila en ms (null si no es legible). */
+const tFec = (r) => { const d = parseAnyDate(gFec(r)); return d && !isNaN(d) ? d.getTime() : null; };
+
+/** Supervivencia sumando última/primera población por tanque.
+ *  A22 (2026-11-06, usuario; C4, la regla oficial en las cinco cuentas de la supervivencia):
+ *  · un tanque en 0 (vaciado o agrupado) cuenta como 0;
+ *  · un tanque entra en la SUPERVIVENCIA sólo con un conteo POSTERIOR al de su siembra («No, hasta su 2.º conteo»): no
+ *    se da por 100 % lo que aún no se ha medido. «Pob. actual» y «Pob. inicial» (`pop`, `popFirst`) siguen contándolos. */
 function survival(winRows, baseRows, tanks) {
-  let lastSum = null, firstSum = null;
+  let lastSum = null, firstSum = null, svNum = 0, svDen = 0;
   if (tanks.length) {
     tanks.forEach((tq) => {
       const win = byDate(winRows.filter((r) => gTnq(r) === tq));
       const base = byDate(baseRows.filter((r) => gTnq(r) === tq));
-      let last = null; for (let i = win.length - 1; i >= 0; i--) { const v = gPop(win[i]); if (v !== null) { last = v; break; } }
+      let last = null, lastT = null; for (let i = win.length - 1; i >= 0; i--) { const v = gPop(win[i]); if (v !== null) { last = v; lastT = tFec(win[i]); break; } }
       // La SIEMBRA es la primera población REAL (>0), el MISMO criterio que
       // `modCorStatsCompute` (core/prodCalendar.js), que ya lo declaraba así. Un 0 en la
       // primera lectura no es «se sembraron cero larvas»: es que aún no se había contado.
@@ -165,7 +172,7 @@ function survival(winRows, baseRows, tanks) {
       // correspondía 78,9 %) y discrepaba de la columna «Superv.» de Producción Omarsa para
       // el mismo módulo+corrida. La del propio tanque salía «—» pese a tener datos.
       // El `last` NO usa esta regla: ahí un 0 sí es real (tanque vaciado o agrupado).
-      let first = null; for (let i = 0; i < base.length; i++) { const v = gPop(base[i]); if (v !== null && v > 0) { first = v; break; } }
+      let first = null, firstT = null; for (let i = 0; i < base.length; i++) { const v = gPop(base[i]); if (v !== null && v > 0) { first = v; firstT = tFec(base[i]); break; } }
       // La siembra de un tanque solo entra en el DENOMINADOR si ese tanque aporta también
       // al NUMERADOR. Antes se sumaba siempre, así que un tanque cuyas filas quedaban fuera
       // de la ventana de fecha (dejó de registrarse, se descartó pronto…) aportaba su
@@ -178,14 +185,18 @@ function survival(winRows, baseRows, tanks) {
       if (last !== null) {
         lastSum = (lastSum || 0) + last;
         if (first !== null) firstSum = (firstSum || 0) + first;
+        // A22 · a la supervivencia, sólo con un conteo posterior al de la siembra
+        if (first !== null && lastT !== null && firstT !== null && lastT > firstT) { svNum += last; svDen += first; }
       }
     });
   } else if (baseRows.length) {
     const win = byDate(winRows), base = byDate(baseRows);
-    for (let i = win.length - 1; i >= 0; i--) { const v = gPop(win[i]); if (v !== null) { lastSum = v; break; } }
-    for (let i = 0; i < base.length; i++) { const v = gPop(base[i]); if (v !== null && v > 0) { firstSum = v; break; } } // primera población REAL (>0), como arriba
+    let lastT = null, firstT = null;
+    for (let i = win.length - 1; i >= 0; i--) { const v = gPop(win[i]); if (v !== null) { lastSum = v; lastT = tFec(win[i]); break; } }
+    for (let i = 0; i < base.length; i++) { const v = gPop(base[i]); if (v !== null && v > 0) { firstSum = v; firstT = tFec(base[i]); break; } } // primera población REAL (>0), como arriba
+    if (lastSum !== null && firstSum !== null && lastT !== null && firstT !== null && lastT > firstT) { svNum = lastSum; svDen = firstSum; }
   }
-  const sv = (lastSum !== null && firstSum !== null && firstSum > 0) ? Math.min((lastSum / firstSum) * 100, 100) : null;
+  const sv = svDen > 0 ? Math.min((svNum / svDen) * 100, 100) : null;
   return { sv, mort: sv !== null ? Math.max(100 - sv, 0) : null, pop: lastSum, popFirst: firstSum };
 }
 

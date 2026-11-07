@@ -181,7 +181,7 @@ describe('P-04 · Superv. real y Superv. proy. en la tabla del cuadro', () => {
 
   it('la cabecera trae ambas columnas y la proyectada lleva el % de merma', () => {
     const ths = [...abrir().querySelectorAll('.sv-sie-table thead th')].map((t) => t.textContent.trim());
-    expect(ths).toContain('Superv.');
+    expect(ths).toContain('Superv. al traslado');   // A22 (2026-11-06, usuario: «Dejarla y rotularla»)
     expect(ths.some((t) => t.startsWith('Superv. proy.') && t.includes('10%'))).toBe(true);
   });
 

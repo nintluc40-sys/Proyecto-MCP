@@ -1481,6 +1481,13 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
 
 - **Población / Supervivencia = 0 es un valor REAL** (tanque vaciado o agrupado): se honra el 0 en
   vez de arrastrar el valor previo.
+- **La supervivencia del módulo, UNA regla** (A22, 2026-11-06; usuario, C4): Σ último conteo ÷ Σ siembra (primer
+  conteo > 0), tope 100 %; el 0 cuenta como 0; con siembra escalonada, cada día sólo los tanques ya sembrados; y un
+  tanque entra sólo con un conteo POSTERIOR al de su siembra (no se da por 100 % lo no medido; «Pob. actual» sí lo
+  cuenta). La aplican el KPI del Supervisor (`survival`), la curva (`moduleSvPopSeries`), el relleno del ICL
+  (`svPopByDay`) y Producción Omarsa (`modCorStats`); lo vigila `supervisor/supervivencia-regla.test.js` con los
+  mismos datos. Antes daban cifras distintas (medido el 04-11: 32,5 · 72,5 · 65 · 70,7 · 35). La tabla de Siembras
+  mide otra cosa a propósito, hasta el TRASLADO (sin el despacho, para «A cosechar»): «Superv. al traslado».
 - **Microbiología:** los niveles se RECALCULAN desde el UFC con los umbrales por área × parámetro.
 - **El analista, en una sola grafía, CON tilde.** La captura canoniza al guardar y el tablero pliega
   al leer, así que las filas ya escritas **no se migran**. Un nombre fuera del catálogo se respeta.

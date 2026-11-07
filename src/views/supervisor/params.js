@@ -123,29 +123,37 @@ const ICL_NEG = [
   { key: 'nvi', label: 'No Viables' }, { key: 'op', label: 'Opacidad' }, { key: 'fl', label: 'Flácidez' }, { key: 'ca', label: 'Canibalismo' }, { key: 'pa', label: 'Parásitos' },
 ];
 
-/** SV por población por día (Σ última pob. >0 ≤ día por tanque / Σ primera pob. × 100,
- *  cap 100), coherente con survival()/moduleSvPopSeries del resto de la vista. Se usa
- *  SOLO para RELLENAR los días en que falta la columna cruda "Supervivencia" (que está
- *  dispersa); los días con SV cruda no se tocan, para no desviar la calibración del ICL. */
-function svPopByDay(rows, days) {
+/** SV por población por día (Σ última pob. ≤ día / Σ siembra × 100, cap 100), con la MISMA regla que survival() y
+ *  moduleSvPopSeries (A22, 2026-11-06, usuario; C4): el 0 cuenta, y cada día sólo los tanques ya sembrados y con un
+ *  conteo posterior a su siembra. Se usa SOLO para RELLENAR los días en que falta la columna cruda "Supervivencia" (que
+ *  está dispersa); los días con SV cruda no se tocan, para no desviar la calibración del ICL. */
+export function svPopByDay(rows, days) {   // exportada para supervivencia-regla.test.js (A22)
   const tanks = [...new Set(rows.map(gTnq).filter(Boolean))];
   const pool = tanks.length ? tanks : [null];
-  const seqByTank = new Map();
-  let totalFirst = 0;
+  const seqByTank = new Map(), siembra = new Map();
   pool.forEach((tq) => {
     const seq = rows.filter((r) => tq === null || gTnq(r) === tq)
       .map((r) => ({ t: parseAnyDate(gFec(r)), p: gPop(r) }))
-      .filter((x) => x.t && x.p !== null && x.p > 0)
+      .filter((x) => x.t && x.p !== null)   // A22 · el 0 cuenta
       .sort((a, b) => a.t - b.t);
     seqByTank.set(tq, seq);
-    if (seq.length) totalFirst += seq[0].p;
+    const s = seq.find((x) => x.p > 0);   // la SIEMBRA: el primer conteo > 0
+    if (s) siembra.set(tq, s);
   });
   return days.map((d) => {
     const dt = parseAnyDate(d);
-    if (!dt || totalFirst <= 0) return null;
-    let total = 0, any = false;
-    pool.forEach((tq) => { const seq = seqByTank.get(tq); for (let i = seq.length - 1; i >= 0; i--) { if (seq[i].t <= dt) { total += seq[i].p; any = true; break; } } });
-    return any ? Math.min((total / totalFirst) * 100, 100) : null;
+    if (!dt) return null;
+    let num = 0, den = 0;
+    pool.forEach((tq) => {
+      const seq = seqByTank.get(tq), s = siembra.get(tq);
+      if (!s || s.t > dt) return;
+      for (let i = seq.length - 1; i >= 0; i--) {
+        if (seq[i].t > dt) continue;
+        if (seq[i].t > s.t) { num += seq[i].p; den += s.p; }
+        break;
+      }
+    });
+    return den > 0 ? Math.min((num / den) * 100, 100) : null;
   });
 }
 

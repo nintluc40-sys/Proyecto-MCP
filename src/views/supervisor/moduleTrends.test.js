@@ -18,7 +18,43 @@ describe('moduleSvPopSeries', () => {
     const r = moduleSvPopSeries(ctx, 'M01', '580');
     expect(r.labels).toEqual(['01/06/2026', '05/06/2026']);
     expect(r.pop).toEqual([1500, 1200]); // Σ tanques
-    expect(r.sv).toEqual([100, 80]);     // 1500/1500, 1200/1500
+    // A22 (2026-11-06, usuario: «No, hasta su 2.º conteo»): el día de la siembra ningún tanque tiene aún otro conteo,
+    // así que no hay supervivencia que dar (antes, 100 %); el 05/06, 1200/1500.
+    expect(r.sv).toEqual([null, 80]);
+  });
+
+  /* A22 (2026-11-06, usuario; C4) · la regla oficial en la curva: con SIEMBRA ESCALONADA cada día entran sólo los tanques
+     ya sembrados (antes, el denominador era la siembra de TODOS desde el primer día: 33 % → 100 % sin una baja), y un
+     tanque vaciado (0) cuenta como 0 (antes se saltaba y seguía con su último conteo > 0). */
+  it('🔴 A22 · siembra escalonada sin bajas: la curva es 100 % todos los días (antes arrancaba en 33 %)', () => {
+    const ctx = {
+      larvWin: [
+        lv({ Tanque: 'TQ1', 'Población': '1000', Fecha: '01/06/2026' }),
+        lv({ Tanque: 'TQ1', 'Población': '1000', Fecha: '02/06/2026' }),
+        lv({ Tanque: 'TQ2', 'Población': '2000', Fecha: '03/06/2026' }),
+        lv({ Tanque: 'TQ1', 'Población': '1000', Fecha: '04/06/2026' }),
+        lv({ Tanque: 'TQ2', 'Población': '2000', Fecha: '04/06/2026' }),
+      ],
+      tanqWin: [],
+    };
+    const r = moduleSvPopSeries(ctx, 'M01', '580');
+    expect(r.labels).toEqual(['01/06/2026', '02/06/2026', '03/06/2026', '04/06/2026']);
+    expect(r.sv).toEqual([null, 100, 100, 100]);
+  });
+
+  it('🔴 A22 · un tanque vaciado (0) cuenta como 0, en la curva y en la población', () => {
+    const ctx = {
+      larvWin: [
+        lv({ Tanque: 'TQ1', 'Población': '1000', Fecha: '01/06/2026' }),
+        lv({ Tanque: 'TQ2', 'Población': '1000', Fecha: '01/06/2026' }),
+        lv({ Tanque: 'TQ1', 'Población': '900', Fecha: '05/06/2026' }),
+        lv({ Tanque: 'TQ2', 'Población': '0', Fecha: '05/06/2026' }),
+      ],
+      tanqWin: [],
+    };
+    const r = moduleSvPopSeries(ctx, 'M01', '580');
+    expect(r.pop).toEqual([2000, 900]);
+    expect(r.sv).toEqual([null, 45]);   // 900 / 2000 (antes, 1900 / 2000)
   });
 
   it('línea base = siembra de la corrida (larvCM), no la 1ª pob. de la ventana filtrada', () => {

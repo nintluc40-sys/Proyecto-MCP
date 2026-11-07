@@ -1162,7 +1162,7 @@ function svSiembrasContentHTML(data, mod, corrida, corr) {
             <tr>
               <th>Tanque</th><th>Lote</th><th class="sv-sie-num">Sembrado</th>
               <th class="sv-sie-b sv-sie-num" title="Última población registrada antes del despacho">Transferido</th>
-              <th class="sv-sie-num" title="Supervivencia REAL: Transferido ÷ Sembrado. No la afecta la merma.">Superv.</th>
+              <th class="sv-sie-num" title="Supervivencia REAL hasta el traslado: Transferido ÷ Sembrado (sin el conteo del despacho). No la afecta la merma. La del módulo, en el resumen, cuenta también el despacho.">Superv. al traslado</th>
               <th title="Estadío de la misma línea del Transferido">Estadío</th>
               <th class="sv-sie-num sv-sie-proy" title="Población proyectada: Transferido menos la merma seleccionada">Proyectado −${mermaPct}%</th>
               <th class="sv-sie-num sv-sie-proy" title="Supervivencia proyectada a cosecha: la real menos la merma seleccionada">Superv. proy. −${mermaPct}%</th>
@@ -1179,7 +1179,7 @@ function svSiembrasContentHTML(data, mod, corrida, corr) {
           </tfoot>
         </table>
       </div>
-      <div class="sv-modal-note">🌱 Sembrado = población del primer registro <b>N5</b> · <b>Transferido</b> = última población registrada <b>antes del despacho</b> (si el módulo aún no despacha, la más reciente) y el Estadío es el de esa misma línea · <b>Superv.</b> = Transferido ÷ Sembrado, la supervivencia real (no la mueve la merma) · <b>Proyectado</b> = Transferido − ${mermaPct}% (suma al «A cosechar») · <b>Superv. proy.</b> = la real menos ese ${mermaPct}%, lo que se espera al cosechar. La supervivencia de los subtotales solo cuenta los tanques con Transferido registrado (los «en proceso» aún no).${corr ? ` <b>🔗 Total de la corrida</b> = los ${corr.modules.length} módulos de la corrida sumados (${corr.nTanks} tanques); su supervivencia se recalcula sobre el sembrado agregado, no es el promedio de las de cada módulo.` : ''}</div>`
+      <div class="sv-modal-note">🌱 Sembrado = población del primer registro <b>N5</b> · <b>Transferido</b> = última población registrada <b>antes del despacho</b> (si el módulo aún no despacha, la más reciente) y el Estadío es el de esa misma línea · <b>Superv. al traslado</b> = Transferido ÷ Sembrado, la supervivencia real hasta el traslado (no la mueve la merma; la del módulo cuenta también el despacho) ·<b>Proyectado</b> = Transferido − ${mermaPct}% (suma al «A cosechar») · <b>Superv. proy.</b> = la real menos ese ${mermaPct}%, lo que se espera al cosechar. La supervivencia de los subtotales solo cuenta los tanques con Transferido registrado (los «en proceso» aún no).${corr ? ` <b>🔗 Total de la corrida</b> = los ${corr.modules.length} módulos de la corrida sumados (${corr.nTanks} tanques); su supervivencia se recalcula sobre el sembrado agregado, no es el promedio de las de cada módulo.` : ''}</div>`
     : `<div class="empty-state" style="padding:30px">Sin siembras registradas para ${esc(mod)}${corrida ? ' · C' + esc(corrida) : ''}.</div>`;
   return body;
 }

@@ -11,7 +11,8 @@
      · Cosecha  = Σ última población registrada de cada tanque (honra el 0)
      · PL/g (manual) = promedio del último PL/g manual de cada tanque
      · PL/g (Larvia) = ídem con la columna «Plg» (biometría LARVIA, registrada a diario)
-     · Supervivencia = Σ última pob. / Σ primera pob. × 100
+     · Supervivencia = Σ última pob. / Σ primera pob. × 100, sólo de los tanques con un conteo
+       posterior al de su siembra (A22, 2026-11-06; la regla oficial, como el Supervisor)
 
    Mes interno definido por su corrida inicial (editar MESES_PROD).
    ============================================================ */
@@ -265,6 +266,9 @@ function modCorStatsCompute(mod, cor) {
   const rsAll = rowsOfModCor(mod, cor);
   const tanks = distinct(rsAll.map((r) => getField(r, F.tanque)));
   let firstSum = 0, lastSum = 0, hasFirst = false, hasLast = false, nSie = 0;
+  // A22 (2026-11-06, usuario; C4) · la SUPERVIVENCIA, sólo de los tanques con un conteo posterior al de su siembra
+  // («No, hasta su 2.º conteo»): un tanque recién sembrado no se da por 100 %. Siembra y cosecha siguen sumando todos.
+  let svNum = 0, svDen = 0;
   // Tonelaje (m³) de los tanques SEMBRADOS, para la densidad de siembra. Se acumula lo
   // registrado (`tonSum`) y se cuentan aparte los tanques sin dato (`tonSin`), en lugar de
   // rellenarlos aquí con un valor de respaldo: cuánto vale un tanque sin medir es una
@@ -276,7 +280,7 @@ function modCorStatsCompute(mod, cor) {
   tanks.forEach((tq) => {
     const rs = rsAll.filter((r) => getField(r, F.tanque) === tq)
       .sort((a, b) => (parseAnyDate(getField(a, F.fecha)) || 0) - (parseAnyDate(getField(b, F.fecha)) || 0));
-    let first = null, last = null, plg = null, plgL = null, firstDate = null;
+    let first = null, last = null, plg = null, plgL = null, firstDate = null, lastDate = null;
     // Tonelaje del tanque: el registrado EL DÍA EN QUE SE SEMBRÓ (`tonSie`), que es el
     // volumen que corresponde a una densidad DE SIEMBRA. Si ese día concreto vino vacío se
     // usa el primer tonelaje que el tanque tenga (`tonAny`): recurrir al valor de respaldo
@@ -293,8 +297,11 @@ function modCorStatsCompute(mod, cor) {
       if (tonAny === null) tonAny = t;                          // `rs` va ordenado por fecha
       const p = parseNum(r, F.poblacion); if (p === null || p < 0) return;
       if (p > 0 && first === null) { first = p; firstDate = parseAnyDate(getField(r, F.fecha)); tonSie = t; }
-      last = p;
+      last = p; lastDate = parseAnyDate(getField(r, F.fecha));
     });
+    if (first !== null && last !== null && firstDate && lastDate && !isNaN(firstDate) && !isNaN(lastDate) && lastDate > firstDate) {
+      svNum += last; svDen += first;
+    }
     for (let i = rs.length - 1; i >= 0; i--) { const v = parseNum(rs[i], PLGM_KEYS); if (v !== null && v > 0) { plg = v; break; } }
     // PL/g (Larvia): MISMA regla que el manual —la ÚLTIMA lectura >0 del tanque— pero sobre
     // la columna «Plg», que se registra a diario. Se toma la última y no el promedio de los
@@ -320,7 +327,8 @@ function modCorStatsCompute(mod, cor) {
   const plg = plgs.length ? plgs.reduce((a, b) => a + b, 0) / plgs.length : null;
   const plgLarvia = plgLarvias.length ? plgLarvias.reduce((a, b) => a + b, 0) / plgLarvias.length : null;
   // cosecha === 0 es válido (tanque vaciado/agrupado) → superv 0, no null.
-  const superv = (siembra !== null && siembra > 0 && cosecha !== null) ? Math.min(cosecha / siembra * 100, 100) : null;
+  // A22 · sobre los tanques con un 2.º conteo (svNum/svDen); con todos ya contados, es cosecha ÷ siembra como antes.
+  const superv = svDen > 0 ? Math.min(svNum / svDen * 100, 100) : null;
   // despachado = el módulo+corrida ya tiene ≥1 registro con datos de la ficha de Despacho.
   const despachado = rsAll.some(isDespachoRow);
   // despachadoFull = TODOS los tanques reales despachados (mismo criterio que el badge

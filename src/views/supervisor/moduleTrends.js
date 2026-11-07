@@ -16,8 +16,12 @@ const modLarv = (ctx, mod, cor) => ctx.larvWin.filter((r) => gMod(r) === mod && 
 const modTanq = (ctx, mod, cor) => ctx.tanqWin.filter((r) => gMod(r) === mod && (!cor || gCor(r) === cor));
 
 /** Tendencia por fecha de Supervivencia y Población TOTAL del módulo.
- *  SV(fecha) = Σ última pob ≤ fecha de cada tanque / Σ primera pob × 100 (misma
- *  fórmula que la etiqueta de supervivencia). pop(fecha) = ese numerador. */
+ *  SV(fecha) = Σ última pob ≤ fecha / Σ siembra × 100, con la regla del KPI (`survival` en stats.js). A22 (2026-11-06,
+ *  usuario; C4): un 0 (tanque vaciado o agrupado) cuenta como 0 —antes se saltaba y el tanque seguía con su último
+ *  conteo >0—; y cada día entran sólo los tanques YA SEMBRADOS y con un conteo posterior a su siembra —antes el
+ *  denominador era la siembra de TODOS desde el primer día: con siembra escalonada la curva arrancaba en ~33 % y subía
+ *  a 100 % sin una sola baja—. pop(fecha) = la población de ese día: el último conteo ≤ fecha de cada tanque, con el
+ *  de su siembra. */
 export function moduleSvPopSeries(ctx, mod, corrida) {
   const rows = modLarv(ctx, mod, corrida);
   const tanks = [...new Set(rows.map(gTnq).filter(Boolean))];
@@ -28,7 +32,7 @@ export function moduleSvPopSeries(ctx, mod, corrida) {
   tanks.forEach((tq) => {
     perTank[tq] = rows.filter((r) => gTnq(r) === tq)
       .map((r) => ({ t: parseAnyDate(gFec(r)), p: gPop(r) }))
-      .filter((x) => x.t && x.p !== null && x.p > 0)
+      .filter((x) => x.t && x.p !== null)   // A22 · el 0 cuenta
       .sort((a, b) => a.t - b.t);
   });
   // Línea base = SIEMBRA de la corrida (primera pob. >0 en larvCM, sin filtro de
@@ -39,27 +43,35 @@ export function moduleSvPopSeries(ctx, mod, corrida) {
   const baseRows = ctx.larvCM
     ? ctx.larvCM.filter((r) => gMod(r) === mod && (!corrida || gCor(r) === corrida))
     : rows;
-  const firstOf = (tq) => {
+  const siembraDe = {};   // tq → { p, t }: la SIEMBRA (primera pob. > 0) y su fecha
+  tanks.forEach((tq) => {
     let first = null, firstT = null;
     baseRows.forEach((r) => {
       if (gTnq(r) !== tq) return;
       const t = parseAnyDate(gFec(r)), p = gPop(r);
       if (t && p !== null && p > 0 && (firstT === null || t < firstT)) { firstT = t; first = p; }
     });
-    return first || 0;
-  };
-  const totalFirst = tanks.reduce((acc, tq) => acc + firstOf(tq), 0);
+    siembraDe[tq] = first ? { p: first, t: firstT } : null;
+  });
+  const totalFirst = tanks.reduce((acc, tq) => acc + (siembraDe[tq] ? siembraDe[tq].p : 0), 0);
   const labels = [], sv = [], pop = [];
   dates.forEach((d) => {
     const dt = parseAnyDate(d);
-    let total = 0, any = false;
+    let total = 0, any = false, num = 0, den = 0;
     tanks.forEach((tq) => {
       const seq = perTank[tq];
-      for (let i = seq.length - 1; i >= 0; i--) { if (seq[i].t <= dt) { total += seq[i].p; any = true; break; } }
+      for (let i = seq.length - 1; i >= 0; i--) {
+        if (seq[i].t > dt) continue;
+        total += seq[i].p; any = true;
+        // A22 · a la supervivencia de ese día, sólo un tanque ya sembrado y con un conteo posterior a su siembra
+        const s = siembraDe[tq];
+        if (s && s.t <= dt && seq[i].t > s.t) { num += seq[i].p; den += s.p; }
+        break;
+      }
     });
     labels.push(d);
     pop.push(any ? total : null);
-    sv.push(any && totalFirst > 0 ? Math.min((total / totalFirst) * 100, 100) : null);
+    sv.push(den > 0 ? Math.min((num / den) * 100, 100) : null);
   });
   // `base` = siembra total del módulo (Σ primera pob. por tanque); permite derivar las
   // bajas acumuladas (base − pob. del día) en el "Resumen del día" sin recalcular.
