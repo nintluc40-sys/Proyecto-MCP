@@ -16147,8 +16147,8 @@ async function madReproTransfer(){
     : destinos;
   _reproPaso("repro-t-paso", "Leyendo los traslados…");
   /* A11 (2026-11-06, usuario: «Releer y no repetir») · SE RELEE la hoja antes de numerar. Sin `force` valía la lectura de
-     antes (o la del tablero, de hasta 5 min): dos traslados seguidos sacaban el MISMO «siguiente» (medido el 04-11: 2 de
-     10 TR-ID en dos fechas). Si la relectura falla, el número sale de lo que tenía (y del contador del equipo), como antes;
+     antes (o la del tablero, de hasta 5 min): dos traslados seguidos podían sacar el MISMO «siguiente». Si la relectura
+     falla, el número sale de lo que tenía (y del contador del equipo), como antes;
      el aviso de hoja recortada (D11) no cambia.
      Revisión de la B (2026-11-07, usuario: «No reponerla») · esa lectura vieja cuenta SÓLO para el número: no vuelve a
      _reproSheets. Reponerla hacía que el Saldo la diera por recién leída (`_madHojaLeida`) aunque tuviera horas, que es

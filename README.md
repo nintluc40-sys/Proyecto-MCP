@@ -1306,8 +1306,9 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
 - **El TR-ID no se repite** (A11, 2026-11-06; usuario: «Releer y no repetir»). Antes de numerar un traslado se
   **relee** «Maduración Transferencias», y el número es uno más que el MAYOR entre esa lectura, la del tablero y el
   último que dio el equipo (`larv4_mad_trseq`, que nunca retrocede y se reserva al enviar). Antes valía la lectura
-  vieja y el contador sólo contaba sin ninguna: dos traslados seguidos sacaban el mismo número (medido el 04-11: 2
-  de 10 TR-ID en dos fechas; esos datos los corrige el usuario). Si la relectura falla, sigue con lo que tenía.
+  vieja y el contador sólo contaba sin ninguna: dos traslados seguidos podían sacar el mismo número (los repetidos
+  de la hoja los corrige el usuario). Si la relectura falla, el número sale de lo que tenía, pero esa lectura vieja
+  no vuelve a la caché: el Saldo la da por no leída y la pide (revisión del 07-11).
 - **Un chip con DOS hembras vivas: el SISTEMA no elige; elige el USUARIO** (D17, R5). El evento sólo
   trae el Trovan, así que apuntarlo a una sería una convención — y sin las columnas de fecha (que la
   lectura no pidió hasta el 2026-09-24) el desempate caería en «la de más abajo en la hoja». Así que el
@@ -1486,7 +1487,7 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   tanque entra sólo con un conteo POSTERIOR al de su siembra (no se da por 100 % lo no medido; «Pob. actual» sí lo
   cuenta). La aplican el KPI del Supervisor (`survival`), la curva (`moduleSvPopSeries`), el relleno del ICL
   (`svPopByDay`) y Producción Omarsa (`modCorStats`); lo vigila `supervisor/supervivencia-regla.test.js` con los
-  mismos datos. Antes daban cifras distintas (medido el 04-11: 32,5 · 72,5 · 65 · 70,7 · 35). La tabla de Siembras
+  mismos datos. Antes, con los mismos datos, daban cifras distintas. La tabla de Siembras
   mide otra cosa a propósito, hasta el TRASLADO (sin el despacho, para «A cosechar»): «Superv. al traslado».
 - **Microbiología:** los niveles se RECALCULAN desde el UFC con los umbrales por área × parámetro.
 - **El analista, en una sola grafía, CON tilde.** La captura canoniza al guardar y el tablero pliega

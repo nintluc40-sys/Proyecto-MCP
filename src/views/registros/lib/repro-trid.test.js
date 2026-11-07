@@ -3,8 +3,8 @@
    MADURACIÓN · REPRODUCTIVO · EL TR-ID NO SE REPITE (A11, 2026-11-06)
 
    LO QUE PASABA: el número de un traslado (TR-000NNN) salía del máximo de «Maduración Transferencias», pero esa hoja no
-   se volvía a leer: valía la lectura de antes (o la del tablero, de hasta 5 min). Dos traslados seguidos sacaban el MISMO
-   número —medido el 04-11: 2 de 10 TR-ID en dos fechas—, y el contador del equipo sólo contaba sin ninguna lectura.
+   se volvía a leer: valía la lectura de antes (o la del tablero, de hasta 5 min). Dos traslados seguidos podían sacar el
+   MISMO número, y el contador del equipo sólo contaba sin ninguna lectura.
 
    AHORA (usuario: «Releer y no repetir»): antes de numerar se RELEE la hoja; el número es uno más que el mayor entre esa
    lectura, la del tablero y el último que dio el equipo, y se reserva al enviar. Si la relectura falla, sigue con lo que

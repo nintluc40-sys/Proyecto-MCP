@@ -2,7 +2,7 @@
    A22 (2026-11-06, usuario; C4) · UNA SOLA SUPERVIVENCIA CON LOS MISMOS DATOS
 
    LO QUE PASABA: la supervivencia del módulo se calculaba en cinco sitios con reglas distintas, y con los mismos datos
-   salían cifras distintas (medido el 04-11: 32,5 · 72,5 · 65 · 70,7 · 35): el KPI del Supervisor (`survival`), la curva
+   salían cifras distintas: el KPI del Supervisor (`survival`), la curva
    día a día (`moduleSvPopSeries`), el relleno del ICL (`svPopByDay`), Producción Omarsa (`modCorStats`) y la tabla de
    Siembras.
 
