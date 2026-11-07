@@ -345,6 +345,8 @@ export function renderTraslado(ctx, mod) {
      Ahora cada viaje tiene su propia sección con sus propios KPI, y todos los
      números de esa sección hablan de ese traslado. */
   const viajes = viajesDe(visibles);
+  // A25 · los viajes con TODOS sus camiones, para el PDF (que es del viaje entero aunque haya filtro de placa).
+  const viajesEnteros = _placaSola ? viajesDe(t.camiones) : viajes;
 
   let html = breadcrumb(col.accent, [
     { label: '← Módulos', nav: 'modules' },
@@ -774,7 +776,9 @@ export function renderTraslado(ctx, mod) {
              ⚠⚠ Y se pasa `v.camiones`, NO `cams`: si el usuario tuviera activo el
              filtro de placas, `cams` sería un subconjunto y el papel diría que en el
              viaje iba un solo camión. El PDF es del VIAJE ENTERO (usuario,
-             2026-08-27). */
+             2026-08-27).
+             A25 (2026-11-07) · pero `v` sale de `viajes`, que se arma con lo VISIBLE: con el filtro de una placa,
+             `v.camiones` también era sólo ese camión. El papel toma el viaje de `viajesEnteros` (todos los camiones). */
           const bPdf = cuerpo.querySelector('[data-tras-pdf]');
           if (bPdf) {
             if (!v) { bPdf.disabled = true; bPdf.title = 'No se pudo identificar el viaje de este desglose'; }
@@ -783,7 +787,7 @@ export function renderTraslado(ctx, mod) {
                  construye una cadena y se imprime en un iframe oculto. Si algo
                  fallara, el modal tiene que quedarse exactamente como estaba. */
               try {
-                const doc = buildTrasladoPdfDoc(v, { mod, corrida });
+                const doc = buildTrasladoPdfDoc(viajesEnteros.find((x) => x.viaje === v.viaje) || v, { mod, corrida });
                 if (!doc.camiones) { bPdf.textContent = '⚠ Este viaje no tiene camiones que imprimir'; return; }
                 const previo = bPdf.textContent;
                 bPdf.textContent = '⏳ Preparando…';

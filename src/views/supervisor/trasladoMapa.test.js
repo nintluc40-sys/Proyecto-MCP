@@ -247,3 +247,23 @@ describe('Traslado · LA RUTA ES DEL VIAJE, no del camión', () => {
     expect(h).not.toContain('<script>bad()</script>');
   });
 });
+
+/* A25 (2026-11-07, usuario: «Sí, los dos») · una parada es del VIAJE: con 3 camiones, 1 parada sin GPS decía «3». */
+describe('A25 · las paradas sin GPS se cuentan una vez por viaje', () => {
+  it('🔴 con tres camiones que comparten una parada sin señal, es UNA (antes, tres)', () => {
+    const uno = () => {
+      const c = { placa: 'X', paradas: [parada(1, -2.2, -80.9), parada(2, null, null), parada(3, -2.3, -80.8)] };
+      c.puntos = c.paradas.filter((p) => p.lat !== null);
+      return c;
+    };
+    expect(paradasSinGps([uno(), uno(), uno()])).toBe(1);
+  });
+
+  it('una parada que algún camión sí situó no cuenta como sin señal', () => {
+    const a = { placa: 'A', paradas: [parada(1, -2.2, -80.9), parada(2, -2.3, -80.8)] };
+    a.puntos = a.paradas.slice();
+    const b = { placa: 'B', paradas: [parada(1, null, null), parada(2, -2.3, -80.8)] };
+    b.puntos = b.paradas.filter((p) => p.lat !== null);
+    expect(paradasSinGps([a, b])).toBe(0);
+  });
+});

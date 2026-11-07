@@ -49,9 +49,16 @@ export function limitesDe(camiones) {
   return [[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]];
 }
 
-/** Cuántas paradas se quedaron sin coordenadas (sin señal en ruta). */
+/** Cuántas paradas se quedaron sin coordenadas (sin señal en ruta).
+ *  A25 (2026-11-07, usuario: «Sí, los dos») · una PARADA es del viaje: los camiones la comparten, y su ubicación también
+ *  (grano «revision»). Se contaba una vez por camión —con 3 camiones, 1 parada sin GPS decía «3»—; ahora, una vez. */
 export function paradasSinGps(camiones) {
-  return camiones.reduce((a, c) => a + (c.paradas.length - c.puntos.length), 0);
+  const todas = new Set(), conGps = new Set();
+  (camiones || []).forEach((c) => {
+    (c.paradas || []).forEach((p) => todas.add(p.revision));
+    (c.puntos || []).forEach((p) => conGps.add(p.revision));
+  });
+  return [...todas].filter((r) => !conGps.has(r)).length;
 }
 
 /** Contenido de la ficha de un punto. Puro: se prueba sin mapa ni DOM. */
