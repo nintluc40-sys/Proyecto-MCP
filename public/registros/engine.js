@@ -16074,9 +16074,10 @@ function _reproBumpTrSeq(trId){
 /* A11 (2026-11-06, usuario: «Releer y no repetir») · el siguiente TR-ID: uno más que el MAYOR entre la hoja releída, la
    del tablero y el último que dio este equipo. Antes, con filas leídas, el contador del equipo no contaba: un traslado
    recién enviado que la lectura aún no traía volvía a salir con el mismo número. */
-function _reproTrIdSiguiente(){
+// `antes` (opcional): una lectura anterior de la hoja que ya no está en _reproSheets; cuenta SÓLO para no repetir el número.
+function _reproTrIdSiguiente(antes){
   const t=_REPRO_SHEETS.transfer, ids=[];
-  _reproStoreRows(t).concat((_reproSheets && _reproSheets[t]) || []).forEach(function(r){ ids.push(r && r["TR-ID"]); });
+  _reproStoreRows(t).concat((_reproSheets && _reproSheets[t]) || [], antes || []).forEach(function(r){ ids.push(r && r["TR-ID"]); });
   const last=localStorage.getItem("larv4_mad_trseq")||"";
   if(last) ids.push(last);
   return window.__rgLib.nextTrId(ids);
@@ -16133,11 +16134,13 @@ async function madReproTransfer(){
   _reproPaso("repro-t-paso", "Leyendo los traslados…");
   /* A11 (2026-11-06, usuario: «Releer y no repetir») · SE RELEE la hoja antes de numerar. Sin `force` valía la lectura de
      antes (o la del tablero, de hasta 5 min): dos traslados seguidos sacaban el MISMO «siguiente» (medido el 04-11: 2 de
-     10 TR-ID en dos fechas). Si la relectura falla, sigue con lo que tenía (y el contador del equipo), como antes: sin
-     `force`, una lectura vieja también se usaba; el aviso de hoja recortada (D11) no cambia. */
+     10 TR-ID en dos fechas). Si la relectura falla, el número sale de lo que tenía (y del contador del equipo), como antes;
+     el aviso de hoja recortada (D11) no cambia.
+     Revisión de la B (2026-11-07, usuario: «No reponerla») · esa lectura vieja cuenta SÓLO para el número: no vuelve a
+     _reproSheets. Reponerla hacía que el Saldo la diera por recién leída (`_madHojaLeida`) aunque tuviera horas, que es
+     el defecto A1 del 09-08; sin ella, el Saldo la da por no leída y la vuelve a pedir. */
   const _trAntes = _reproSheets && _reproSheets[_REPRO_SHEETS.transfer];
   await _reproEnsureSheet(_REPRO_SHEETS.transfer, null, true);
-  if(_trAntes && !(_reproSheets && _reproSheets[_REPRO_SHEETS.transfer])) _reproPutRows(_REPRO_SHEETS.transfer, _trAntes);
   _reproPaintMatrixBanner();
   /* ⚠⚠ D11 · CON EL LEDGER RECORTADO NO HAY TR-ID SEGURO, y aquí no basta con avisar. Hasta el
      2026-10-19 el máximo salía de las filas más ANTIGUAS, así que el TR-ID «siguiente» ya existía
@@ -16151,7 +16154,7 @@ async function madReproTransfer(){
     _reproNada("repro-t-paso", "No se envió: Google devolvió incompleta la lista de traslados, y el número del próximo traslado podría repetir uno que ya existe. Hay que ampliar el límite de lectura del GAS; lo pegado sigue aquí.", 9000);
     return;
   }
-  const trId=_reproTrIdSiguiente();
+  const trId=_reproTrIdSiguiente(_trAntes);
   const res=window.__rgLib.buildTransferBatch({ fecha:fecha, tipo:tipo, origen:origen, destinos:_destinos, composicion:composicion, matrixIndex:_reproMatrixIndex(), trId:trId });
   if(res.error){ _reproNada("repro-t-paso", res.error, 3500); return; }
   res.report.sinConfirmar=_scT;

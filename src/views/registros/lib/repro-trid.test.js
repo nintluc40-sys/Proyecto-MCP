@@ -18,7 +18,7 @@ import { join } from 'node:path';
 
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
-const EXPORTAR = ['_reproTransferHTML', 'madReproTransfer', '_REPRO_SHEETS', '_reproBumpTrSeq'];
+const EXPORTAR = ['_reproTransferHTML', 'madReproTransfer', '_REPRO_SHEETS', '_reproBumpTrSeq', '_madHojaLeida'];
 const H = {};
 const envios = [];
 let ledgerDeGoogle = null;   // lo que contesta la relectura (null = falla)
@@ -120,6 +120,20 @@ describe('A11 · el TR-ID no se repite', () => {
     ledgerDeGoogle = null;
     expect(await trasladar()).toBe('TR-000008');
     expect(await trasladar()).toBe('TR-000009');
+  });
+
+  /* Revisión de la B (2026-11-07, usuario: «No reponerla») · la lectura vieja cuenta sólo para el número. Reponerla en la caché
+     hacía que el Saldo la diera por RECIÉN leída (`_madHojaLeida`), aunque tuviera horas. */
+  it('🔴 si la relectura falla, la lectura vieja no se da por leída: el Saldo la vuelve a pedir (antes, sí)', async () => {
+    ledgerDeGoogle = null;
+    expect(await trasladar()).toBe('TR-000008');   // el número sí sale de ella
+    expect(H._madHojaLeida(S.transfer)).toBe(false);
+  });
+
+  it('con la relectura buena, la hoja queda leída con lo nuevo', async () => {
+    ledgerDeGoogle = [fila('TR-000007'), fila('TR-000011')];
+    expect(await trasladar()).toBe('TR-000012');
+    expect(H._madHojaLeida(S.transfer)).toBe(true);
   });
 
   it('el contador del equipo nunca va hacia atrás', () => {
