@@ -771,15 +771,25 @@ export function filaAnulada(row) {
   return !!col && String(getField(row, [col]) || '').trim().startsWith(MARCA_ANULADA);
 }
 
+/* Revisión de la B (2026-11-07, usuario: «Sí, los cuatro así») · LAS FILAS EN BLANCO DE DESINFECCIÓN. Desde A10, desmarcar
+   en Registros un elemento ya enviado manda su fila EN BLANCO —sin Estado ni Observaciones— para que la hoja quede en «—»:
+   el Apps Script no sabe borrarla. No es un registro: el sistema no la carga, como las anuladas. Sin esto, un módulo con
+   todo desmarcado seguía «en desinfección» en el Supervisor y su PDF imprimía una página de «—». Sólo en esa hoja. */
+const DX_HOJA = 'Registro_Desinfección';
+/** ¿Es una fila de Desinfección vaciada desde Registros (sin Estado ni Observaciones)? */
+export function filaDesinfVacia(row) {
+  return !!row && row._SheetOrigin === DX_HOJA && getField(row, ['Estado']) === '' && getField(row, ['Observaciones']) === '';
+}
+
 /** Aplica un set de hojas { name: rows } al store: aplana las filas, limpia la caché
  *  de fechas, fija globalData/sheetNames/latestDateMs y deriva Mortalidad. NO emite
  *  eventos ni toca el estado de conexión/fingerprint: eso lo decide cada caller
  *  (carga inicial vs auto-refresco). No muta el store si el set viene vacío.
- *  Las filas anuladas (A10, `filaAnulada`) no entran.
+ *  Las filas anuladas (A10, `filaAnulada`) y las de Desinfección en blanco (`filaDesinfVacia`) no entran.
  *  Devuelve el nº de filas aplicadas (0 = nada que aplicar). */
 export function applySheets(sheets) {
   const rows = [];
-  for (const name in sheets) for (const r of sheets[name]) if (!filaAnulada(r)) rows.push(r);
+  for (const name in sheets) for (const r of sheets[name]) if (!filaAnulada(r) && !filaDesinfVacia(r)) rows.push(r);
   if (!rows.length) return 0;
 
   clearDateCache();

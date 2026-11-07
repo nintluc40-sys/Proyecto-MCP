@@ -467,8 +467,9 @@ function desinfeccionTable(rows) {
     <tbody>${body.join('')}</tbody></table>`;
 }
 
-// Páginas de Desinfección: una por fecha con registros (la hoja ya sólo guarda
-// elementos marcados u observados → no hace falta filtro de "día con datos").
+// Páginas de Desinfección: una por fecha con registros. No hace falta filtro de «día con datos»: la hoja sólo guarda
+// elementos marcados u observados, y las filas que Registros manda en blanco al desmarcar (A10) no llegan al store
+// (`filaDesinfVacia`, core/sheets.js).
 function desinfeccionPages({ mod, corrida, from, to }) {
   const byDate = new Map();
   desinfRowsOf(mod, corrida).forEach((r) => {

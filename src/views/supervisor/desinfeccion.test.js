@@ -1,6 +1,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { store } from '../../core/store.js';
 import { desinfeccionEnCurso, desinfeccionDetalle } from './desinfeccion.js';
+import { applySheets } from '../../core/sheets.js';
+import { buildFichaPages } from './trazabilidad.js';
 
 const dz = (origin, extra) => ({ _SheetOrigin: origin, ...extra });
 
@@ -40,6 +42,19 @@ describe('desinfeccionEnCurso', () => {
   it('sin hoja de desinfección → arreglo vacío', () => {
     store.globalData = [dz('Larvicultura', { 'Módulo': 'M01', Corrida: '580' })];
     expect(desinfeccionEnCurso()).toEqual([]);
+  });
+
+  /* Revisión de la B (2026-11-07) · un módulo con TODO desmarcado en Registros sólo tiene filas en blanco (A10): no está
+     «en desinfección». Pasa por la carga real (`applySheets`), que es la que las deja fuera. */
+  it('🔴 con todo desmarcado (filas en blanco), no sale «en desinfección» ni en el PDF (antes, gris y una página de «—»)', () => {
+    const blanco = (elem) => dz('Registro_Desinfección', { 'Módulo': 'M01', Corrida: '580', 'Tipo de Registro': 'Desinfección de módulo larvicultura',
+      'Categoría': 'Materiales', Elemento: elem, Estado: '', Observaciones: '', Fecha: '2026-06-10' });
+    applySheets({ 'Registro_Desinfección': [blanco('Reservorio'), blanco('Líneas de agua')],
+      Larvicultura: [dz('Larvicultura', { 'Módulo': 'M09', Corrida: '590', Fecha: '2026-06-10' })] });
+    expect(store.globalData).toHaveLength(1);   // la carga sí se aplicó
+    expect(desinfeccionEnCurso()).toEqual([]);
+    expect(desinfeccionDetalle('M01', '580')).toBeNull();
+    expect(buildFichaPages('desinfeccion', { mod: 'M01', corrida: '580' })).toEqual([]);
   });
 });
 
