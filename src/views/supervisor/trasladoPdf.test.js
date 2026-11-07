@@ -199,3 +199,30 @@ describe('A25 · PDF del viaje con una hora mal escrita', () => {
     expect(doc.page).toMatch(/⚠ <b>Puerta a puerta:<\/b> la salida \(11:00\)/);
   });
 });
+
+/* A25 (2026-11-07, usuario: «Que cubra todo el papel») · el código TRAS-… cubría sólo las tablas de los camiones: con otra
+   salida, otra llegada, otra camaronera u otra observación salía el MISMO código. */
+describe('A25 · el código verificador cubre todo el papel', () => {
+  const codigo = (doc) => doc.page.match(/TRAS-[0-9A-F]{8}/)[0];
+  const conCambio = (fn) => {
+    const v = viaje({});
+    fn(v.data);
+    return buildTrasladoPdfDoc(viajesDeFilas(aFilas(buildTrasladoPayload(v)))[0], { mod: 'M07', corrida: '555' });
+  };
+
+  it('🔴 cambia con la salida, la llegada, la camaronera o una observación (antes, no)', () => {
+    const base = codigo(conCambio(() => {}));
+    expect(codigo(conCambio((d) => { d.horaSalida = '20:45'; }))).not.toBe(base);
+    expect(codigo(conCambio((d) => { d.horaLlegada = '06:30'; }))).not.toBe(base);
+    expect(codigo(conCambio((d) => { d.camaronera = 'Puná 2'; }))).not.toBe(base);
+    expect(codigo(conCambio((d) => { d.revisiones[1].obs = 'Tracto digestivo lleno.'; }))).not.toBe(base);
+  });
+
+  it('el mismo viaje con los mismos datos da el mismo código, y el de la cabecera es el del pie', () => {
+    const a = conCambio(() => {});
+    expect(codigo(a)).toBe(codigo(conCambio(() => {})));
+    const todos = a.page.match(/TRAS-[0-9A-F]{8}/g);
+    expect(new Set(todos).size).toBe(1);
+    expect(todos.length).toBeGreaterThan(1);
+  });
+});

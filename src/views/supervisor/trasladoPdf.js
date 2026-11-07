@@ -206,17 +206,21 @@ export function buildTrasladoPdfDoc(viaje, opts = {}) {
      todos, el documento abriría con una hoja en blanco. */
   const camionesHtml = cuerpo.map((s, i) => (i ? '<div class="brk"></div>' : '') + s).join('');
 
-  // Código verificador DETERMINISTA sobre el contenido: el mismo viaje con los
-  // mismos datos da siempre el mismo código (el sello de generación queda fuera).
-  const codigo = 'TRAS-' + fnv1a(`${viaje.viaje}|${viaje.fecha}|${camionesHtml}`)
-    .toString(16).toUpperCase().padStart(8, '0').slice(-8);
-
   const obs = observacionesDelViaje(cams);
   const obsHtml = obs.length
     ? `<div class="tv-notas"><div class="tv-nlab">Observaciones del viaje</div>`
       + obs.map((o) => `<div class="tv-nota"><b>Parada ${o.revision}</b> · ${val(o.hora)} · ${val(o.lugar)} — ${esc(o.texto)}</div>`).join('')
       + '</div>'
     : '';
+
+  // Código verificador DETERMINISTA sobre el contenido: el mismo viaje con los
+  // mismos datos da siempre el mismo código (el sello de generación queda fuera).
+  /* A25 (2026-11-07, usuario: «Que cubra todo el papel») · cubría sólo las tablas de los camiones: cambiar la salida, la
+     llegada, la camaronera, los tiempos o las observaciones daba el MISMO código, así que no las verificaba. Ahora cubre
+     todo lo impreso salvo el propio código y la hora de generación (la cabecera se arma sin código para calcularlo). Un
+     viaje impreso antes de este cambio da otro código al reimprimirlo. */
+  const codigo = 'TRAS-' + fnv1a(`${viaje.viaje}|${viaje.fecha}|${cabecera(viaje, mod, corrida, '')}${camionesHtml}${obsHtml}`)
+    .toString(16).toUpperCase().padStart(8, '0').slice(-8);
 
   const pie = `<div class="pfoot">
     <div><div class="code-box">${esc(codigo)}</div><div class="ts-txt">Generado ${esc(tsStr)}</div></div>
