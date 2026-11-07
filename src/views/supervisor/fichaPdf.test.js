@@ -142,14 +142,16 @@ describe('fichaPdf · núcleo PDF nativo (Trazabilidad)', () => {
     })).toBe(true);
   });
 
-  it('params añade Estadío/Hora registro en la cabecera', () => {
+  // A25 (2026-11-07, usuario: «Calcular lo que se pueda») · la «Hora registro» no está en ninguna hoja: salía siempre «—»
+  // y se quita del papel. El estadío sí, que ahora se rellena desde Larvicultura.
+  it('params añade el Estadío en la cabecera, sin «Hora registro»', () => {
     const doc = buildFichaPdfDoc({
       fid: 'params', mod: 'M03', fileName: 'PA_2026-06-01_M03',
       pages: [{ d: { fecha: '2026-06-01', estadio: 'Z2', hora: '08:00' }, tableHtml: '<table></table>' }],
     });
     expect(doc).toContain('Estadío');
     expect(doc).toContain('Z2');
-    expect(doc).toContain('Hora registro');
+    expect(doc).not.toContain('Hora registro');
     expect(doc).toContain('Versión 0'); // rev-line de params
   });
 });
