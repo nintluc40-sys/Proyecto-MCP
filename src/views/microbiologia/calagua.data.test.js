@@ -349,3 +349,36 @@ describe('calGroupTree / calDiagnosis', () => {
     expect(d.topParams.length).toBeGreaterThan(0);
   });
 });
+
+/* A30 (2026-11-06, decisiones del usuario) · «Cuatro niveles, como el WQI» para el cumplimiento, y «Queda sin ese límite»
+   al vaciar un mín o un máx en el editor (se guarda `null`): sin ningún límite, el parámetro no tiene rango. */
+describe('A30 · cumplimiento y límites vaciados', () => {
+  it('sevDeCumplimiento: ≥90 óptimo, ≥70 vigilancia, ≥50 fuera, por debajo crítico; sin cifra, null', async () => {
+    const { sevDeCumplimiento } = await import('./calagua.data.js');
+    expect([100, 90, 89, 70, 69, 60, 50, 49, 0].map(sevDeCumplimiento))
+      .toEqual(['optimo', 'optimo', 'vigilancia', 'vigilancia', 'fuera', 'fuera', 'fuera', 'critico', 'critico']);
+    expect(sevDeCumplimiento(null)).toBeNull();
+  });
+  it('calEstado: un parámetro con los DOS límites vacíos (null) no tiene rango (antes, «dentro»)', () => {
+    const R = { ph: { min: null, max: null } };
+    expect(calEstado('ph', 8, R)).toBe('sin-rango');
+    expect(calSeverity('ph', 8, R)).toBe('sin-rango');
+    expect(calEstado('ph', 9, { ph: { min: null, max: 8.5 } })).toBe('fuera');   // sólo techo: sigue mirando el máx
+  });
+  describe('con overrides guardados', () => {
+    const KEY = 'larv4_cal_ranges';
+    let store0;
+    beforeEach(() => {
+      store0 = {};
+      globalThis.localStorage = { getItem: (k) => (k in store0 ? store0[k] : null), setItem: (k, v) => { store0[k] = String(v); }, removeItem: (k) => { delete store0[k]; } };
+    });
+    afterEach(() => { delete globalThis.localStorage; });
+    it('un mín guardado como null QUITA el de base (antes lo reponía)', () => {
+      store0[KEY] = JSON.stringify({ ph: { min: null, max: 8.5 } });
+      const R = loadCalRanges();
+      expect(R.ph).toEqual({ min: null, max: 8.5 });
+      expect(calEstado('ph', 6, R)).toBe('dentro');   // ya no hay piso
+      expect(calRangeText('ph', R)).toBe('≤8.5');
+    });
+  });
+});

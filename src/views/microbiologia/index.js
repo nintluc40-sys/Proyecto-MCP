@@ -37,7 +37,7 @@ import { buildPetriPdfDoc, dayKeyOf } from './petriPdf.js';
 // Motor de impresión compartido (iframe oculto, sin pop-ups). Vive en supervisor/ por
 // ser donde nació, pero es genérico: recibe HTML y lo imprime.
 import { printFichaDocs } from '../supervisor/fichaPdf.js';
-import { calAguaRows, calCtx, calMeasured, calLocation, loadCalRanges, calRangeText, calEnsayoData, CAL_PARAMS, calDiagnosis, calGroupTree, calWQI, controlStats, boxStats, calSeverity, calStageCmp, CAL_RISK, CAL_SEV, rangosModificados, procesoDe, parametrosConRango } from './calagua.data.js';
+import { calAguaRows, calCtx, calMeasured, calLocation, loadCalRanges, calRangeText, calEnsayoData, CAL_PARAMS, calDiagnosis, calGroupTree, calWQI, controlStats, boxStats, calSeverity, calStageCmp, CAL_RISK, CAL_SEV, rangosModificados, procesoDe, parametrosConRango, sevDeCumplimiento, CAL_RANGE_BASE } from './calagua.data.js';
 
 /* H-013 (auditoría 2026-09-25, aprobado 2026-10-03) · el fondo del tema (--c-surface) para separar los sectores de la
    dona: blanco en claro, oscuro en oscuro (era blanco fijo). */
@@ -553,7 +553,7 @@ function genScorecardHTML(areas) {
   if (!areas.length) return emptyBox('Sin muestras en el mes seleccionado.');
   const rows = areas.map((a) => {
     const wqiSev = a.wqi == null ? 'sin-rango' : wqiBand(a.wqi).sev;
-    const cumpSev = a.cump == null ? 'sin-rango' : a.cump >= 90 ? 'optimo' : a.cump >= 70 ? 'vigilancia' : 'fuera';
+    const cumpSev = a.cump == null ? 'sin-rango' : sevDeCumplimiento(a.cump);   // A30 · la regla única (cuatro niveles)
     return `<button class="gen-sc-row" data-gen-depto="${esc(a.area)}" title="Ver desglose de ${esc(a.area)}">
         <span class="gen-sc-area">${esc(a.area)}</span>
         <span class="gen-sc-n">${a.n || '—'}</span>
@@ -781,27 +781,31 @@ function calKpiStripHTML(samples, { outC, fullOk, pctOk, evaluated, evalCount, o
   const sevOrder = ['optimo', 'vigilancia', 'fuera', 'critico'];
   const sevCount = { optimo: 0, vigilancia: 0, fuera: 0, critico: 0 };
   samples.forEach((s) => s.meas.forEach((m) => { if (sevCount[m.severity] != null) sevCount[m.severity]++; }));
-  const sevTot = sevOrder.reduce((a, k) => a + sevCount[k], 0) || 1;
-  const pctOpt = Math.round(sevCount.optimo / sevTot * 100);
+  // A30 (2026-11-06) · sin ninguna medición con rango (p. ej. sólo Salinidad y T°) no hay perfil: «—», no «0 % óptimo».
+  const sevTot0 = sevOrder.reduce((a, k) => a + sevCount[k], 0);
+  const sevTot = sevTot0 || 1;
+  const pctOpt = sevTot0 ? Math.round(sevCount.optimo / sevTot * 100) : null;
 
   // Series por día: cobertura (nº muestras) + cumplimiento (% mediciones en rango).
   const byDay = new Map();
   samples.forEach((s) => {
     const t = s.ctx.fecha ? +s.ctx.fecha : null; if (t == null || isNaN(t)) return;
     const k = Math.floor(t / 86400000);
-    const b = byDay.get(k) || { n: 0, in: 0, out: 0 };
-    b.n++; s.meas.forEach((m) => { if (m.estado === 'dentro') b.in++; else if (m.estado === 'fuera') b.out++; });
+    const b = byDay.get(k) || { n: 0, in: 0, out: 0, muestras: [] };
+    b.n++; b.muestras.push(s); s.meas.forEach((m) => { if (m.estado === 'dentro') b.in++; else if (m.estado === 'fuera') b.out++; });
     byDay.set(k, b);
   });
   const days = [...byDay.keys()].sort((a, b) => a - b);
   const tlMax = Math.max(1, ...days.map((k) => byDay.get(k).n));
-  const compSeries = days.map((k) => { const b = byDay.get(k); const ev = b.in + b.out; return ev ? Math.round(b.in / ev * 100) : null; });
+  // A30 (2026-11-06, usuario: «Muestras») · el minigráfico y el ▲/▼ del cumplimiento, por MUESTRAS del día con todo en rango
+  // (`calSampleCompliance`, la definición de la cifra grande); antes eran % de mediciones y no se comparaban con ella.
+  const compSeries = days.map((k) => calSampleCompliance(byDay.get(k).muestras).pct);
   const compVals = compSeries.filter((v) => v != null);
   const compDelta = compVals.length >= 2 ? compVals[compVals.length - 1] - compVals[compVals.length - 2] : null;
   const dArrow = compDelta == null ? '' : compDelta > 0 ? 'up' : compDelta < 0 ? 'dn' : '';
 
-  const compSev = pctOk == null ? '' : pctOk >= 90 ? 'optimo' : pctOk >= 70 ? 'vigilancia' : 'critico';
-  const sevProfileSev = pctOpt >= 80 ? 'optimo' : pctOpt >= 60 ? 'vigilancia' : 'fuera';
+  const compSev = pctOk == null ? '' : sevDeCumplimiento(pctOk);   // A30 · la regla única (antes, bajo 70 era «crítico» aquí y «fuera» en el área)
+  const sevProfileSev = pctOpt == null ? '' : pctOpt >= 80 ? 'optimo' : pctOpt >= 60 ? 'vigilancia' : 'fuera';
 
   // 01 · Timeline compacto (cobertura de muestreo por día).
   const timeline = days.length
@@ -840,7 +844,7 @@ function calKpiStripHTML(samples, { outC, fullOk, pctOk, evaluated, evalCount, o
   return `<div class="cal-inst-strip">
     ${inst('01', '', '💧 Muestras', String(samples.length), timeline, `${days.length} día(s) de muestreo`, kpiClick('muestras'))}
     ${inst('02', compSev, '✅ Cumplimiento', pctOk == null ? '—' : `${pctOk}<small>%</small>`, calSpark(compSeries), compFoot, kpiClick('cumplimiento'))}
-    ${inst('03', sevProfileSev, '🧭 Perfil de severidad', `${pctOpt}<small>% óptimo</small>`, `<div class="cal-inst-segwrap">${segBar}${segLegend}</div>`, '', kpiClick('perfil'))}
+    ${inst('03', sevProfileSev, '🧭 Perfil de severidad', pctOpt == null ? '—' : `${pctOpt}<small>% óptimo</small>`, `<div class="cal-inst-segwrap">${segBar}${segLegend}</div>`, pctOpt == null ? 'sin parámetros con rango' : '', kpiClick('perfil'))}
     ${inst('04', outC > 0 ? 'fuera' : 'optimo', '⚠️ Fuera de rango', String(outC), topBars, evaluated ? `${(outC / evaluated * 100).toFixed(0)}% de evaluados` : 'sin evaluar', alertAttrs)}
   </div>`;
 }
@@ -984,13 +988,15 @@ function calKpiBodyHTML(which) {
   }
   if (which === 'cumplimiento') {
     const inC = d.evaluated - d.outC;
-    const dayRows = d.dayStats.map((x) => { const ev = x.in + x.out; const pct = ev ? Math.round(x.in / ev * 100) : null; return `<tr><td>${esc(dayDate(x.k))}</td><td>${x.in}</td><td>${x.out}</td><td>${pct == null ? '—' : pct + '%'}</td></tr>`; }).join('');
+    // A30 (2026-11-06) · por día, el % de MUESTRAS con todo en rango (lo que dibuja el minigráfico de la tarjeta), y las
+    // mediciones dentro y fuera aparte, con su nombre.
+    const dayRows = d.dayStats.map((x) => { const c = calSampleCompliance(x.muestras || []); return `<tr><td>${esc(dayDate(x.k))}</td><td>${c.evalCount ? `${c.fullOk} de ${c.evalCount}` : '—'}</td><td>${c.pct == null ? '—' : c.pct + '%'}</td><td>${x.in}</td><td>${x.out}</td></tr>`; }).join('');
     const lead = d.pctOk == null
       ? 'Ninguna muestra del filtro tiene parámetros con rango objetivo, por lo que no hay cumplimiento que evaluar.'
       : `<b>${d.pctOk}%</b> de cumplimiento: <b>${d.fullOk}</b> de <b>${d.evalCount}</b> muestra(s) con parámetros evaluables tienen TODOS sus parámetros dentro de rango.`;
     return `<p class="cal-kpi-lead">${lead}</p>
       <p class="cal-kpi-note">"En rango" = valor dentro de [mín, máx] del parámetro. De <b>${d.evaluated}</b> medición(es) con rango objetivo, <b>${inC}</b> están dentro y <b>${d.outC}</b> fuera.</p>
-      <div class="cal-kpi-sec"><h4>Cumplimiento por día</h4><table class="cal-kpi-table"><thead><tr><th>Fecha</th><th>Dentro</th><th>Fuera</th><th>% en rango</th></tr></thead><tbody>${dayRows || '<tr><td colspan="4">Sin fechas registradas.</td></tr>'}</tbody></table></div>`;
+      <div class="cal-kpi-sec"><h4>Cumplimiento por día</h4><table class="cal-kpi-table"><thead><tr><th>Fecha</th><th>Muestras al 100 %</th><th>% muestras</th><th>Mediciones dentro</th><th>Mediciones fuera</th></tr></thead><tbody>${dayRows || '<tr><td colspan="5">Sin fechas registradas.</td></tr>'}</tbody></table></div>`;
   }
   // perfil de severidad
   const meaning = {
@@ -1141,14 +1147,16 @@ function saveCalFactors(root) {
     const mx = root.querySelector(`[data-cal-rmax="${p.key}"]`);
     const min = mn && mn.value.trim() !== '' ? parseFloat(mn.value) : null;
     const max = mx && mx.value.trim() !== '' ? parseFloat(mx.value) : null;
-    const o = {};
-    if (min != null && !isNaN(min)) o.min = min;
-    if (max != null && !isNaN(max)) o.max = max;
+    /* A30 (2026-11-06, usuario: «Queda sin ese límite») · un campo vacío se guarda como `null`: QUITA ese límite en este
+       equipo. Antes no se guardaba nada y `loadCalRanges` reponía el de base: no había forma de quitar un límite. */
+    const o = { min: min != null && !isNaN(min) ? min : null, max: max != null && !isNaN(max) ? max : null };
     if (o.min != null && o.max != null && o.min > o.max) { bad.push(p.label); return; }
     edits.push({ key: p.key, o });
   });
   if (bad.length) { toast(`Rango inválido (mín > máx): ${bad.join(', ')}. Corrígelo antes de guardar.`, 'err'); return; }
-  edits.forEach(({ key, o }) => { if (Object.keys(o).length) stored[key] = o; else delete stored[key]; });
+  // Igual que la base (también vacío donde la base no tiene): sin override. Si no, se guardan los dos, con su `null`.
+  const igual = (a, b) => (a == null ? null : a) === (b == null ? null : b);
+  edits.forEach(({ key, o }) => { const b = CAL_RANGE_BASE[key] || {}; if (igual(o.min, b.min) && igual(o.max, b.max)) delete stored[key]; else stored[key] = o; });
   try { localStorage.setItem(CAL_RANGES_KEY, JSON.stringify(stored)); } catch (_) { toast('No se pudieron guardar los rangos (almacenamiento no disponible).', 'err'); return; }
   closeCalFact(root); toast('Rangos guardados.', 'ok'); microbiologiaView(root);
 }
@@ -2623,7 +2631,9 @@ function tableHTML(rows, summaries) {
 function doExport() {
   const recs = _scope.records;
   if (!recs.length) return;
-  const stamp = new Date().toISOString().slice(0, 10);
+  // A30 (2026-11-06) · la fecha LOCAL: con `toISOString`, desde las 19:00 en Ecuador el archivo salía con la de mañana.
+  const _h = new Date(), _p = (n) => String(n).padStart(2, '0');
+  const stamp = `${_h.getFullYear()}-${_p(_h.getMonth() + 1)}-${_p(_h.getDate())}`;
   const alerts = recs.filter((r) => isAlerta(r.nivel));
   const lines = [
     '='.repeat(52), 'REPORTE DE VIGILANCIA MICROBIOLÓGICA — Bacteriología',

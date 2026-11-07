@@ -129,9 +129,20 @@ export function rangosModificados() {
 export function calEstado(key, value, ranges) {
   const r = (ranges || CAL_RANGE_BASE)[key];
   if (!r || value == null || isNaN(value)) return 'sin-rango';
+  // A30 (2026-11-06) · un parámetro al que se le vaciaron los DOS límites (`null`) no tiene rango: antes salía «dentro».
+  if (r.min == null && r.max == null) return 'sin-rango';
   if (r.min != null && value < r.min) return 'fuera';
   if (r.max != null && value > r.max) return 'fuera';
   return 'dentro';
+}
+
+/** A30 (2026-11-06, usuario: «Cuatro niveles, como el WQI») · el semáforo del CUMPLIMIENTO (% de muestras con todo en
+ *  rango), uno solo para la tarjeta de Calidad de agua y la tabla por área del General: ≥90 óptimo, ≥70 vigilancia, ≥50
+ *  fuera y por debajo crítico. Antes, por debajo de 70 era «crítico» en una y «fuera» en la otra. `null` sin muestras
+ *  evaluables. */
+export function sevDeCumplimiento(pct) {
+  if (pct == null || isNaN(pct)) return null;
+  return pct >= 90 ? 'optimo' : pct >= 70 ? 'vigilancia' : pct >= 50 ? 'fuera' : 'critico';
 }
 
 /** Texto del rango objetivo: "7.5–8.5" · "≤0.2" · "≥120" · "" (sin rango). */

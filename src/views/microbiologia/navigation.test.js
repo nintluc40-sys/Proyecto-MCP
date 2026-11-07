@@ -570,3 +570,78 @@ describe('dominantColony · UFC máx / Dominante del resumen del día', () => {
     expect(dominantColony(null)).toBeNull();
   });
 });
+
+/* A30 (2026-11-06, decisiones del usuario) · Calidad de agua: el cumplimiento en MUESTRAS también por día; el «0 % óptimo» sin
+   parámetros con rango pasa a «—»; los cuatro niveles del cumplimiento; y vaciar un límite en el editor lo QUITA. */
+describe('Microbiología · A30 · Calidad de agua', () => {
+  const agua = (fecha, extra) => ({ _SheetOrigin: 'Calidad de Agua', 'Fecha muestreo': fecha, Corrida: '573', Departamento: 'Larvicultura',
+    Formato: 'Larvicultura', 'Tipo de muestra': 'Agua', 'Módulo': '1', 'Estadío': 'Z2', 'TQ/N°': '3', ...extra });
+  const abrirCalidad = () => { mount(); click(root.querySelector('[data-mic-sub="calidad"]')); };
+  const tarjeta = (n) => [...root.querySelectorAll('.cal-inst')].find((x) => x.querySelector('.cal-inst-ix').textContent === n);
+
+  it('sólo Salinidad y T° (sin rango): el perfil dice «—» y «sin parámetros con rango» (antes, «0 % óptimo»)', () => {
+    store.globalData = [agua('05/06/2026', { 'S‰': '32', Temperatura: '29' }), agua('06/06/2026', { 'S‰': '31', Temperatura: '30' })];
+    abrirCalidad();
+    const t = tarjeta('03');
+    expect(t.querySelector('.cal-inst-v').textContent).toBe('—');
+    expect(t.textContent).toContain('sin parámetros con rango');
+    expect(t.textContent).not.toContain('% óptimo');
+  });
+
+  it('el modal del cumplimiento, por día: muestras al 100 % y su %, y las mediciones aparte', () => {
+    store.globalData = [
+      agua('05/06/2026', { pH: '8.0', Nitrito: '0.5' }),   // una dentro y una fuera: la muestra NO está al 100 %
+      agua('05/06/2026', { pH: '8.1' }),                   // al 100 %
+    ];
+    abrirCalidad();
+    expect(tarjeta('02').querySelector('.cal-inst-v').textContent).toBe('50%');
+    click(root.querySelector('[data-cal-kpi="cumplimiento"]'));
+    const tabla = [...root.querySelectorAll('#calKpiBody .cal-kpi-table')].find((x) => x.textContent.includes('Muestras al 100 %'));
+    expect([...tabla.querySelectorAll('thead th')].map((x) => x.textContent)).toEqual(['Fecha', 'Muestras al 100 %', '% muestras', 'Mediciones dentro', 'Mediciones fuera']);
+    expect([...tabla.querySelectorAll('tbody td')].slice(1).map((x) => x.textContent)).toEqual(['1 de 2', '50%', '2', '1']);
+  });
+
+  it('el ▲/▼ del cumplimiento compara MUESTRAS de un día a otro (antes, mediciones)', () => {
+    store.globalData = [
+      agua('05/06/2026', { pH: '8.0', Nitrito: '0.5' }),   // día 1: 0 % de muestras al 100 % (50 % de mediciones)
+      agua('06/06/2026', { pH: '8.1' }),                   // día 2: 100 % (100 % de mediciones)
+    ];
+    abrirCalidad();
+    expect(tarjeta('02').textContent).toContain('▲ 100pt');   // por mediciones habría sido ▲ 50pt
+  });
+
+  it('un 60 % de cumplimiento es «fuera» y un 40 %, «crítico» (cuatro niveles, como el WQI)', () => {
+    const conPct = (enRango, total) => Array.from({ length: total }, (_, i) => agua('05/06/2026', i < enRango ? { pH: '8.0' } : { pH: '6.0' }));
+    store.globalData = conPct(3, 5);
+    abrirCalidad();
+    expect(tarjeta('02').className).toContain('cal-sev--fuera');
+    store.globalData = conPct(2, 5);
+    abrirCalidad();
+    expect(tarjeta('02').className).toContain('cal-sev--critico');
+  });
+
+  it('editor: vaciar el mínimo del pH lo QUITA (se guarda null); dejarlo como la base no guarda nada', () => {
+    const KEY = 'larv4_cal_ranges';
+    const ls = window.localStorage || globalThis.localStorage;
+    if (!ls) return;
+    const hadGlobal = 'localStorage' in globalThis;
+    if (!hadGlobal) globalThis.localStorage = ls;
+    ls.removeItem(KEY);
+    try {
+      abrirCalidad();
+      click(root.querySelector('[data-cal-factors]'));
+      root.querySelector('[data-cal-rmin="ph"]').value = '';
+      click(root.querySelector('[data-cal-fact-save]'));
+      const saved = JSON.parse(ls.getItem(KEY) || '{}');
+      expect(saved.ph).toEqual({ min: null, max: 8.5 });
+      expect(Object.keys(saved)).toEqual(['ph']);   // los que quedaron como la base, sin override
+      // reabierto, el mínimo sigue vacío (no vuelve el de base)
+      click(root.querySelector('[data-cal-factors]'));
+      expect(root.querySelector('[data-cal-rmin="ph"]').value).toBe('');
+      expect(errSpy).not.toHaveBeenCalled();
+    } finally {
+      ls.removeItem(KEY);
+      if (!hadGlobal) delete globalThis.localStorage;
+    }
+  });
+});
