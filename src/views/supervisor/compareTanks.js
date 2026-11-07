@@ -100,9 +100,26 @@ function buildSeries(vdef, match) {
   return out;
 }
 
+/* A24 (2026-11-07, usuario: «Darles el lote de su tanque») · Control_Tanque NO anota el lote, así que al comparar «por
+   lote» el oxígeno y la temperatura salían siempre «Sin datos». Cada lectura toma el lote que tenía su tanque ESE DÍA en
+   Datos Larvicultura (mismo módulo, corrida y tanque; el día como fecha, el tanque por su número). Sin lote ese día, no
+   entra. Memoizado por identidad del store. */
+const diaClave = (f) => { const d = parseAnyDate(f); return d && !isNaN(d) ? d.toDateString() : ''; };
+const tqClave = (t) => { const s = String(t == null ? '' : t).trim().toUpperCase(); const n = s.match(/\d+/); return n ? String(+n[0]) : s; };
+const claveLote = (r) => JSON.stringify([getField(r, F.modulo), getField(r, F.corrida), tqClave(getField(r, F.tanque)), diaClave(getField(r, F.fecha))]);
+let _lotesTq = { src: null, map: null };
+export function loteDeLectura(r) {
+  if (_lotesTq.src !== store.globalData) {
+    const map = new Map();
+    larvRows().forEach((l) => { const lote = getField(l, F.lote); if (!lote) return; const k = claveLote(l); if (!map.has(k)) map.set(k, lote); });
+    _lotesTq = { src: store.globalData, map };
+  }
+  return _lotesTq.map.get(claveLote(r)) || '';
+}
+
 /** Predicado de filtrado de la serie `side` ('A'|'B') según el modo activo. null si incompleta. */
 function matchFor(side) {
-  if (ctState.mode === 'lote') { const l = ctState.lote[side]; return l ? (r) => getField(r, F.lote) === l : null; }
+  if (ctState.mode === 'lote') { const l = ctState.lote[side]; return l ? (r) => (isTanqueRow(r) ? loteDeLectura(r) : getField(r, F.lote)) === l : null; }
   if (ctState.mode === 'corrida') { const c = ctState.corrida[side]; return c ? (r) => getField(r, F.corrida) === c : null; }
   const s = ctState[side];
   if (!s.mod || !s.cor || !s.tq) return null;
