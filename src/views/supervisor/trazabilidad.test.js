@@ -454,6 +454,16 @@ describe('A25 · los campos del PDF que salían «—»', () => {
     expect(html).not.toContain('Hora registro');
   });
 
+  it('🔴 la CTA de un día cuenta sólo lo sembrado hasta ese día (siembra escalonada)', () => {
+    store.globalData = [
+      row({ Tanque: '1', Fecha: '2026-06-01', 'Población': '1000000' }),
+      row({ Tanque: '1', Fecha: '2026-06-03', 'Población': '950000' }),
+      row({ Tanque: '2', Fecha: '2026-06-03', 'Población': '2000000' }),   // sembrado dos días después
+    ];
+    const p = buildFichaPages('poblacion', { mod: 'M01', corrida: '573' });
+    expect(p.map((x) => x.d.cta)).toEqual([(1000).toLocaleString('es-EC'), (3000).toLocaleString('es-EC')]);
+  });
+
   it('Desinfección no enseña una «Hora» que ninguna hoja tiene; Población sí la suya', () => {
     store.globalData.push({ _SheetOrigin: 'Registro_Desinfección', 'Módulo': 'M01', Corrida: '573', Fecha: '2026-06-01',
       'Tipo de Registro': 'X', 'Categoría': 'Y', Elemento: 'Z', Estado: 'Sí' });
