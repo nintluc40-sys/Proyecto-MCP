@@ -18,7 +18,8 @@ import { join } from 'node:path';
 
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
-const EXPORTAR = ['saveE', 'syncOneFicha', 'syncAll', '_previasEnviarFichas', 'DX_ENV_KEY', 'PRE', '_invalidateLoadE', '_lastSyncFingerprint'];
+const EXPORTAR = ['saveE', 'syncOneFicha', 'syncAll', '_previasEnviarFichas', 'DX_ENV_KEY', 'PRE', '_invalidateLoadE', '_lastSyncFingerprint',
+  '_allAppStorageKeys'];
 const H = {};
 const envios = [];
 
@@ -212,6 +213,28 @@ describe('A10 · Desinfección: el blanco que no llegó se vuelve a mandar', () 
     await p;
     expect(fila(ultimo(), 'Reservorio')).toEqual(['', '']);
     expect(anotados().some((k) => k.includes('Reservorio'))).toBe(false);
+    expect(anotados().some((k) => k.includes('Líneas de agua'))).toBe(true);
+  });
+});
+
+/* Revisión de la B (2026-11-07) · la clave no llevaba el prefijo de la app: el respaldo no se la llevaba, y el medidor de
+   espacio y la limpieza no la veían. Lo anotado con el nombre viejo pasa al nuevo. */
+describe('A10 · lo anotado de Desinfección entra en el respaldo', () => {
+  it('🔴 su clave es de la app: el respaldo la incluye (antes, no)', async () => {
+    await enviarHoy(ficha({ [RES + '_estado']: 'Sí' }));
+    expect(H.DX_ENV_KEY.startsWith(H.PRE)).toBe(true);
+    expect(H._allAppStorageKeys()).toContain(H.DX_ENV_KEY);
+  });
+
+  it('🔴 lo anotado con el nombre viejo pasa al nuevo y sigue valiendo', async () => {
+    await enviarHoy(ficha({ [RES + '_estado']: 'Sí' }));
+    const v = almacen.getItem(H.DX_ENV_KEY);
+    almacen.removeItem(H.DX_ENV_KEY);
+    almacen.setItem('dx_enviado_v1', v);                 // como lo dejó la versión del 06-11
+    H._lastSyncFingerprint.clear();
+    await enviarHoy(ficha({ [LIN + '_estado']: 'Sí' }));
+    expect(fila(ultimo(), 'Reservorio')).toEqual(['', '']);
+    expect(almacen.getItem('dx_enviado_v1')).toBeNull();
     expect(anotados().some((k) => k.includes('Líneas de agua'))).toBe(true);
   });
 });

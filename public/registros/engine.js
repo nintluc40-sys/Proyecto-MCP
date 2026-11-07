@@ -947,6 +947,16 @@ function _lsSet(key, valueStr){
     return false;
   }
 }
+/* Revisión de la B (2026-11-07) · UNA CLAVE QUE CAMBIÓ DE NOMBRE: lo que haya con el viejo pasa al nuevo, una vez, y el
+   viejo se borra. Si no cabe, el viejo se queda y quien lee lo sigue leyendo de allí; cuando el nuevo ya existe, lo
+   escribió quien partió de esa lectura, y el viejo sobra. */
+function _lsMudarClave(vieja, nueva){
+  try{
+    if(localStorage.getItem(nueva) !== null){ if(localStorage.getItem(vieja) !== null) localStorage.removeItem(vieja); return; }
+    const v = localStorage.getItem(vieja);
+    if(v !== null && _lsSet(nueva, v)) localStorage.removeItem(vieja);
+  }catch(_){}
+}
 
 function cleanup(){
   // FPRE/RPRE/ALGHIST_PRE/TQNAME_PRE/NPRE all start with PRE, so a single
@@ -4981,10 +4991,14 @@ function dxFechaChange(v){
    nunca antes: si falla sin quedar en la cola (rechazado, en curso, sin espacio), el siguiente vuelve a llevar el blanco;
    lo que ya viajó en blanco se olvida. Se guardan 60 días. Sin espacio para anotarlo, el envío sigue: sólo se pierde esta
    corrección. */
-const DX_ENV_KEY = "dx_enviado_v1";
+/* Revisión de la B (2026-11-07) · la clave lleva el prefijo de la app (PRE). Sin él no entraba en el respaldo, ni en el
+   medidor de espacio, ni en la limpieza (`STORAGE_NAMESPACES`). La del nombre viejo pasa a la nueva al leerla (_lsMudarClave). */
+const DX_ENV_KEY = PRE + "dx_enviado_v1";
+const DX_ENV_KEY_VIEJA = "dx_enviado_v1";
 const DX_ENV_DIAS = 60;
 function _dxEnviados(){
-  try{ const o = JSON.parse(localStorage.getItem(DX_ENV_KEY) || "{}"); return (o && typeof o === "object" && !Array.isArray(o)) ? o : {}; }
+  _lsMudarClave(DX_ENV_KEY_VIEJA, DX_ENV_KEY);
+  try{ const o = JSON.parse(localStorage.getItem(DX_ENV_KEY) || localStorage.getItem(DX_ENV_KEY_VIEJA) || "{}"); return (o && typeof o === "object" && !Array.isArray(o)) ? o : {}; }
   catch(_){ return {}; }
 }
 // La llave de la fila sin la fecha ni el módulo (ésos ya son el cajón): Tipo · Categoría · Elemento.
@@ -26359,10 +26373,13 @@ function micSessionKey(d){
    de sesión sólo cambia con 🧹, y un análisis reutilizado otro día comparte sesión con ése. El sistema no carga esas
    filas (MARCA_ANULADA y filaAnulada, src/core/sheets.js). Las anulaciones esperan en LAB_ANULAR_KEY hasta que salen
    (entregadas o en la cola) junto con el siguiente envío de su hoja. Las sesiones heredadas (sin sesión) no entran. */
-const LAB_ANULAR_KEY = "lab_anular_v1";
+// Revisión de la B (2026-11-07) · con el prefijo de la app, como DX_ENV_KEY (ver allí); la del nombre viejo pasa a ésta.
+const LAB_ANULAR_KEY = PRE + "lab_anular_v1";
+const LAB_ANULAR_KEY_VIEJA = "lab_anular_v1";
 const LAB_MARCA_ANULADA = "⛔ ANULADA";
 function _labAnulacionesTodas(){
-  try{ const o = JSON.parse(localStorage.getItem(LAB_ANULAR_KEY) || "{}"); return (o && typeof o === "object" && !Array.isArray(o)) ? o : {}; }
+  _lsMudarClave(LAB_ANULAR_KEY_VIEJA, LAB_ANULAR_KEY);
+  try{ const o = JSON.parse(localStorage.getItem(LAB_ANULAR_KEY) || localStorage.getItem(LAB_ANULAR_KEY_VIEJA) || "{}"); return (o && typeof o === "object" && !Array.isArray(o)) ? o : {}; }
   catch(_){ return {}; }
 }
 function _labAnulaciones(tipo){ const l = _labAnulacionesTodas()[tipo]; return Array.isArray(l) ? l : []; }

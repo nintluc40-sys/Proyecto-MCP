@@ -21,7 +21,8 @@ const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['savePatLocal', 'syncPat', '_patRaw', 'renderPatNuevo', 'syncMic', '_micRaw', 'renderMicNuevo',
   'syncCal', '_calRaw', 'renderCalNuevo', 'CAL_FORMATS', 'MIC_FORMATS', 'micFmtChange', 'micTypeSet', 'LAB_ANULAR_KEY', '_lastSyncFingerprint',
-  'PAT_SHEET_HEADERS', 'MIC_SHEET_HEADERS', 'CAL_SHEET_HEADERS', 'PAT_REC_KEY', 'MIC_REC_KEY', 'CAL_REC_KEY', 'saveMicLocal', 'saveCalLocal'];
+  'PAT_SHEET_HEADERS', 'MIC_SHEET_HEADERS', 'CAL_SHEET_HEADERS', 'PAT_REC_KEY', 'MIC_REC_KEY', 'CAL_REC_KEY', 'saveMicLocal', 'saveCalLocal',
+  '_allAppStorageKeys', 'PRE'];
 const H = {};
 const envios = [];
 let respuesta = 'ok';
@@ -315,5 +316,37 @@ describe('A10 · corregir sin espacio en el equipo: todo o nada', () => {
     llenas.clear();
     expect(pendientes().pat).toHaveLength(1);              // la de antes sigue, igual
     expect(pendientes().pat[0].data.fechaMuestreo).toBe(D1);
+  });
+});
+
+/* Revisión de la B (2026-11-07) · la clave de las anulaciones no llevaba el prefijo de la app: un respaldo restaurado en otro
+   equipo las perdía. Lo guardado con el nombre viejo pasa al nuevo. */
+describe('A10 · las anulaciones pendientes entran en el respaldo', () => {
+  const corregirSinEnviar = async () => {
+    H.micTypeSet('pat'); H.renderPatNuevo();
+    campo('pat-fm', D1); campo('pat-corr', '585'); campo('pat-resp', 'Analista A');
+    celda('pat_1_muestra', 'Camarón 1');
+    await H.syncPat();
+    H.renderPatNuevo(); campo('pat-fm', D2);
+    respuestas = [true];
+    expect(H.savePatLocal()).toBe(1);   // la anulación de D1 espera al siguiente envío
+  };
+
+  it('🔴 su clave es de la app: el respaldo la incluye (antes, no)', async () => {
+    await corregirSinEnviar();
+    expect(H.LAB_ANULAR_KEY.startsWith(H.PRE)).toBe(true);
+    expect(H._allAppStorageKeys()).toContain(H.LAB_ANULAR_KEY);
+  });
+
+  it('🔴 lo guardado con el nombre viejo pasa al nuevo y sale con el siguiente envío', async () => {
+    await corregirSinEnviar();
+    const v = almacen.getItem(H.LAB_ANULAR_KEY);
+    almacen.removeItem(H.LAB_ANULAR_KEY);
+    almacen.setItem('lab_anular_v1', v);                 // como lo dejó la versión del 06-11
+    H._lastSyncFingerprint.clear();
+    await H.syncPat();
+    expect(anuladas(ultimo(), H.PAT_SHEET_HEADERS)).toHaveLength(1);
+    expect(almacen.getItem('lab_anular_v1')).toBeNull();
+    expect(pendientes().pat).toBeUndefined();
   });
 });
