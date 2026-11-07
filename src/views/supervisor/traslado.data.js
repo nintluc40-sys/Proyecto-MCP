@@ -185,6 +185,19 @@ function paradaDe(filasParada) {
    visible y no por camión; promediarlo entre camiones daría el mismo número con
    más pasos y se rompería en cuanto una parada le faltara a uno de ellos. */
 
+/** A25 · el aviso de una duración sin cifra (ver TOPE_TRASLADO_MIN): qué horas no cuadran y lo que saldría. '' si cuadra.
+ *  `cual`: 'ruta' (de la primera parada a la última) o 'puerta' (de la salida a la llegada). */
+export function avisoTiempo(t, cual) {
+  if (!t) return '';
+  if (cual === 'ruta' && t.enRutaFuera !== null && t.enRutaFuera !== undefined) {
+    return `la primera parada (${t.primera.hora}) y la última (${t.ultima.hora}) no cuadran: serían ${fmtMinutos(t.enRutaFuera)}. Revisa esas horas en la hoja`;
+  }
+  if (cual === 'puerta' && t.puertaFuera !== null && t.puertaFuera !== undefined) {
+    return `la salida (${t.salida}) y la llegada (${t.llegada}) no cuadran: serían ${fmtMinutos(t.puertaFuera)}. Revisa esas horas en la hoja (¿formato de 12 horas?)`;
+  }
+  return '';
+}
+
 /** Minutos → «4 h 30 min». Sin horas, «45 min». `null` → «—». */
 export function fmtMinutos(min) {
   if (min === null || min === undefined || Number.isNaN(min)) return '—';
@@ -303,6 +316,13 @@ function difReloj(a, b, atras = 12 * 60) {
 /** Entre dos paradas consecutivas, cuánto puede RETROCEDER una hora para leerse como mal registrada (y no como un
  *  tramo de más de 18 h hacia delante, que en un traslado no existe). */
 const TRAMO_ATRAS = 6 * 60;
+/** A25 (2026-11-07, usuario: «Sin cifra y avisar») · NINGÚN TRASLADO DURA MÁS. «En ruta» y «Puerta a puerta» por encima
+ *  de esto no son un viaje largo: son una hora mal escrita, casi siempre en formato de 12 horas («11:00» por 23:00), que
+ *  `minutosEntre` leía como el día siguiente (de 15:00 a 14:40 salían 23 h 40 min). No se da cifra: se dice qué horas
+ *  no cuadran (`enRutaFuera`, `puertaFuera`: los minutos que saldrían), para corregirlas en la hoja. Nada se corrige solo. */
+export const TOPE_TRASLADO_MIN = 17 * 60;
+const dentroDelTope = (m) => (m !== null && m <= TOPE_TRASLADO_MIN ? m : null);
+const fueraDelTope = (m) => (m !== null && m > TOPE_TRASLADO_MIN ? m : null);
 
 /** El tiempo del traslado del conjunto visible.
  *  Devuelve siempre la misma forma; los huecos son `null`, nunca 0 —un 0 diría
@@ -338,6 +358,14 @@ export function tiempoDe(camiones) {
   const ultima = paradas.length ? paradas[paradas.length - 1] : null;
   const dPrevio = salida && primera ? difReloj(salida, primera.hora) : null;
   const dPosterior = llegada && ultima ? difReloj(ultima.hora, llegada) : null;
+  // Con UNA sola parada no hay recorrido que medir: null, no 0.
+  const enRuta = paradas.length > 1 ? minutosEntre(primera.hora, ultima.hora) : null;
+  // `salida` y `llegada` YA son "" cuando no eran legibles, y `minutosEntre`
+  // devuelve null en cuanto una de las dos no lo es: una guarda extra aquí no
+  // cambiaría ningún resultado. La comprobación de verdad está arriba, al
+  // normalizarlas — es lo que hace que el desglose diga «sin horas» en vez de
+  // enseñar «s/n → 06:00» como si fuera un tramo.
+  const puerta = minutosEntre(salida, llegada);
   return {
     paradas,
     tramos,
@@ -345,14 +373,11 @@ export function tiempoDe(camiones) {
     llegada,
     primera,
     ultima,
-    // Con UNA sola parada no hay recorrido que medir: null, no 0.
-    enRuta: paradas.length > 1 ? minutosEntre(primera.hora, ultima.hora) : null,
-    // `salida` y `llegada` YA son "" cuando no eran legibles, y `minutosEntre`
-    // devuelve null en cuanto una de las dos no lo es: una guarda extra aquí no
-    // cambiaría ningún resultado. La comprobación de verdad está arriba, al
-    // normalizarlas — es lo que hace que el desglose diga «sin horas» en vez de
-    // enseñar «s/n → 06:00» como si fuera un tramo.
-    puertaAPuerta: minutosEntre(salida, llegada),
+    // A25 · por encima de TOPE_TRASLADO_MIN, sin cifra; lo que saldría va en `…Fuera` para decir qué no cuadra.
+    enRuta: dentroDelTope(enRuta),
+    enRutaFuera: fueraDelTope(enRuta),
+    puertaAPuerta: dentroDelTope(puerta),
+    puertaFuera: fueraDelTope(puerta),
     // Tiempos muertos: lo que va de la salida a la primera parada y de la última a
     // la llegada. Es donde se esconde el tiempo que no aparece en ninguna revisión.
     // Si van al revés no hay tiempo muerto que contar: se dice cuánto (ver `difReloj`).

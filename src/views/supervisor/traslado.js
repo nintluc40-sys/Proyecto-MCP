@@ -23,7 +23,7 @@ import { esc } from '../../core/format.js';
 import {
   trasladoDe, ACTIVIDAD_ORDEN,
   deltasDe, resumenPorTina, valoresDe, escalaDe, nivelDe, tinaMasInestable,
-  tiempoDe, fmtMinutos, CADENCIA_MAX_MIN, observacionesDelViaje, viajesDe,
+  tiempoDe, fmtMinutos, CADENCIA_MAX_MIN, observacionesDelViaje, viajesDe, avisoTiempo,
 } from './traslado.data.js';
 import { montarMapa, paradasSinGps, paradasDelMapa, COLORES_CAMION } from './trasladoMapa.js';
 import { buildTrasladoPdfDoc } from './trasladoPdf.js';
@@ -250,9 +250,10 @@ function tablaTiempo(camiones) {
   return `<div class="sv-tras-blk">
     <div class="sv-t-resumen">
       <div><span>En ruta</span><b>${esc(fmtMinutos(t.enRuta))}</b>
-        <i>${t.paradas.length} parada(s) con hora</i></div>
+        <i>${avisoTiempo(t, 'ruta') ? '⚠ ' + esc(avisoTiempo(t, 'ruta')) : t.paradas.length + ' parada(s) con hora'}</i></div>
       <div><span>Puerta a puerta</span><b>${esc(fmtMinutos(t.puertaAPuerta))}</b>
-        <i>${t.salida && t.llegada ? esc(t.salida) + ' → ' + esc(t.llegada) : 'sin horas de salida y llegada'}</i></div>
+        <i>${avisoTiempo(t, 'puerta') ? '⚠ ' + esc(avisoTiempo(t, 'puerta'))
+    : t.salida && t.llegada ? esc(t.salida) + ' → ' + esc(t.llegada) : 'sin horas de salida y llegada'}</i></div>
       <div><span>Fuera de cadencia</span><b>${t.fueraDeCadencia}</b>
         <i>tramos de más de ${CADENCIA_MAX_MIN} min</i></div>
     </div>
@@ -437,7 +438,7 @@ export function renderTraslado(ctx, mod) {
         <td class="sv-hm-lugar">${esc(v.camaronera || '—')}</td>
         <td>${v.placas.length}<span class="sv-tras-idx-pl">${esc(v.placas.join(' · '))}</span></td>
         <td>${v.tiempo.paradas.length}</td>
-        <td class="sv-tras-media">${esc(fmtMinutos(v.tiempo.enRuta))}</td>
+        <td class="sv-tras-media"${avisoTiempo(v.tiempo, 'ruta') ? ` title="${esc(avisoTiempo(v.tiempo, 'ruta'))}"` : ''}>${esc(fmtMinutos(v.tiempo.enRuta))}${avisoTiempo(v.tiempo, 'ruta') ? ' ⚠' : ''}</td>
         <td class="sv-tras-media">${n2(vv.o2)}</td>
         <td class="sv-tras-media">${n2(vv.temp)}</td>
         <td>${esc(etiquetaActividad(vv.actividad))}</td>
@@ -472,8 +473,11 @@ export function renderTraslado(ctx, mod) {
         ${kpiGlass('📝', 'Observaciones', String(v.nObservaciones), `${ident} data-tras-modal="obs" role="button" tabindex="0" title="Ver las observaciones de cada parada"`)}
         ${kpiGlass('⏱️', 'Tiempo en ruta', fmtMinutos(v.tiempo.enRuta),
     `${ident} data-tras-modal="tiempo" role="button" tabindex="0" title="Ver el tiempo de cada tramo entre paradas y descargar el PDF del viaje"`,
-    v.tiempo.fueraDeCadencia > 0,
-    v.tiempo.puertaAPuerta === null ? '' : 'puerta a puerta ' + fmtMinutos(v.tiempo.puertaAPuerta))}
+    v.tiempo.fueraDeCadencia > 0 || !!avisoTiempo(v.tiempo, 'ruta') || !!avisoTiempo(v.tiempo, 'puerta'),
+    // A25 · sin cifra (más de TOPE_TRASLADO_MIN): se dice que hay horas que no cuadran; el detalle, en el desglose.
+    avisoTiempo(v.tiempo, 'ruta') ? '⚠ horas que no cuadran: ábrelo'
+      : avisoTiempo(v.tiempo, 'puerta') ? '⚠ puerta a puerta: horas que no cuadran'
+        : v.tiempo.puertaAPuerta === null ? '' : 'puerta a puerta ' + fmtMinutos(v.tiempo.puertaAPuerta))}
       </div>
       <div class="sv-tmap-blk">
         <div class="sv-tmap-h">

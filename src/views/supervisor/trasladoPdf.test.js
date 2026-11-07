@@ -187,3 +187,15 @@ describe('PDF del viaje · los tiempos y las observaciones', () => {
     expect(doc.page).toContain('&lt;script&gt;');
   });
 });
+
+/* A25 (2026-11-07, usuario: «Sin cifra y avisar») · en el papel, la duración imposible sale «—» y se dice qué no cuadra. */
+describe('A25 · PDF del viaje con una hora mal escrita', () => {
+  it('🔴 «Puerta a puerta» sin cifra y una nota con las horas que no cuadran (antes, 21 h 30 min)', () => {
+    const v = viaje({});
+    v.data.horaSalida = '11:00';
+    v.data.horaLlegada = '08:30';
+    const doc = buildTrasladoPdfDoc(viajesDeFilas(aFilas(buildTrasladoPayload(v)))[0], { mod: 'M07', corrida: '555' });
+    expect(doc.page).not.toContain('>21 h 30 min<');
+    expect(doc.page).toMatch(/⚠ <b>Puerta a puerta:<\/b> la salida \(11:00\)/);
+  });
+});

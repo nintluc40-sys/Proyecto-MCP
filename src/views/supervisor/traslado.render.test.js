@@ -766,3 +766,22 @@ describe('Traslado · una sección por VIAJE', () => {
     expect(root.querySelectorAll('.sv-tras-card')).toHaveLength(2);
   });
 });
+
+/* A25 (2026-11-07, usuario: «Sin cifra y avisar») · una salida en formato de 12 horas daba «puerta a puerta 21 h 30 min». */
+describe('A25 · duración imposible en la vista', () => {
+  beforeEach(() => { resetTrasladoFiltro(); document.body.innerHTML = ''; });
+
+  it('🔴 el KPI no da 21 h 30 min: dice que las horas no cuadran, y el desglose dice cuáles', () => {
+    const v = viaje(1);
+    v.data.horaSalida = '11:00';
+    v.data.horaLlegada = '08:30';
+    const root = montar(ctxCon(aFilas(buildTrasladoPayload(v))));
+    const k = root.querySelector('[data-tras-modal="tiempo"]');
+    expect(k.textContent).not.toContain('21 h 30 min');
+    expect(k.textContent).toContain('puerta a puerta: horas que no cuadran');
+    expect(k.classList.contains('sv-kpi-alert')).toBe(true);
+    k.click();
+    const cuerpo = document.querySelector('.sv-t-resumen');
+    expect(cuerpo.textContent).toMatch(/la salida \(11:00\) y la llegada \(0?8:30\) no cuadran/);
+  });
+});

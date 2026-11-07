@@ -30,7 +30,7 @@
    ============================================================ */
 import { esc } from '../../core/format.js';
 import { pdfCss, fnv1a } from './fichaPdf.js';
-import { fmtMinutos, tiempoDe, observacionesDelViaje } from './traslado.data.js';
+import { fmtMinutos, tiempoDe, observacionesDelViaje, avisoTiempo } from './traslado.data.js';
 
 /* Sólo lo que el `pdfCss` compartido no trae: la rejilla de camión y las notas.
    Todo lo demás —cabecera, tablas, pie, código verificador— se hereda, para que
@@ -157,7 +157,9 @@ function cabecera(viaje, mod, corrida, codigo) {
          siendo parte del registro del viaje: sin él el papel no dice cuánto duró. */''}
     ${campo('En ruta', fmtMinutos(t.enRuta))}
     ${campo('Puerta a puerta', fmtMinutos(t.puertaAPuerta))}
-  </div>`;
+  </div>${/* A25 · una duración sin cifra (más de TOPE_TRASLADO_MIN) dice en el papel qué horas no cuadran. */''}${
+  [['En ruta', avisoTiempo(t, 'ruta')], ['Puerta a puerta', avisoTiempo(t, 'puerta')]].filter((a) => a[1])
+    .map((a) => `<div class="tv-nota">⚠ <b>${esc(a[0])}:</b> ${esc(a[1])}</div>`).join('')}`;
 }
 
 function firmas(cam) {

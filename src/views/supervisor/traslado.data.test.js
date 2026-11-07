@@ -13,7 +13,7 @@ import {
   trasladoDe, filasDe, placasDe, actividadDe, isTrasladoRow,
   TK, ACTIVIDAD_ORDEN, INSUMOS_POSIBLES, CHECK_POSIBLES,
   deltasDe, resumenPorTina, valoresDe, escalaDe, nivelDe, tinaMasInestable,
-  tiempoDe, fmtMinutos, paradasDelViaje, viajesDe,
+  tiempoDe, fmtMinutos, paradasDelViaje, viajesDe, avisoTiempo, TOPE_TRASLADO_MIN,
 } from './traslado.data.js';
 
 /* ── De payload a filas de hoja, como las leería el tablero ── */
@@ -665,5 +665,54 @@ describe('Traslado · el orden es el de la FECHA real, no el del texto dd/mm/aaa
     const t = trasladoDe(filas, 'M07', '555');
     expect(t.camiones.map((c) => c.placa), 'el fixture no tiene la misma placa en los dos viajes').toEqual(['GSA-1147', 'GSA-1147']);
     expect(t.camiones.map((c) => c.fecha), 'los dos viajes del camión salieron por el texto').toEqual(['28/09/2026', '02/10/2026']);
+  });
+});
+
+/* A25 (2026-11-07, usuario: «Sin cifra y avisar») · NINGÚN TRASLADO DURA MÁS DE 17 H. «Puerta a puerta» y «En ruta» leían
+   una hora que retrocede como el día siguiente: de 15:00 a 14:40 salían 23 h 40 min. En los viajes reales, lo que pasa de
+   ese tope es una hora en formato de 12 horas («11:00» por 23:00). Sin cifra, y se dice qué horas no cuadran. Ficticios. */
+describe('A25 · una duración de más de 17 h es una hora mal escrita', () => {
+  const camion = (horas, extra) => Object.assign({
+    horaSalida: '20:30',
+    horaLlegada: '06:00',
+    paradas: horas.map((h, i) => ({ revision: i + 1, hora: h, lugar: 'Parada ' + (i + 1) })),
+  }, extra || {});
+
+  it('🔴 de 15:00 a 14:40 no son 23 h 40 min: sin cifra y con aviso', () => {
+    const t = tiempoDe([camion(['15:10', '16:00'], { horaSalida: '15:00', horaLlegada: '14:40' })]);
+    expect(t.puertaAPuerta).toBeNull();
+    expect(fmtMinutos(t.puertaAPuerta)).toBe('—');
+    expect(t.puertaFuera).toBe(23 * 60 + 40);
+    const a = avisoTiempo(t, 'puerta');
+    expect(a).toContain('15:00');
+    expect(a).toContain('14:40');
+    expect(a).toContain('23 h 40 min');
+  });
+
+  it('🔴 la salida en formato de 12 horas («11:00» por 23:00): puerta a puerta sin cifra; en ruta sigue', () => {
+    const t = tiempoDe([camion(['22:52', '02:10', '03:50', '07:43'], { horaSalida: '11:00', horaLlegada: '08:30' })]);
+    expect(t.puertaAPuerta).toBeNull();
+    expect(avisoTiempo(t, 'puerta')).toMatch(/formato de 12 horas/);
+    expect(t.enRuta).toBe(8 * 60 + 51);
+    expect(avisoTiempo(t, 'ruta')).toBe('');
+  });
+
+  it('🔴 la última parada en formato de 12 horas: en ruta sin cifra; puerta a puerta sigue', () => {
+    const t = tiempoDe([camion(['23:28', '02:47', '04:43', '16:46'], { horaSalida: '23:30', horaLlegada: '09:30' })]);
+    expect(t.enRuta).toBeNull();
+    expect(t.enRutaFuera).toBe(17 * 60 + 18);
+    expect(avisoTiempo(t, 'ruta')).toContain('23:28');
+    expect(avisoTiempo(t, 'ruta')).toContain('16:46');
+    expect(t.puertaAPuerta).toBe(10 * 60);
+  });
+
+  it('un traslado largo de verdad, hasta 17 h justas, se da con su cifra', () => {
+    expect(TOPE_TRASLADO_MIN).toBe(17 * 60);
+    expect(tiempoDe([camion(['16:05', '23:00'], { horaSalida: '16:00', horaLlegada: '08:00' })]).puertaAPuerta).toBe(16 * 60);
+    const t = tiempoDe([camion(['16:05', '09:05'], { horaSalida: '16:00', horaLlegada: '09:00' })]);
+    expect(t.puertaAPuerta).toBe(17 * 60);
+    expect(t.enRuta).toBe(17 * 60);
+    expect([avisoTiempo(t, 'ruta'), avisoTiempo(t, 'puerta')]).toEqual(['', '']);
+    expect([t.enRutaFuera, t.puertaFuera]).toEqual([null, null]);
   });
 });
