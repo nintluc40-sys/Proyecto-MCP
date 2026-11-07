@@ -169,7 +169,8 @@ describe('Maduración · laboratorio · 🧬 Biomol · reproductores', () => {
     expect(b.total.WSSV).toEqual({ analizadas: 2, positivos: 0 });
     expect(b.porSala.map((s) => [s.clave, s.muestras, s.fueraDeSalas])).toEqual([['Sala 1', 1, false], ['Sala 3', 2, false], ['Chongón', 1, true], ['Maduración', 1, true]]);
     expect(b.porSala[1].patogenos.IHHNV).toEqual({ analizadas: 2, positivos: 1 });
-    expect(b.porPiscina.map((x) => [x.clave, x.muestras])).toEqual([['P553', 1], ['P557', 4]]);
+    // A27 (2026-11-06) · con el nombre del filtro de piscina («P553» → «Piscina 553»).
+    expect(b.porPiscina.map((x) => [x.clave, x.muestras])).toEqual([['Piscina 553', 1], ['Piscina 557', 4]]);
     expect(b.porSexo.map((x) => [x.clave, x.muestras])).toEqual([['Hembra', 4], ['Macho', 1]]);
   });
   it('🔴 la lista de positivos, lo último primero, con sus patógenos', () => {
@@ -414,6 +415,29 @@ describe('Maduración · laboratorio · 0q·6 · 🧬 la ventana de Biomol', () 
     expect(V({ piscina: 'Piscina 557' }).muestras).toBe(2);   // la del 02/09 y la de julio (P557 del fixture base)
     expect(V({ piscina: 'Piscina 553' }).sinDato.piscina).toBe(1);
     expect(V({ sexo: 'Macho' }).muestras).toBe(1);
+  });
+
+  /* A27 (2026-11-06, usuario: «Como el filtro») · antes la tabla ponía «P554/556» en su propia fila, y «P554» y «554» en
+     dos: la combinada no salía en ninguna de sus piscinas, aunque el filtro de piscina sí la contaba. */
+  it('🔴 A27 · por piscina, como el filtro: «Piscina N», la combinada en las dos, y lo mismo escrito de dos formas, junto', () => {
+    const C = normalizeRows([
+      BIO('01/09/2026', 'Sala 3', { Piscina: 'P554/556', IHHNV: 'Positivo' }),
+      BIO('02/09/2026', 'Sala 3', { Piscina: 'P554', IHHNV: 'Negativo' }),
+      BIO('03/09/2026', 'Sala 3', { Piscina: '556', IHHNV: 'Negativo' }),
+      BIO('04/09/2026', 'Sala 3', { Piscina: '', IHHNV: 'Negativo' }),
+    ]);
+    const r = resumenBiomolDeLaVentana(C, {});
+    expect(r.porPiscina.map((x) => [x.clave, x.muestras, x.patogenos.IHHNV.positivos])).toEqual([
+      ['(sin piscina)', 1, 0], ['Piscina 554', 2, 1], ['Piscina 556', 2, 1],
+    ]);
+    // cada fila cuadra con lo que da el filtro de esa piscina
+    for (const p of ['Piscina 554', 'Piscina 556']) {
+      expect(resumenBiomolDeLaVentana(C, { piscina: p }).muestras, p).toBe(r.porPiscina.find((x) => x.clave === p).muestras);
+    }
+    expect(r.muestras).toBe(4);   // la suma de las filas (5) pasa del total: la combinada está en dos
+    // una muestra que nombra dos veces la misma piscina («P556/556») cuenta UNA vez en ella
+    const D = normalizeRows([BIO('05/09/2026', 'Sala 3', { Piscina: 'P556/556', IHHNV: 'Negativo' })]);
+    expect(resumenBiomolDeLaVentana(D, {}).porPiscina.map((x) => [x.clave, x.muestras])).toEqual([['Piscina 556', 1]]);
   });
 
   it('🔴 un mes sin muestras: nada, y sin recorrer siglos', () => {

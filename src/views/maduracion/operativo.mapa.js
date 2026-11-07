@@ -225,6 +225,9 @@ export function colorDeTanque(t, modo, ctx) {
     if (typeof c.pctCopulas === 'number' && c.pctCopulas > 100) {
       return { clase: 'is-imposible', estilo: '', clave: 'imposible', texto: cifra(c.pctCopulas) + ' % de cópulas · ⚠ más cópulas que hembras' };
     }
+    // A27 (2026-11-06, usuario) · con partes en el período pero ningún día con hembras (un tanque sólo de machos) no hay %
+    // que calcular, pero tampoco es «sin partes»: lo dice, en el mismo gris.
+    if (c.pctCopulas === '' && c.partes > 0) return { clase: 'is-sd', estilo: '', clave: 'sinHembras', texto: 'sin hembras en el período' };
     return escala(c.pctCopulas, ctx.max.copulas, 'is-ic', 'sin partes en el período', cifra(c.pctCopulas) + ' % de cópulas');
   }
   if (modo === 'parte') {
@@ -288,7 +291,8 @@ export function leyendaDelMapa(mapa, modo, ctx) {
     return [
       { clase, estilo: '--mop-i:20%', etiqueta: 'Menos', n: '' },
       { clase, estilo: '--mop-i:100%', etiqueta: 'El más alto: ' + cifra(max) + unidad, n: cuantos('escala') },
-      ...(modo === 'copulas' ? [{ clase: 'is-imposible', estilo: '', etiqueta: 'Más cópulas que hembras', n: cuantos('imposible') }] : []),
+      ...(modo === 'copulas' ? [{ clase: 'is-imposible', estilo: '', etiqueta: 'Más cópulas que hembras', n: cuantos('imposible') },
+        { clase: 'is-sd', estilo: '', etiqueta: 'Sin hembras en el período', n: cuantos('sinHembras') }] : []),
       { clase: 'is-sd', estilo: '', etiqueta: modo === 'carga' ? 'Sin peso registrado' : 'Sin partes en el período', n: cuantos('sin') },
       vacio,
     ];

@@ -12,7 +12,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 vi.mock('../../core/charts.js', () => ({ makeChart: vi.fn(), destroyChart: () => {}, destroyAllCharts: () => {}, Chart: class {} }));
 
 import { store } from '../../core/store.js';
-import { buildReproModel, makeFilter, productividadPorFamilia } from './data.js';
+import { buildReproModel, makeFilter, productividadPorFamilia, kpis, locationStats } from './data.js';
 import { maduracionView } from './index.js';
 
 const MZ = (t, lote, cod, estado = 'Vivo', muerte = '') => ({ 'Trovan ID': t, Lote: lote, 'Código genético': cod, 'Sala actual': 'Sala 4', 'Tanque actual': 'Tanque 1', Estado: estado, 'Fecha ingreso': '2026-06-01', 'Fecha muerte': muerte });
@@ -77,6 +77,12 @@ describe('Microchips · T1 · la tarjeta en Panorama', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('🔴 A27 · la baldosa «Desoves / hembra»: 4 desoves ÷ las 4 hembras (C está muerta) = 1, y lo dice', () => {
+    const t = [...root.querySelectorAll('.mc-kpi')].find((x) => x.querySelector('.mc-kpi-lb').textContent === 'Desoves / hembra');
+    expect(t.querySelector('.mc-kpi-v').textContent).toBe('1');
+    expect(t.querySelector('.mc-kpi-sub').textContent).toBe('entre todas sus hembras, vivas y muertas');
+  });
+
   it('🔴 el selector cambia a Lote', () => {
     click(root.querySelector('[data-mc-familia="lote"]'));
     expect(filas().map((r) => r[0])).toEqual(['L2 · C2', 'L1 · C1', 'L3 · C1']);
@@ -87,5 +93,65 @@ describe('Microchips · T1 · la tarjeta en Panorama', () => {
     const { readFileSync } = await import('node:fs');
     const css = readFileSync('src/views/maduracion/maduracion.css', 'utf8');
     for (const c of ['.mc-tasa-b {', '.mc-tasa-b.is-b-critica', '.mc-tasa-b.is-b-rango', '.mc-fam-otros {']) expect(css.includes(c), c).toBe(true);
+  });
+});
+
+/* ============================================================
+   A27 (2026-11-06, decisiones del usuario: «Todas las hembras» y «Contar donde desovó»)
+   · «Desoves / hembra» del KPI divide entre TODAS las hembras del filtro, vivas y muertas, como la tabla por familia.
+     Antes, entre las vivas: con 4 desoves de una viva y otra muerta, el KPI daba 4 y la familia 2.
+   · Con sala o tanque, el KPI y la familia cuentan también las hembras que tuvieron desoves o muertes ALLÍ en el período,
+     como la tabla por sala: una hembra que desovó en la Sala 2 y hoy está en la 1 ya no deja a la Sala 2 con sus
+     desoves y ninguna hembra («tasa —»).
+   Fixture ficticio: X (viva, hoy en la Sala 1) desova cuatro veces en la Sala 2 entre el 11 y el 14/09; Y, de la Sala 1,
+   muere el 02/09 (allí).
+   ============================================================ */
+describe('Microchips · A27 · la población de los KPI y de la familia', () => {
+  const MZ2 = (t, sala, estado = 'Vivo', muerte = '') => ({ 'Trovan ID': t, Lote: 'LZ', 'Código genético': 'CZ', 'Sala actual': sala, 'Tanque actual': 'Tanque 1', Estado: estado, 'Fecha ingreso': '2026-09-01', 'Fecha muerte': muerte });
+  const EV2 = (t, fecha, sala, tipo = 'Desove') => ({ 'Trovan ID': t, Fecha: fecha, Tipo: tipo, Sala: sala, Tanque: 'Tanque 1' });
+  const M = () => buildReproModel(
+    [MZ2('X', 'Sala 1'), MZ2('Y', 'Sala 1', 'Muerto', '2026-09-02')],
+    [EV2('X', '2026-09-11', 'Sala 2'), EV2('X', '2026-09-12', 'Sala 2'), EV2('X', '2026-09-13', 'Sala 2'), EV2('X', '2026-09-14', 'Sala 2'),
+      EV2('Y', '2026-09-02', 'Sala 1', 'Mortalidad')], []);
+
+  it('🔴 «Desoves / hembra»: entre todas las hembras, vivas y muertas; el KPI y la familia dan lo mismo', () => {
+    const k = kpis(M(), makeFilter({}));
+    expect([k.desoves, k.totalHembras, k.vivas, k.desovesPorHembra]).toEqual([4, 2, 1, 2]);
+    expect(productividadPorFamilia(M(), makeFilter({}), 'codigo')[0].desovesPorHembra).toBe(2);
+    expect(k.desovesPorHembraViva).toBeUndefined();   // el nombre viejo ya no existe: decía «viva» y no lo es
+  });
+
+  it('🔴 con la sala donde desovó: la hembra trasladada cuenta allí; el KPI cuadra con la tabla por sala', () => {
+    const m = M();
+    const k2 = kpis(m, makeFilter({ sala: 'Sala 2' }));
+    expect([k2.desoves, k2.totalHembras, k2.vivas, k2.desovesPorHembra]).toEqual([4, 1, 1, 4]);
+    const filaS2 = locationStats(m, makeFilter({}), 'sala').find((x) => x.key === 'Sala 2');
+    expect(k2.tasaDesove).toBe(filaS2.tasaDesove);
+    expect(k2.hembrasNoche).toBe(filaS2.hembrasNoche);
+    expect(k2.tasaDesove).not.toBeNull();   // antes: «—», sin hembras
+    const fam2 = productividadPorFamilia(m, makeFilter({ sala: 'Sala 2' }), 'codigo');
+    expect(fam2.map((x) => [x.familia, x.hembras, x.desoves, x.desovesPorHembra])).toEqual([['CZ', 1, 4, 4]]);   // antes: 0 desoves
+  });
+
+  it('🔴 la sala donde está hoy sigue contándola; una sala sin nada suyo, nada', () => {
+    const m = M();
+    const k1 = kpis(m, makeFilter({ sala: 'Sala 1' }));
+    expect([k1.desoves, k1.totalHembras, k1.vivas, k1.muertas]).toEqual([0, 2, 1, 1]);
+    const k9 = kpis(m, makeFilter({ sala: 'Sala 9' }));
+    expect([k9.desoves, k9.totalHembras]).toEqual([0, 0]);
+  });
+
+  it('🔴 una MUERTE allí también cuenta a la hembra en esa sala (no sólo un desove)', () => {
+    const m = buildReproModel(
+      [MZ2('W', 'Sala 1', 'Muerto', '2026-09-05')],
+      [EV2('W', '2026-09-05', 'Sala 2', 'Mortalidad')], []);
+    const k2 = kpis(m, makeFilter({ sala: 'Sala 2' }));
+    expect([k2.mortalidad, k2.totalHembras, k2.muertas]).toEqual([1, 1, 1]);
+  });
+
+  it('🔴 sin sala ni tanque, la población es la de siempre (el lote y el código no suman hembras de fuera)', () => {
+    const m = M();
+    expect(kpis(m, makeFilter({ lote: 'LZ' })).totalHembras).toBe(2);
+    expect(kpis(m, makeFilter({ lote: 'OTRO' })).totalHembras).toBe(0);
   });
 });

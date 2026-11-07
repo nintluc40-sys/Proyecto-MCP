@@ -3674,6 +3674,15 @@ describe('Maduración · operativo · 🧬 Biomol: sus filtros, por lote y la te
     expect(kpiRep()).toContain('1 muestras');
   });
 
+  it('🔴 A27 · la tabla por piscina agrupa como el filtro: la combinada en sus dos filas, y lo dice', async () => {
+    await montar([...PLANTA, ...BIO6]);
+    await abrirBiomol();
+    const h = [...vistaLab().querySelectorAll('h5.mop-lab-h5')].find((x) => x.textContent.startsWith('Por piscina de origen'));
+    expect(h.textContent).toContain('una combinada («P554/556») cuenta en las dos');
+    const filas = [...h.nextElementSibling.querySelectorAll('tbody tr')].map((tr) => [tr.cells[0].textContent.trim(), tr.cells[1].textContent.trim()]);
+    expect(filas).toEqual([['(sin piscina)', '1'], ['Piscina 553', '2'], ['Piscina 554', '1'], ['Piscina 556', '1'], ['Piscina 557', '2']]);
+  });
+
   it('🔴 la prevalencia por lote: lote × patógeno, cada celda sombreada por su %; la muestra sin lote, aparte', async () => {
     await montar([...PLANTA, ...BIO6]);
     await abrirBiomol();

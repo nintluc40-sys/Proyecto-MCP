@@ -1180,7 +1180,7 @@ function labBiomolHTML() {
     <h5 class="mop-lab-h5">Por lote <span class="mop-nota">el color, del % de positivos</span></h5>${tablaLotesBiomol(b.porLote, pats)}
     ${tejidosBiomolHTML(b.tejidos)}
     <h5 class="mop-lab-h5">Por sala</h5>${tabla('Sala', b.porSala, true)}
-    <h5 class="mop-lab-h5">Por piscina de origen</h5>${tabla('Piscina', b.porPiscina, false)}
+    <h5 class="mop-lab-h5">Por piscina de origen <span class="mop-nota">una combinada («P554/556») cuenta en las dos: la suma puede pasar del total</span></h5>${tabla('Piscina', b.porPiscina, false)}
     <h5 class="mop-lab-h5">Por sexo</h5>${tabla('Sexo', b.porSexo, false)}
     ${_labTend ? `<h5 class="mop-lab-h5">Tendencia semanal · ${esc(_labTend.etiqueta)} · % de positivos y muestras analizadas</h5><div class="mc-chart" style="height:240px"><canvas id="mopLabTend"></canvas></div>
       <p class="mc-note">Las barras, cuántas muestras se analizaron cada semana (eje de la derecha); la línea, qué % salió positivo. Un punto hueco es una semana de menos de ${POCAS_MUESTRAS} muestras: su % se mueve mucho con una sola.</p>` : ''}

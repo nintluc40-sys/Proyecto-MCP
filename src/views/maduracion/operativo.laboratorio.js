@@ -488,6 +488,12 @@ export function resumenBiomol(filasNorm, periodo, F) {
     for (const r of lista) { const k = clave(r); if (!g.has(k)) g.set(k, []); g.get(k).push(r); }
     return [...g].sort(orden).map(([k, rs]) => ({ clave: k, muestras: rs.length, patogenos: cuenta(rs) }));
   };
+  // Lo mismo, cuando una muestra va en VARIAS filas (las piscinas de una combinada).
+  const agrupaVarias = (claves, orden) => {
+    const g = new Map();
+    for (const r of lista) for (const k of new Set(claves(r))) { if (!g.has(k)) g.set(k, []); g.get(k).push(r); }
+    return [...g].sort(orden).map(([k, rs]) => ({ clave: k, muestras: rs.length, patogenos: cuenta(rs) }));
+  };
   const lugar = (r) => (esSala(r.lugar) ? txt(r.lugar) : txt(r.lugar) || 'Sin lugar');
   const porSala = agrupa(lugar, ([a], [b]) => (esSala(b) - esSala(a)) || porNombre(a, b))
     .map((x) => ({ ...x, fueraDeSalas: !esSala(x.clave) }));
@@ -510,7 +516,10 @@ export function resumenBiomol(filasNorm, periodo, F) {
     ignora: filtro.ignora, sinDato: filtro.sinDato, muestras: lista.length,
     total: cuenta(lista),
     porSala,
-    porPiscina: agrupa((r) => txt(r.piscina) || '(sin piscina)', ([a], [b]) => porNombre(a, b)),
+    /* A27 (2026-11-06, usuario: «Como el filtro») · una fila por piscina con el nombre del filtro («P554» y «554» →
+       «Piscina 554»), y una combinada («P554/556») cuenta en las dos, como al filtrar por piscina: la suma de las filas
+       puede pasar del total. Antes cada texto era su propia fila, y la combinada no salía en ninguna de las dos. */
+    porPiscina: agrupaVarias((r) => { const ps = piscinasBiomol(r); return ps.length ? ps : ['(sin piscina)']; }, ([a], [b]) => porNombre(a, b)),
     porSexo: agrupa((r) => txt(r.sexo) || '(sin sexo)', ([a], [b]) => porNombre(a, b)),
     tendencia, positivos,
   };

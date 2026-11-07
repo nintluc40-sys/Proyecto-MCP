@@ -319,7 +319,7 @@ function renderPanorama(model, f) {
     ${kpiTile('Mortalidad', n0(k.mortalidad), 'eventos en el período', 'is-mort')}
     ${kpiTile('Fertilidad', pct(k.fertilidadGlobal), f.from ? '% de las vivas del mes que desovaron' : '% de vivas que han desovado', 'is-fert')}
     ${kpiTile('Tasa de desove', tasaBadge(k.tasaDesove), `% de hembras por noche · ref. ${TASA_DESOVE_REF.referencia}`, 'is-desove')}
-    ${kpiTile('Desoves / hembra', n1(k.desovesPorHembraViva), 'productividad media', '')}
+    ${kpiTile('Desoves / hembra', n1(k.desovesPorHembra), 'entre todas sus hembras, vivas y muertas', '')}
     ${kpiTile('Activas', n0(sd.activa), `en últimos ${ACTIVITY_WINDOW_DAYS} días`, 'is-fert')}
   </div>`;
 

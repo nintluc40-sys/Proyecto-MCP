@@ -300,3 +300,38 @@ describe('Maduración · mapa · el lienzo de un tanque', () => {
     }
   });
 });
+
+/* A27 (2026-11-06, usuario) · un tanque SÓLO de machos, con partes en el período: en el modo cópulas no hay % que calcular,
+   pero tampoco es «sin partes»: dice «sin hembras en el período», en el mismo gris, y la leyenda lo cuenta aparte. */
+describe('Maduración · mapa · A27 · un tanque sólo de machos en el modo cópulas', () => {
+  const PL = [
+    ING('2026-08-01', 'NA', 'Sala 1', 1, 2, 5, 'CA'),
+    ING('2026-08-01', 'NC', 'Sala 3', 5, 6, 0, 'CC'),   // sólo machos
+    TQ('2026-09-17', 'Sala 1', 1, { 'Cópulas': 1 }),
+    TQ('2026-09-17', 'Sala 3', 5, { 'Cópulas': '', 'Machos muertos': 1 }),
+    TQ('2026-09-18', 'Sala 3', 5, { 'Cópulas': '' }),
+  ];
+  const M3 = modeloOperativo(PL, { hoy: FOTO, fecha: FOTO });
+  const P3 = periodoDe('7d', FOTO, M3.fuentes);
+  const S3 = serieDiaria(M3.fuentes, sumarDias(P3.desde, -1), P3.hasta);
+  const PA3 = diasDeTanque(M3.fuentes.tanques);
+  const MP3 = mapaDePlanta(M3.libro, normalizarFiltro({}));
+  const CX3 = contextoDelMapa(MP3, capasDelMapa(M3, S3, PA3, P3), M3.fecha);
+  const celda3 = (sala, t) => MP3.salas.find((s) => s.sala === sala).tanques.find((x) => x.tanque === t);
+
+  it('dice «sin hembras en el período», no «sin partes», y la leyenda lo cuenta en su línea', () => {
+    expect(colorDeTanque(celda3('Sala 3', 5), 'copulas', CX3))
+      .toEqual({ clase: 'is-sd', estilo: '', clave: 'sinHembras', texto: 'sin hembras en el período' });
+    const ley = leyendaDelMapa(MP3, 'copulas', CX3).map((x) => [x.etiqueta, x.n]);
+    expect(ley).toContainEqual(['Sin hembras en el período', 1]);
+    expect(ley).toContainEqual(['Sin partes en el período', 0]);
+    // en la mortalidad sí tiene su cifra: sus bajas son de machos
+    expect(colorDeTanque(celda3('Sala 3', 5), 'mortalidad', CX3)).toMatchObject({ clase: 'is-im' });
+  });
+
+  it('sin ningún parte en el período, sigue siendo «sin partes»', () => {
+    const P0 = { desde: '2026-09-01', hasta: '2026-09-10' };
+    const CX0 = contextoDelMapa(MP3, capasDelMapa(M3, S3, PA3, P0), M3.fecha);
+    expect(colorDeTanque(celda3('Sala 3', 5), 'copulas', CX0)).toMatchObject({ clase: 'is-sd', clave: 'sin', texto: 'sin partes en el período' });
+  });
+});

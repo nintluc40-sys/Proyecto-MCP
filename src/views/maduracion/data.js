@@ -364,6 +364,22 @@ export function makeFilter({ sala = null, tanque = null, lote = null, codigo = n
 
 const desovesIn = (model, f) => model.desoves.filter((e) => passLoc(e, f));
 const mortsIn = (model, f) => model.mortalidades.filter((e) => passLoc(e, f));
+/** A27 (2026-11-06, usuario: «Contar donde desovó») · La población de un filtro para los KPIs y la tabla por familia: las
+ *  hembras que pasan `passFem` (su ubicación de HOY) y, con sala o tanque, también las que tuvieron un desove o una muerte
+ *  ALLÍ en el período (`des`/`mor`, que ya pasan `passLoc`), como cuenta la tabla por ubicación (`locationStats`). Antes,
+ *  una hembra que desovó en la Sala 2 y hoy está en la 1 dejaba a la Sala 2 con sus desoves y ninguna hembra («tasa —»). */
+function poblacionDelFiltro(model, f, des, mor) {
+  const pop = model.females.filter((r) => passFem(r, f));
+  if (!f.sala && !f.tanque) return pop;
+  const ya = new Set(pop.map((r) => r.trovan));
+  const porTrovan = new Map(model.females.map((r) => [r.trovan, r]));
+  for (const e of des.concat(mor)) {
+    if (ya.has(e.trovan)) continue;
+    const r = porTrovan.get(e.trovan);
+    if (r) { pop.push(r); ya.add(e.trovan); }
+  }
+  return pop;
+}
 
 /* ── Tasa de desove (2026-09-26) ── */
 /** La referencia de la tasa de desove, en % de las hembras por noche: la MISMA del catálogo del tablero (`tasaDeDesove`,
@@ -395,8 +411,9 @@ export function kpis(model, f) {
   const des = desovesIn(model, f);
   const mor = mortsIn(model, f);
   const spawners = new Set(des.map((e) => e.trovan));
-  // Población de hembras (según filtro de sala/tanque —ubicación ACTUAL en matriz— y lote/código).
-  const pop = model.females.filter((r) => passFem(r, f));
+  // Población de hembras (según filtro de sala/tanque —ubicación ACTUAL en matriz, más las que tuvieron desoves o
+  // muertes allí en el período (A27)— y lote/código).
+  const pop = poblacionDelFiltro(model, f, des, mor);
   const vivas = pop.filter((r) => r.estado !== ESTADO_MUERTO).length;
   const muertas = pop.length - vivas;
   // Fertilidad = % de hembras VIVAS (en la ubicación) que ALGUNA VEZ han desovado.
@@ -420,7 +437,9 @@ export function kpis(model, f) {
     totalHembras: pop.length, vivas, muertas,
     desoves: des.length, mortalidad: mor.length,
     spawners: spawners.size, fertilidadGlobal,
-    desovesPorHembraViva: vivas ? des.length / vivas : 0,
+    // A27 (2026-11-06, usuario: «Todas las hembras») · entre TODAS las del filtro, vivas y muertas, como la tabla por
+    // familia: los desoves de una hembra que murió ya cuentan arriba. Antes, entre las vivas: 4 frente a 2 con lo mismo.
+    desovesPorHembra: pop.length ? des.length / pop.length : 0,
     hembrasNoche, tasaDesove: tasa(des.length, hembrasNoche),
   };
 }
@@ -432,8 +451,8 @@ export function kpis(model, f) {
  *  las familias no tienen por qué ser contemporáneas. Ordenada por tasa. */
 export function productividadPorFamilia(model, f, campo = 'codigo') {
   const clave = campo === 'lote' ? 'lote' : 'codigo', otro = clave === 'lote' ? 'codigo' : 'lote';
-  const pop = model.females.filter((r) => passFem(r, f));
   const v = ventana(model, f), des = desovesIn(model, f);
+  const pop = poblacionDelFiltro(model, f, des, mortsIn(model, f));   // A27 · la misma población que los KPIs
   const alguna = new Set(model.desoves.map((e) => e.trovan)), enPeriodo = new Set(des.map((e) => e.trovan));
   const muertesDe = new Map();   // T2 · las mortalidades del período de cada hembra
   mortsIn(model, f).forEach((e) => muertesDe.set(e.trovan, (muertesDe.get(e.trovan) || 0) + 1));
