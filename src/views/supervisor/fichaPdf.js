@@ -148,13 +148,16 @@ tr:nth-child(even) td{background:#f0fdfa}
 }
 
 // `d` = datos de cabecera del día: fecha, corrida, tec, hora, estadio.
+// A25 (2026-11-07, usuario: «Calcular lo que se pueda») · sin la HORA que ninguna hoja trae: la de registro de Parámetros
+// (Control_Tanque sólo tiene la hora de cada toma) y la de Desinfección. Salían siempre «—»; su hueco queda en blanco.
+const SIN_HORA = new Set(['params', 'desinfeccion']);
 function pdfHeader(fid, mod, d) {
   const meta = FICHA_META[fid] || {};
-  const extraMeta = fid === 'params'
-    ? `<div class="mf"><label>Estadío</label><span>${esc(String(d.estadio || '—'))}</span></div>
-       <div class="mf"><label>Hora registro</label><span>${esc(String(d.hora || '—'))}</span></div>`
-    : `<div class="mf"><label>Hora</label><span>${esc(String(d.hora || '—'))}</span></div>
-       <div class="mf" style="visibility:hidden"></div>`;
+  const hueco = '<div class="mf" style="visibility:hidden"></div>';
+  const extraMeta = (fid === 'params'
+    ? `<div class="mf"><label>Estadío</label><span>${esc(String(d.estadio || '—'))}</span></div>`
+    : SIN_HORA.has(fid) ? hueco : `<div class="mf"><label>Hora</label><span>${esc(String(d.hora || '—'))}</span></div>`)
+    + '\n       ' + hueco;
   return `<div class="ph">
     <div class="ph-brand">
       <div class="co">OMARSA · Larvicultura</div>

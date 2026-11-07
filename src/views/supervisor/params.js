@@ -123,11 +123,8 @@ const ICL_NEG = [
   { key: 'nvi', label: 'No Viables' }, { key: 'op', label: 'Opacidad' }, { key: 'fl', label: 'Flácidez' }, { key: 'ca', label: 'Canibalismo' }, { key: 'pa', label: 'Parásitos' },
 ];
 
-/** SV por población por día (Σ última pob. ≤ día / Σ siembra × 100, cap 100), con la MISMA regla que survival() y
- *  moduleSvPopSeries (A22, 2026-11-06, usuario; C4): el 0 cuenta, y cada día sólo los tanques ya sembrados y con un
- *  conteo posterior a su siembra. Se usa SOLO para RELLENAR los días en que falta la columna cruda "Supervivencia" (que
- *  está dispersa); los días con SV cruda no se tocan, para no desviar la calibración del ICL. */
-export function svPopByDay(rows, days) {   // exportada para supervivencia-regla.test.js (A22)
+/** Los conteos de cada tanque en orden y su SIEMBRA (el primer conteo > 0), la base de svPopByDay y siembraHasta. */
+function conteosYSiembras(rows) {
   const tanks = [...new Set(rows.map(gTnq).filter(Boolean))];
   const pool = tanks.length ? tanks : [null];
   const seqByTank = new Map(), siembra = new Map();
@@ -140,6 +137,26 @@ export function svPopByDay(rows, days) {   // exportada para supervivencia-regla
     const s = seq.find((x) => x.p > 0);   // la SIEMBRA: el primer conteo > 0
     if (s) siembra.set(tq, s);
   });
+  return { pool, seqByTank, siembra };
+}
+
+/** A25 (2026-11-07) · lo SEMBRADO hasta el día `d` (Σ siembra de los tanques ya sembrados), con la misma siembra que
+ *  svPopByDay. Es la «CTA sembrada» del PDF de Población del Supervisor. 0 si nada. */
+export function siembraHasta(rows, d) {
+  const dt = parseAnyDate(d);
+  if (!dt) return 0;
+  let tot = 0;
+  conteosYSiembras(rows).siembra.forEach((s) => { if (s.t <= dt) tot += s.p; });
+  return tot;
+}
+
+/** SV por población por día (Σ última pob. ≤ día / Σ siembra × 100, cap 100), con la MISMA regla que survival() y
+ *  moduleSvPopSeries (A22, 2026-11-06, usuario; C4): el 0 cuenta, y cada día sólo los tanques ya sembrados y con un
+ *  conteo posterior a su siembra. Se usa para RELLENAR los días en que falta la columna cruda "Supervivencia" (que
+ *  está dispersa; los días con SV cruda no se tocan, para no desviar la calibración del ICL) y, desde A25, para el
+ *  «% Sobrevivencia» del PDF de Población. */
+export function svPopByDay(rows, days) {   // exportada para supervivencia-regla.test.js (A22)
+  const { pool, seqByTank, siembra } = conteosYSiembras(rows);
   return days.map((d) => {
     const dt = parseAnyDate(d);
     if (!dt) return null;

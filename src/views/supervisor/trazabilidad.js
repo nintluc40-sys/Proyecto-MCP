@@ -8,7 +8,8 @@
    Cada PDF = la hoja (tabla), sin gráficos.
    ============================================================ */
 import { store } from '../../core/store.js';
-import { getField, parseNum, F, isLarviculturaRow, isTanqueRow, PLGM_KEYS } from '../../core/fields.js';
+import { getField, parseNum, F, isLarviculturaRow, isTanqueRow, PLGM_KEYS, getLatestStage } from '../../core/fields.js';
+import { svPopByDay, siembraHasta } from './params.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { natCmp } from '../../core/util.js';
 import { esc } from '../../core/format.js';
@@ -112,8 +113,8 @@ function larvRowsOf(mod, corrida) {
 
 // Motor común de las fichas de Larvicultura (Población/Calidad/PLG/…): agrupa las
 // filas del módulo por fecha, conserva sólo los días que `qualifies` acepta, y por
-// cada día arma `d` (cabecera + campos por tanque vía `fill`) + la tabla (`table`).
-function larvFichaPages({ mod, corrida, from, to }, { qualifies, fill, table }) {
+// cada día arma `d` (cabecera + campos por tanque vía `fill`; lo del día entero, `cierre`) + la tabla (`table`).
+function larvFichaPages({ mod, corrida, from, to }, { qualifies, fill, table, cierre }) {
   const byDate = new Map();
   larvRowsOf(mod, corrida).forEach((r) => {
     const f = getField(r, F.fecha); if (!f || !inRange(f, from, to)) return;
@@ -133,8 +134,25 @@ function larvFichaPages({ mod, corrida, from, to }, { qualifies, fill, table }) 
       hora: firstField(dayRows, F.hora),
     };
     tanks.forEach((tq, i) => { fill(d, i, dayRows.filter((r) => getField(r, F.tanque) === tq)); });
+    if (cierre) cierre(d, mod);
     return { d, tanks, tableHtml: table(d, tanks) };
   });
+}
+
+/* A25 (2026-11-07, usuario: «Calcular lo que se pueda») · LOS TOTALES DEL PDF DE POBLACIÓN. «% Sobrevivencia», «% Mort.
+   Diaria» y «CTA Sembrada» salían siempre «—»: en Registros los calcula la ficha con lo del equipo, y aquí nadie los
+   rellenaba. Ahora salen de la hoja: la supervivencia del día con la regla oficial del módulo (svPopByDay, A22), la
+   mortalidad como el promedio del «% Mortalidad» de los tanques ese día (como la ficha), y lo sembrado como la suma de
+   la siembra de los tanques ya sembrados (siembraHasta), en miles, como «Total Ingresado». Sin dato, «—». */
+function totalesPoblacion(d, mod) {
+  const rows = larvRowsOf(mod, d.corrida);
+  const sv = svPopByDay(rows, [d.fecha])[0];
+  d.sobrev = sv === null || sv === undefined ? '' : sv.toFixed(2);
+  const cta = siembraHasta(rows, d.fecha);
+  d.cta = cta > 0 ? (cta / 1000).toLocaleString('es-EC') : '';
+  const mos = rows.filter((r) => getField(r, F.fecha) === d.fecha)
+    .map((r) => parseNum(r, ['% Mortalidad'])).filter((v) => v !== null && v >= 0);
+  d.mort_d = mos.length ? (Math.round((mos.reduce((a, b) => a + b, 0) / mos.length) * 100) / 100).toFixed(2) : '';
 }
 
 // Páginas de Población: una por fecha con dato de población, ascendente.
@@ -151,6 +169,7 @@ function poblacionPages(opts) {
       d['e_' + i] = getField(r, F.estadio);
       d['sal_' + i] = getField(r, F.salinidad);
     },
+    cierre: totalesPoblacion,
     table: poblacionTable,
   });
 }
@@ -336,6 +355,16 @@ function paramsTable(d, tanks) {
   </table>`;
 }
 
+/* A25 (2026-11-07, usuario: «Calcular lo que se pueda») · el ESTADÍO de la cabecera de Parámetros salía siempre «—»:
+   Control_Tanque no lo trae. Sale de Datos Larvicultura del mismo módulo, corrida y DÍA (comparado como fecha: las dos
+   hojas no la escriben igual), el más avanzado (getLatestStage). La «Hora registro» no está en ninguna hoja: fuera del
+   papel (fichaPdf.js). */
+const mismoDia = (a, b) => { const x = parseAnyDate(a), y = parseAnyDate(b); return !!x && !!y && x.toDateString() === y.toDateString(); };
+function estadioDelDia(mod, corrida, fecha) {
+  const st = getLatestStage(larvRowsOf(mod, corrida).filter((r) => mismoDia(getField(r, F.fecha), fecha)));
+  return st === 'N/A' ? '' : st;
+}
+
 // Páginas de Parámetros: una por fecha con tomas horarias del módulo.
 function paramsPages({ mod, corrida, from, to }) {
   const byDate = new Map();
@@ -352,6 +381,7 @@ function paramsPages({ mod, corrida, from, to }) {
     const dayRows = byDate.get(fecha);
     const tanks = distinct(dayRows.map((r) => getField(r, F.tanque))).sort(natCmp);
     const d = { fecha, corrida: corrida || firstField(dayRows, F.corrida), tec: firstField(dayRows, F.tecnico) };
+    d.estadio = estadioDelDia(mod, d.corrida, fecha);
     tanks.forEach((tq, i) => {
       dayRows.filter((r) => getField(r, F.tanque) === tq).forEach((r) => {
         const j = STD_HRS.indexOf(normHr(getField(r, F.hora)));  // normaliza la hora → índice de toma

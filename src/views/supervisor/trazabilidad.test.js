@@ -417,3 +417,50 @@ describe('PTIMES ↔ STD_HRS · invariante de la ficha de Parámetros', () => {
     expect(new Set(PTIMES).size).toBe(PTIMES.length);
   });
 });
+
+/* A25 (2026-11-07, usuario: «Calcular lo que se pueda») · campos del PDF que salían SIEMPRE «—»: en Población, «%
+   Sobrevivencia», «% Mort. Diaria» y «CTA Sembrada» (nadie los rellenaba); en Parámetros, «Estadío» (Control_Tanque no lo
+   trae) y «Hora registro» (ninguna hoja la tiene); en Desinfección, «Hora». Datos ficticios. */
+describe('A25 · los campos del PDF que salían «—»', () => {
+  beforeEach(() => {
+    store.globalData = [
+      row({ Tanque: '1', Fecha: '2026-06-01', 'Población': '1000000', '% Mortalidad': '2', 'Estadío': 'Z2' }),
+      row({ Tanque: '2', Fecha: '2026-06-01', 'Población': '2000000', '% Mortalidad': '4', 'Estadío': 'Z3' }),
+      row({ Tanque: '1', Fecha: '2026-06-03', 'Población': '900000', '% Mortalidad': '1', 'Estadío': 'M1' }),
+      row({ Tanque: '2', Fecha: '2026-06-03', 'Población': '1700000', 'Estadío': 'M2' }),
+      { _SheetOrigin: 'Control_Tanque M01', 'Módulo': 'M01', Corrida: '573', Tanque: '1', Fecha: '03/06/2026', Hora: '08:00', OD: '6.2', Temperatura: '29.5' },
+    ];
+  });
+
+  it('🔴 Población: % Sobrevivencia con la regla del módulo, % Mort. Diaria y CTA Sembrada', () => {
+    const p = buildFichaPages('poblacion', { mod: 'M01', corrida: '573' });
+    expect(p.map((x) => x.d.fecha)).toEqual(['2026-06-01', '2026-06-03']);
+    const [d1, d3] = p.map((x) => x.d);
+    expect(d1.sobrev).toBe('');                                    // el día de la siembra: aún sin un conteo posterior
+    expect(d1.cta).toBe((3000).toLocaleString('es-EC'));           // 1 000 + 2 000 miles sembrados
+    expect(d1.mort_d).toBe('3.00');                                // (2 + 4) / 2
+    expect(d3.sobrev).toBe(((2600000 / 3000000) * 100).toFixed(2));
+    expect(d3.mort_d).toBe('1.00');                                // sólo el tanque con dato
+    expect(p[1].tableHtml).toContain(d3.sobrev);
+    expect(p[1].tableHtml).not.toMatch(/% Sobrevivencia<\/label><span><span class="empty">/);
+  });
+
+  it('🔴 Parámetros: el estadío del día sale de Larvicultura (con la fecha escrita de otra forma) y sin «Hora registro»', () => {
+    const p = buildFichaPages('params', { mod: 'M01', corrida: '573' });
+    expect(p).toHaveLength(1);
+    expect(p[0].d.estadio).toBe('M2');                             // el más avanzado de ese día
+    const html = buildFichaPdfDoc({ fid: 'params', mod: 'M01', fileName: 'x', pages: p, autoPrint: false });
+    expect(html).toContain('<label>Estadío</label><span>M2</span>');
+    expect(html).not.toContain('Hora registro');
+  });
+
+  it('Desinfección no enseña una «Hora» que ninguna hoja tiene; Población sí la suya', () => {
+    store.globalData.push({ _SheetOrigin: 'Registro_Desinfección', 'Módulo': 'M01', Corrida: '573', Fecha: '2026-06-01',
+      'Tipo de Registro': 'X', 'Categoría': 'Y', Elemento: 'Z', Estado: 'Sí' });
+    store.globalData = [...store.globalData];
+    const dx = buildFichaPdfDoc({ fid: 'desinfeccion', mod: 'M01', fileName: 'x', pages: buildFichaPages('desinfeccion', { mod: 'M01', corrida: '573' }), autoPrint: false });
+    expect(dx).not.toContain('<label>Hora</label>');
+    const pob = buildFichaPdfDoc({ fid: 'poblacion', mod: 'M01', fileName: 'x', pages: buildFichaPages('poblacion', { mod: 'M01', corrida: '573' }), autoPrint: false });
+    expect(pob).toContain('<label>Hora</label>');
+  });
+});
