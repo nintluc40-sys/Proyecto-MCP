@@ -14,6 +14,7 @@ import { getField, parseNum, F, isLarviculturaRow, OBS_KEYS } from '../../core/f
 import { parseAnyDate, dayNum, rangeLabel } from '../../core/dates.js';
 import { makeChart } from '../../core/charts.js';
 import { avg, natCmpEs } from '../../core/util.js';
+import { diasDesde, proyeccionSinSubir } from '../../core/proyeccion.js';
 import { dailySeries, lastState, iclOf, compositeScore } from './compute.js';
 import { ACCENT, NEUTRAL, SEM, CAT, catColor } from './palette.js';
 
@@ -383,22 +384,11 @@ export function populationTrend(canvasId, popData) {
   });
 }
 
-/** Ajuste lineal simple sobre puntos (xs, ys), ignorando huecos. `xs` va en unidades
- *  reales (p. ej. días de calendario) para que la proyección respete los saltos entre
- *  muestras. Devuelve {predict(x)} o null. */
-function linFit(xs, ys) {
-  const pts = [];
-  ys.forEach((y, i) => { const x = xs[i]; if (y != null && !isNaN(y) && x != null) pts.push([x, y]); });
-  if (pts.length < 2) return null;
-  const n = pts.length; let sx = 0, sy = 0, sxx = 0, sxy = 0;
-  pts.forEach(([x, y]) => { sx += x; sy += y; sxx += x * x; sxy += x * y; });
-  const den = n * sxx - sx * sx; if (den === 0) return null;
-  const m = (n * sxy - sx * sy) / den, b = (sy - m * sx) / n;
-  return { predict: (x) => m * x + b };
-}
-
-/** Proyección: población por tanque (histórico sólido) + tendencia lineal a `horizon` días (punteado). */
-export function populationForecast(canvasId, popData, horizon = 7) {
+/** Las series del pronóstico de población, sin dibujar: por tanque, el histórico y la proyección a `horizon` días.
+ *  A24 (2026-11-07, usuario: «Sí, los tres») · con la regla común (core/proyeccion.js): por días de calendario —«+Nd»
+ *  son días reales, no registros— y SIN SUBIR nunca. Antes la recta podía subir: con 100, 110 y 120 prometía 190. Todas
+ *  las series parten del último día del gráfico. → { keys, days, labels, series: [{ k, hist, proy }] } o null. */
+export function seriesPronosticoPoblacion(popData, horizon = 7) {
   const keys = Object.keys(popData).sort(natCmpEs);
   if (!keys.length) return null;
   const dateSet = new Map();
@@ -406,26 +396,34 @@ export function populationForecast(canvasId, popData, horizon = 7) {
   const days = [...dateSet.entries()].sort((a, b) => a[1] - b[1]).map((e) => e[0]);
   const futLabels = Array.from({ length: horizon }, (_, i) => `+${i + 1}d`);
   const labels = [...days, ...futLabels];
-  // Offsets en días de calendario desde la 1ª fecha → la proyección respeta los saltos
-  // entre muestras, así "+Nd" son días reales (no nº de registros).
-  const dayMs = days.map((d) => { const dt = parseAnyDate(d); return dt ? dt.getTime() : null; });
-  const baseMs = dayMs.find((m) => m != null);
-  const xOff = dayMs.map((m) => (m == null || baseMs == null) ? null : Math.round((m - baseMs) / 86400000));
+  const xOff = diasDesde(days);
   const lastOff = [...xOff].reverse().find((x) => x != null);
+  const series = keys.map((k) => {
+    const map = {}; popData[k].forEach((p) => { map[p.fecha] = p.poblacion; });
+    const hist = days.map((d) => (d in map ? map[d] : null));
+    const fc = lastOff != null ? proyeccionSinSubir(xOff, hist, horizon, lastOff) : null;
+    let proy = null;
+    if (fc) {
+      proy = Array(labels.length).fill(null);
+      proy[days.length - 1] = Math.max(0, fc.desde);
+      fc.future.forEach((y, hh) => { proy[days.length + hh] = Math.max(0, y); });
+    }
+    return { k, hist, proy };
+  });
+  return { keys, days, labels, series };
+}
+
+/** Proyección: población por tanque (histórico sólido) + tendencia lineal a `horizon` días (punteado). */
+export function populationForecast(canvasId, popData, horizon = 7) {
+  const sp = seriesPronosticoPoblacion(popData, horizon);
+  if (!sp) return null;
+  const { labels } = sp;
   const tqLabel = (k) => (/^\s*TQ/i.test(k) ? k : 'TQ ' + k);
   const datasets = [];
-  keys.forEach((k, i) => {
-    const map = {}; popData[k].forEach((p) => { map[p.fecha] = p.poblacion; });
-    const histVals = days.map((d) => (d in map ? map[d] : null));
+  sp.series.forEach(({ k, hist, proy }, i) => {
     const color = catColor(i);
-    datasets.push({ label: tqLabel(k), data: [...histVals, ...Array(horizon).fill(null)], borderColor: color, backgroundColor: color + '22', tension: .3, pointRadius: 2, spanGaps: true, borderWidth: 2 });
-    const fc = linFit(xOff, histVals);
-    if (fc && lastOff != null) {
-      const arr = Array(labels.length).fill(null);
-      arr[days.length - 1] = Math.max(0, fc.predict(lastOff));
-      for (let hh = 0; hh < horizon; hh++) arr[days.length + hh] = Math.max(0, fc.predict(lastOff + hh + 1));
-      datasets.push({ label: tqLabel(k) + ' (proy.)', data: arr, borderColor: color, borderDash: [5, 4], pointRadius: 0, spanGaps: true, borderWidth: 1.5, _proj: true });
-    }
+    datasets.push({ label: tqLabel(k), data: [...hist, ...Array(horizon).fill(null)], borderColor: color, backgroundColor: color + '22', tension: .3, pointRadius: 2, spanGaps: true, borderWidth: 2 });
+    if (proy) datasets.push({ label: tqLabel(k) + ' (proy.)', data: proy, borderColor: color, borderDash: [5, 4], pointRadius: 0, spanGaps: true, borderWidth: 1.5, _proj: true });
   });
   return makeChart(canvasId, {
     type: 'line',

@@ -8,7 +8,8 @@ import { svLevel, odLevel, tmpLevel, levelColor, levelLabel, esc } from '../../c
 import { parseAnyDate } from '../../core/dates.js';
 import { makeChart, destroyChart } from '../../core/charts.js';
 import { getField, F } from '../../core/fields.js';
-import { buildParamSection, iclSeries, paramAlerts, morphHeatmap, linForecast } from './params.js';
+import { buildParamSection, iclSeries, paramAlerts, morphHeatmap } from './params.js';
+import { diasDesde, proyeccionSinSubir } from '../../core/proyeccion.js';
 import { tankColorInfo } from '../../core/aguaColor.js';
 import { THRESHOLDS } from '../../config.js';
 // Rejilla horaria de Control_Tanque. Vivía aquí y la importaban module/moduleTrends/
@@ -730,12 +731,11 @@ export function renderTank(ctx, mod, tq) {
         // caso de ejemplo el KPI «SV +7d» decía 90 % mientras «Pob. +7d» implicaba 100 %.
         // Un repunte en el HISTÓRICO sigue siendo plausible (la población es una estimación
         // manual y la vista lo advierte); lo que no cabe es proyectarlo hacia adelante.
-        const flatIfRising = (fit, lastReal) => (fit && fit.slope > 0 && lastReal != null)
-          ? { slope: 0, intercept: lastReal, future: Array(H).fill(lastReal), predict: () => lastReal }
-          : fit;
-        const lastPopReal = [...popv].reverse().find((v) => v != null);
-        const svF = flatIfRising(linForecast(svv, H), lastSv);
-        const popF = flatIfRising(linForecast(popv, H), lastPopReal);
+        // A24 (2026-11-07, usuario: «Sí, los tres») · la regla vive ahora en core/proyeccion.js, compartida con
+        // Larvicultura, y la recta va por DÍAS de calendario (antes, por número de registro).
+        const xs = diasDesde(fdays);
+        const svF = proyeccionSinSubir(xs, svv, H);
+        const popF = proyeccionSinSubir(xs, popv, H);
         const futLabels = Array.from({ length: H }, (_, k) => `+${k + 1}d`);
         const labels = [...fdays, ...futLabels];
         const histLen = fdays.length;
@@ -745,7 +745,7 @@ export function renderTank(ctx, mod, tq) {
         const fcArr = (fc, clamp) => {
           const a = Array(labels.length).fill(null);
           if (!fc || histLen < 1) return a;
-          a[histLen - 1] = clamp(fc.predict(histLen - 1));
+          a[histLen - 1] = clamp(fc.desde);
           fc.future.forEach((y, k) => { a[histLen + k] = clamp(y); });
           return a;
         };
