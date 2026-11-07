@@ -260,6 +260,12 @@
    al ancho VISIBLE de su caja (contenedor de consultas: 100cqw) y se queda a la izquierda al desplazar. */
 .mop-rlote-wrap { container-type: inline-size; }
 .mop-rlote-in { position: sticky; left: 12px; width: calc(100cqw - 24px); }
+/* A28 (2026-11-06, usuario: «Ancho mínimo a Destinos») · sin ancho mínimo, a 800 px (tablet en vertical) la columna Destinos
+   se quedaba en 72 px y partía cada nombre palabra a palabra: filas de 330–400 px (medido con el libro real). Con un mínimo
+   de 320 px (elegido por el usuario tras medirlo) y cada destino ENTERO (se parte entre destinos, nunca dentro de uno), unas 4
+   líneas en los lotes con 10–13 destinos; la tabla ya se desplazaba de lado. */
+.mc-table .mop-rlote-dest { min-width: 320px; }
+.mop-rlote-d { white-space: nowrap; }
 /* Un desove al que ya se le pasó el día de contar su N5. */
 .mop-pend-tarde td { background: color-mix(in srgb, var(--c-malo) 14%, transparent); }
 

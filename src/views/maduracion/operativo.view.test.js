@@ -3195,6 +3195,24 @@ describe('Maduración · operativo · 🥚 Por lote: el reparto por destino', ()
     expect(t).toContain('1 registro(s) de desove sin destino');
   });
 
+  /* A28 (2026-11-06, usuario: «Ancho mínimo a Destinos») · a 800 px la columna Destinos se quedaba en 72 px y partía cada
+     nombre palabra a palabra (filas de 330–400 px, medido en Chrome). La celda lleva su ancho mínimo y cada destino va ENTERO.
+     Aquí, el marcado y la regla; la altura real se mide en Chrome (happy-dom no maqueta). */
+  it('🔴 A28 · Destinos con ancho mínimo y cada destino entero (sin partir su nombre)', async () => {
+    await montar(PLANTA_Q3);
+    abrirRepro();
+    const td = filaRepro('QA').cells[9];
+    expect(td.classList.contains('mop-rlote-dest')).toBe(true);
+    const nombres = [...td.querySelectorAll('.mop-rlote-d')].map((s) => s.textContent);
+    expect([...nombres].sort()).toEqual(['Hisenor', 'Mar Bravo M07', 'SanLab', 'Tabasca']);   // uno por destino, entero
+    expect(td.textContent).toBe(nombres.join(' · '));                                          // el texto, el de siempre
+    expect(root.querySelector('.mop-rlote-wrap thead th:last-child').classList.contains('mop-rlote-dest')).toBe(true);
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync('src/views/maduracion/operativo.css', 'utf8');
+    expect(css).toMatch(/\.mc-table \.mop-rlote-dest \{ min-width: 320px; \}/);   // 320, elegido tras medir 220 (5–6 líneas)
+    expect(css).toMatch(/\.mop-rlote-d \{ white-space: nowrap; \}/);
+  });
+
   /* A26 (2026-11-06, usuario) · con un código elegido, el gráfico usa los MISMOS desoves que la fila (que ya iba con el
      filtro, pauta 11): un desove de QA con otro código y otro destino no sale. */
   it('🔴 A26 · con un código elegido, el gráfico desplegado es el de los desoves de ese código, como su fila', async () => {

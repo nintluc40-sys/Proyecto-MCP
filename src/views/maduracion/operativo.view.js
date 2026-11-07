@@ -3066,13 +3066,13 @@ function tablaReproHTML(filas, F, rep) {
       <td class="r">${pc(x.fertilidad)}</td>
       <td class="r">${nf(x.n5)}</td>
       <td class="r">${x.naupliosPorHembra === '' ? '<span class="muted" title="Ningún desove de este lote tiene su N5 todavía">—</span>' : nf(x.naupliosPorHembra)}</td>
-      <td>${x.destinos.length ? x.destinos.map((d) => esc(d)).join(' · ') : '<span class="muted">—</span>'}</td></tr>${abierto(x) ? `<tr class="mop-rlote-det"><td colspan="10">${repartoLoteHTML(rep)}</td></tr>` : ''}`;
+      <td class="mop-rlote-dest">${x.destinos.length ? x.destinos.map((d) => `<span class="mop-rlote-d">${esc(d)}</span>`).join(' · ') : '<span class="muted">—</span>'}</td></tr>${abierto(x) ? `<tr class="mop-rlote-det"><td colspan="10">${repartoLoteHTML(rep)}</td></tr>` : ''}`;
   return `<div class="mc-card mc-card-wide">
     <h4 class="mc-card-h">Por lote <span class="mc-h-note">en el período · pulsa un lote para ver sus N2 y N5 por destino</span></h4>
     <div class="mc-tablewrap mop-rlote-wrap"><table class="mc-table mc-table-sm">
       <thead><tr><th>Lote</th><th class="r">Desoves</th><th class="r">Huevos</th><th class="r">Huevos/desove</th>
         <th class="r">No viables</th><th class="r">N2</th><th class="r">Fertilidad</th><th class="r">N5</th>
-        <th class="r">Nauplios/hembra</th><th>Destinos</th></tr></thead>
+        <th class="r">Nauplios/hembra</th><th class="mop-rlote-dest">Destinos</th></tr></thead>
       <tbody>${filas.map(f).join('')}</tbody></table></div>
     ${filas.some((x) => esMix(x.lote)) ? '<p class="mc-note">🔀 Un MIX es un desove de varios lotes juntos: sus huevos, N2 y N5 no se pueden separar, así que va en su propia fila y no suma a ninguno de sus lotes.</p>' : ''}
   </div>`;
