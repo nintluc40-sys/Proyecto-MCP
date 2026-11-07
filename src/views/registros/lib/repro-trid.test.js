@@ -105,6 +105,17 @@ describe('A11 · el TR-ID no se repite', () => {
     expect(await trasladar()).toBe('TR-000009');
   });
 
+  it('🔴 el número se reserva AL ENVIAR: si el primero se queda en la cola, el segundo no lo repite', async () => {
+    ledgerDeGoogle = [fila('TR-000007')];
+    H.setPost(async (payload) => { envios.push(payload); return false; });   // no entregado (p. ej. en cola)
+    try {
+      expect(await trasladar()).toBe('TR-000008');
+      expect(await trasladar()).toBe('TR-000009');
+    } finally {
+      H.setPost(async (payload) => { envios.push(payload); return true; });
+    }
+  });
+
   it('si la relectura falla, sigue con lo que tenía y con el contador del equipo, como antes', async () => {
     ledgerDeGoogle = null;
     expect(await trasladar()).toBe('TR-000008');
