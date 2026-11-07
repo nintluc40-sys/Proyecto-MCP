@@ -150,8 +150,11 @@ export function renderTank(ctx, mod, tq) {
   //   · OBSERVACIONES — una anotación sin tanque se listaba como historial de CADA tanque del
   //     módulo, así que el mismo texto aparecía repetido en todos y el recuento del botón
   //     atribuía a un tanque observaciones que no eran suyas.
-  // Ambas son hechos POR TANQUE y se acotan aquí. El diagnóstico por parámetros, el ICL y el
-  // color de agua siguen leyendo `s.lRows` a propósito (ahí el dato de módulo sí representa).
+  // Ambas son hechos POR TANQUE y se acotan aquí. El diagnóstico por parámetros y el color
+  // de agua siguen leyendo `s.lRows` a propósito (ahí el dato de módulo sí representa).
+  // A24 (2026-11-07, usuario: «Sí, los tres») · el ICL ya NO: con las filas de módulo, el ICL del tanque no era el que
+  // usan el módulo (su comparativa de tanques, module.js) y OM vs Tex, que lo calculan sobre las filas del tanque; con
+  // los mismos datos daba otra cifra. Ahora, las del tanque (`ownRows`), como allí.
   const ownRows = s.lRows.filter((r) => getField(r, F.tanque) === tq);
 
   // Color del agua del tanque (último valor con dato).
@@ -168,7 +171,7 @@ export function renderTank(ctx, mod, tq) {
   const param = buildParamSection(s.lRows, stageClass, modRows, colorInfo);
 
   // ICL diario (índice compuesto) + banda de referencia según estadío
-  const icl = iclSeries(s.lRows);
+  const icl = iclSeries(ownRows);   // A24 · las filas del tanque (ver arriba)
   const iclBand = ICL_BANDS[stageClass] || ICL_BANDS.larv;
   let lastIcl = null;
   for (let i = icl.values.length - 1; i >= 0; i--) { if (icl.values[i] !== null && icl.values[i] !== undefined) { lastIcl = icl.values[i]; break; } }
