@@ -492,3 +492,50 @@ describe('🔧 F3 · el blower de cada módulo llega a la vista con el cálculo 
     expect(ultimoAviso(maqueta)).toMatch(/^Datos del MCP · puestos al día/);
   });
 });
+
+/* A33 (2026-11-07, usuario: «Botón en el aviso y el del modo», «Sí, hazlo») · una vista que no se pudo cargar se reintenta
+   con «Reintentar» o con su propio botón (antes el aviso decía «vuelve a elegirla» y el clic se ignoraba: ya era el modo
+   elegido); y si la carga del libro falla mientras un modo se monta, al montarse lo dice (antes, «Cargando…» sin fin). */
+describe('🏭 Planta · A33: reintentar lo que no se pudo cargar, y el aviso sin datos', () => {
+  const SIN = 'No se pudieron cargar los datos de producción. Pulsa ⟳ arriba para reintentar.';
+  it('🔴 «Reintentar» vuelve a cargar la vista que falló', async () => {
+    plantaView(root); await espera();
+    montarAnalisis.mockImplementationOnce(() => { throw new Error('red caída'); });
+    elegir('analisis'); await espera();
+    expect(cajas('analisis')[0].textContent).toContain('No se pudo cargar esta vista');
+    cajas('analisis')[0].querySelector('[data-reintentar]').click(); await espera();
+    expect(montarAnalisis).toHaveBeenCalledTimes(2);
+    expect(cajas('analisis')).toHaveLength(1);
+    expect(cajas('analisis')[0].querySelector('.planta-an')).not.toBeNull();
+  });
+  it('🔴 su propio botón también, aunque ya sea el modo elegido', async () => {
+    plantaView(root); await espera();
+    montarAnalisis.mockImplementationOnce(() => { throw new Error('red caída'); });
+    elegir('analisis'); await espera();
+    expect(root.querySelector('[data-modo="analisis"]').getAttribute('aria-pressed')).toBe('true');
+    elegir('analisis'); elegir('analisis'); await espera();   // el segundo clic, con el reintento en curso: no lo reinicia
+    expect(montarAnalisis).toHaveBeenCalledTimes(2);
+    expect(cajas('analisis')).toHaveLength(1);
+    expect(cajas('analisis')[0].querySelector('.planta-an')).not.toBeNull();
+  });
+  it('mientras carga, o ya montada, su botón no la vuelve a montar', async () => {
+    plantaView(root); elegir('maqueta'); await espera();
+    elegir('maqueta'); await espera();
+    expect(montarPlanta).toHaveBeenCalledTimes(1);
+  });
+  it('🔴 si la carga del libro falla mientras la Maqueta se monta, al montarse lo dice; y el modo que se elija después, también', async () => {
+    plantaView(root);
+    emit(EV.CONN, { state: 'error', label: 'HTTP 500' });   // aún sin vista: la escena se está importando
+    await espera();
+    expect(montarPlanta.mock.results[0].value.aviso).toHaveBeenLastCalledWith(SIN);
+    elegir('analisis'); await espera();
+    expect(montarAnalisis.mock.results[0].value.aviso).toHaveBeenLastCalledWith(SIN);
+  });
+  it('con una carga nueva en curso, no', async () => {
+    plantaView(root);
+    emit(EV.CONN, { state: 'error', label: 'HTTP 500' });
+    emit(EV.CONN, { state: 'connecting', label: 'Descargando datos…' });
+    await espera();
+    expect(montarPlanta.mock.results[0].value.aviso).not.toHaveBeenCalled();
+  });
+});

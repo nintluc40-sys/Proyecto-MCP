@@ -130,10 +130,14 @@ const MARCO = `
 const DESPLAZABLES = '.panel, .an-tabla-caja, .an-plano-caja';
 
 /** Pinta la vista con el modo que el equipo eligió la última vez. Sin WebGL, la maqueta avisa y Análisis sigue a mano. */
+const SIN_CONEXION = 'No se pudieron cargar los datos de producción. Pulsa ⟳ arriba para reintentar.';
+
 export function plantaView(root) {
   root.innerHTML = MARCO;
   const marco = root.querySelector('.planta-vista'), cuerpo = marco.querySelector('.planta-cuerpo');
-  let vista = null, modo = null, turno = 0;
+  // A33 (2026-11-07) · `fallo`: el modo cuya carga falló (se reintenta con su botón o con «Reintentar»); `sinConexion`: la
+  // última carga del libro falló y no hay datos (se avisa aunque el fallo llegara mientras el modo se montaba).
+  let vista = null, modo = null, turno = 0, fallo = null, sinConexion = false;
   // El mes elegido: null = el último con datos (sigue al mes en curso); al elegir uno anterior se conserva en cada
   // actualización de datos, como en la tabla Producción Omarsa. Mueve toda la vista, no sólo la tarjeta. Lo comparten
   // los dos modos: cambiar de Maqueta a Análisis sigue en el mismo mes.
@@ -201,7 +205,7 @@ export function plantaView(root) {
   };
   const pintar = () => {
     if (!vista) return;   // la del modo elegido aún se está cargando: pinta al montarse
-    if (!store.connected || !store.globalData.length) { enCurso = null; vista.pintarEstado(null); return; }
+    if (!store.connected || !store.globalData.length) { enCurso = null; vista.pintarEstado(null); if (sinConexion) vista.aviso(SIN_CONEXION); return; }
     aceptados = store.globalData; aviso.hidden = true;   // pintar es enseñar lo último: el aviso sobra
     const hoy = hoyLocal();
     if (memo.datos !== store.globalData || memo.hoy !== hoy) memo = { datos: store.globalData, hoy, meses: new Map() };
@@ -247,7 +251,7 @@ export function plantaView(root) {
   // Un modo que falló o que se dejó mientras cargaba no queda montado: al volver a elegirlo se intenta de nuevo.
   const montados = {};
   async function montar(nuevo) {
-    const mio = ++turno; modo = nuevo; vista = null; guardarModo(nuevo);
+    const mio = ++turno; modo = nuevo; vista = null; fallo = null; guardarModo(nuevo);
     marco.querySelectorAll('[data-modo]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.modo === nuevo)));
     [...cuerpo.children].forEach((c) => { c.hidden = c.dataset.cuerpo !== nuevo; });
     if (montados[nuevo]) {
@@ -286,7 +290,9 @@ export function plantaView(root) {
     } catch (e) {
       if (mio !== turno || !marco.isConnected) { caja.remove(); return; }
       console.error('[planta] modo', e);
-      caja.innerHTML = '<div class="planta planta-carga"><p>No se pudo cargar esta vista. Revisa la conexión y vuelve a elegirla.<br>' + `<small class="mono">${esc(e.message)}</small></p></div>`;
+      fallo = nuevo;
+      caja.innerHTML = '<div class="planta planta-carga"><p>No se pudo cargar esta vista. Revisa la conexión y vuelve a intentarlo.<br>' + `<small class="mono">${esc(e.message)}</small></p>`
+        + '<button type="button" class="planta-reintentar" data-reintentar>Reintentar</button></div>';
       return;
     }
     montados[nuevo] = v;
@@ -294,7 +300,10 @@ export function plantaView(root) {
     vista.alElegirMes((mIdx, esUltimo) => { mesElegido = esUltimo ? null : mIdx; pintar(); });
     pintar();
   }
-  marco.querySelector('.planta-modos').addEventListener('click', (e) => { const b = e.target.closest('[data-modo]'); if (b && b.dataset.modo !== modo) montar(b.dataset.modo); });
+  // A33 (2026-11-07, usuario) · el botón del modo que falló lo vuelve a cargar (antes, «vuelve a elegirla» y el clic se ignoraba);
+  // mientras uno carga, su botón no lo reinicia.
+  marco.querySelector('.planta-modos').addEventListener('click', (e) => { const b = e.target.closest('[data-modo]'); if (b && (b.dataset.modo !== modo || fallo === modo)) montar(b.dataset.modo); });
+  cuerpo.addEventListener('click', (e) => { if (e.target.closest('[data-reintentar]') && fallo === modo) montar(modo); });
   aviso.querySelector('button').addEventListener('click', () => { guardarPosicion(); pintar(); });
   // «Usada»: un toque, una tecla, la rueda o un desplazamiento desde que se abrió (decide la puesta al día del libro guardado)
   const marcarUso = () => { usada = true; };
@@ -323,6 +332,7 @@ export function plantaView(root) {
   });
   const offConn = on(EV.CONN, (c) => {
     if (!marco.isConnected) { soltar(); return; }
-    if (vista && c && c.state === 'error' && !store.connected) vista.aviso('No se pudieron cargar los datos de producción. Pulsa ⟳ arriba para reintentar.');
+    if (c) sinConexion = c.state === 'error' && !store.connected;
+    if (vista && sinConexion) vista.aviso(SIN_CONEXION);
   });
 }

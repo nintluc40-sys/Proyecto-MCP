@@ -78,8 +78,17 @@ import { fmtPop } from '../../core/format.js';
 import { META_POR_DEFECTO, normalizarMeta } from './cifras.js';
 import { leerMeta, guardarMeta } from './meta.js';
 import { montarNauplios } from './nauplios.js';
+import logoUrl from '../../assets/logo.png';
 import { fmt, pct, num, ent, dec, dm, millones, ESTADO_TXT, MAD_HEX, colorGrupo, fichaGrupo, fichaTanque as textoFichaTanque, textoFila, cifrasDelPanel,
   textosProduccion, textoMes, alertasParaAtender, textoAlertasFS, reproductoresPorDias } from './textos.js';
+
+// A33 (2026-11-07) · el de M10 iba 31 cm fuera del centro de su pasillo y pisaba los tanques 9 y 10; el de la Sala 1 cruzaba
+// los de desove: ahora va por el pasillo entre sus dos columnas.
+/** Los recorridos de los caminantes ([x, z] de ida y vuelta, en metros del plano). Exportados para las pruebas. */
+export const PATHS = [
+  [[74.5, 29], [74.5, 87]], [[78, 77], [172, 77]], [[23.8, 50.5], [23.8, 85]], [[39.7, 50.5], [39.7, 85]], [[8, 86.6], [55, 86.6]],
+  [[80, 19.3], [175, 19.3]], [[2, 14.6], [63, 14.6]], [[46.8, 18], [46.8, 49]], [[15.6, 16], [15.6, 49]], [[112, 37.6], [112, 20.8]], [[128, 37.4], [175, 37.4]], [[60, 52], [60, 86]], [[113, 26.7], [143, 26.7]], [[80.5, 32.1], [110, 32.1]], [[30.5, 30.4], [46, 30.4]], [[8.5, 61.7], [23, 61.7]], [[40.6, 73.09], [55, 73.09]], [[148.85, 3.2], [148.85, 15.8]],
+];
 
 /** Monta la maqueta en `root` (que ya trae el marcado de planta/index.js).
  *  Devuelve { dispose, pintarEstado(estado|null), aviso(texto), alElegirMes(fn(mIdx, esUltimo)) }.
@@ -870,7 +879,8 @@ groups.filter(g => g.kind === 'mat').forEach(g => {
   g.tanks.concat(g.desove).forEach(t => { const [x, z] = P(t.cx, t.cz); if (t.type === 'rect') for (const k of [-.25, .25]) bxL(g, x + k * t.L, .26 + 2.95, z, 1.4, .07, .18); else bxL(g, x, .26 + 2.95, z, 1.1, .07, .18); });
   for (let u = x0 + 4; u < x1 - 2; u += 8) { const [fx, fz] = P(u, z0 + .24); D.fan.push([fx, 2.5, fz]); }
   if (g.desove.length) {
-    const [mx, mz] = P(148.6, 16.4); bx(D.bench, mx, .26 + .82, mz, 3.2, .06, .8); for (const dx of [-1.5, 1.5]) for (const dz of [-.35, .35]) bx(D.bench, mx + dx, .26 + .41, mz + dz, .06, .8, .06);
+    // A33 (2026-11-07) · contra la pared del cerco (estaba en z 16,4, sobre los tanques de desove D1 y D6)
+    const [mx, mz] = P(148.85, 1.95); bx(D.bench, mx, .26 + .82, mz, 3.2, .06, .8); for (const dx of [-1.5, 1.5]) for (const dz of [-.35, .35]) bx(D.bench, mx + dx, .26 + .41, mz + dz, .06, .8, .06);
     for (let j = 0; j < 7; j++) D.jar.push([mx - 1.3 + j * .42, .26 + .97, mz + R(-.15, .15)]);
   }
 });
@@ -929,6 +939,7 @@ nature.add(shrubI);
   };
   draw();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
+  img.onload = draw; img.src = logoUrl;   // A33 (2026-11-07, usuario: «El logo de la cabecera») · antes, sin `src`: hueco en blanco
   const face = std({ map: tex, emissiveMap: tex, emissive: col('#ffffff'), emissiveIntensity: 0, roughness: .5 }); nightMats.push(face);
   const edge = std({ color: col('#e9e7e1'), roughness: .6 });
   const board = new THREE.Mesh(new THREE.BoxGeometry(5.2, 2.24, .18), [edge, edge, edge, edge, face, face]);
@@ -938,7 +949,9 @@ nature.add(shrubI);
 
 /* ---------- Postes de luz ---------- */
 // B2 (2026-10-19) · el primero, al arranque de la calle interior (estaba en x 74,8 · z 22: hoy dentro del R.A.S.)
-const lampSpots = [[72.6, 29.5], [74.8, 40], [74.8, 58], [74.8, 76], [92, 76.8], [112, 76.8], [132, 76.8], [152, 76.8], [172, 76.8], [26, 87.5], [46, 87.5], [6, 47], [6, 13], [100, 19.2], [150, 19.2], [20, 93], [60, 93], [100, 93], [140, 93]];
+// A33 (2026-11-07, usuario: «Moverlos a lo libre») · el de x 6 · z 47 estaba dentro del tanque 10 de M7: va afuera, entre M7 y M8.
+// Lo vigila escena.objetos.test.js (ningún poste, caminante ni mesa sobre un tanque).
+const lampSpots = [[72.6, 29.5], [74.8, 40], [74.8, 58], [74.8, 76], [92, 76.8], [112, 76.8], [132, 76.8], [152, 76.8], [172, 76.8], [26, 87.5], [46, 87.5], [4.2, 51.5], [6, 13], [100, 19.2], [150, 19.2], [20, 93], [60, 93], [100, 93], [140, 93]];
 const poleI = new THREE.InstancedMesh(new THREE.CylinderGeometry(.08, .12, 1, 6), M.steel, lampSpots.length);
 const headI = new THREE.InstancedMesh(new THREE.BoxGeometry(.9, .18, .35), M.lamp, lampSpots.length); poleI.castShadow = true;
 lampSpots.forEach(([x, z], i) => { const [px, pz] = P(x, z); m4.compose(v.set(px, 3.5, pz), q0, s.set(1, 7, 1)); poleI.setMatrixAt(i, m4); m4.compose(v.set(px + .3, 7, pz), q0, s.set(1, 1, 1)); headI.setMatrixAt(i, m4); });
@@ -953,10 +966,6 @@ const nightLights = [[74.8, 40], [74.8, 76], [120, 76.8], [160, 76.8], [36, 87.5
 
 /* ---------- Vida: personal, vehículos y aves ---------- */
 const life = new THREE.Group(); scene.add(life);
-const PATHS = [
-  [[74.5, 29], [74.5, 87]], [[78, 77], [172, 77]], [[23.8, 50.5], [23.8, 85]], [[39.7, 50.5], [39.7, 85]], [[8, 86.6], [55, 86.6]],
-  [[80, 19.3], [175, 19.3]], [[2, 14.6], [63, 14.6]], [[46.8, 18], [46.8, 49]], [[15.6, 16], [15.6, 49]], [[112, 37.6], [112, 20.8]], [[128, 37.4], [175, 37.4]], [[60, 52], [60, 86]], [[113, 26.7], [143, 26.7]], [[80.5, 32.1], [110, 32.1]], [[30.5, 30.4], [46, 30.4]], [[8.5, 61.7], [23, 61.7]], [[40.6, 73.4], [55, 73.4]], [[146, 9.9], [153, 9.9]],
-];
 const people = []; const SHIRTS = ['#f4f4f0', '#2f5d8f', '#1f3f6b', '#8a6d4f', '#f4f4f0', '#3c8a5c'];   // sin naranja: es el chaleco del personal de tarea (opción K)
 for (let i = 0; i < 30; i++) { const p = PATHS[i % PATHS.length]; people.push({ path: p, u: R(0, 1), dir: rnd() < .5 ? 1 : -1, sp: R(.9, 1.4), pause: 0, shirt: SHIRTS[i % SHIRTS.length] }); }
 const bodyI = new THREE.InstancedMesh(new THREE.CylinderGeometry(.2, .24, 1.05, 8), std({ roughness: .8 }), people.length);
@@ -1516,6 +1525,9 @@ function pintarEstado(E) {
   paso('personal', pintarPersonal); paso('cifras', () => pintarCifras(E)); paso('producción del mes', () => pintarProduccion(E && E.cifras));
   paso('reemplazo de reproductores', () => pintarReemplazo(E && E.mad ? E.mad.reemplazo : null)); paso('qué atender', pintarAtender);
   paso('lista de módulos', () => groups.forEach(pintarFila));
+  // A33 (2026-11-07) · con movimiento reducido la escena no se anima: se recoloca una vez, quieta, con lo que dicen los datos
+  // (antes sólo al montar, sin datos: burbujas en los tanques vacíos y caminantes en los módulos sin cultivo).
+  if (reduced) paso('escena quieta', () => animateLife(0, 0));
   renderer.shadowMap.needsUpdate = true;   // los camiones de despacho cambian con los datos y el mes
   esperarNitidez();   // el cálculo y el repintado traban unos cuadros: no son la tarjeta gráfica
   wasFar = null;   // rehace los rótulos en el próximo cuadro

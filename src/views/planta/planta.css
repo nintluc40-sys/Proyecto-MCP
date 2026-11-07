@@ -214,7 +214,10 @@
 .planta-modos button:hover { background: var(--c-surface-2); }
 .planta-modos button[aria-pressed="true"] { background: var(--c-text); color: var(--c-surface); }
 .planta-modos button:focus-visible { outline: 2px solid #d9622b; outline-offset: 2px; }
-.planta.planta-carga { display: grid; place-items: center; text-align: center; padding: 24px; color: var(--muted); }
+.planta.planta-carga { display: grid; place-items: center; align-content: center; gap: 12px; text-align: center; padding: 24px; color: var(--muted); }
+/* A33 (2026-11-07) · «Reintentar» del modo que no se pudo cargar (index.js) */
+.planta-carga .planta-reintentar { font: 600 13px/1 var(--font-sans); color: var(--ink); background: var(--chip); border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px; cursor: pointer; }
+.planta-carga .planta-reintentar:focus-visible { outline: 2px solid #d9622b; outline-offset: 2px; }
 /* en escritorio la maqueta deja sitio al selector (≈ 46 px) para no desbordar la pantalla; cada modo va en su caja
    (.planta-modo, index.js), que se oculta y no se destruye al cambiar de modo */
 @media (min-width: 901px) { .planta-cuerpo > .planta-modo > .planta:not(.planta-an) { height: calc(100vh - 196px); } }
