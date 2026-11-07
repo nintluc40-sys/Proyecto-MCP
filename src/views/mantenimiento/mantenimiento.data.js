@@ -146,8 +146,6 @@ export function horometros(lecturas, trabajos, equipos) {
   (trabajos || []).forEach((t) => { if (t.horometro != null) out.push({ equipo: t.equipo, fecha: t.fecha, hora: t.horaInicio, h: horasReales(t.horometro, eq.get(t.equipo), t.fecha), tablero: t.horometro, origen: 'Trabajo' }); });
   return out;
 }
-/** El horómetro actual de un equipo: el MAYOR conocido (como el Excel), con su fecha; null si no hay ninguno. Si varias
- *  lecturas dan ese valor, la MÁS RECIENTE (2026-10-30, usuario: «La más reciente»; antes, la primera de la hoja). */
 /** A31 (2026-11-07, usuario: «La lectura de ese día») · la lectura del horómetro de un equipo en una fecha: la del MISMO día o la
  *  anterior más reciente (en el mismo día, la mayor). null si no hay ninguna hasta esa fecha. */
 export function horometroEnFecha(lista, codigo, fecha) {
@@ -158,6 +156,8 @@ export function horometroEnFecha(lista, codigo, fecha) {
   });
   return u;
 }
+/** El horómetro actual de un equipo: el MAYOR conocido (como el Excel), con su fecha; null si no hay ninguno. Si varias
+ *  lecturas dan ese valor, la MÁS RECIENTE (2026-10-30, usuario: «La más reciente»; antes, la primera de la hoja). */
 export function horometroActual(lista, codigo) {
   let u = null;
   (lista || []).forEach((x) => { if (x.equipo === codigo && (!u || x.h > u.h || (x.h === u.h && orden(x, u) > 0))) u = x; });

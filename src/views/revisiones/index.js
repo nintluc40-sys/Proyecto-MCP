@@ -259,8 +259,10 @@ const inGlobalDate = (r) => {
 
 /** Predicado único de fila bajo los filtros activos (fecha global + mes + corrida + módulo + siembra).
  *  Fuente compartida por el render principal y por los drill-downs (getFilteredRows). */
-const rowMatchesFilters = (r, monthSet) =>
-  inGlobalDate(r) && (!monthSet.size || monthSet.has(gCor(r))) &&
+const rowMatchesFilters = (r, monthSet) => inGlobalDate(r) && filtrosSinFecha(r, monthSet);
+/** Lo mismo SIN la fecha global: la comparativa de periodos (revisión del 07-11, usuario: «Sin el filtro de fechas»). */
+const filtrosSinFecha = (r, monthSet) =>
+  (!monthSet.size || monthSet.has(gCor(r))) &&
   (!vState.corrida || gCor(r) === vState.corrida) &&
   (!vState.mod || gMod(r) === vState.mod) &&
   (!vState.siembra || gSiem(r) === vState.siembra);
@@ -385,7 +387,9 @@ export function revisionesView(root) {
   // Comparativa de periodos (Punto 5)
   // A30 (2026-11-06, usuario: «Previo con todo el registro») · la comparativa cuenta por FECHA sobre todo el registro con los
   // demás filtros (corrida, módulo, siembra): con sólo las filas del mes, el periodo previo salía casi vacío (cambio falso).
-  html += periodSection(rows, all.filter((r) => rowMatchesFilters(r, new Set())));
+  // Revisión del 07-11 (usuario: «Sin el filtro de fechas») · tampoco la recorta el filtro de fechas de arriba: con «7 días»
+  // el periodo previo quedaba fuera de él y daba un «+100 %» falso.
+  html += periodSection(rows, all.filter((r) => filtrosSinFecha(r, new Set())));
 
   // Observaciones + Acciones (treemap · área = frecuencia · clic = desglose por módulo).
   const obsEntries = obsCounts(rows);

@@ -254,4 +254,20 @@ describe('Revisiones · A30 · la comparativa con todo el registro', () => {
     expect(card.querySelector('.rv-cmp-prev').textContent).toBe('prev: 2');     // antes: «prev: —» (sólo el mes)
     expect(errSpy).not.toHaveBeenCalled();
   });
+
+  /* Revisión del 07-11 (usuario: «Sin el filtro de fechas») · el filtro de fechas de arriba tampoco la recorta: con él en
+     02–08/06, el periodo previo (26/05–01/06) quedaba fuera y daba «prev: —» (un «+100 %» falso). */
+  it('🔴 con el filtro global de fechas en los días del periodo actual, el previo se sigue contando', () => {
+    store.globalData = [...synthData(),
+      R({ Corrida: '567', 'Módulo': 'Módulo 1', Siembra: '1', Supervisor: 'Ana', Fecha: '30/05/2026', 'Tipo_revisión': 'Matutina' }),
+      R({ Corrida: '567', 'Módulo': 'Módulo 2', Siembra: '1', Supervisor: 'Beto', Fecha: '31/05/2026', 'Tipo_revisión': 'Matutina' })];
+    store.dateFrom = new Date(2026, 5, 2); store.dateTo = new Date(2026, 5, 8, 23, 59, 59);
+    mount();
+    for (let i = 0; i < 5; i++) { const b = root.querySelector('[data-month-nav="1"]'); if (!b || b.disabled) break; click(b); }
+    click(root.querySelector('[data-cmp-days="7"]'));
+    const card = root.querySelector('.rv-cmp-card');
+    expect(card.querySelector('.rv-cmp-val').textContent).toBe('8');
+    expect(card.querySelector('.rv-cmp-prev').textContent).toBe('prev: 2');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
 });

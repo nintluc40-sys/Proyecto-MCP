@@ -38,6 +38,20 @@ describe('monthLabelAt (etiquetas, incl. meses virtuales)', () => {
   // Al dar la vuelta al calendario los nombres se repiten. Antes `monthLabelAt(12)`
   // devolvía 'Enero' a secas, indistinguible del mes 0 en el navegador ◀▶ de las
   // 7 vistas que usan esta etiqueta; ahora se desambigua.
+  /* Revisión del 07-11 (usuario: «En la función del mes») · la corrida con rango la lee la propia función, en TODAS las llamadas. */
+  it('una corrida con rango («581-582») es la de su primer número; sin cifras, -1', () => {
+    expect(monthIndexOfCorrida('581-582')).toBe(monthIndexOfCorrida(581));
+    expect(monthIndexOfCorrida(' 544 ')).toBe(0);
+    expect(['', null, undefined, 'sin corrida', NaN].map(monthIndexOfCorrida)).toEqual([-1, -1, -1, -1, -1]);
+  });
+  it('🔴 el año base vota también con las corridas con rango (antes no votaban: sin año, «Enero» a secas)', () => {
+    store.globalData = [
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M06', Corrida: '616-617', Tanque: 'TQ1', Fecha: '15/01/2027' },
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M06', Corrida: '616-617', Tanque: 'TQ1', Fecha: '17/01/2027' },
+    ];
+    expect(monthLabelAt(12)).toBe('Enero 2027');
+  });
+
   it('al reiniciar el ciclo añade el AÑO del mes de calendario (año base de las fechas + ciclos de 12)', () => {
     // Mes 12 = 12 meses × 6 corridas desde 544 → corrida 616.
     expect(monthIndexOfCorrida(616)).toBe(12);

@@ -118,7 +118,10 @@ export function numeroDeCorrida(c) {
   return m ? Number(m[0]) : NaN;
 }
 
-export function monthIndexOfCorrida(num) {
+// Revisión del 07-11 (usuario: «En la función del mes») · lee ella misma el primer número de la corrida: «581-582» es la 581
+// para TODAS las llamadas (antes cada una tenía que pasarla por `numeroDeCorrida`, y el año base y el Excel de despachos no lo hacían).
+export function monthIndexOfCorrida(corrida) {
+  const num = numeroDeCorrida(corrida);
   if (isNaN(num)) return -1;
   let idx = -1;
   for (let i = 0; i < MESES_PROD.length; i++) if (num >= MESES_PROD[i].desde) idx = i;
@@ -172,7 +175,7 @@ function anioBase() {
   const votar = (filas, fecha) => {
     const votos = new Map();
     filas.forEach((r) => {
-      const i = monthIndexOfCorrida(+getField(r, F.corrida));
+      const i = monthIndexOfCorrida(getField(r, F.corrida));
       if (i < 0) return;
       const d = parseAnyDate(getField(r, fecha));
       if (!d || isNaN(d)) return;

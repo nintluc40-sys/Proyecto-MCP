@@ -399,8 +399,9 @@ export function promediosDeLote(M, lote, periodo, presencia = null) {
   let copulas = 0;
   let muda = 0;
   /* A26 (2026-11-06, usuario: «Rotular y corregir») · con la presencia diaria, un PESO cuenta sólo si ese día el lote estaba
-     en ese tanque. Antes, en un tanque reutilizado, el pesaje del lote anterior entraba en el promedio de éste (medido:
-     67,5 g en la ficha y en los informes semanal y de cierre, 35 g en el Saldo). Sin presencia, como siempre. */
+     en ese tanque. Antes, en un tanque reutilizado, el pesaje del lote anterior entraba en el promedio de éste (la ficha y
+     los informes semanal y de cierre daban otro peso que el Saldo). Sin presencia, como siempre.
+     Revisión del 07-11 (usuario: «Sólo los días del lote») · y lo mismo las cópulas y la muda del parte (el % ya iba bien). */
   const pesoDelLote = (fecha, uk) => {
     if (!presencia) return true;
     const Tq = (presencia.get(fecha) || { tanques: new Map() }).tanques.get(uk);
@@ -415,8 +416,7 @@ export function promediosDeLote(M, lote, periodo, presencia = null) {
     const suyo = pesoDelLote(fechaDeFila('tanques', r), uk);
     if (suyo && pm !== null && c.machos > 0) { pmNum += pm * c.machos; pmDen += c.machos; }
     if (suyo && ph !== null && c.hembras > 0) { phNum += ph * c.hembras; phDen += c.hembras; }
-    copulas += ent(r.Cópulas) * c.parte;
-    muda += ent(r.Muda) * c.parte;
+    if (suyo) { copulas += ent(r.Cópulas) * c.parte; muda += ent(r.Muda) * c.parte; }
   }
   /* Punto 2 (2026-10-04, usuario) · un peso tecleado a mano en 🍤 Alimentación cuenta como del tanque; el MISMO día manda
      Tanques (`pesosDeAlimentacion` ya lo quita). SÓLO el peso: esas filas no son partes. */

@@ -341,6 +341,23 @@ describe('Maduración · lotes · la ficha', () => {
     expect(fichaDeLote(MR, [], 'NUEVO', PR, null, presR).promedios).toMatchObject({ pesoHembras: 35, pesoMachos: 25 });
   });
 
+  /* Revisión del 07-11 (usuario: «Sólo los días del lote») · las cópulas y la muda del parte, como el peso: las del lote anterior
+     en el mismo tanque ya no suman al nuevo (el % ya iba bien: sale de la presencia diaria). */
+  it('🔴 tanque reutilizado: las cópulas y la muda del lote anterior tampoco entran', () => {
+    const PL = [
+      ING('2026-09-01', 'VIEJO', 'Sala 1', 1, 10, 10),
+      TQ('2026-09-05', 'Sala 1', 1, { 'Cópulas': 4, Muda: 2 }),
+      TQ('2026-09-10', 'Sala 1', 1, { 'Machos muertos': 10, 'Hembras muertas': 10 }),
+      ING('2026-09-12', 'NUEVO', 'Sala 1', 1, 10, 10),
+      TQ('2026-09-15', 'Sala 1', 1, { 'Cópulas': 3, Muda: 1 }),
+    ];
+    const MR = modeloOperativo(PL, { hoy: FOTO, fecha: FOTO });
+    const PR = periodoDe('30d', FOTO, MR.fuentes);
+    const presR = presenciaDiaria(MR.fuentes, sumarDias(PR.desde, -1), PR.hasta);
+    expect(promediosDeLote(MR, 'NUEVO', PR, presR)).toMatchObject({ copulas: 3, muda: 1 });
+    expect(promediosDeLote(MR, 'NUEVO', PR)).toMatchObject({ copulas: 7, muda: 3 });   // sin presencia: lo de antes
+  });
+
   it('🔴 A26 · lo mismo con un peso tecleado en 🍤 Alimentación (cuenta como del tanque): el del lote anterior no entra', () => {
     const ALI = (fecha, ph, pm) => ({ _SheetOrigin: O, Fecha: fecha, Sala: 'Sala 1', Tanque: 1, 'Peso hembras (g)': ph,
       'Peso machos (g)': pm, 'Fuente del peso': '♀ Manual · ♂ Manual', ID: fecha + '-S1-T1' });

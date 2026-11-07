@@ -49,7 +49,7 @@ const txt = (r, keys) => { const v = getField(r, keys); return v === '' ? '' : v
 const num = (r, keys) => { const v = parseNum(r, keys); return v === null ? txt(r, keys) : v; };
 
 /** Índice del mes de producción al que pertenece una corrida ('579' → 6). */
-export const monthOfCorrida = (cor) => monthIndexOfCorrida(+cor);
+export const monthOfCorrida = (cor) => monthIndexOfCorrida(cor);   // revisión 07-11 · «581-582» también
 
 /** Meses de producción presentes en un conjunto de filas, de viejo a reciente.
  *  No usa `presentMonths()` de prodCalendar porque ése barre el store global y aquí

@@ -36,6 +36,9 @@ describe('supervisor · despacho · mes de producción', () => {
     expect(monthOfCorrida('574')).toBe(5);
     expect(monthOfCorrida('579')).toBe(6);
   });
+  it('revisión 07-11 · una corrida con rango («573-574») cae en el mes de la primera (antes: fuera de todo mes)', () => {
+    expect(monthOfCorrida('573-574')).toBe(5);
+  });
 
   it('monthsInRows y modulesInMonth sólo ven lo que hay en cada mes', () => {
     const rows = [
