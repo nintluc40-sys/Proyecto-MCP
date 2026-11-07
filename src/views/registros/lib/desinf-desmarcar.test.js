@@ -215,6 +215,36 @@ describe('A10 · Desinfección: el blanco que no llegó se vuelve a mandar', () 
     expect(anotados().some((k) => k.includes('Reservorio'))).toBe(false);
     expect(anotados().some((k) => k.includes('Líneas de agua'))).toBe(true);
   });
+
+  /* 2.ª revisión de la B (07-11) · se anota DESPUÉS del envío, y si el usuario sale del módulo mientras tanto `curMod` es
+     null: se anotaba en un módulo vacío, y lo desmarcado después no viajaba en blanco. Se anota en el módulo del envío. */
+  const salirAlEnviar = async (b) => { envios.push(JSON.parse(JSON.stringify(b))); H.setVista(null, 'desinfeccion'); return 'ok'; };
+  it('🔴 por ☁️: salir del módulo mientras se envía no pierde lo anotado', async () => {
+    await enviarHoy(ficha({ [RES + '_estado']: 'Sí' }));
+    H.setPostOnce(salirAlEnviar);
+    H._lastSyncFingerprint.clear();
+    await enviarHoy(ficha({ [LIN + '_estado']: 'Sí' }));
+    H.setPostOnce(POST_OK);
+    H.setVista(MOD, 'desinfeccion');
+    H._lastSyncFingerprint.clear();
+    await enviarHoy(ficha({}));
+    expect(fila(ultimo(), 'Líneas de agua')).toEqual(['', '']);
+  });
+
+  it('🔴 por 🔄 de hoy (syncAll): igual', async () => {
+    H.saveE(MOD, 'desinfeccion', ficha({ [RES + '_estado']: 'Sí' }), false);
+    await H.syncAll();
+    H.setPostOnce(salirAlEnviar);
+    H._lastSyncFingerprint.clear();
+    H.saveE(MOD, 'desinfeccion', ficha({ [LIN + '_estado']: 'Sí' }), false);
+    await H.syncAll();
+    H.setPostOnce(POST_OK);
+    H.setVista(MOD, 'desinfeccion');
+    H._lastSyncFingerprint.clear();
+    H.saveE(MOD, 'desinfeccion', ficha({ [BOT + '_obs']: 'Lavadas' }), false);
+    await H.syncAll();
+    expect(fila(ultimo(), 'Líneas de agua')).toEqual(['', '']);
+  });
 });
 
 /* Revisión de la B (2026-11-07) · la clave no llevaba el prefijo de la app: el respaldo no se la llevaba, y el medidor de

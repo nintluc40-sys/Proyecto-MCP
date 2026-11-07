@@ -2784,11 +2784,11 @@ async function syncAll(){
     if(getStatus(curMod,"desinfeccion")==="pending"){
       total++;
       toast("Enviando Desinfección…","info",2000);
-      const dxp = buildDesinfeccionPayload(curMod);
+      const dxp = buildDesinfeccionPayload(curMod), _mDx = curMod;   // el módulo de ESTE envío: al salir, curMod pasa a null
       if(dxp.rows.length > 0){
         const opts = { mark: _marcaFichas(curMod, ["desinfeccion"]) };
         const sent = await postPayload(dxp, url, opts);
-        if(sent || opts.outcome === "queued") _dxAnotarEnviado(curMod, dxp);   // A10 · sólo lo que llegó o quedó en la cola
+        if(sent || opts.outcome === "queued") _dxAnotarEnviado(_mDx, dxp);   // A10 · sólo lo que llegó o quedó en la cola
         if(sent){
           _marcarEnviado(opts);
           ok++;
@@ -3636,10 +3636,10 @@ async function syncOneFicha(fid){
     if(sent) _marcarEnviado(opts);
   } else if(fid === "desinfeccion"){
     // Desinfección → hoja propia "Registro_Desinfección" (formato tidy).
-    const dxp = buildDesinfeccionPayload(curMod);
+    const dxp = buildDesinfeccionPayload(curMod), _mDx = curMod;   // el módulo de ESTE envío: al salir, curMod pasa a null
     if(dxp.rows.length > 0){
       sent = await postPayload(dxp, url, opts);
-      if(sent || opts.outcome === "queued") _dxAnotarEnviado(curMod, dxp);   // A10 · sólo lo que llegó o quedó en la cola
+      if(sent || opts.outcome === "queued") _dxAnotarEnviado(_mDx, dxp);   // A10 · sólo lo que llegó o quedó en la cola
     } else { hadRows = false; }
     if(sent) _marcarEnviado(opts);
   } else if(["calidad","plg","poblacion","calagua","despacho"].includes(fid)){
