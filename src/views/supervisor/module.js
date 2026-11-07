@@ -89,11 +89,16 @@ export function sieOrder(raw) {
 }
 const isRevisionRow = (r) => r && r._SheetOrigin === 'Registro_Supervision';
 const modNum = (s) => { const m = String(s).match(/\d+/); return m ? +m[0] : null; };
-/** Empareja "M03" (Supervisor) con "Módulo 3" (Registro_Supervisión) por número; CIO por letras. */
+/** Empareja "M03" (Supervisor) con "Módulo 3" (Registro_Supervisión) por número; CIO por letras.
+ *  2.ª revisión de la B (2026-11-07, usuario: «En la regla común») · por letras SÓLO si ninguno de los dos tiene número.
+ *  Con un número en un solo lado caía a las letras, y un módulo escrito «M» a secas emparejaba con TODOS los numerados
+ *  (Microbiología, Calidad de Agua, revisiones y desinfección del día). Vacío no empareja con vacío. */
 const sameModule = (a, b) => {
   const na = modNum(a), nb = modNum(b);
   if (na !== null && nb !== null) return na === nb;
-  return String(a).replace(/[^a-z]/gi, '').toUpperCase() === String(b).replace(/[^a-z]/gi, '').toUpperCase();
+  if (na !== null || nb !== null) return false;
+  const la = String(a).replace(/[^a-z]/gi, '').toUpperCase(), lb = String(b).replace(/[^a-z]/gi, '').toUpperCase();
+  return !!la && la === lb;
 };
 // Memo por IDENTIDAD de store.globalData para los conjuntos de datos por módulo+corrida.
 // `renderModule` hacía cinco recorridos COMPLETOS del store por render (Biomol, Micro,

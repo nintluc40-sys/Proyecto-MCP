@@ -64,4 +64,15 @@ describe('A24 · CIO en la vista del módulo', () => {
     const root = abrirModulo('M01');
     expect(root.querySelector('[data-micro-open]')?.textContent).toContain('Microbiología (1)');
   });
+
+  /* 2.ª revisión de la B (07-11, usuario: «En la regla común») · con un número en un solo lado se comparaba por letras:
+     una fila con módulo «M» a secas entraba en TODOS los módulos numerados. */
+  it('🔴 una fila con módulo «M» a secas no entra en M01 (antes, en todos los numerados)', () => {
+    store.globalData = [...datos('M01'),
+      MIC({ 'Módulo/Sala': 'M', Corrida: '573', TQ: '1', 'Vibrio (UFC/ml)': '100' }),
+      CW({ 'Módulo': 'M', Corrida: '573', TQ: '1', pH: '8.0' })];
+    const root = abrirModulo('M01');
+    expect(root.querySelector('[data-micro-open]')?.textContent).toContain('Microbiología (1)');
+    expect(root.querySelector('[data-cw-open]')?.textContent).toContain('Calidad de Agua (1)');
+  });
 });
