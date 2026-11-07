@@ -486,14 +486,15 @@ let _svMicEm = [];         // análisis EM con fecha, del más antiguo al más r
 
 /** Filas de Microbiología que comparten corrida + módulo (número) con este módulo. */
 const microForModule = (mod, corrida) => memoByData(memoKey('mic', mod, corrida), () => microForModuleCompute(mod, corrida));
+// A24 (2026-11-07, usuario: «Sí, los tres») · CIO no tiene número: con `modNum(mod) === null → []` nunca enseñaba su
+// Microbiología ni su Calidad de Agua, aunque el libro las tiene. `sameModule` empareja por número y, sin él, por letras,
+// como Biomol (`bmLugarMatches`). Con número, igual que antes.
 function microForModuleCompute(mod, corrida) {
-  const mn = modNum(mod);
-  if (mn === null) return [];
   const cd = corrida ? micDigits(corrida) : '';
   return store.globalData.filter((r) => {
     if (!isMicroRow(r)) return false;
     const c = microCtx(r);
-    if (modNum(c.modulo) !== mn) return false; // robusto ante "3" / "M03" / "Módulo 3"
+    if (!sameModule(c.modulo, mod)) return false; // robusto ante "3" / "M03" / "Módulo 3"; CIO, por letras
     if (cd && micDigits(c.corrida) !== cd) return false;
     return true;
   });
@@ -779,14 +780,12 @@ let _svCwTrend = null; // { days, range, label, unit } de la pestaña Tendencias
 
 /** Filas de Calidad de Agua que comparten corrida + módulo (número) con este módulo. */
 const calAguaForModule = (mod, corrida) => memoByData(memoKey('cw', mod, corrida), () => calAguaForModuleCompute(mod, corrida));
-function calAguaForModuleCompute(mod, corrida) {
-  const mn = modNum(mod);
-  if (mn === null) return [];
+function calAguaForModuleCompute(mod, corrida) {   // A24 · CIO por letras (ver microForModuleCompute)
   const cd = corrida ? micDigits(corrida) : '';
   return store.globalData.filter((r) => {
     if (!isCalAguaRow(r)) return false;
     const c = calCtx(r);
-    if (modNum(c.modulo) !== mn) return false; // robusto ante "3" / "M03" / "Módulo 3"
+    if (!sameModule(c.modulo, mod)) return false; // robusto ante "3" / "M03" / "Módulo 3"; CIO, por letras
     if (cd && micDigits(c.corrida) !== cd) return false;
     return true;
   });
