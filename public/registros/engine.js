@@ -26442,7 +26442,9 @@ function _labGuardarJunto(tipo, anul, guardar){
     return false;
   }
   if(guardar()) return true;
-  try{ if(antes === null) localStorage.removeItem(LAB_ANULAR_KEY); else localStorage.setItem(LAB_ANULAR_KEY, antes); }catch(_){}
+  // Se vuelve EXACTAMENTE a lo de antes, que cabía: primero se quita lo nuevo. Lo de antes puede ser más largo (al volver
+  // a una fecha, su anulación sobra y sale), y con el navegador lleno reemplazar sin quitar puede no caber (2.ª revisión).
+  try{ localStorage.removeItem(LAB_ANULAR_KEY); if(antes !== null) localStorage.setItem(LAB_ANULAR_KEY, antes); }catch(_){}
   return false;
 }
 /** Las filas de las anulaciones pendientes de `tipo`, armadas con el MISMO constructor de su hoja: la clave de la sesión

@@ -29,11 +29,17 @@ let respuesta = 'ok';
 
 /** Claves que «no caben»: escribirlas lanza, como un navegador sin espacio. */
 const llenas = new Set();
+/** Navegador LLENO que cuenta el valor viejo y el nuevo a la vez: reemplazar por algo más largo no cabe. */
+let creceNoCabe = false;
 const almacen = (() => {
   const m = new Map();
   return {
     getItem: (k) => (m.has(k) ? m.get(k) : null),
-    setItem: (k, v) => { if (llenas.has(k)) throw new Error('QuotaExceededError'); m.set(k, String(v)); },
+    setItem: (k, v) => {
+      if (llenas.has(k)) throw new Error('QuotaExceededError');
+      if (creceNoCabe && m.has(k) && String(v).length > m.get(k).length) throw new Error('QuotaExceededError');
+      m.set(k, String(v));
+    },
     removeItem: (k) => { m.delete(k); },
     clear: () => { m.clear(); },
     key: (i) => Array.from(m.keys())[i] ?? null,
@@ -74,6 +80,7 @@ const pendientes = () => JSON.parse(almacen.getItem(H.LAB_ANULAR_KEY) || '{}');
 
 beforeEach(() => {
   llenas.clear();
+  creceNoCabe = false;
   almacen.clear();
   envios.length = 0;
   respuesta = 'ok';
@@ -315,6 +322,27 @@ describe('A10 · corregir sin espacio en el equipo: todo o nada', () => {
     expect(H.savePatLocal()).toBe(-2);
     llenas.clear();
     expect(pendientes().pat).toHaveLength(1);              // la de antes sigue, igual
+    expect(pendientes().pat[0].data.fechaMuestreo).toBe(D1);
+  });
+
+  /* 2.ª revisión de la B (07-11) · al VOLVER a la fecha de antes, su anulación sobra y sale: lo que se escribe es más corto
+     que lo que había. Si después el análisis no cabe, deshacer era reemplazar por algo MÁS LARGO, y con el navegador
+     lleno eso podía no caber: la anulación se perdía. Ahora se quita lo nuevo y se repone lo de antes, que cabía. */
+  it('🔴 deshacer vuelve a lo de antes aunque fuera más largo, con el navegador lleno', async () => {
+    patNuevo(D1);
+    await H.syncPat();
+    H.renderPatNuevo(); campo('pat-fm', D2);
+    respuestas = [true];
+    expect(H.savePatLocal()).toBe(1);                       // la anulación de D1 espera
+    const antes = almacen.getItem(H.LAB_ANULAR_KEY);
+    H.renderPatNuevo(); campo('pat-fm', D1);                // vuelve a D1: su anulación sobraría
+    respuestas = [true];
+    llenas.add(H.PAT_REC_KEY);
+    creceNoCabe = true;
+    expect(H.savePatLocal()).toBe(-2);
+    creceNoCabe = false;
+    llenas.clear();
+    expect(almacen.getItem(H.LAB_ANULAR_KEY)).toBe(antes);
     expect(pendientes().pat[0].data.fechaMuestreo).toBe(D1);
   });
 });
