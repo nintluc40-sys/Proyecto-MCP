@@ -11,7 +11,7 @@
    ============================================================ */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 /* F6 · los tipos de aviso que el libro sabe anotar: la pantalla tiene que enseñarlos TODOS. Es una constante pura. */
-import { TIPOS_AVISO } from './operativo.tablero.js';
+import { TIPOS_AVISO, ESPERA_DIAS, ETIQUETA_HOJA } from './operativo.tablero.js';
 
 vi.mock('../../core/charts.js', () => ({
   makeChart: vi.fn(),
@@ -154,6 +154,16 @@ describe('Maduración · operativo · 📊 Estado actual', () => {
      (entre ello, data.js de Microchips, que crece). Solo tarda ~1,3 s; como primero de un shard con carga llegó a 4,25 s y
      falló varias veces por el tope de 5 s de vitest. No cambia lo que comprueba. */
   }, 20000);
+
+  it('B5 · la nota de «Últimos registros» nombra TODAS las hojas diarias, Zonas incluida', async () => {
+    await montar(PLANTA);
+    const card = [...root.querySelectorAll('.mc-card')].find((c) => c.querySelector('.mc-card-h')?.textContent.includes('Últimos registros'));
+    const nota = card.querySelector('.mc-note').textContent;
+    // Las que se marcan con ⚠ son las de ESPERA_DIAS: su nombre, sin el icono ni lo de entre paréntesis.
+    const diarias = Object.keys(ESPERA_DIAS).map((k) => ETIQUETA_HOJA[k].replace(/^\S+\s+/, '').replace(/\s*\(.*$/, ''));
+    expect(diarias).toEqual(['Salas', 'Tanques', 'Zonas']);
+    for (const d of diarias) expect(nota, d).toContain(d);
+  });
 
   it('filtros: sala → tanque en cascada (el 1 de la Sala 1 no es el de la Sala 4), lote → código, y ✕ Limpiar', async () => {
     await montar(PLANTA);
@@ -737,6 +747,14 @@ describe('Maduración · operativo · 🧬 Lotes', () => {
     const qc = filaLote('QC');
     expect(qc.textContent).toContain('Cerrado');
     expect(qc.textContent).toContain('cerrado');
+  });
+
+  it('B5 · la nota de la tabla dice que el ciclo y la edad van desde el ÚLTIMO ingreso (el libro reabre el ciclo)', async () => {
+    await montar(PLANTA_L);
+    abrirLotes();
+    const nota = [...root.querySelectorAll('.mc-note')].find((n) => n.textContent.includes('INGRESO: cada fecha')).textContent;
+    expect(nota).toContain('de su ÚLTIMO ingreso a la foto o a su cierre (un ingreso nuevo del lote abre otro ciclo');
+    expect(nota).toContain('La EDAD va del último ingreso a la foto');
   });
 
   it('pulsar una fila abre su ficha; volver a pulsarla la cierra', async () => {
@@ -1682,6 +1700,17 @@ describe('Maduración · operativo · 🥚 Reproducción', () => {
     expect(t).toContain('SIN CIFRA de N5');
     expect(t).toContain('cero es una medición');
     expect(root.querySelector('.mop-pend-tarde')).not.toBeNull();
+  });
+
+  it('B5 · la nota dice cuándo TOCA el N5 como lo calcula la tabla: sin «Fecha N2», dos días después del desove', async () => {
+    await montar(PLANTA_F4);
+    abrirRepro();
+    const fila = root.querySelector('.mop-pend-tarde');
+    expect(fila.cells[0].textContent.trim()).toBe('16/09/2026');
+    expect(fila.cells[6].textContent.trim(), 'desove del 16/09 sin «Fecha N2»: el N5 tocaba el 18/09').toBe('18/09');
+    const nota = [...root.querySelectorAll('.mc-note')].find((n) => n.textContent.includes('SIN CIFRA de N5')).textContent.replace(/\s+/g, ' ');
+    expect(nota).toContain('(el siguiente a su «Fecha N2»; sin ella, dos días después del desove)');
+    expect(nota).not.toContain('(el siguiente al desove)');
   });
 
   it('🔑 un desove con DOS destinos cuenta en los dos, y se avisa de que no suman', async () => {

@@ -1636,7 +1636,7 @@ function ultimosHTML(u) {
         <td class="r">${f.ultima ? nf(f.dias) + ' d' + (f.atrasada ? ' ⚠' : '') : '—'}</td>
         <td class="r">${nf(f.filas)}${f.futuras ? ` <span class="mop-nota" title="con fecha posterior a hoy">+${nf(f.futuras)} futuras</span>` : ''}</td>
       </tr>`).join('')}</tbody></table></div>
-    <p class="mc-note">⚠ = hoja DIARIA (Salas y Tanques) con más de un día sin registro. Las demás registran sucesos: que pasen días sin ellos no es un atraso.</p>
+    <p class="mc-note">⚠ = hoja DIARIA (Salas, Tanques y Zonas) con más de un día sin registro. Las demás registran sucesos: que pasen días sin ellos no es un atraso.</p>
   </div>`;
 }
 
@@ -2167,7 +2167,7 @@ function tablaLotesHTML(filas, F) {
         <th class="r" title="N2 ÷ huevos, de los desoves que traen los dos (la regla del ⚖️ Saldo), en el ciclo del lote">Fertilidad</th><th class="r">N2</th><th class="r">N5</th>
         <th class="r" title="El último pesaje del lote (⚖️ Saldo), con su fecha">Último peso ♀</th><th class="r" title="El último pesaje del lote (⚖️ Saldo), con su fecha">Último peso ♂</th><th class="r">Edad</th></tr></thead>
       <tbody>${filas.map(fila).join('')}</tbody></table></div>
-    <p class="mc-note">INGRESO: cada fecha del Ingreso con su piscina. MUERTOS: los acumulados hasta la foto, sin los descartes (♀ y ♂ en el globo). FERTILIDAD, N2 y N5: los del CICLO del lote, de su ingreso a la foto o a su cierre (la comparativa de abajo, los del período). La EDAD va del ingreso a la foto; en un lote cerrado, hasta su cierre. El PESO es el del ⚖️ Saldo: el promedio de sus tanques en la última fecha con peso, hasta la foto (su fecha, en el globo). ⚠ en un lote = su cascada no cuadra.${F.sexo ? ' Con filtro de sexo estas cifras son de ese sexo; la CASCADA de la ficha sigue entera, porque es un cuadre y a medias no cuadraría.' : ''}</p>
+    <p class="mc-note">INGRESO: cada fecha del Ingreso con su piscina. MUERTOS: los acumulados hasta la foto, sin los descartes (♀ y ♂ en el globo). FERTILIDAD, N2 y N5: los del CICLO del lote, de su ÚLTIMO ingreso a la foto o a su cierre (un ingreso nuevo del lote abre otro ciclo; la comparativa de abajo, los del período). La EDAD va del último ingreso a la foto; en un lote cerrado, hasta su cierre. El PESO es el del ⚖️ Saldo: el promedio de sus tanques en la última fecha con peso, hasta la foto (su fecha, en el globo). ⚠ en un lote = su cascada no cuadra.${F.sexo ? ' Con filtro de sexo estas cifras son de ese sexo; la CASCADA de la ficha sigue entera, porque es un cuadre y a medias no cuadraría.' : ''}</p>
   </div>`;
 }
 
@@ -3045,7 +3045,7 @@ function pendientesHTML(pend) {
       <tbody>${pend.filas.map(f).join('')}</tbody></table></div>
     <p class="mc-note">Pendiente = SIN CIFRA de N5. Una fecha de N5 sola no completa —diría que se contó algo que no se
       contó— y un N5 de CERO sí completa: cero es una medición. La espera se cuenta desde el día en que TOCABA
-      contarlo (el siguiente al desove), no desde el desove.</p>
+      contarlo (el siguiente a su «Fecha N2»; sin ella, dos días después del desove), no desde el desove.</p>
     ${ignoraHTML(pend.ignora, 'Lo pendiente')}
   </div>`;
 }
