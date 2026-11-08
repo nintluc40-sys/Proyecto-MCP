@@ -14,14 +14,15 @@
      · Supervivencia = Σ última pob. / Σ primera pob. × 100, sólo de los tanques con un conteo
        posterior al de su siembra (A22, 2026-11-06; la regla oficial, como el Supervisor)
 
-   Mes interno definido por su corrida inicial (editar MESES_PROD).
+   Mes interno definido por su corrida inicial: los de MESES_PROD y, tras el último, uno cada MONTH_SPAN corridas.
    ============================================================ */
 import { store } from './store.js';
 import { getField, parseNum, F, isLarviculturaRow, PLGM_KEYS, PLG_KEYS } from './fields.js';
 import { parseAnyDate } from './dates.js';
 import { natCmp } from './util.js';
 
-// ▼▼ EDITAR AQUÍ al iniciar un mes nuevo: añade { label, desde: <corrida inicial> } ▼▼
+// ▼▼ EDITAR AQUÍ sólo si un mes no empieza 6 corridas después del anterior: añade { label, desde: <corrida inicial> } ▼▼
+// Los meses siguientes al último se generan solos (ver MONTH_SPAN, abajo); no hace falta tocar esto cada mes.
 // (la corrida inicial es la de los módulos 6-7; el mes cierra con la de los módulos 9-10).
 const MESES_PROD = [
   { label: 'Enero',   desde: 544 },
