@@ -21,7 +21,7 @@ let pedidas;     // las URL pedidas a la red
 let motor;       // los src de los <script> del motor que se intentaron cargar
 let fetchReal;
 
-const esperar = async () => { for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0)); };
+const esperar = async () => { for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0)); };
 async function montar(huella) {
   document.head.innerHTML = `<meta name="mcp-build" content="${huella}">`;
   const { registrosView } = await import('./index.js');
@@ -44,14 +44,18 @@ beforeEach(() => {
     return { ok: false, status: 404, json: async () => ({}) };
   };
   const anadir = document.head.appendChild.bind(document.head);
+  /* No se ejecuta: basta con saber que se pidió. Pero se da por CARGADO (su `onload`), como el navegador: el motor va
+     detrás de `qrcode.js` (`cargarMotor`), y sin ese aviso la prueba nunca veía pedir `engine.js` (B10, 2026-11-08). */
   vi.spyOn(document.head, 'appendChild').mockImplementation((el) => {
-    if (el.tagName === 'SCRIPT') { motor.push(el.getAttribute('src')); return el; }   // no se ejecuta: basta con saber que se pidió
+    if (el.tagName === 'SCRIPT') { motor.push(el.getAttribute('src')); setTimeout(() => el.onload && el.onload(), 0); return el; }
     return anadir(el);
   });
 });
 afterEach(() => { globalThis.fetch = fetchReal; vi.restoreAllMocks(); });
 
 const versionPedida = () => pedidas.filter((u) => u.includes('version.json')).length;
+/** Lo que se pidió del motor, sin la base: ['qrcode.js', 'engine.js'] si se cargó entero. */
+const motorPedido = () => motor.map((src) => String(src).replace(/^.*registros\//, ''));
 
 // Importar la vista (con `resetModules`, una vez por prueba) cuesta segundos: con la máquina cargada, los 5 s de vitest
 // darían un rojo falso.
@@ -72,7 +76,7 @@ describe('Registros · pauta 5 · el motor no se mezcla con el de otro build', {
     root.querySelector('[data-rg-version="abrir"]').click();
     await esperar();
     expect(root.querySelector('#pin'), 'el shell vuelve').toBeTruthy();
-    expect(motor[0]).toMatch(/registros\/qrcode\.js$/);
+    expect(motorPedido(), 'el motor entero: qrcode.js y DESPUÉS engine.js').toEqual(['qrcode.js', 'engine.js']);
     expect(versionPedida()).toBe(1);
   });
 
@@ -87,7 +91,7 @@ describe('Registros · pauta 5 · el motor no se mezcla con el de otro build', {
   it('con el MISMO build, el motor se carga como siempre', async () => {
     const root = await montar(PROPIA);
     expect(versionPedida()).toBe(1);
-    expect(motor[0]).toMatch(/registros\/qrcode\.js$/);
+    expect(motorPedido(), 'el motor entero: qrcode.js y DESPUÉS engine.js').toEqual(['qrcode.js', 'engine.js']);
     expect(root.querySelector('#pin')).toBeTruthy();
     expect(root.textContent).not.toContain('Hay una versión nueva');
   });
@@ -96,6 +100,6 @@ describe('Registros · pauta 5 · el motor no se mezcla con el de otro build', {
     publicada = OTRA;
     await montar('sin-sellar');
     expect(versionPedida()).toBe(0);
-    expect(motor[0]).toMatch(/registros\/qrcode\.js$/);
+    expect(motorPedido(), 'el motor entero: qrcode.js y DESPUÉS engine.js').toEqual(['qrcode.js', 'engine.js']);
   });
 });
