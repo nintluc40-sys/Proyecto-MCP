@@ -111,6 +111,13 @@ describe('Microchips · T7 · la tarjeta', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('B5 · los huecos se miran en la tarjeta que sustituyó al calendario (en esta misma pestaña), con su nombre de verdad', () => {
+    const nota = card().querySelector('.mc-note:last-of-type').textContent;
+    const titulo = root.querySelector('.mc-ultdes-card .mc-card-h').firstChild.textContent.trim();
+    expect(nota).toContain(`(míralos en «${titulo}»)`);
+    expect(nota).not.toContain('calendario');
+  });
+
   it('🔴 el selector de días', () => {
     click(root.querySelector('[data-mc-postv="1"]'));
     expect(filas()[0][0]).toBe('En los 0–1 días tras desovar');

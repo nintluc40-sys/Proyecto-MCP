@@ -72,6 +72,13 @@ describe('Microchips · T6 · la vista', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('B5 · la nota no dice que las que nunca desovaron «están» en la Alerta de reemplazo: entran pasado su umbral', () => {
+    click(root.querySelector('[data-mc-sub="operativo"]'));
+    const nota = root.querySelector('.mc-ventana-card .mc-note').textContent;
+    expect(nota).toContain('no cuentan aquí, y salen en la Alerta de reemplazo cuando llevan en sala más días que su umbral');
+    expect(nota).not.toContain('están en la Alerta de reemplazo');
+  });
+
   it('🔴 el ranking dice el estado de cada hembra para la próxima noche', () => {
     click(root.querySelector('[data-mc-sub="hembras"]'));
     const card = [...root.querySelectorAll('.mc-card')].find((c) => c.textContent.includes('Ranking de hembras'));

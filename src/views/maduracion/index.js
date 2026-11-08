@@ -807,7 +807,7 @@ function reemplazoHTML(model, f) {
           + `<td class="r"><b>${n0(h.diasSin)} d</b></td><td class="r">${n0(h.desoves)}</td></tr>`).join('')
         + (resto > 0 ? `<tr class="mc-alerta-mas"><td colspan="6">+${n0(resto)} más en este tanque (filtra por él para verlas todas)</td></tr>` : '');
     }).join('')}</tbody></table></div>
-    <p class="mc-note">Contado al último dato. Una hembra que nunca desovó cuenta desde su ingreso. Un tanque donde nadie desovó en esos días suele ser un hueco del registro: míralo en el calendario de desoves (Salas y Tanques).</p>`
+    <p class="mc-note">Contado al último dato. Una hembra que nunca desovó cuenta desde su ingreso. Un tanque donde nadie desovó en esos días suele ser un hueco del registro: míralo, tanque a tanque, en «🦐 Hembras por su último desove» (Salas y Tanques).</p>`
     : vacioHTML(`Ninguna hembra viva lleva más de ${u} días sin desovar`, { icono: '✅' });
   return `<div class="mc-card mc-card-wide mc-reemp-card"><h4 class="mc-card-h">⚠ Alerta de reemplazo <span class="mc-h-note">${n0(a.total)} hembra${a.total === 1 ? '' : 's'} sin desovar hace más de ${u} días</span> ${seg}</h4>${cuerpo}</div>`;
 }
@@ -822,7 +822,7 @@ function ventanaHTML(model, f) {
   const cuerpo = v.desde == null ? vacioHTML('Aún no hay intervalos para calcular la ventana', { icono: '⏳', conFiltros: false })
     : v.porTanque.length ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm"><thead><tr><th>Tanque</th><th class="r">En ventana</th><th class="r">Aún no</th><th class="r">Pasadas</th></tr></thead>
       <tbody>${v.porTanque.map((t) => `<tr><td><b>${esc(t.key)}</b></td><td class="r">${barra(t.ventana, maxDe(v.porTanque, 'ventana'))}</td><td class="r">${n0(t.aun)}</td><td class="r">${n0(t.pasadas)}</td></tr>`).join('')}</tbody></table></div>
-      <p class="mc-note">Cuenta a la próxima noche (la siguiente al último dato) las hembras vivas que ya desovaron alguna vez; las que nunca lo hicieron están en la Alerta de reemplazo. La ventana es la mitad central de los intervalos reales de la granja: no es una fecha exacta.</p>`
+      <p class="mc-note">Cuenta a la próxima noche (la siguiente al último dato) las hembras vivas que ya desovaron alguna vez; las que nunca lo hicieron no cuentan aquí, y salen en la Alerta de reemplazo cuando llevan en sala más días que su umbral. La ventana es la mitad central de los intervalos reales de la granja: no es una fecha exacta.</p>`
       : vacioHTML('Ninguna hembra viva con desoves en este filtro');
   return `<div class="mc-card mc-card-wide mc-ventana-card"><h4 class="mc-card-h">🔮 Esperadas la próxima noche <span class="mc-h-note">${nota}</span></h4>${cuerpo}</div>`;
 }
@@ -853,7 +853,7 @@ function postDesoveHTML(model, f) {
       <div class="mc-chart mc-post-chart"><canvas id="mcPostDesove" aria-label="Tendencia diaria de la mortalidad tras el desove y del resto del tiempo"></canvas></div></div></div>
     ${p.porTanque.length ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm"><thead><tr><th>Tanque</th><th class="r">Muertes tras desovar</th><th class="r">El resto</th></tr></thead>
       <tbody>${p.porTanque.map((t) => `<tr><td><b>${esc(t.key)}</b></td><td class="r">${n0(t.dentro)}</td><td class="r">${n0(t.fuera)}</td></tr>`).join('')}</tbody></table></div>` : ''}
-    <p class="mc-note">Cuenta desde el primer desove de cada hembra hasta su muerte o el último dato; su muerte cae «tras desovar» si fue a ≤ ${V} días de su último desove. Los huecos del registro de desoves (míralos en el calendario) cargan días al «resto» y pueden exagerar la diferencia. Sigue sala, tanque, lote y código, no el mes.</p>`
+    <p class="mc-note">Cuenta desde el primer desove de cada hembra hasta su muerte o el último dato; su muerte cae «tras desovar» si fue a ≤ ${V} días de su último desove. Los huecos del registro de desoves (míralos en «🦐 Hembras por su último desove») cargan días al «resto» y pueden exagerar la diferencia. Sigue sala, tanque, lote y código, no el mes.</p>`
     : vacioHTML('Ninguna hembra con desoves en este filtro');
   return `<div class="mc-card mc-card-wide mc-post-card"><h4 class="mc-card-h">🩺 Mortalidad tras el desove ${seg}</h4>${cuerpo}</div>`;
 }

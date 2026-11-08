@@ -79,6 +79,16 @@ describe('Microchips · T5 · la tarjeta en «Hembras»', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('B5 · la nota manda los huecos a la tarjeta que sustituyó al calendario, con su nombre de verdad y su pestaña', () => {
+    const nota = card().querySelector('.mc-note').textContent;
+    expect(nota).not.toContain('calendario');
+    click(root.querySelector('[data-mc-sub="operativo"]'));
+    const titulo = root.querySelector('.mc-ultdes-card .mc-card-h').firstChild.textContent.trim();
+    expect(nota).toContain(`«${titulo}» (Salas y Tanques)`);
+    expect(root.querySelector('[data-mc-sub="operativo"]').textContent).toContain('Salas y Tanques');
+    click(root.querySelector('[data-mc-sub="hembras"]'));
+  });
+
   it('🔴 el chip del anillo y el Trovan abre su historial', () => {
     const b = card().querySelector('[data-mc-female="C"]');
     expect(b.parentElement.querySelector('.mc-anillo.is-verde')).not.toBeNull();
