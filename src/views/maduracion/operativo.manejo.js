@@ -119,8 +119,9 @@ export function matrizDeMovimientos(fuentes, periodo, F, libro) {
       if (vivos.length > 1) aTanqueCompartido++;
     }
   }
-  /* El catálogo manda en el orden, y lo que NO está en él va al final marcado: un motivo inventado a mano no
-     se disimula entre los siete, que es lo mismo que hace el Pareto de 💀 Bajas con los motivos de cierre. */
+  /* Se ordena por movimientos (el más usado primero; a igualdad, por nombre), y lo que NO está en el catálogo se
+     MARCA (`enCatalogo: false`, «fuera del catálogo» en la vista): un motivo inventado a mano no se disimula entre los
+     siete, que es lo mismo que hace el Pareto de 💀 Bajas con los motivos de cierre. */
   const ordenar = (m, catalogo) => [...m.values()]
     .map((o) => ({ ...o, enCatalogo: catalogo.includes(o.clave) }))
     .sort((a, b) => b.movimientos - a.movimientos || porNombre(a.clave, b.clave));

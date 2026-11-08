@@ -7,8 +7,9 @@
    su piscina y su código genético—. Módulo PURO: ni DOM ni red; la vista sólo pinta lo que sale de aquí.
 
    Las reglas (decisiones del usuario, 2026-09-25; los umbrales viven en `UMBRALES_DE_AVISO`, «fuente: usuario»):
-   · Se compara el período ELEGIDO con el anterior de igual duración: con «7 d», los 7 días de antes. Con «Todo» o
-     «Ciclo» el anterior cae antes del primer registro, y entonces no avisa nada.
+   · Se compara el período ELEGIDO con el anterior de igual duración: con «7 d», los 7 días de antes. Con «Todo» el
+     anterior cae antes del primer registro, y entonces no avisa nada. Con «Ciclo» cae antes del ÚLTIMO ingreso del
+     lote: sólo hay con qué comparar si el lote tuvo otro ciclo (un ingreso anterior) en esos días.
    · Avisa un cambio del 20 % o más, y sólo con datos suficientes: 3 registros en el período ANTERIOR para lo que
      BAJA —una sala que pasa de 14 desoves a 0 sí avisa— y en los DOS para lo que SUBE, porque sin partes no se ven
      las bajas. Sin base (un cero en el anterior) no hay porcentaje que medir, y no avisa. Un cociente sin

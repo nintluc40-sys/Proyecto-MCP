@@ -116,5 +116,5 @@ export function diasConZonas(filas) {
   return [...dias].sort();
 }
 
-/** El rótulo de un (zona, tanque): «Tanque 3», o la zona sola en un reservorio. */
+/** El rótulo de un (zona, tanque): «Tanque 3», o «toda el área» en un reservorio (la zona ya va delante en la vista). */
 export const rotuloTanque = (z) => (z.tanque === '' ? 'toda el área' : 'Tanque ' + z.tanque);
