@@ -11,6 +11,8 @@ import { buildTrasladoPayload } from '../registros/lib/ficha-traslado.schema.js'
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { renderTraslado, resetTrasladoFiltro } from './traslado.js';
+import { trasladoDe, viajesDe } from './traslado.data.js';
+import { buildTrasladoPdfDoc } from './trasladoPdf.js';
 
 function aFilas(payload) {
   return payload.rows.map((r) => {
@@ -91,6 +93,29 @@ describe('Traslado · la vista se dibuja', () => {
     expect(txt(root)).toContain('Todavía no hay traslados registrados');
     expect(txt(root)).toContain('Registro_Traslado');
     expect(root.querySelector('.sv-tras-cards')).toBeNull();
+  });
+
+  it('B5 · filas sin ninguna placa y sin filtro: dice que faltan las placas, no «ocultos por el filtro»', () => {
+    const sinPlaca = aFilas(buildTrasladoPayload(viaje(1)))
+      .map((f) => Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v === 'GSA-1147' ? '' : v])));
+    const root = montar(ctxCon(sinPlaca));
+    expect(txt(root)).toContain(`Hay ${sinPlaca.length} fila(s) de traslado, pero ninguna lleva placa: no se puede armar ningún camión.`);
+    expect(txt(root)).not.toContain('ocultos por el filtro');
+    expect(root.querySelector('.sv-tras-card')).toBeNull();
+  });
+
+  it('B5 · la pista del PDF dice lo que lleva (el total del viaje) y que el tramo a tramo no va', () => {
+    const filas = aFilas(buildTrasladoPayload(viaje(1)));
+    const root = montar(ctxCon(filas));
+    root.querySelector('[data-tras-modal="tiempo"]').click();
+    const pista = root.querySelector('#sv-tras-modal-b .sv-tras-pdf-hint').textContent;
+    expect(pista).toContain('su duración total (en ruta y puerta a puerta)');
+    expect(pista).toContain('El tramo a tramo de arriba no va en el PDF');
+    // Y es verdad: el papel lleva los dos totales y ningún tramo.
+    const doc = buildTrasladoPdfDoc(viajesDe(trasladoDe(filas, 'M07', '555').camiones)[0], { mod: 'M07', corrida: '555' });
+    expect(doc.page).toContain('En ruta');
+    expect(doc.page).toContain('Puerta a puerta');
+    expect(doc.page).not.toMatch(/tramo/i);
   });
 
   it('🔴 una tarjeta por camión, con su placa', () => {

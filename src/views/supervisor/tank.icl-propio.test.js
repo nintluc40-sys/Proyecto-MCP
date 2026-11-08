@@ -39,3 +39,16 @@ describe('A24 · el ICL del tanque', () => {
     expect(Math.round(conModulo)).not.toBe(Math.round(esperado));   // el caso distingue
   });
 });
+
+describe('B5 · la fórmula del ICL que enseña el modal', () => {
+  it('dice «Estrés × 10», que es como resta: un 8 en la hoja quita 80', () => {
+    const base = { Tanque: '1', Fecha: '2026-06-01', 'Población': '1000000', '% Actividad': '90', 'Estadío': 'Z2' };
+    const sin = iclSeries([row(base)]).values.at(-1);
+    const con = iclSeries([row({ ...base, 'Estrés': '8' })]).values.at(-1);
+    expect(sin - con).toBe(80);
+    const { html } = renderTank(ctxFor([row({ ...base, 'Estrés': '8' })]), 'M01', '1');
+    const nota = html.match(/ICL = \(SV[^<]*/)[0];
+    expect(nota).toContain('Deformidad + Estrés × 10 + Retraso');
+    expect(nota).toContain('por eso se multiplica por 10');
+  });
+});

@@ -303,7 +303,7 @@ export function renderTank(ctx, mod, tq) {
       <div class="sv-modal-body">
         <div class="sv-modal-kpis" id="svIclMeta"></div>
         <div class="lv-fs-chart">${icl.values.some((v) => v !== null) ? '<canvas id="svIclCanvas"></canvas>' : '<div class="empty-state">Sin datos suficientes para calcular el ICL.</div>'}</div>
-        <div class="sv-modal-note">ICL = (SV + %Actividad + Int.Lleno + Lípidos) − (Vacío + Semilleno + Deformidad + Estrés + Retraso + Necrosis + Hongos + No Viables + Opacidad + Flácidez + Canibalismo + Parásitos). El tooltip muestra las variables que más restan ese día.</div>
+        <div class="sv-modal-note">ICL = (SV + %Actividad + Int.Lleno + Lípidos) − (Vacío + Semilleno + Deformidad + Estrés × 10 + Retraso + Necrosis + Hongos + No Viables + Opacidad + Flácidez + Canibalismo + Parásitos). El Estrés se anota de 0 a 10 y los demás en %: por eso se multiplica por 10. El tooltip muestra las variables que más restan ese día.</div>
       </div>
     </div>
   </div>`;

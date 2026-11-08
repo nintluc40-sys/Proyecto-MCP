@@ -273,7 +273,7 @@ function tablaTiempo(camiones) {
     <div class="sv-tras-pdf-bar">
       <button type="button" class="sv-btn-pdf" data-tras-pdf
         title="Genera el registro completo de este traslado: cabecera, tiempos y una hoja por camión">📄 Descargar PDF del viaje</button>
-      <span class="sv-tras-pdf-hint">Incluye los tramos de arriba y, por cada camión, sus matrices de oxígeno, temperatura y actividad parada a parada.</span>
+      <span class="sv-tras-pdf-hint">Incluye la cabecera del viaje con su duración total (en ruta y puerta a puerta) y, por cada camión, sus matrices de oxígeno, temperatura y actividad parada a parada. El tramo a tramo de arriba no va en el PDF: se mira aquí.</span>
     </div>
   </div>`;
 }
@@ -556,7 +556,10 @@ export function renderTraslado(ctx, mod) {
     });
     html += '</div></section>';
   }
-  if (!visibles.length) html += '<div class="sv-tras-vacio">Todos los camiones están ocultos por el filtro.</div>';
+  /* B5 (2026-11-08, usuario: «Que faltan las placas») · Aquí no se llega por el filtro: una placa elegida que ya no existe
+     se olvida arriba y se enseñan todos. Se llega cuando NINGUNA fila trae placa (las que la captura manda en blanco
+     para apagar lo quitado), y decía «ocultos por el filtro» sin filtro puesto. */
+  if (!visibles.length) html += `<div class="sv-tras-vacio">Hay ${t.nFilas} fila(s) de traslado, pero ninguna lleva placa: no se puede armar ningún camión.</div>`;
 
   // ── Modales de desglose ──
   // ⚠ Las clases son las del proyecto: `sv-modal-card` / `-head` / `-title` / `-body`.

@@ -133,11 +133,17 @@ export function renderLarvia(ctx, mod, tq) {
     <div class="sv-card-orb"></div>
     <div class="sv-card-tag">🔬 ANÁLISIS BIOMÉTRICO LARVIA</div>
     <div class="sv-banner-name">${esc(mod)} — ${esc(tq)}</div>
-    <div class="sv-card-sub">${bit.length} registro${bit.length !== 1 ? 's' : ''} disponible${bit.length !== 1 ? 's' : ''}</div>
+    <div class="sv-card-sub">${withId.length || !bit.length
+    ? `${bit.length} registro${bit.length !== 1 ? 's' : ''} disponible${bit.length !== 1 ? 's' : ''}`
+    : `${bit.length} registro${bit.length !== 1 ? 's' : ''}, ninguno con ID de análisis`}</div>
   </div>`;
 
+  /* B5 (2026-11-08) · Sin ningún registro con ID la página no enseña nada; decía «45 registros disponibles» y debajo
+     «Sin datos LARVIA», sin decir por qué. */
   if (!withId.length) {
-    html += `<div class="empty-state">Sin datos LARVIA para este tanque.</div>`;
+    html += `<div class="empty-state">${bit.length
+      ? `Sin análisis LARVIA que mostrar: ${bit.length === 1 ? 'el registro de este tanque no trae' : `los ${bit.length} registros de este tanque no traen`} ID de análisis, y sin él no se muestran.`
+      : 'Sin datos LARVIA para este tanque.'}</div>`;
     return { html };
   }
 

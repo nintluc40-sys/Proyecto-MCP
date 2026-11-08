@@ -88,3 +88,18 @@ describe('LARVIA · la serie es del TANQUE, no del módulo', () => {
     expect(seriePlg().datasets[0].data).toHaveLength(2);
   });
 });
+
+describe('B5 · LARVIA sin ningún análisis con ID', () => {
+  it('dice cuántos registros hay y por qué no se muestran (antes, «3 registros disponibles» y debajo «Sin datos»)', () => {
+    store.globalData = synth().filter((r) => r.Tanque === 'TQ1').map(({ 'ID de Análisis': _id, ...r }) => r);
+    const root = abrirLarvia();
+    expect(root.querySelector('.sv-banner .sv-card-sub').textContent).toBe('3 registros, ninguno con ID de análisis');
+    expect(root.textContent).toContain('los 3 registros de este tanque no traen ID de análisis, y sin él no se muestran');
+    expect(root.textContent).not.toContain('disponible');
+  });
+
+  it('con alguno con ID, la cabecera sigue como estaba', () => {
+    const root = abrirLarvia();
+    expect(root.querySelector('.sv-banner .sv-card-sub').textContent).toBe('3 registros disponibles');
+  });
+});
