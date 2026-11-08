@@ -264,6 +264,21 @@ describe('Auditoría · la ficha en el módulo AsT', () => {
     expect(H._audRaw()).toHaveLength(0);
   });
 
+  it('B5 · 🗑 de una auditoría NO enviada: si ya espera en la cola, el aviso dice que llegará igual (no «se pierde»)', () => {
+    globalThis.localStorage.setItem('larv4_aud_records', JSON.stringify([{ id: 'AUE-901-M04', ts: 5, synced: false, data: audit({ corrida: '901', siembras: [SI({})] }) }]));
+    H.renderAud();
+    const vistas = [];
+    window.confirm = (m) => { vistas.push(m); return false; };
+    const borrar = () => H.audBorrarEl(fp().querySelector('button[onclick="audBorrarEl(this)"]'));
+    borrar();
+    expect(vistas[0]).toContain('se pierde');
+    globalThis.localStorage.setItem('larv4_syncqueue', JSON.stringify([{ ts: 1, payload: { sheetName: 'Registro_Auditoria' }, mark: { kind: 'auditoria', keys: ['AUE-901-M04@5'] } }]));
+    borrar();
+    expect(vistas[1]).toContain('esperando en la cola: llegará a la hoja aunque la quites de este dispositivo');
+    expect(vistas[1]).not.toContain('se pierde');
+    expect(H._audRaw(), '«no» no la quita').toHaveLength(1);
+  });
+
   it('lo pendiente NO caduca; lo enviado se purga a los 7 días', () => {
     const viejo = Date.now() - 10 * 24 * 3600 * 1000;
     globalThis.localStorage.setItem('larv4_aud_records', JSON.stringify([

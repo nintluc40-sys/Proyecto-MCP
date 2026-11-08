@@ -232,6 +232,27 @@ describe('Score · la ficha en el módulo AsT', () => {
     expect(H._scoreRaw()).toHaveLength(0);
   });
 
+  it('B5 · 🗑 de una evaluación NO enviada: «se pierde» sólo si no espera en la cola (si espera, llegará igual)', () => {
+    globalThis.localStorage.setItem('larv4_score_records', JSON.stringify([{ id: 'SCE-a', ts: 5, synced: false, data: evaluacion({ 1: tanque(1) }) }]));
+    H.renderScore();
+    const vistas = [];
+    window.confirm = (m) => { vistas.push(m); return false; };
+    const borrar = () => H.scoreBorrarEl(fp().querySelector('button[onclick="scoreBorrarEl(this)"]'));
+    const cola = (items) => globalThis.localStorage.setItem('larv4_syncqueue', JSON.stringify(items));
+    borrar();
+    expect(vistas[0]).toContain('se pierde');
+    // Otra hoja, o un id que sólo EMPIEZA igual, no es esta evaluación.
+    cola([{ ts: 1, payload: {}, mark: { kind: 'auditoria', keys: ['SCE-a@5'] } }, { ts: 2, payload: {}, mark: { kind: 'score', keys: ['SCE-ab@5'] } }]);
+    borrar();
+    expect(vistas[1]).toContain('se pierde');
+    // Una versión anterior suya en la cola: llegará a la hoja aunque se quite de aquí.
+    cola([{ ts: 1, payload: { sheetName: 'Registro_Score' }, mark: { kind: 'score', keys: ['SCE-a@4'] } }]);
+    borrar();
+    expect(vistas[2]).toContain('esperando en la cola: llegará a la hoja aunque la quites de este dispositivo');
+    expect(vistas[2]).not.toContain('se pierde');
+    expect(H._scoreRaw(), '«no» no la quita').toHaveLength(1);
+  });
+
   it('🔴 la cola reconcilia por evaluación Y versión: lo corregido después de encolar NO se da por enviado', () => {
     globalThis.localStorage.setItem('larv4_score_records', JSON.stringify([{ id: 'SCE-a', ts: 5, synced: false, data: evaluacion({ 1: tanque(1) }) }]));
     expect(H._reconcileMark({ kind: 'score', keys: ['SCE-a@4'] }), 'una versión anterior no la marca').toBe(false);

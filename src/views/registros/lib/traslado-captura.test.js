@@ -463,6 +463,24 @@ describe('Traslado · guardar', () => {
     expect(H._trasRaw()).toHaveLength(0);
     expect(ultimoAviso()).toContain('Revisión 3');
   });
+
+  it('B5 · 🗑 Borrar traslado sin enviar que ya espera en la cola: avisa de que llegará igual, no «se pierden»', () => {
+    viajeCompleto(1);
+    H.trasGuardarLocal();
+    const rec = H._trasRaw()[0];
+    expect(rec.synced).toBeFalsy();
+    const vistas = [];
+    window.confirm = (m) => { vistas.push(m); return false; };
+    H.trasBorrarTraslado();
+    expect(vistas[0]).toContain('sus datos se pierden y no llegarán a la hoja');
+    // Su lote en la cola (la marca de Traslado lleva el id de cada traslado del lote, sin versión).
+    localStorage.setItem('larv4_syncqueue', JSON.stringify([{ ts: 1, payload: { sheetName: 'Registro_Traslado' }, mark: { kind: 'tras', keys: ['otro', rec.id] } }]));
+    H.trasBorrarTraslado();
+    expect(vistas[1]).toContain('esperando en la cola: llegará a la hoja aunque lo borres de este dispositivo');
+    expect(vistas[1]).not.toContain('se pierden');
+    expect(H._trasRaw(), '«no» no lo borra').toHaveLength(1);
+    window.confirm = () => true;
+  });
 });
 
 describe('Traslado · revisiones', () => {

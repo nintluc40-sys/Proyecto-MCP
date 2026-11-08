@@ -270,6 +270,23 @@ describe('Mantenimiento · 🔧 Trabajo', () => {
     expect(texto).toContain('NO se ha enviado');
     expect(H.loadMntTrabajos()).toHaveLength(0);
   });
+
+  it('B5 · quitar uno NO enviado que ya espera en la cola avisa de que llegará igual a la hoja', () => {
+    trabajoCompleto();
+    H.mntTrabGuardar();
+    const rec = H.loadMntTrabajos()[0];
+    const vistas = [];
+    window.confirm = (t) => { vistas.push(t); return false; };
+    const borrar = () => H.mntTrabBorrarEl(document.querySelector('#fp-mnttrabajo button[data-mnt-id]:not([onclick*="Abrir"])'));
+    // Lo de una RONDA con el mismo id no es este trabajo.
+    globalThis.localStorage.setItem('larv4_syncqueue', JSON.stringify([{ ts: 1, payload: {}, mark: { kind: 'mntronda', keys: [rec.id + '@1'] } }]));
+    borrar();
+    expect(vistas[0]).toBe('Este trabajo NO se ha enviado: si lo quitas, se pierde.\n\n¿Quitarlo igualmente?');
+    globalThis.localStorage.setItem('larv4_syncqueue', JSON.stringify([{ ts: 1, payload: { sheetName: 'Mantenimiento Trabajos' }, mark: { kind: 'mnttrabajo', keys: [rec.id + '@1'] } }]));
+    borrar();
+    expect(vistas[1]).toBe('Ya hay un envío de este trabajo esperando en la cola: llegará a la hoja aunque lo quites de este dispositivo.\n\n¿Quitarlo del dispositivo?');
+    expect(H.loadMntTrabajos(), '«no» no lo quita').toHaveLength(1);
+  });
 });
 
 describe('A9 · ✏️ Abrir no pisa lo que no se ha guardado', () => {

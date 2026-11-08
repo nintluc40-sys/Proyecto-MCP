@@ -1901,6 +1901,26 @@ function _purgeQueueMark(mark){
   }catch(_){}
 }
 
+/* B5 (2026-11-08, usuario: «Decirlo bien») · ¿Espera en la cola algún envío de este registro? Quitarlo del dispositivo no
+   lo saca de la cola, así que llegará a la hoja: el aviso de 🗑 no puede decir «se pierde». `kind` es el de su marca; las
+   llaves son el id (Traslado) o `id@ts` (Score, Auditoría y Mantenimiento: la versión), y cualquier versión que espere llega. */
+function _colaTieneRegistro(kind, id){
+  if(!kind || id == null || id === "") return false;
+  const sid = String(id);
+  return _loadSyncQueue().some(function(it){
+    const m = it && it.mark;
+    return !!(m && m.kind === kind && Array.isArray(m.keys)
+      && m.keys.some(function(k){ k = String(k); return k === sid || k.indexOf(sid + "@") === 0; }));
+  });
+}
+/* El aviso de quitar algo NO enviado: «se pierde» sólo si no espera en la cola. `que` es «esta evaluación», «este traslado»… */
+function _avisoQuitarNoEnviado(enCola, que, femenino){
+  const pron = femenino ? "la" : "lo", fin = femenino ? "a" : "o";
+  return enCola
+    ? "Ya hay un envío de " + que + " esperando en la cola: llegará a la hoja aunque " + pron + " quites de este dispositivo.\n\n¿Quitarl" + fin + " del dispositivo?"
+    : (que.charAt(0).toUpperCase() + que.slice(1)) + " NO se ha enviado: si " + pron + " quitas, se pierde.\n\n¿Quitarl" + fin + " igualmente?";
+}
+
 /* 2026-11-03 (pauta 1.2) · ¿Espera en la cola un envío con ALGUNA de estas llaves? Entonces no puede salir directo: si lleva otras que éste
    no lleva, _purgeQueueMark no lo retira —se perderían los demás— y al vaciarse volvería a escribir sobre lo de ahora los datos viejos de
    las llaves compartidas, con la app diciendo «enviado». La salida es respetar el orden: ver postPayload.
@@ -12706,7 +12726,7 @@ function renderMadDesoves(d, corr){
     + '<div class="fc-h"><div class="fc-t">🥚 Maduración · Desoves</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
     + '<div class="fc-b">'
     +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:flex-start;gap:8px">'
-    +     '<span style="font-size:16px">ℹ️</span><span>La producción se registra por <b>lote y código genético</b>, no por tanque: las copuladas de varios tanques se juntan en un pool y al devolverlas nadie identifica cuáles eran.<br>Los conteos grandes van <b>en miles</b> (escribe <b>6500</b> para 6.500.000). <b>N2 y N5 se completan después</b>: en <b>📋 Desoves pendientes</b> pulsa <b>✏️ Completar</b>, rellena lo nuevo y guarda. Con el N5 guardado, el desove sale de la lista. Sus fechas <b>vienen puestas</b> —N2 la del desove y N5 la del día siguiente— y <b>puedes cambiarlas</b> si el conteo se hizo otro día: la que toques se queda en amarillo y deja de seguir a la del desove.</span>'
+    +     '<span style="font-size:16px">ℹ️</span><span>La producción se registra por <b>lote y código genético</b>, no por tanque: las copuladas de varios tanques se juntan en un pool y al devolverlas nadie identifica cuáles eran.<br>Los conteos grandes van <b>en miles</b> (escribe <b>6500</b> para 6.500.000). <b>N2 y N5 se completan después</b>: en <b>📋 Desoves pendientes</b> pulsa <b>✏️ Completar</b>, rellena lo nuevo y guarda. Con el N5 guardado, el desove sale de la lista. Sus fechas <b>vienen puestas</b> —N2 la del día siguiente al desove y N5 la del otro— y <b>puedes cambiarlas</b> si el conteo se hizo otro día: la que toques se queda en amarillo y deja de seguir a la del desove.</span>'
     +   '</div>'
     +   (corr ? _madDesCorrBannerHTML(d, corr) : d ? '<div id="md-edit" style="background:#fef9c3;border:1.5px solid #fde047;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:12px;color:#713f12">✏️ Completando el desove del <b>'+escapeHtml(d.fecha)+'</b> · <b>'+escapeHtml(d.lote)+'</b> · <b>'+escapeHtml(d.codigoGenetico)+'</b>. Rellena lo nuevo y guarda; 🧹 Vaciar sale sin guardar.</div>' : '')
     +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
@@ -21592,7 +21612,7 @@ function scoreBorrar(id){
   const r = _scoreRaw().find(function(x){ return x && x.id === id; });
   if(!r) return;
   if(!confirm(r.synced ? "¿Quitar esta evaluación del dispositivo? (Lo enviado sigue en la hoja.)"
-    : "Esta evaluación NO se ha enviado: si la quitas, se pierde.\n\n¿Quitarla igualmente?")) return;
+    : _avisoQuitarNoEnviado(_colaTieneRegistro("score", r.id), "esta evaluación", true))) return;
   _scoreSave(_scoreRaw().filter(function(x){ return x && x.id !== id; }));
   renderScore(); updateDots(); updateSyncUI();
 }
@@ -22235,7 +22255,7 @@ function _mntBorrar(ronda, id){
   if(!r) return;
   const cual = ronda ? "esta ronda" : "este trabajo";
   if(!confirm(r.synced ? "¿Quitar " + cual + " del dispositivo? (Lo enviado sigue en la hoja.)"
-    : "Lo de " + cual + " NO se ha enviado: si lo quitas, se pierde.\n\n¿Quitarlo igualmente?")) return;
+    : _avisoQuitarNoEnviado(_colaTieneRegistro(ronda ? "mntronda" : "mnttrabajo", r.id), cual, ronda))) return;
   _mntSave(key, _mntRaw(key).filter(function(x){ return x && x.id !== id; }));
   if(ronda) renderMntRonda(); else renderMntTrabajo();
   updateDots(); updateSyncUI();
@@ -23187,7 +23207,7 @@ function audBorrar(id){
   const r = _audRaw().find(function(x){ return x && x.id === id; });
   if(!r) return;
   if(!confirm(r.synced ? "¿Quitar esta auditoría del dispositivo? (Lo enviado sigue en la hoja.)"
-    : "Esta auditoría NO se ha enviado: si la quitas, se pierde.\n\n¿Quitarla igualmente?")) return;
+    : _avisoQuitarNoEnviado(_colaTieneRegistro("auditoria", r.id), "esta auditoría", true))) return;
   _audSave(_audRaw().filter(function(x){ return x && x.id !== id; }));
   renderAud(); updateDots(); updateSyncUI();
 }
@@ -25655,7 +25675,10 @@ async function syncAllPendingTras(){
 function trasBorrarTraslado(){
   const rec = trasRegistroActivo();
   const aviso = (rec && !rec.synced)
-    ? "Este traslado NO se ha sincronizado todavía.\n\nSi lo borras, sus datos se pierden y no llegarán a la hoja.\n\n¿Borrarlo igualmente?"
+    ? (_colaTieneRegistro("tras", rec.id)
+      // B5 (2026-11-08, usuario: «Decirlo bien») · borrarlo de aquí no lo saca de la cola.
+      ? "Ya hay un envío de este traslado esperando en la cola: llegará a la hoja aunque lo borres de este dispositivo.\n\n¿Vaciar la ficha y borrarlo del dispositivo?"
+      : "Este traslado NO se ha sincronizado todavía.\n\nSi lo borras, sus datos se pierden y no llegarán a la hoja.\n\n¿Borrarlo igualmente?")
     : "¿Vaciar la ficha y borrar este traslado del dispositivo para empezar otro?";
   if(!confirm(aviso)) return;
   if(rec){

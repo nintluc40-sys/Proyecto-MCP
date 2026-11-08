@@ -218,6 +218,13 @@ describe('Desoves · el mismo día siguiente (2026-09-16)', () => {
       expect({ ...api.madDesFechasNauplios(f) }, String(f)).toEqual(fechasNauplios(f));
     }
   });
+
+  it('B5 (2026-11-08) · el recuadro de la ficha dice las fechas que pone: N2 el día siguiente al desove y N5 el otro', () => {
+    expect({ ...api.madDesFechasNauplios('2026-11-01') }).toEqual({ n2: '2026-11-02', n5: '2026-11-03' });
+    const src = leer(ENGINE);
+    expect(src).toContain('—N2 la del día siguiente al desove y N5 la del otro—');
+    expect(src, 'la frase vieja decía N2 el mismo día del desove').not.toContain('N2 la del desove');
+  });
 });
 
 describe('Desoves · el mismo ×1000', () => {
