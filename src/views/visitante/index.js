@@ -9,12 +9,13 @@ import { esc, fmtPop, wqiBand, wqiSpans } from '../../core/format.js';
 import { store } from '../../core/store.js';
 import { getField, parseNum, F, isLarviculturaRow, obsFindings } from '../../core/fields.js';
 import { fmtPct } from '../../core/util.js';
-import { presentMonths, corridasOfMonth, modulesOfCorrida, modCorStats, monthLabelAt, monthIndexOfCorrida, ventanaDeMaduracion, numeroDeCorrida } from '../../core/prodCalendar.js';
+import { presentMonths, corridasOfMonth, modulesOfCorrida, modCorStats, monthLabelAt, monthIndexOfCorrida, ventanaDeMaduracion, numeroDeCorrida, calendarRangeOfMonth } from '../../core/prodCalendar.js';
 import { THRESHOLDS } from '../../config.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { SIN_RED } from '../../ui/vistaDiferida.js';
-// Capas de datos PURAS de laboratorio (ya en el bundle base vía la vista Microbiología →
-// no inflan el bundle de Visitante; solo se reutiliza su lógica de umbrales/rangos).
+// Capas de datos PURAS de laboratorio, compartidas con la vista Microbiología: las dos vistas son diferidas, y la build
+// pone estas capas en un trozo común que baja con la primera de las dos que se abra. Solo se reutiliza su lógica de
+// umbrales/rangos. (B8, 2026-11-08 · decía «ya en el bundle base vía la vista Microbiología», y no lo está.)
 // `isMicroRow` / `isCalAguaRow` son el criterio ÚNICO del sistema para reconocer esas
 // hojas. Aquí se comparaba `_SheetOrigin` contra la cadena EXACTA, más estricto que el
 // resto de la app. Los módulos ya se importaban, así que reutilizarlos no cuesta bundle.
@@ -122,7 +123,8 @@ const rowMonth = (r) => { const n = numeroDeCorrida(getField(r, F.corrida)); ret
 // la lee también la vista Revisiones, que es la dueña de esa hoja. Tenerlo por copia era
 // garantizar que algún día las dos pantallas contaran hallazgos distintos.
 
-// Lectura mínima de Biomol (NO se importa la vista lazy para no inflar el bundle base).
+// Lectura mínima de Biomol: no se importa su vista para no meterla en el trozo de Visitante (las dos son diferidas;
+// B8, 2026-11-08 · decía «para no inflar el bundle base»).
 const BIO_KEYS = {
   IHHNV: ['IHHNV', 'ihhnv', 'CC', 'cc'], WSSV: ['WSSV', 'wssv', 'DD', 'dd'], BP: ['BP', 'bp', 'EE', 'ee'],
   AHPND: ['AHPND', 'AHPND/EMS', 'ahpnd', 'EMS', 'ems', 'PP', 'pp'], NHPB: ['NHPB', 'NHP', 'NHP-B', 'nhpb', 'nhp', 'NN', 'nn'], EHP: ['EHP', 'ehp'],
@@ -130,16 +132,27 @@ const BIO_KEYS = {
 const bioIsPos = (raw) => ['positivo', 'positive', 'pos', 'p', '1', 'si', 'sí'].includes(String(raw || '').toLowerCase());
 const bioIsMeas = (raw) => bioIsPos(raw) || ['negativo', 'negative', 'neg', 'n', '0', 'no'].includes(String(raw || '').toLowerCase());
 
+/** C5 (2026-11-08, usuario: «Decir que está en curso») · un mes que AÚN NO HA TERMINADO: su mes de calendario llega a
+ *  hoy, o todavía no empieza. Sus corridas no han cosechado, así que el resumen no juzga la calidad, dice que la
+ *  supervivencia es parcial y pone «todavía» donde aún no hay nada. Antes, el mes por defecto (el más reciente) salía
+ *  «🟢 Buena» o «🟡 Regular» junto a «0 de N» módulos revisados y «Sin análisis». `hoy` en `aaaa-mm-dd`, local. */
+function mesEnCurso(mIdx, hoy = hoyIso()) {
+  const r = calendarRangeOfMonth(mIdx);
+  return !!r && hoy <= r.hasta;
+}
+
 /** Indicadores de alto nivel del mes (semáforos + conteos). */
 function monthSummary(mIdx, monthSup) {
-  return memo(JSON.stringify(['monthSummary', mIdx, monthSup]), () => monthSummaryCompute(mIdx, monthSup));
+  const enCurso = mesEnCurso(mIdx);   // en la clave: al acabar el mes, el mismo dato se juzga (sin esperar a un refresco)
+  return memo(JSON.stringify(['monthSummary', mIdx, monthSup, enCurso]), () => monthSummaryCompute(mIdx, monthSup, enCurso));
 }
-function monthSummaryCompute(mIdx, monthSup) {
+function monthSummaryCompute(mIdx, monthSup, enCurso) {
   const G = store.globalData;
 
-  // Calidad de larvas (proxy: supervivencia promedio del mes).
+  // Calidad de larvas (proxy: supervivencia promedio del mes). C5 · en un mes en curso, no se juzga.
   let calTier = 'x', calText = 'Sin datos';
-  if (monthSup != null) {
+  if (enCurso) { calTier = 'c'; calText = 'Mes en curso'; }
+  else if (monthSup != null) {
     if (monthSup >= 70) { calTier = 'v'; calText = 'Buena'; }
     else if (monthSup >= 40) { calTier = 'a'; calText = 'Regular'; }
     else { calTier = 'r'; calText = 'Atención'; }
@@ -168,7 +181,7 @@ function monthSummaryCompute(mIdx, monthSup) {
   const covX = [...prodMods].filter((n) => revMods.has(n)).length;
 
   // Estado de revisiones (tasa de hallazgos por revisión).
-  let revTier = 'x', revText = 'Sin datos', revCtx = 'Sin revisiones este mes';
+  let revTier = 'x', revText = enCurso ? 'Todavía sin revisiones' : 'Sin datos', revCtx = enCurso ? 'el mes sigue en curso' : 'Sin revisiones este mes';
   if (revRows.length) {
     const findings = revRows.reduce((s, r) => s + obsFindings(r).length, 0);
     const rate = findings / revRows.length;
@@ -182,20 +195,21 @@ function monthSummaryCompute(mIdx, monthSup) {
   const bioRows = G.filter((r) => r._SheetOrigin === 'Biomol' && rowMonth(r) === mIdx);
   let positives = 0, measured = 0;
   bioRows.forEach((r) => Object.values(BIO_KEYS).forEach((keys) => { const v = getField(r, keys); if (bioIsMeas(v)) { measured++; if (bioIsPos(v)) positives++; } }));
-  let bioTier = 'x', bioText = 'Sin análisis', bioCtx = 'Sin muestras de laboratorio';
+  const sinAnalisis = enCurso ? 'Todavía sin análisis' : 'Sin análisis';
+  let bioTier = 'x', bioText = sinAnalisis, bioCtx = enCurso ? 'el mes sigue en curso' : 'Sin muestras de laboratorio';
   if (bioRows.length) {
-    if (!measured) { bioTier = 'x'; bioText = 'Sin análisis'; }
+    if (!measured) { bioTier = 'x'; bioText = sinAnalisis; }
     else if (positives === 0) { bioTier = 'v'; bioText = 'Sin patógenos detectados'; }
     else { bioTier = 'r'; bioText = `${positives} detección(es)`; }
     bioCtx = `${bioRows.length} muestra(s) analizada(s)`;
   }
 
-  return { calTier, calText, covX, covY, revTier, revText, revCtx, bioTier, bioText, bioCtx, bioSamples: bioRows.length };
+  return { calTier, calText, covX, covY, revTier, revText, revCtx, bioTier, bioText, bioCtx, bioSamples: bioRows.length, enCurso };
 }
 
-// Chip de semáforo con TEXTO (no solo color → accesible).
+// Chip de semáforo con TEXTO (no solo color → accesible). `c` (C5): un mes en curso, que aún no se juzga.
 function semChip(tier, text) {
-  const map = { v: ['#2E9E5B', '🟢'], a: ['#E6A100', '🟡'], r: ['#D64545', '🔴'], x: ['#90A4AE', '⚪'] };
+  const map = { v: ['#2E9E5B', '🟢'], a: ['#E6A100', '🟡'], r: ['#D64545', '🔴'], x: ['#90A4AE', '⚪'], c: ['#90A4AE', '⏳'] };
   const [c, dot] = map[tier] || map.x;
   return `<span style="color:${c}">${dot} ${esc(text)}</span>`;
 }
@@ -252,10 +266,13 @@ function algasSummaryCompute(mIdx) {
 /** Bloque “🌿 Microalgas” (2 tarjetas clicables, estilo algas) para Visitante. */
 function algasSummaryBlock(mIdx) {
   const s = algasSummary(mIdx);
-  if (!s.n) return ''; // sin datos de algas en el mes → no se muestra la sección
+  const titulo = `<div class="vt-card-title" style="color:#015B76">🌿 Microalgas · ${esc(monthLabelAt(mIdx))} <span class="muted" style="font-weight:600;font-size:12px">· laboratorio de algas</span></div>`;
+  // Sin datos de algas en un mes CERRADO, no se muestra la sección. C5 (2026-11-08, usuario) · en el mes en curso se
+  // dice, en vez de desaparecer sin aviso: aún pueden llegar.
+  if (!s.n) return mesEnCurso(mIdx) ? `<div class="card vt-card">${titulo}<p style="color:var(--c-text-muted);margin:0">Sin registros de algas este mes todavía.</p></div>` : '';
   const sanTier = (s.descPct >= 20 || s.protoPct >= 25) ? 'r' : (s.descPct >= 10 || s.protoPct >= 10) ? 'a' : 'v';
   return `<div class="card vt-card">
-    <div class="vt-card-title" style="color:#015B76">🌿 Microalgas · ${esc(monthLabelAt(mIdx))} <span class="muted" style="font-weight:600;font-size:12px">· laboratorio de algas</span></div>
+    ${titulo}
     <div style="display:flex;gap:12px;flex-wrap:wrap">
       ${sumCard('🌿', 'Cultivos de microalgas', `${s.cultivos} cultivos`, `densidad prom. ${fmtK(s.densAvg)} cel/ml`, 'algasCultivos', '#015B76')}
       ${sumCard('🦠', 'Sanidad de las algas', semChip(sanTier, `${s.descPct.toFixed(0)}% descarte`), `${s.desc} descartado(s) · protoz. altos en ${s.protoAlert} reg.`, 'algasSanidad', '#015B76')}
@@ -474,9 +491,9 @@ function summaryBlock(mIdx, monthSup, label) {
   return `<div class="card vt-card">
     <div class="vt-card-title">📊 Resumen del mes · ${esc(label)} <span class="muted" style="font-weight:600;font-size:12px">· panorama general</span></div>
     <div style="display:flex;gap:12px;flex-wrap:wrap">
-      ${sumCard('🦐', 'Calidad de las larvas', semChip(s.calTier, s.calText), 'Según la supervivencia promedio', 'calidad')}
-      ${sumCard('📈', 'Supervivencia promedio', fmtPct(monthSup), 'Cosecha ÷ siembra del mes', 'superv')}
-      ${sumCard('🔍', 'Cobertura de supervisión', covVal, s.covY ? 'módulos revisados' : 'no hay cobertura que medir', 'cobertura')}
+      ${sumCard('🦐', 'Calidad de las larvas', semChip(s.calTier, s.calText), s.enCurso ? 'sus corridas aún no terminan' : 'Según la supervivencia promedio', 'calidad')}
+      ${sumCard('📈', 'Supervivencia promedio', fmtPct(monthSup), s.enCurso ? 'Parcial: cosecha ÷ siembra hasta hoy' : 'Cosecha ÷ siembra del mes', 'superv')}
+      ${sumCard('🔍', 'Cobertura de supervisión', covVal, s.covY ? (s.enCurso ? 'módulos revisados hasta hoy' : 'módulos revisados') : 'no hay cobertura que medir', 'cobertura')}
       ${sumCard('⚠️', 'Estado de revisiones', semChip(s.revTier, s.revText), s.revCtx, 'revisiones')}
       ${sumCard('🧬', 'Sanidad (laboratorio)', semChip(s.bioTier, s.bioText), s.bioCtx, 'sanidad')}
       ${sumCard('🧪', 'Análisis genéticos', String(s.bioSamples), 'muestras con prueba de patógenos', 'analisis')}
