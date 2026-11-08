@@ -4,13 +4,12 @@
 
    LO QUE CUENTAN: «en la hoja de Google, efectivamente, los partes llegan DUPLICADOS».
 
-   LO MEDIDO (2026-09-30, la hoja de producción en sólo lectura, 736 filas): ninguna llave repetida y ninguna fila sin
-   Hora ni Parte. El duplicado es OTRO: la misma ronda dada DOS VECES desde DOS dispositivos (o dos apps: index (8) y el
-   MCP guardan en sitios distintos). Cada dispositivo numera sus partes con lo que tiene él y no ve lo que dio el otro:
-     · 29/09 Sala 5: «21:22 P1» T7 3 ♀ muertas y T9 1 ♀, y dos minutos después «21:24 P3» T7 3 ♀ (+16 cópulas), T9 2 ♀,
-       T11 2 ♀. T7 cuenta sus 3 hembras DOS veces y el libro resta 6;
-     · 20/09 Sala 1: «00:48 P2» y «00:55 P1» con las mismas bajas en T1 y T11;
-     · 10/09 Sala 2 y 5: el P2 de 9 minutos después repite las cópulas y la muda del P1 (sin muertes) en T16 y T11.
+   LO MEDIDO (2026-09-30, la hoja de producción en sólo lectura): ninguna llave repetida y ninguna fila sin Hora ni
+   Parte. El duplicado es OTRO: la misma ronda dada DOS VECES desde DOS dispositivos (o dos apps: index (8) y el MCP
+   guardan en sitios distintos). Cada dispositivo numera sus partes con lo que tiene él y no ve lo que dio el otro: dos
+   partes de la misma sala a pocos minutos, con las mismas bajas en un tanque (que el libro resta dos veces), o con las
+   mismas cópulas y muda y sin muertes. (B8, 2026-11-08 · aquí iban los casos medidos, con fecha, sala, hora y bajas:
+   el repo es público. El caso de abajo es un ejemplo de esa forma, no uno real.)
    El GAS no puede saber cuál es buena (una ronda real puede repetir cifras) y numerar por la hoja no es posible al
    guardar (sin red). Lo que sí se puede es PREGUNTAR antes de enviar, que es lo que se pide aquí.
 
@@ -123,7 +122,7 @@ const irASala = (s) => { document.getElementById('mad-tanques-sala').value = s; 
 const enviadasTq = () => envios.filter((b) => b.sheetName === 'Maduración Tanques');
 const pendientes = (sala) => H.loadMad('tanques').filter((r) => !r.synced && r.data && r.data.sala === sala);
 const cola = () => JSON.parse(localStorage.getItem('larv4_syncqueue') || '[]');
-/** El dispositivo de la prueba da la ronda de las 21:24 en la Sala 5, como el «P3» del 29/09 (aquí será su P1). */
+/** El dispositivo de la prueba da la ronda de las 21:24 en la Sala 5 (aquí será su P1). */
 const darRondaSala5 = () => {
   irASala('Sala 5');
   poner(7, 'hembras_muertas', 3); poner(7, 'copulas', 16);
@@ -166,7 +165,7 @@ describe('Tanques · la misma ronda ya dada desde otro dispositivo: se PREGUNTA 
     ]);
   });
 
-  it('🔴 el caso del 29/09: T7 con las mismas bajas que el parte de las 21:22 de otro dispositivo → UNA pregunta', async () => {
+  it('🔴 el caso medido: T7 con las mismas bajas que el parte de las 21:22 de otro dispositivo → UNA pregunta', async () => {
     fixture = OTRO_2122();
     respuesta = false;
     darRondaSala5();
@@ -198,7 +197,7 @@ describe('Tanques · la misma ronda ya dada desde otro dispositivo: se PREGUNTA 
     expect(pendientes('Sala 5')).toHaveLength(0);
   });
 
-  it('🔴 el caso del 10/09: sin muertes, pero las mismas cópulas y muda que un parte de hace 9 minutos → pregunta', async () => {
+  it('🔴 sin muertes, pero las mismas cópulas y muda que un parte de hace 9 minutos → pregunta', async () => {
     fixture = [fila('Sala 2', 16, '21:15', 1, { 'Cópulas': 15, Muda: 18 })];
     respuesta = false;
     irASala('Sala 2');
