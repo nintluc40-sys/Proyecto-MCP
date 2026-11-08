@@ -131,16 +131,28 @@ describe('subvista Módulo · el modal de Calidad de Agua no se contamina entre 
 
     const modal = root.querySelector('#svCwModal') || root.querySelector('[data-cwmodal]');
     expect(modal).toBeTruthy();
+    const clic = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
 
-    // Diagnóstico ANTES de visitar Tabla.
+    /* B10 (2026-11-08) · antes buscaba las pestañas por `[data-cwview]`, que no existe: no visitaba ninguna y la prueba
+       pasaba sin comprobar nada. Son `[data-cw-mode]`. Y el diagnóstico (WQI) no sirve de testigo: las dos muestras de
+       la misma fecha dan el mismo WQI. Lo que el orden cambia es «el último valor de cada parámetro» con el empate de la
+       fecha, que enseñan las pastillas de 📈 Tendencias (medido con la Tabla reordenando el array: pH 8,4 ↔ 8). */
+    const tabs = [...modal.querySelectorAll('[data-cw-mode]')];
+    expect(tabs.map((t) => t.dataset.cwMode)).toEqual(['tabla', 'fichas', 'matriz', 'tendencias']);
+    const txt = (el) => el.textContent.replace(/\s+/g, ' ');
+    const ver = (modo) => { clic(modal.querySelector(`[data-cw-mode="${modo}"]`)); return txt(modal.querySelector('#svCwBody')); };
     const wqiAntes = modal.querySelector('.cw-gauge-v')?.textContent ?? null;
+    expect(wqiAntes, 'sin diagnóstico no hay nada que comparar').toMatch(/^\d/);
+    const antes = { tendencias: ver('tendencias'), matriz: ver('matriz'), fichas: ver('fichas') };
+    expect(antes.tendencias, 'las pastillas con el último valor de cada parámetro').toMatch(/pH \d/);
 
-    // Visita todas las vistas disponibles (incluida Tabla) y vuelve.
-    const tabs = [...modal.querySelectorAll('[data-cwview]')];
-    tabs.forEach((t) => t.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })));
-    if (tabs.length) tabs[0].dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    ver('tabla');   // una sola vez: la Tabla ya se pintó al abrir, y dos visitas más podrían deshacer un reorden
+    expect(modal.querySelectorAll('#svCwBody tbody tr').length, 'la Tabla se pintó').toBeGreaterThan(0);
 
-    const wqiDespues = modal.querySelector('.cw-gauge-v')?.textContent ?? null;
-    expect(wqiDespues).toBe(wqiAntes); // el diagnóstico no cambia por haber abierto Tabla
+    expect({ tendencias: ver('tendencias'), matriz: ver('matriz'), fichas: ver('fichas') }).toEqual(antes);
+    // El diagnóstico se pinta al ABRIR: cerrar y volver a abrir lo hace leer el mismo array.
+    clic(modal.querySelector('[data-cw-close]'));
+    clic(root.querySelector('[data-cw-open]'));
+    expect(modal.querySelector('.cw-gauge-v')?.textContent ?? null).toBe(wqiAntes);
   });
 });
