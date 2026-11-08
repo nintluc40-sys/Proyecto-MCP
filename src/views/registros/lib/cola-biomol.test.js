@@ -147,6 +147,7 @@ describe('🔴 dos análisis del mismo día, sin señal', () => {
     const b = analisis('B', 'XB1');
     await enviar();
     expect(hoja.map(cod)).toEqual([['XB1']]);
+    expect(pendientes(b), 'B10 · el envío directo de B queda marcado como enviado').toBe(0);
     expect(cola().map((it) => it.mark.keys), 'el directo purgó al otro análisis').toEqual([[FECHA + '|' + a]]);
     await H.flushSyncQueue();
     expect(hoja.map(cod)).toEqual([['XB1'], ['XA1']]);
