@@ -6,6 +6,14 @@
 // (Instalado ANTES del 2026-10-28: pega el código nuevo y ejecuta UNA vez `rellenarObservado`. Cambios posteriores:
 //  basta con pegar el código; los activadores llaman a las funciones por su nombre.)
 // ════════════════════════════════════════════════════════════════════════════════════
+
+// ── EL SELLO (A36, 2026-11-08, usuario: «En el código y en su registro») ────────────────
+// La HUELLA del resto de este archivo (sha-256, 12 caracteres), como GAS_VERSION en Code.gs: la exige la prueba
+// src/core/clima-version.test.js del repo, así que tocar cualquier otra línea sin actualizarlo pone la suite en rojo (y
+// la prueba dice el sello nuevo). Cada pasada lo escribe en el registro de ejecuciones, y `probar` lo dice primero: si
+// coincide con esta línea del repo, lo instalado es lo del repo. Las hojas no lo llevan.
+var CLIMA_VERSION = "b4e3da1fbfbb";
+
 //
 // QUÉ HACE: escribe en el libro del MCP dos hojas que el tablero lee como lee «Marea»:
 //  · «Clima horas» — una fila por HORA (Fecha + Hora): lo que pasó y lo que queda del día de hoy.
@@ -151,12 +159,14 @@ function intentar_(errores, fn) {
 /** …y DESPUÉS de guardar, la ejecución termina en error si alguna falló: Apps Script la marca como fallida y avisa
  *  al dueño por correo, así un corte largo de una fuente no pasa en silencio. */
 function cerrar_(prefijo, r, errores) {
+  Logger.log("MCP · clima · versión " + CLIMA_VERSION);   // aparte: la última línea es el resumen, en JSON
   Logger.log(prefijo + JSON.stringify(r));
   if (errores.length) throw new Error("Fuentes caídas en esta pasada: " + errores.join(" · "));
 }
 
 /** Para la instalación: pide las tres fuentes y dice qué devolvió cada una, SIN escribir nada. */
 function probar() {
+  Logger.log("MCP · clima · versión " + CLIMA_VERSION + " (compárala con la línea CLIMA_VERSION de GAS/Clima.gs del repo)");
   var ss = libro_();
   Logger.log("Libro: " + ss.getName() + " · zona del libro " + ss.getSpreadsheetTimeZone() + " · zona del script " +
     Session.getScriptTimeZone());
