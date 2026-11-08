@@ -619,7 +619,7 @@ function micLvlCode(ufc, r) {
    gente, y convertir a un analista nuevo en otro sería peor que tener dos grafías.
    ⚠⚠ Este catálogo es GEMELO del `MIC_ANALISTAS` del monolito. Si divergen, la captura escribiría
    una forma y el tablero plegaría a otra — que es exactamente el defecto que esto arregla. Lo
-   comprueba `analista-grafia.test.js` leyendo el motor. */
+   comprueba `analistaGrafia.test.js` (en esta carpeta) leyendo el motor. */
 export const MIC_ANALISTAS = ['Macías', 'Ramírez', 'Espinoza', 'Cayra', 'Chumo'];
 /* ⚠ Se usa el MISMO `sanitizeStr` que el monolito, no un `.trim()` parecido: si uno recortara a
    200 caracteres o quitara los `=+-@` del principio y el otro no, las dos mitades devolverían

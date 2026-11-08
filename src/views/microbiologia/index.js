@@ -1983,7 +1983,7 @@ function renderBacteriologia() {
   const rows = pool;
   _scope.rows = rows;
   _scope.records = pathogenRecords(rows);
-  _scope.theme = vState.petriTheme; // la placa usa su propio tema (oscuro por defecto)
+  _scope.theme = vState.petriTheme; // la placa usa su propio tema (claro por defecto; ver vState.petriTheme)
 
   // ── Derivados para KPIs ──
   const summaries = rows.map(rowSummary);
