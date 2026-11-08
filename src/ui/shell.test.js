@@ -9,22 +9,17 @@
 //   · Visitante      → solo Visitante
 // Además verifica que cada id permitido exista en MAIN_VIEWS (un typo en un id
 // dejaría la vista invisible en silencio) y la vista de aterrizaje de cada rol
-// (primera permitida NO pendiente, la regla de selectRole).
+// (`vistaInicialDeRol`, la que usa selectRole).
 import { describe, it, expect } from 'vitest';
-import { ROLES, MAIN_VIEWS } from './shell.js';
+import { ROLES, MAIN_VIEWS, vistaInicialDeRol } from './shell.js';
 
 const allows = (role, viewId) => {
   const r = ROLES[role];
   return !!r && (r.allow === '*' || r.allow.includes(viewId));
 };
-// Réplica de la regla de aterrizaje de selectRole(): la vista que el rol declara en `inicio` o, si no, la primera permitida.
-const landing = (role) => {
-  const r = ROLES[role];
-  if (r && r.inicio && allows(role, r.inicio) && MAIN_VIEWS.some((x) => x.id === r.inicio)) return r.inicio;
-  const v = MAIN_VIEWS.find((x) => allows(role, x.id) && !x.pending)
-    || MAIN_VIEWS.find((x) => allows(role, x.id));
-  return v ? v.id : null;
-};
+/* B10 (2026-11-08) · la regla de VERDAD, no una réplica: la copia que había aquí seguía esquivando vistas «pendientes»
+   después de que selectRole dejara de hacerlo, y habría seguido en verde aunque las dos divergieran. */
+const landing = (role) => vistaInicialDeRol(role);
 
 describe('shell · permisos por rol', () => {
   it('existen exactamente los 7 roles del sistema', () => {
@@ -80,11 +75,29 @@ describe('shell · permisos por rol', () => {
     });
   });
 
-  it('vista de aterrizaje por rol: primera permitida no pendiente', () => {
+  it('vista de aterrizaje por rol: la de su `inicio` o la primera permitida', () => {
     expect(landing('administrativo')).toBe('supervisor');
     expect(landing('tecnico')).toBe('supervisor');
     expect(landing('supervisor')).toBe('supervisor');
     expect(landing('chequeador')).toBe('larvicultura');
     expect(landing('visitante')).toBe('visitante');
+    // Todos los roles aterrizan en una vista que existe y que pueden ver; un rol que no existe, en ninguna.
+    Object.keys(ROLES).forEach((r) => {
+      const v = landing(r);
+      expect(MAIN_VIEWS.some((x) => x.id === v), r).toBe(true);
+      expect(allows(r, v), r).toBe(true);
+    });
+    expect(landing('nadie')).toBe(null);
+  });
+
+  it('B10 · un `inicio` que el rol no puede ver no manda: aterriza en la primera permitida', () => {
+    const antes = ROLES.mantenimiento.inicio, antesAllow = ROLES.mantenimiento.allow;
+    try {
+      ROLES.mantenimiento.inicio = 'supervisor';   // existe, pero no lo tiene permitido
+      expect(landing('mantenimiento')).toBe('registros');
+      ROLES.mantenimiento.allow = [...antesAllow, 'fantasma'];
+      ROLES.mantenimiento.inicio = 'fantasma';     // permitido, pero no es una vista
+      expect(landing('mantenimiento')).toBe('registros');
+    } finally { ROLES.mantenimiento.inicio = antes; ROLES.mantenimiento.allow = antesAllow; }
   });
 });

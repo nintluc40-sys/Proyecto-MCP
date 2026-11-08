@@ -173,19 +173,30 @@ function renderEntryRoles() {
     `<button class="entry-role" data-role="${k}"><span class="er-ic">${r.icon}</span><span class="er-lb">${r.label}</span></button>`).join('');
 }
 
+/**
+ * La vista inicial de un rol: la que declara en `inicio` (Mantenimiento, 2026-10-28), si la permite y existe, o, si no, la
+ * primera permitida en el orden de MAIN_VIEWS; null si no tiene ninguna. Todas las vistas listadas están desarrolladas y
+ * registradas en main.js, así que no hay que esquivar placeholders. (Existía aquí un respaldo para vistas marcadas como
+ * pendientes; ninguna entrada de MAIN_VIEWS lo declaraba nunca, así que era código inalcanzable. Si algún día se añade
+ * una vista a medias, el respaldo vuelve aquí.)
+ * B10 (2026-11-08, usuario) · exportada para que su prueba ejerza ESTA regla: antes llevaba una copia, que ya no
+ * coincidía (seguía esquivando las pendientes).
+ */
+export function vistaInicialDeRol(key) {
+  const r = ROLES[key];
+  if (!r) return null;
+  const permite = (id) => r.allow === '*' || r.allow.includes(id);
+  const v = (r.inicio && permite(r.inicio) && MAIN_VIEWS.find((x) => x.id === r.inicio)) || MAIN_VIEWS.find((x) => permite(x.id));
+  return v ? v.id : null;
+}
+
 function selectRole(key) {
   if (!ROLES[key]) return;
   store.role = key;
-  // Vista inicial: la que el rol declara en `inicio` (Mantenimiento, 2026-10-28) o, si no, la primera permitida al rol, en
-  // el orden de MAIN_VIEWS. Todas las vistas listadas están desarrolladas y registradas en main.js, así que no
-  // hay que esquivar placeholders. (Existía aquí un respaldo para vistas marcadas como
-  // pendientes; ninguna entrada de MAIN_VIEWS lo declaraba nunca, así que era código
-  // inalcanzable. Si algún día se añade una vista a medias, el respaldo vuelve aquí.)
-  const r = ROLES[key];
-  const def = (r.inicio && roleAllows(r.inicio) && MAIN_VIEWS.find((v) => v.id === r.inicio)) || MAIN_VIEWS.find((v) => roleAllows(v.id));
+  const def = vistaInicialDeRol(key);
   renderDrawer();
   hideEntry();
-  if (def) changeView(def.id);
+  if (def) changeView(def);
   else { destroyAllCharts(); els.content.innerHTML = '<div class="empty-state" style="padding:64px 20px">🔒 Tu rol aún no tiene vistas asignadas.</div>'; }
 }
 
