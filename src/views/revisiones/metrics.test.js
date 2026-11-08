@@ -40,8 +40,14 @@ describe('revisiones · integridad del registro', () => {
     ['flacidez', 'necrosis', 'disparidad'].forEach((id) => expect(QUANT[id].optional).toBe(true));
   });
 
-  it('las 3 originales NO son opcionales (se mostraban siempre)', () => {
-    ['deformidad', 'atraso', 'protusion'].forEach((id) => expect(QUANT[id].optional).toBe(false));
+  it('Deformidad y Atraso NO son opcionales (se mostraban siempre)', () => {
+    ['deformidad', 'atraso'].forEach((id) => expect(QUANT[id].optional).toBe(false));
+  });
+
+  // C8 (2026-11-08, usuario: «Ocultarlo si no hay dato») · Protusión era la tercera «siempre visible», y casi ninguna fila
+  // la trae: el KPI salía «—» casi siempre. Ahora se oculta como las nuevas, si en lo filtrado no hay ni un valor.
+  it('🔴 Protusión es opcional, como las nuevas', () => {
+    expect(QUANT.protusion.optional).toBe(true);
   });
 
   it('el orden de «morf» y «alim» es el de antes (decide el color de la paleta)', () => {

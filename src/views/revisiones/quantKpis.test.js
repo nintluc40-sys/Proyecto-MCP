@@ -118,6 +118,27 @@ describe('revisiones · KPIs de las variables nuevas', () => {
     expect(valorKpi('Deformidad prom.')).toBeTruthy();
     expect(root.querySelectorAll('[data-rvtrend]').length).toBe(6);
   });
+
+  // C8 (2026-11-08, usuario: «Ocultarlo si no hay dato») · Protusión casi nunca trae dato y su KPI salía «—».
+  it('🔴 sin «% Protusión» en lo filtrado, su KPI no se dibuja; Deformidad y Atraso, sí', () => {
+    store.globalData = datos().map(({ '% Protusión': _fuera, ...r }) => r);
+    mount();
+    expect(kpiPorRotulo('Protusión prom.')).toBeFalsy();
+    expect(valorKpi('Deformidad prom.')).toBeTruthy();
+    expect(valorKpi('Atraso prom.')).toBeTruthy();
+    expect(root.querySelectorAll('[data-rvtrend]').length).toBe(8);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('🔴 con una sola fila con «% Protusión», el KPI sale con su promedio', () => {
+    store.globalData = datos().map((r, i) => {
+      if (i === 0) return r;   // M1, 02/06: 12
+      const { '% Protusión': _fuera, ...resto } = r;
+      return resto;
+    });
+    mount();
+    expect(valorKpi('Protusión prom.')).toBe('12.0%');
+  });
 });
 
 describe('revisiones · gráfico Condición', () => {

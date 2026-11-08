@@ -356,7 +356,8 @@ export function revisionesView(root) {
     const v = QUANT[id];
     // `optional` = se oculta si ninguna fila trae dato (patrón que ya seguían
     // No viables/Vacías/Semillenas, y que aplica a las 3 nuevas del AsT hasta
-    // que sincronicen). Las 3 primeras se muestran siempre, como antes.
+    // que sincronicen). Deformidad y Atraso se muestran siempre, como antes;
+    // Protusión es opcional desde C8 (2026-11-08).
     if (v.optional && proms[id] === null) return '';
     return kpi(v.icon, v.kpi, fmtPct(proms[id]),
       `data-rvtrend="${id}" title="Ver tendencia diaria de ${esc(v.corta)} con los filtros activos"`);

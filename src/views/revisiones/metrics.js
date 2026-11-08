@@ -39,13 +39,15 @@ export const QUANT_KEYS = {
  *  · `kpi`      rótulo del KPI de cabecera
  *  · `serie`    rótulo en los gráficos y en la tendencia
  *  · `corta`    rótulo breve (ficha de detalle y comparativa)
- *  · `optional` true → el KPI se OCULTA si ninguna fila trae dato. Las tres
- *    primeras siempre se muestran, que es como se comportaba la vista.
+ *  · `optional` true → el KPI se OCULTA si ninguna fila trae dato. Deformidad y
+ *    Atraso siempre se muestran, que es como se comportaba la vista (Protusión
+ *    también, hasta C8: 2026-11-08).
  */
 export const QUANT = {
   deformidad: { icon: '🧬', kpi: 'Deformidad prom.', serie: '% Deformidad', corta: 'Deformidad', keys: QUANT_KEYS.deformidad, optional: false, color: '#26A69A' },
   atraso:     { icon: '⏳', kpi: 'Atraso prom.', serie: '% Atraso', corta: '% Atraso', keys: QUANT_KEYS.atraso, optional: false, color: '#3F51B5' },
-  protusion:  { icon: '🩹', kpi: 'Protusión prom.', serie: '% Protusión', corta: '% Protusión', keys: QUANT_KEYS.protusion, optional: false, color: '#EC407A' },
+  // C8 (2026-11-08, usuario: «Ocultarlo si no hay dato») · opcional: casi ninguna fila trae Protusión, y su KPI salía «—».
+  protusion:  { icon: '🩹', kpi: 'Protusión prom.', serie: '% Protusión', corta: '% Protusión', keys: QUANT_KEYS.protusion, optional: true, color: '#EC407A' },
   noviables:  { icon: '💀', kpi: 'No viables prom.', serie: '% No viables', corta: '% No viables', keys: QUANT_KEYS.noviables, optional: true, color: '#FB8C00' },
   vacias:     { icon: '🕳️', kpi: 'Vacías prom.', serie: 'Vacías %', corta: 'Vacías', keys: QUANT_KEYS.vacias, optional: true, color: '#EC407A' },
   semillenas: { icon: '🥣', kpi: 'Semillenas prom.', serie: 'Semillenas %', corta: 'Semillenas', keys: QUANT_KEYS.semillenas, optional: true, color: '#3F51B5' },
