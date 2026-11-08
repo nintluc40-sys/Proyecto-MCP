@@ -18035,10 +18035,10 @@ async function _madTanquesEnviar(payload, opts, gas){
 }
 
 /* 2026-09-30 (usuarios: partes de Tanques DUPLICADOS en la hoja) · ¿LA MISMA RONDA YA ESTÁ EN LA HOJA COMO OTRO PARTE?
-   Medido en la hoja de producción (736 filas): ninguna llave repetida y ninguna fila sin Hora ni Parte. El duplicado es la
+   Medido en la hoja de producción: ninguna llave repetida y ninguna fila sin Hora ni Parte. El duplicado es la
    misma ronda dada DOS veces desde dos dispositivos —o dos apps: index (8) y el MCP guardan en sitios distintos—, cada uno
-   con su propio número de parte: el 29/09, Sala 5, «21:22 P1» y «21:24 P3» con las mismas 3 ♀ muertas en T7, que el libro
-   resta dos veces. El GAS no puede saber cuál es la buena (una ronda real puede repetir cifras) y numerar por la hoja no es
+   con su propio número de parte: la misma sala y el mismo día, dos partes a pocos minutos con las mismas muertes en el
+   mismo tanque, que el libro resta dos veces. El GAS no puede saber cuál es la buena (una ronda real puede repetir cifras) y numerar por la hoja no es
    posible al guardar (sin red), así que se PREGUNTA antes de enviar. La regla:
      · la hoja FRESCA, del mismo (Fecha, Sala, Tanque);
      · sólo filas de OTRA llave (otra Hora u otro Parte): la misma llave es el mismo parte, y reenviarlo lo ACTUALIZA;
