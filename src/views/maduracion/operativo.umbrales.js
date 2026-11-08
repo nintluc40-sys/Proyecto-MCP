@@ -97,20 +97,22 @@ export const UMBRALES = {
     laboratorio: { min: MAD_ALIM_PCT_MIN, max: MAD_ALIM_PCT_MAX, referencia: MAD_ALIM_PCT_MIN + '–' + MAD_ALIM_PCT_MAX + ' %', fuente: ['FICHA_ALIMENTACION'] } },
 };
 
-/** El umbral que MANDA: el del laboratorio si lo hay (el de `laboratorio` pasado, o el del catálogo); si no, el
- *  bibliográfico; si no hay ninguno, null. Dice de dónde sale, para enseñarlo junto a la cifra. */
-export function umbralVigente(id, laboratorio) {
+/** El umbral que MANDA: el del laboratorio del catálogo si lo hay; si no, el bibliográfico; si no hay ninguno, null.
+ *  Dice de dónde sale, para enseñarlo junto a la cifra.
+ *  B7 (2026-11-08, usuario: «Quitarlo todo») · `umbralVigente` y `evaluar` aceptaban un 2.º/3.er argumento con umbrales
+ *  de laboratorio que mandaban sobre el catálogo; sólo lo pasaban las pruebas. Se fue: el del laboratorio vive en UMBRALES. */
+export function umbralVigente(id) {
   const U = UMBRALES[id];
   if (!U) return null;
-  const lab = (laboratorio && laboratorio[id]) || U.laboratorio;
+  const lab = U.laboratorio;
   if (lab) return { min: lab.min ?? null, max: lab.max ?? null, origen: 'laboratorio', referencia: lab.referencia || '', fuente: lab.fuente || [] };
   if (U.bibliografia) return { ...U.bibliografia, origen: 'bibliografía' };
   return null;
 }
 
 /** «bajo», «alto» u «ok» (los extremos cuentan como dentro); vacío si no hay valor o no hay umbral. */
-export function evaluar(id, valor, laboratorio) {
-  const u = umbralVigente(id, laboratorio);
+export function evaluar(id, valor) {
+  const u = umbralVigente(id);
   const v = typeof valor === 'number' ? valor : (String(valor ?? '').trim() === '' ? NaN : Number(valor));
   if (!u || !Number.isFinite(v)) return '';
   if (u.min !== null && v < u.min) return 'bajo';

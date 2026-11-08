@@ -17,8 +17,11 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
   transversales que tocan el DOM: `modal`, `modalEscape`, `toast`.
 - `src/views/<vista>/` — cada vista es un módulo con su `index.js` orquestador y su `.css` propio
   (`clima/` no es una vista: es la pastilla 🌦 que pintan otras, sin `index.js`).
-  - `src/views/planta/plano.js` es la **fuente única de la geometría**: la maqueta 3D (`escena.js`) y el
-    plano de 📊 Análisis salen de él (módulos, salas y las áreas `OTHERS` del plano ARQ-A3 V4). Cada
+  - `src/views/planta/plano.js` es la **fuente única de los edificios**: la maqueta 3D (`escena.js`) y el
+    plano de 📊 Análisis sacan de él los módulos, las salas y las áreas `OTHERS` del plano ARQ-A3 V4. Los
+    detalles de la maqueta (los cortes de las vías, las rejillas, los recorridos de los caminantes, los postes
+    y la mesa) llevan coordenadas propias en `escena.js`; `escena.objetos.test.js` vigila que postes,
+    caminantes y mesa no pisen un tanque. Cada
     edificio lleva su color en su propia fila, y la semilla aleatoria se repone después de las áreas. Así,
     añadir o partir un área no recolorea ni mueve nada más: `plano.test.js` vigila los colores y que
     ninguna área pise a otra, y `escena.semilla.test.js`, la semilla. En `escena.js`, todo lo que el

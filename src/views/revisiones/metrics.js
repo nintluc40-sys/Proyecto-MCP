@@ -17,8 +17,8 @@
 import { getField, parseNum, F } from '../../core/fields.js';
 import { avg } from '../../core/util.js';
 
-/** Alias de cabecera. Se exportan para que el `K` de index.js los reutilice: así
- *  `K.deformidad` y el registro NO pueden divergir. */
+/** Alias de cabecera: los únicos de estas columnas. Los usa QUANT (abajo), por referencia. El `K` de index.js
+ *  los re-exponía y ninguno se usaba: se quitaron (B7, 2026-11-08). */
 export const QUANT_KEYS = {
   deformidad: ['Deformidad_%', 'Deformidad %', 'Deformidad_porc', 'Deformidad', 'deformidad_%', 'deformidad'],
   atraso:     ['% Atraso', 'Atraso_%', 'Atraso %', '%Atraso', 'Atraso', 'atraso'],

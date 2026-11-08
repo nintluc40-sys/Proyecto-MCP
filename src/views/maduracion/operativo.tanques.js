@@ -75,50 +75,26 @@ export function cargasPorTanque(M) {
   return m;
 }
 
-/** Lo que los PARTES dicen de cada tanque en el período: rondas, bajas, cópulas, muda y los últimos pesos. */
-export function actividadPorTanque(dias, periodo, pesosAlim = []) {
+/** Lo que los PARTES dicen de cada tanque en el período: rondas, bajas, cópulas, muda y el último parte (con su hora).
+ *  B7 (2026-11-08, usuario: «Quitarlo todo») · aquí se calculaban también los últimos pesos, con los de 🍤 Alimentación
+ *  (`pesosAlim`): nadie los leía —los pesos de la tabla y de la ficha salen de `pesosDeReferencia`— y nadie pasaba
+ *  `pesosAlim`. Se fueron los dos. */
+export function actividadPorTanque(dias, periodo) {
   const m = new Map();
-  const fechaPeso = new Map();   // punto 2 · de qué día es cada último peso, para compararlo con los de Alimentación
   for (const d of dias || []) {
     if (!enPeriodo(txt(d.fecha), periodo)) continue;
     const k = ubicKey(d.sala, d.tanque);
-    const o = m.get(k) || { rondas: 0, dias: 0, muertes: 0, descartes: 0, copulas: 0, muda: 0,
-      pesoMachos: '', pesoHembras: '', ultimoParte: '', ultimaHora: '' };
+    const o = m.get(k) || { rondas: 0, dias: 0, muertes: 0, descartes: 0, copulas: 0, muda: 0, ultimoParte: '', ultimaHora: '' };
     o.rondas += ent(d.partes);
     o.dias += 1;
     o.muertes += ent(d.machosMuertos) + ent(d.hembrasMuertas);
     o.descartes += ent(d.machosDescarte) + ent(d.hembrasDescarte);
     o.copulas += ent(d.copulas);
     o.muda += ent(d.muda);
-    // Los pesos son el ÚLTIMO registrado, no un promedio del período: un peso viejo no dice cuánto pesa hoy.
     if (txt(d.fecha) >= txt(o.ultimoParte)) {
       o.ultimoParte = txt(d.fecha);
       o.ultimaHora = txt(d.ultimaHora);   // 3 (2026-10-01, usuario) · la hora del último parte de ese día
-      if (d.pesoMachos !== '') o.pesoMachos = d.pesoMachos;
-      if (d.pesoHembras !== '') o.pesoHembras = d.pesoHembras;
-      const fp = fechaPeso.get(k) || {};
-      if (d.pesoMachos !== '') fp.pesoMachos = txt(d.fecha);
-      if (d.pesoHembras !== '') fp.pesoHembras = txt(d.fecha);
-      fechaPeso.set(k, fp);
     }
-    m.set(k, o);
-  }
-  /* Punto 2 (2026-10-04, usuario) · un peso tecleado a mano en 🍤 Alimentación cuenta como del tanque; el MISMO día manda
-     Tanques (`pesosDeAlimentacion` ya lo quita). SÓLO el peso: esas filas no son partes.
-     Un tanque sin partes en el período también enseña ese peso. */
-  for (const r of (pesosAlim || []).filter((x) => enPeriodo(fechaDeFila('tanques', x), periodo))) {
-    const f = fechaDeFila('tanques', r);
-    const k = ubicKey(r.Sala, r.Tanque);
-    const o = m.get(k) || { rondas: 0, dias: 0, muertes: 0, descartes: 0, copulas: 0, muda: 0,
-      pesoMachos: '', pesoHembras: '', ultimoParte: '', ultimaHora: '' };
-    const fp = fechaPeso.get(k) || {};
-    for (const [campo, col] of [['pesoMachos', 'Peso promedio machos (g)'], ['pesoHembras', 'Peso promedio hembras (g)']]) {
-      const v = numONulo(r[col]);
-      if (v === null || f < txt(fp[campo])) continue;
-      o[campo] = v;
-      fp[campo] = f;
-    }
-    fechaPeso.set(k, fp);
     m.set(k, o);
   }
   return m;

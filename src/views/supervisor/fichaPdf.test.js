@@ -36,7 +36,6 @@ describe('fichaPdf · núcleo PDF nativo (Trazabilidad)', () => {
     // Estructura general
     expect(doc).toContain('@page{size:A4 landscape');
     expect(doc).toContain('<title>PB_2026-06-01_M01-573</title>');
-    expect(doc).toContain('window.print()');
     // Título de ficha (ftitle) + código de documento
     expect(doc).toContain('Población Laboratorio');
     expect(doc).toContain('OMR-LAB-M-FOR-040');
@@ -55,10 +54,14 @@ describe('fichaPdf · núcleo PDF nativo (Trazabilidad)', () => {
     expect(doc).toContain('nota');
   });
 
-  it('autoPrint:false omite el script de auto-impresión (lo controla el padre / iframe)', () => {
-    const opts = { fid: 'poblacion', mod: 'M01', fileName: 'PB', pages: [{ d: { fecha: '2026-06-01' }, tableHtml: '<table></table>' }] };
-    expect(buildFichaPdfDoc({ ...opts })).toContain('window.print()');            // por defecto sí
-    expect(buildFichaPdfDoc({ ...opts, autoPrint: false })).not.toContain('window.print()');
+  // B7 (2026-11-08) · antes, «autoPrint:false omite el script»: el guion de auto-impresión se retiró (la app imprime con
+  // printFichaDocs, desde un iframe). El documento no lleva guion, y el nombre del archivo sólo va en el <title>, escapado.
+  it('el documento no lleva guion: el nombre del archivo, sólo en el <title> y escapado', () => {
+    const doc = buildFichaPdfDoc({ fid: 'poblacion', mod: 'M01', fileName: 'PB</title><script>x()</script>',
+      pages: [{ d: { fecha: '2026-06-01' }, tableHtml: '<table></table>' }] });
+    expect(doc).not.toMatch(/<script/i);
+    expect(doc).not.toContain('window.print()');
+    expect(doc).toContain('<title>PB&lt;/title&gt;&lt;script&gt;x()&lt;/script&gt;</title>');
   });
 
   it('el código verificador es DETERMINISTA: el mismo documento da el mismo código', () => {

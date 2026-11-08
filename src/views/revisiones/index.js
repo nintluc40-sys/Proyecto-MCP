@@ -19,7 +19,7 @@ import { fmtPct } from '../../core/util.js';
 import { monthIndexOfCorrida, monthLabelAt, numeroDeCorrida } from '../../core/prodCalendar.js';
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import {
-  QUANT, QUANT_KEYS, KPI_ORDER, CHART_SERIES, chartKeys,
+  QUANT, KPI_ORDER, CHART_SERIES, chartKeys,
   hasChartData, quantAvg, quantDaySeries, pctAxisMax,
 } from './metrics.js';
 
@@ -29,14 +29,11 @@ const K = {
   siembra:    ['Siembra', 'siembra'],
   estadio:    ['Estadío_observado', 'Estadio_observado', 'estadío_observado', 'estadio_observado', 'Estadío observado', 'Estadío', 'Estadio'],
   tipo:       ['Tipo_revisión', 'Tipo_revision', 'tipo_revisión', 'tipo_revision', 'Tipo revisión', 'Tipo de revisión'],
-  // ⚠ Las CUANTITATIVAS porcentuales viven en ./metrics.js, que es el registro único
-  // que recorren los KPIs, los 3 gráficos por día, la tendencia, la ficha de detalle y
-  // la comparativa. Aquí sólo se re-exponen para no tocar los ~25 usos de `K.x`.
-  deformidad: QUANT_KEYS.deformidad,
-  atraso:     QUANT_KEYS.atraso,
-  // Numérica (% Protusión; antes "% Hernia", renombrada en la hoja 2026-06).
-  // NO incluir 'Protusión' a secas: ahora es una col. cualitativa aparte.
-  protusion:  QUANT_KEYS.protusion,
+  // ⚠ Las CUANTITATIVAS porcentuales viven en ./metrics.js (QUANT_KEYS), que es el registro único
+  // que recorren los KPIs, los 3 gráficos por día, la tendencia, la ficha de detalle y la comparativa.
+  // B7 (2026-11-08, usuario: «Quitarlo todo») · aquí se re-exponían «para no tocar los ~25 usos de `K.x`»,
+  // y no quedaba ninguno: se quitaron las 9 (deformidad, atraso, protusión, semillenas, vacías, no viables,
+  // flacidez, necrosis y disparidad).
   intestino:  ['Intestino', 'intestino'],
   actividad:  ['Actividad', '% Actividad', 'actividad'],
   condicion:  ['Condición_biológica', 'Condicion_biologica', 'condición_biológica', 'condicion_biologica', 'Condición biológica', 'Condición'],
@@ -45,14 +42,6 @@ const K = {
   protusionCual: ['Protusión', 'Protusion', 'protusión', 'protusion', 'Hernia', 'hernia'],
   opacidad:   ['Opacidad', 'opacidad'],
   asimilacion:['Asimilación', 'Asimilacion', 'asimilación', 'asimilacion'],
-  semillenas: QUANT_KEYS.semillenas,
-  vacias:     QUANT_KEYS.vacias,
-  // Numérica (% No viables): columna nueva de la hoja (2026-06), tras Condición_biológica.
-  noviables:  QUANT_KEYS.noviables,
-  // 2026-08, columnas nuevas del AsT (cuantitativas porcentuales).
-  flacidez:   QUANT_KEYS.flacidez,
-  necrosis:   QUANT_KEYS.necrosis,
-  disparidad: QUANT_KEYS.disparidad,
   observaciones: ['Observaciones', 'observaciones', 'Observación', 'observación'],
   accion:     ['Acción', 'Accion', 'acción', 'accion', 'Acción tomada'],
   // Comentario se dividió en matutino / vespertino (antes era una sola col. "Comentario").

@@ -569,7 +569,7 @@ export function downloadTrazabilidad({ mod, corrida, fids, from, to, onProgress 
     const dates = pages.map((p) => p.d.fecha);
     let fileName = pdfFilename(fid, mod, dates[0], corrida);
     if (dates.length > 1) fileName += `_al_${toIsoDate(dates[dates.length - 1])}`;
-    docs.push({ page: buildFichaPdfDoc({ fid, mod, fileName, pages, autoPrint: false }), fileName });
+    docs.push({ page: buildFichaPdfDoc({ fid, mod, fileName, pages }), fileName });
     generated.push({ fid, label: fichaLabel(fid), pages: pages.length });
   });
   if (docs.length) printFichaDocs(docs, onProgress);

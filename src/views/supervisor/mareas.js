@@ -781,16 +781,15 @@ export function mareasPanelHTML(opciones) {
  * Correlación; el cierre (✕, velo, Escape) lo pone `bindModal`. Abrir SIEMPRE empieza en `mareasEstadoInicial`.
  * @param {Element} root      donde viven los `[data-mareas-open]`
  * @param {Element} overlay   el `#svMareasModal` (null = no-op)
- * @param {object} [opts]
- * @param {object} [opts.state]       el estado a usar (y a MUTAR)
- * @param {object} [opts.extras]    0r·2 · las vistas que añade quien lo abre (ver `renderMareas`), con `cambio(target, state)`
- *                                    (true = repintar) e `inicial` (su estado al abrir)
- * @returns {{state: object}|null}
  * 2 (2026-09-29) · `alAbrir`, `alCerrar` y `reabrir` se fueron con el modal de Maduración, su único usuario: ahora es una
  * sub-vista (`cablearPanelMareas`).
+ * B7 (2026-11-08, usuario: «Quitarlo todo») · aceptaba `{ state, extras }` y devolvía `{ state }`; su única llamada
+ * (supervisor/module.js) no pasaba nada ni guardaba la respuesta. Las vistas extra siguen en `cablearPanelMareas`.
  */
-export function cablearMareas(root, overlay, { state = mareasEstadoInicial(), extras = {} } = {}) {
-  if (!overlay) return null;
+export function cablearMareas(root, overlay) {
+  if (!overlay) return;
+  const state = mareasEstadoInicial();
+  const extras = {};
   const { renderMareaBody, marcarModo } = cablearCuerpo(overlay, state, extras);
   bindModal(root, overlay, {
     openSel: '[data-mareas-open]', closeSel: '[data-mareas-close]',
@@ -801,7 +800,6 @@ export function cablearMareas(root, overlay, { state = mareasEstadoInicial(), ex
     },
     onClose: () => { cleanupMareas(); },
   });
-  return { state };
 }
 
 /**

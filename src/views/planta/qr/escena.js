@@ -56,10 +56,12 @@ function roundedRect(w, h, r) {
 
 /* ---------- Especies ---------- */
 const ESPECIE_POR_DEFECTO = 'cocido';
+// B7 (2026-11-08, usuario: «Quitarlo todo») · fuera `sci`, `auth` y `common` de cada especie, y `stage` y `size` de cada
+// forma: nadie los leía.
 const SPECIES = [
-  { id: 'blanco', label: 'Blanco', sci: 'Penaeus vannamei', auth: 'Boone, 1931', common: 'camarón blanco del Pacífico', pattern: 'plain',
+  { id: 'blanco', label: 'Blanco', pattern: 'plain',
     accL: '#8f4a2f', accD: '#e0a07f', body: '#b5b39d', body2: '#8b8b78', belly: '#d2cbad', band: '#77786a', tail: '#bfae86', rim: '#9c4a34', leg: '#cfc19c', antenna: '#a0563a', eye: '#141619', glint: '#8e999e', ink: '#1e2a2c' },
-  { id: 'cocido', label: 'Cocido', sci: 'Penaeus sp.', auth: 'al ajillo', common: 'listo para servir', pattern: 'cooked',
+  { id: 'cocido', label: 'Cocido', pattern: 'cooked',
     accL: '#bd431b', accD: '#f5a074', body: '#ee6233', body2: '#d6461e', belly: '#f9c7aa', band: '#fde3d3', tail: '#cc3a1c', rim: '#8a1d0b', leg: '#f49e78', antenna: '#e2592c', eye: '#1b0e0a', glint: '#c99a8a', ink: '#541306' },
 ];
 const SP = id => SPECIES.find(s => s.id === id) || SPECIES.find(s => s.id === ESPECIE_POR_DEFECTO);
@@ -72,13 +74,13 @@ const LARVA = { amber: new THREE.Color('#cf9a55'), core: new THREE.Color('#b5692
 // En orden del ciclo de vida. len: largo del cuerpo en unidades locales; show: largo mostrado,
 // para que cada estadio larval se vea más pequeño que el siguiente.
 const FORMS = [
-  { id: 'nauplio', label: 'Nauplio', code: 'N', noun: 'el nauplio', back: 'al nauplio', stage: 'nauplio (N1–N6)', size: '0,3–0,5 mm', len: 1.9, show: .62, target: 840 },
-  { id: 'zoea', label: 'Zoea', code: 'Z', noun: 'la zoea', back: 'a la zoea', stage: 'zoea (Z1–Z3)', size: '0,9–2,4 mm', len: 2.65, show: 1.4, target: 900 },
-  { id: 'mysis', label: 'Mysis', code: 'M', noun: 'la mysis', back: 'a la mysis', stage: 'mysis (M1–M3)', size: '2,6–3,8 mm', len: 3.5, show: 2.45, target: 1000, glass: true },
-  { id: 'pl1', label: 'Postlarva', code: 'PL1', noun: 'la postlarva', back: 'a la postlarva', stage: 'postlarva 1 (PL1)', size: '≈ 4,5 mm', len: 3.9, show: 3.3, target: 1000, glass: true },
-  { id: 'adulto', label: 'Adulto', code: '', noun: 'el camarón', back: 'al camarón', stage: 'adulto', size: 'hasta ~23 cm', target: 900 },
-  { id: 'logo', label: 'Logo', code: '', noun: 'el logo', back: 'al logo', stage: '', size: '', target: 2400, logo: true },
-  { id: 'marbravo', label: 'Mar Bravo', code: '', noun: 'el logo', back: 'al logo', stage: '', size: '', target: 3200, logo: true },
+  { id: 'nauplio', label: 'Nauplio', code: 'N', noun: 'el nauplio', back: 'al nauplio', len: 1.9, show: .62, target: 840 },
+  { id: 'zoea', label: 'Zoea', code: 'Z', noun: 'la zoea', back: 'a la zoea', len: 2.65, show: 1.4, target: 900 },
+  { id: 'mysis', label: 'Mysis', code: 'M', noun: 'la mysis', back: 'a la mysis', len: 3.5, show: 2.45, target: 1000, glass: true },
+  { id: 'pl1', label: 'Postlarva', code: 'PL1', noun: 'la postlarva', back: 'a la postlarva', len: 3.9, show: 3.3, target: 1000, glass: true },
+  { id: 'adulto', label: 'Adulto', code: '', noun: 'el camarón', back: 'al camarón', target: 900 },
+  { id: 'logo', label: 'Logo', code: '', noun: 'el logo', back: 'al logo', target: 2400, logo: true },
+  { id: 'marbravo', label: 'Mar Bravo', code: '', noun: 'el logo', back: 'al logo', target: 3200, logo: true },
 ];
 const FORM = id => FORMS.find(f => f.id === id) || FORMS[0];
 
@@ -899,11 +901,11 @@ async function setForm(id, opts) {
 }
 
 // el enlace es fijo (el de Gerencia): se arma una vez al arrancar
-function generate(v, opts) {
+// B7 (2026-11-08) · fuera su `opts.bloom` (abrirse en QR tras armarlo): la única llamada no lo pasaba.
+function generate(v) {
   build(v);
   currentUrl = v;
   save();
-  if (opts && opts.bloom) { phase = 0; setTarget(0); setTimeout(() => setTarget(1), reduced ? 100 : 450); }
   return true;
 }
 
@@ -916,9 +918,10 @@ function placeholderLogo() {
   g.fillStyle = '#ffffff'; g.font = '800 50px "Segoe UI", Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('LOGO', 100, 103);
   return cv.toDataURL('image/png');
 }
-async function useLogo(src, name, key, uploaded) {
+// B7 (2026-11-08) · fuera su `uploaded` (y el campo del mismo nombre): nadie lo pasaba ni lo leía.
+async function useLogo(src, name, key) {
   const data = analyzeImage(await loadImg(src));
-  logos[key] = { data, name, src: data.thumb, brand: brandColors(data), uploaded: !!uploaded };
+  logos[key] = { data, name, src: data.thumb, brand: brandColors(data) };
 }
 async function ensureLogo(key) {
   if (logos[key]) return;

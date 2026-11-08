@@ -205,11 +205,13 @@ function pdfFooter(codigo, tsStr, tec, fid) {
  * @param {string} o.mod  módulo ('M01'…'CIO')
  * @param {string} o.fileName  nombre sugerido del archivo
  * @param {Array<{d:object, tableHtml:string, obs?:string}>} o.pages  una por día
- * @param {boolean} [o.autoPrint=true]  incluir el script que auto-imprime al cargar
- *   (true para ventana propia; false cuando el padre controla la impresión, p.ej. iframe).
- * @returns {string} HTML completo (con CSS)
+ * @returns {string} HTML completo (con CSS), sin guion: la impresión la lleva `printFichaDocs`, desde un iframe.
+ * B7 (2026-11-08, usuario: «Quitarlo todo») · tenía un `autoPrint` (por defecto, sí) que metía un guion de auto-impresión
+ * para abrirlo en ventana propia; la única llamada de la app (trazabilidad.js) pasaba `false`, y sólo lo usaban las
+ * pruebas. Se fue con su escape de `</script>` (`scriptSafe`): sin guion, el nombre del archivo sólo va en el <title>,
+ * con `esc`.
  */
-export function buildFichaPdfDoc({ fid, mod, fileName, pages = [], autoPrint = true }) {
+export function buildFichaPdfDoc({ fid, mod, fileName, pages = [] }) {
   const tsStr = new Date().toLocaleString('es-EC', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
   const body = pages.map((pg) => {
     const d = pg.d || {};
@@ -219,27 +221,13 @@ export function buildFichaPdfDoc({ fid, mod, fileName, pages = [], autoPrint = t
     const obsHtml = obsTxt ? `<div class="obs-block"><div class="lbl">Observaciones del turno</div><div class="txt">${esc(String(obsTxt))}</div></div>` : '';
     return `<div class="ppage">${pdfHeader(fid, mod, d)}${pg.tableHtml || ''}${obsHtml}<div class="spacer"></div>${pdfFooter(codigo, tsStr, d.tec, fid)}</div>`;
   }).join('');
-  // `JSON.stringify` escapa comillas pero NO `</script>`: el analizador de HTML cierra el
-  // elemento en cuanto ve esa secuencia, aunque esté dentro de una cadena JS. `fileName`
-  // incorpora el nombre de MÓDULO tal cual viene de la hoja (pdfFilename solo sanea la
-  // corrida), así que un módulo con `</script>` inyectaría marcado en el documento que se
-  // imprime. Escapar `<` como < lo cierra sin cambiar el texto del título.
-  const scriptSafe = (s) => JSON.stringify(s).replace(/</g, '\\u003C');
-  const printScript = autoPrint ? `
-  <script>
-    try { document.title = ${scriptSafe(fileName)}; } catch(_){}
-    var _printed=false;
-    function doPrint(){if(_printed)return;_printed=true;setTimeout(function(){window.print();},350);}
-    if(document.readyState==='complete')doPrint();
-    else window.addEventListener('load',doPrint,{once:true});
-  </script>` : '';
   return `<!DOCTYPE html><html lang="es"><head>
   <meta charset="UTF-8">
   <title>${esc(fileName)}</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>${pdfCss(fid)}</style>
 </head><body>
-  ${body}${printScript}
+  ${body}
 </body></html>`;
 }
 

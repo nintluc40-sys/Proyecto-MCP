@@ -153,10 +153,11 @@ scene.add(sun, sun.target);
 const P = (x, z) => [x - C0[0], z - C0[1]];
 
 /* ---------- Texturas generadas en el navegador ---------- */
-function canvasTex(size, draw, opts) {
+// B7 (2026-11-08, usuario: «Quitarlo todo») · tenía un 3.er argumento `opts.linear` para dejar una textura sin sRGB; nadie lo pasaba.
+function canvasTex(size, draw) {
   const cv = document.createElement('canvas'); cv.width = cv.height = size; const g = cv.getContext('2d'); draw(g, size);
   const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-  if (!(opts && opts.linear)) t.encoding = THREE.sRGBEncoding; return t;
+  t.encoding = THREE.sRGBEncoding; return t;
 }
 function grain(g, n, base, spread, amount, size) { // ruido y motas sobre un color base
   g.fillStyle = base; g.fillRect(0, 0, n, n);
@@ -496,7 +497,8 @@ const semillaAntesDeAreas = seed, RND_FACHADAS_DE_REFERENCIA = 11 * 10004;
 const muroVivo = (hex) => { const c = new THREE.Color(hex), h = {}; c.getHSL(h); c.setHSL(h.h, Math.min(.5, h.s * 2), Math.max(0, h.l - .05)); return '#' + c.getHexString(); };
 const TONOS_DE_TECHO = ['#ffffff', '#d9dcd7', '#dce6ec', '#ecdccb'];
 const tonoDeTecho = (nombre) => { let k = 0; for (const ch of String(nombre)) k = (k * 31 + ch.charCodeAt(0)) % 9973; return TONOS_DE_TECHO[k % TONOS_DE_TECHO.length]; };
-const cil = (x, z, r, h, y0, mat, tumbado) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 16), mat); const [px, pz] = P(x, z); m.position.set(px, y0 + (tumbado ? r : h / 2), pz); if (tumbado) m.rotation.x = Math.PI / 2; m.castShadow = m.receiveShadow = true; others.add(m); return m; };
+// B7 (2026-11-08) · fuera su `tumbado`: sólo lo usaba el tanque tumbado de algas, que se quitó el 2026-10-27.
+const cil = (x, z, r, h, y0, mat) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 16), mat); const [px, pz] = P(x, z); m.position.set(px, y0 + h / 2, pz); m.castShadow = m.receiveShadow = true; others.add(m); return m; };
 const M_SOPLADOR = std({ color: col('#3d6fa0'), roughness: .5, metalness: .3 }), M_ACERO = std({ color: col('#9aa3a8'), roughness: .35, metalness: .7 });
 const M_VIDRIO = std({ color: col('#2c3e48'), roughness: .15, metalness: .4 }), M_PORTON = std({ map: rep(TX.zinc, 1, 1), color: col('#b8c0c4'), roughness: .5, metalness: .4 });
 // B1 · los tanques de las salas abiertas (eclosión): pared clara vista por dentro y por fuera, y el agua de los de desove
@@ -824,7 +826,8 @@ function animateShrimp(time) {
 
 /* ---------- Detalles internos de módulos y salas ---------- */
 const interior = new THREE.Group(); scene.add(interior);
-const D = { corona: [], mang: [], pipeB: [], pipeW: [], cos: [], cosW: [], floorL: [], floorM: [], lamp: [], grate: [], bar: [], tray: [], bench: [], fan: [], drain: [], discM: [], bucket: [], jar: [] };
+// B7 (2026-11-08) · fuera la lista `lamp`, que nadie llenaba ni leía: las lámparas van aparte, en `lampG`.
+const D = { corona: [], mang: [], pipeB: [], pipeW: [], cos: [], cosW: [], floorL: [], floorM: [], grate: [], bar: [], tray: [], bench: [], fan: [], drain: [], discM: [], bucket: [], jar: [] };
 const bx = (arr, x, y, z, sx, sy, sz) => arr.push([x, y, z, sx, sy, sz]);
 const lampG = new Map();   // las lámparas de cada módulo y sala, aparte: se encienden según su estado (opción J)
 const bxL = (g, ...caja) => { if (!lampG.has(g)) lampG.set(g, []); bx(lampG.get(g), ...caja); };
@@ -1175,8 +1178,9 @@ const ctxTextos = () => ({ cargado: estadoCargado, mesPasado, blowers: blowersAc
 /** Ficha del módulo (las cifras de su tarjeta en la Vista Ejecutiva) o de la sala. */
 function fichaModulo(g) { tanqueFicha = null; llenarFicha(fichaGrupo(g, ctxTextos())); }
 /** Ficha de un tanque (al tocarlo con su módulo o sala ya elegido). */
+// B7 (2026-11-08, usuario: «Quitarlo todo») · había un `fichaTanqueMad` que sólo llamaba a ésta, y tres sitios elegían entre
+// las dos según el módulo fuera de larvicultura o no: daba lo mismo. `textoFichaTanque` ya distingue el tipo.
 function fichaTanque(t) { tanqueFicha = t; llenarFicha(textoFichaTanque(t, ctxTextos())); }
-function fichaTanqueMad(t) { fichaTanque(t); }
 $('#card-close').addEventListener('click', () => select(null));
 $('#v-iso').addEventListener('click', () => frameView('iso'));
 $('#v-top').addEventListener('click', () => frameView('top'));
@@ -1203,7 +1207,7 @@ canvas.addEventListener('pointerup', e => {
   // un área (opción F): se suelta lo elegido y, con el dedo, se muestra su nombre unos segundos
   if (p.area) { select(null); if (e.pointerType !== 'mouse') { tipArea(p.area, e); clearTimeout(tipTimer); tipTimer = setTimeout(() => { tip.hidden = true; }, 3500); } return; }
   // con el módulo ya elegido, tocar uno de sus tanques abre la ficha del tanque
-  if (p.tank && p.tank.g === selected) { if (p.tank.g.kind === 'larv') fichaTanque(p.tank); else fichaTanqueMad(p.tank); return; }
+  if (p.tank && p.tank.g === selected) { fichaTanque(p.tank); return; }
   select(p.tank ? p.tank.g : p.group, true);
 });
 canvas.addEventListener('pointermove', e => {
@@ -1531,7 +1535,7 @@ function pintarEstado(E) {
   renderer.shadowMap.needsUpdate = true;   // los camiones de despacho cambian con los datos y el mes
   esperarNitidez();   // el cálculo y el repintado traban unos cuadros: no son la tarjeta gráfica
   wasFar = null;   // rehace los rótulos en el próximo cuadro
-  if (selected) paso('ficha abierta', () => { if (tanqueFicha && tanqueFicha.g === selected) (selected.kind === 'larv' ? fichaTanque : fichaTanqueMad)(tanqueFicha); else fichaModulo(selected); });
+  if (selected) paso('ficha abierta', () => { if (tanqueFicha && tanqueFicha.g === selected) fichaTanque(tanqueFicha); else fichaModulo(selected); });
   return fallidos;
 }
 /* ---------- Qué atender hoy: las mismas alertas que las balizas y las cifras, en una lista ---------- */
@@ -1541,7 +1545,7 @@ function irATanque(t) {
   select(t.g, false);
   const [x, z] = P(t.cx, t.cz);
   frameView('iso', [x, 0, z], 16);
-  (t.g.kind === 'larv' ? fichaTanque : fichaTanqueMad)(t);
+  fichaTanque(t);
   subirAMaqueta();
 }
 function irAGrupo(g) {

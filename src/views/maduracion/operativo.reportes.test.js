@@ -246,6 +246,14 @@ describe('Maduración · F7 · la página cabe en una hoja', () => {
     expect(html).toContain('Planta entera');
   });
 
+  // B7 (2026-11-08) · el pie de 💀 Bajas no tenía prueba (un banco quitó su total y vivió). Al quitar su «· en desove N»,
+  // que por tanque era siempre 0, queda fijado: natural, descarte y total de TODAS las filas del día, nada más.
+  it('🔴 el pie de las bajas: natural, descarte y total del día, sin «en desove»', () => {
+    const html = parteDiarioHtml(parte);
+    expect(html).toContain('<div class="rp-pie-b">Natural 6 · descarte 1 · <b>total 7</b></div>');
+    expect(html).not.toContain('en desove');
+  });
+
   it('un bloque sin nada lo dice en vez de enseñar una tabla vacía', () => {
     const vacio = parteDiario(modeloOperativo([], { hoy: HOY, fecha: DIA }), [], [], SIN, {});
     const html = parteDiarioHtml(vacio);

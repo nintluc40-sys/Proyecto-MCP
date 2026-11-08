@@ -449,7 +449,7 @@ describe('A25 · los campos del PDF que salían «—»', () => {
     const p = buildFichaPages('params', { mod: 'M01', corrida: '573' });
     expect(p).toHaveLength(1);
     expect(p[0].d.estadio).toBe('M2');                             // el más avanzado de ese día
-    const html = buildFichaPdfDoc({ fid: 'params', mod: 'M01', fileName: 'x', pages: p, autoPrint: false });
+    const html = buildFichaPdfDoc({ fid: 'params', mod: 'M01', fileName: 'x', pages: p });
     expect(html).toContain('<label>Estadío</label><span>M2</span>');
     expect(html).not.toContain('Hora registro');
   });
@@ -468,9 +468,9 @@ describe('A25 · los campos del PDF que salían «—»', () => {
     store.globalData.push({ _SheetOrigin: 'Registro_Desinfección', 'Módulo': 'M01', Corrida: '573', Fecha: '2026-06-01',
       'Tipo de Registro': 'X', 'Categoría': 'Y', Elemento: 'Z', Estado: 'Sí' });
     store.globalData = [...store.globalData];
-    const dx = buildFichaPdfDoc({ fid: 'desinfeccion', mod: 'M01', fileName: 'x', pages: buildFichaPages('desinfeccion', { mod: 'M01', corrida: '573' }), autoPrint: false });
+    const dx = buildFichaPdfDoc({ fid: 'desinfeccion', mod: 'M01', fileName: 'x', pages: buildFichaPages('desinfeccion', { mod: 'M01', corrida: '573' }) });
     expect(dx).not.toContain('<label>Hora</label>');
-    const pob = buildFichaPdfDoc({ fid: 'poblacion', mod: 'M01', fileName: 'x', pages: buildFichaPages('poblacion', { mod: 'M01', corrida: '573' }), autoPrint: false });
+    const pob = buildFichaPdfDoc({ fid: 'poblacion', mod: 'M01', fileName: 'x', pages: buildFichaPages('poblacion', { mod: 'M01', corrida: '573' }) });
     expect(pob).toContain('<label>Hora</label>');
   });
 });

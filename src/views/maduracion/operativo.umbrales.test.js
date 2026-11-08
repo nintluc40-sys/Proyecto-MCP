@@ -136,13 +136,8 @@ describe('Maduración · umbrales · el veredicto', () => {
     expect(evaluar('noExiste', 5)).toBe('');
   });
 
-  it('🔑 el del LABORATORIO manda en cuanto existe', () => {
-    const lab = { temperatura: { min: 27, max: 30, referencia: '27–30 °C (laboratorio)', fuente: [] } };
-    expect(evaluar('temperatura', 27.5)).toBe('bajo');
-    expect(evaluar('temperatura', 27.5, lab)).toBe('ok');
-    expect(umbralVigente('temperatura', lab)).toMatchObject({ min: 27, max: 30, origen: 'laboratorio' });
-    expect(umbralVigente('oxigeno', lab).origen).toBe('bibliografía');
-  });
+  // B7 (2026-11-08) · aquí se probaba un umbral de laboratorio PASADO A MANO, que la app nunca pasaba y se retiró. Que el
+  // del laboratorio del catálogo manda sobre el bibliográfico lo vigila «la mortalidad del día y las cargas», arriba.
 
   it('🔴 alcalinidad (2026-09-26, usuario): manda el rango del laboratorio, 120–150, con los extremos dentro', () => {
     expect(umbralVigente('alcalinidad')).toMatchObject({ min: 120, max: 150, origen: 'laboratorio', referencia: '120–150 mg/L CaCO₃' });

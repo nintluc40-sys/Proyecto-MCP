@@ -224,7 +224,9 @@ function bloqueBajas(B, tope) {
     esc(ubic(f.sala, f.tanque)), nf(f.natural.total), nf(f.descarte.total), `<b>${nf(f.total)}</b>`, pc(f.pct),
   ])}</tr>`);
   const T = B.totales || { natural: {}, descarte: {}, total: 0 };
-  const pie = `<div class="rp-pie-b">Natural ${nf(T.natural.total)} · descarte ${nf(T.descarte.total)} · <b>total ${nf(T.total)}</b>${B.desove ? ` · en desove ${nf(B.desove)}` : ''}</div>`;
+  // B7 (2026-11-08, usuario: «Quitarlo todo») · aquí había un «· en desove N» que nunca salía: el parte agrupa las bajas
+  // por TANQUE, y `desgloseDeBajas` sólo cuenta `desove` por lote (por tanque lo da en 0).
+  const pie = `<div class="rp-pie-b">Natural ${nf(T.natural.total)} · descarte ${nf(T.descarte.total)} · <b>total ${nf(T.total)}</b></div>`;
   /* 0r·4 · H1 (2026-09-28, usuario) · van por TANQUE (F7.1): lo que esa agrupación no puede honrar —el lote, el código
      genético— se DICE, como en 💀 Bajas y en los avisos. Callarlo dejaba un «PARTE FILTRADO — Lote X» con bajas de
      tanques de otros lotes (visto con datos reales). */
