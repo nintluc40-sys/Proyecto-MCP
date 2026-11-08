@@ -316,6 +316,27 @@ describe('GAS · un cliente con el ESQUEMA VIEJO no puede escribir en Maduració
     expect(vigiladas.filter((h) => !firmadas.has(h)), 'vigiladas sin firma').toEqual([]);
   });
 
+  /* 2026-11-08 (usuario: «Sí, las dos») · Zonas y Broodstock entran en V3. Antes sólo tenían la firma de dos columnas: con
+     ésas en su sitio, una HOJA con otra columna retocada o corrida recibía cada dato en la columna que no es, y «ok». */
+  const ZONAS = ['Fecha', 'Zona', 'Tanque', ...[2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 0].map((h) => 'Temperatura ' + h + ':00'),
+    'Oxígeno 06:00', 'Oxígeno 12:00', 'Oxígeno 18:00', 'Oxígeno 00:00'];
+  for (const [hoja, cab, col] of [['Maduración Zonas', ZONAS, 5], ['Maduración Broodstock', BS_HEADERS, 4]]) {
+    it(`🔴 ${hoja}: la app al día contra una HOJA retocada (col. ${col}) no escribe, y dice que la vieja es la hoja`, () => {
+      const retocada = cab.map((h, i) => (i === col - 1 ? h + ' (antes)' : h));
+      const h = hojaFalsa([retocada, filaVacia(retocada)]);
+      const r = gas({ [hoja]: h }).post({ sheetName: hoja, headers: cab, rows: [cab.map((_, i) => (i < 3 ? 'x' + i : ''))] });
+      expect(r.status, 'el GAS escribió en una hoja con otra cabecera').toBe('error');
+      expect(r.message).toContain('columna ' + col);
+      expect(r.message).toContain('la cabecera vieja es la de la HOJA');
+      expect(h.escrituras).toEqual([]);
+    });
+    it(`${hoja}: con la cabecera de la app, escribe como siempre`, () => {
+      const h = hojaFalsa([cab]);
+      const r = gas({ [hoja]: h }).post({ sheetName: hoja, headers: cab, rows: [cab.map((_, i) => (i < 3 ? 'x' + i : ''))] });
+      expect(r.status, JSON.stringify(r)).toBe('ok');
+    });
+  }
+
   it('el rechazo NO echa en cara lo que mandó el cliente: sólo nombra la columna de la hoja', () => {
     const g = gas({ 'Maduración Tanques': hojaFalsa([TANQUES]) });
     const r = g.post({ sheetName: 'Maduración Tanques', headers: TANQUES_F1D9687, rows: [filaVacia(TANQUES_F1D9687)] });

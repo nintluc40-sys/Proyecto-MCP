@@ -22,7 +22,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "0c019e78e429";
+const GAS_VERSION = "a1873bf5f9c9";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -1015,12 +1015,16 @@ function ensureHeaders(ws, headers) {
 // 🔧 Y las dos de Mantenimiento (2026-10-29, usuario: «Sí, vigilarlas»): también se escriben por posición
 // (upsertAstRows) y pueden NACER de pegar a mano los .tsv de la importación, así que una cabecera pegada
 // corrida o retocada escribiría cada dato en otra columna sin aviso. Están firmadas: el aviso culpa a la HOJA.
+// 🔧 Y Zonas y Broodstock (2026-11-08, usuario: «Sí, las dos»): también posicionales (llave [0,1,2] y reemplazo por
+// Fecha de corte · Piscina), y sólo tenían su firma de dos columnas. Medido ese día, sólo leyendo: sus cabeceras
+// vivas son las de la app, columna a columna, así que la app al día no se ve rechazada. Están firmadas.
 // El cliente, ante el rechazo, no marca nada como sincronizado: lo tecleado se queda en
 // el dispositivo hasta que se actualice la app (medido en el cliente de f1d9687).
 var MAD_ESQUEMA_VIGILADO = [
   "Maduración Sala", "Maduración Tanques", "Maduración Lotes",
   "Maduración Ingreso", "Maduración Movimientos", "Maduración Fin de Ciclo",
   "Maduración Tratamientos", "Maduración Mortalidad Desove", "Maduración Alimentación",
+  "Maduración Zonas", "Maduración Broodstock",
   "Mantenimiento Trabajos", "Mantenimiento Lecturas"
 ];
 function _cabeceraNorm_(v) {
@@ -1462,7 +1466,8 @@ function upsertAstRows(ws, newRows, merge) {
 // la columna Sesión se preserva. Filas heredadas sin Sesión no se emparejan (se
 // conservan). Sustituye la clave compuesta anterior (Fecha|Corrida|Módulo|Área|
 // Sistema|Lote|Día), que hacía que editar cualquiera de esos campos creara fila nueva.
-// NOTA: algasRowKey / algasInKey (abajo) quedan sin uso con esta clave.
+// (2026-11-08, usuario: «En ese mismo cambio» · se quitaron algasRowKey / algasInKey, las funciones de esa clave
+//  anterior, que ya no usaba nadie.)
 function upsertAlgasRows(ws, newRows) {
   var widest = 0;
   for (var wi = 0; wi < newRows.length; wi++) if (newRows[wi].length > widest) widest = newRows[wi].length;
@@ -1519,33 +1524,6 @@ function upsertAlgasRows(ws, newRows) {
     added = u.filas.length;
   }
   return { upserted: updated, appended: added };
-}
-
-function algasRowKey(row) {
-  // Fila leída de Sheets: row[0] puede ser Date (col formateada dd/mm/yyyy).
-  // Clave: Fecha|Corrida_Larv|Modulo_Larv|Area_Algas|Sistema|Lote|Dia_Proceso.
-  return [
-    dStr(row[0]),
-    String(row[1] == null ? "" : row[1]).trim(),
-    String(row[2] == null ? "" : row[2]).trim(),
-    String(row[3] == null ? "" : row[3]).trim(),
-    String(row[4] == null ? "" : row[4]).trim(),
-    String(row[5] == null ? "" : row[5]).trim(),
-    String(row[6] == null ? "" : row[6]).trim()
-  ].join("|");
-}
-function algasInKey(row) {
-  // Fila entrante: row[0] siempre llega como string "yyyy-MM-dd".
-  // Clave: Fecha|Corrida_Larv|Modulo_Larv|Area_Algas|Sistema|Lote|Dia_Proceso.
-  return [
-    String(row[0] == null ? "" : row[0]).slice(0, 10),
-    String(row[1] == null ? "" : row[1]).trim(),
-    String(row[2] == null ? "" : row[2]).trim(),
-    String(row[3] == null ? "" : row[3]).trim(),
-    String(row[4] == null ? "" : row[4]).trim(),
-    String(row[5] == null ? "" : row[5]).trim(),
-    String(row[6] == null ? "" : row[6]).trim()
-  ].join("|");
 }
 
 // ── Upsert genérico para hojas de Maduración ──
