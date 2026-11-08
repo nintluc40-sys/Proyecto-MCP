@@ -10,8 +10,9 @@
    apuntan a `marker-icon.png` por una ruta que los empaquetadores rompen a menudo
    (el clásico icono invisible en producción y perfecto en desarrollo). Un `divIcon`
    es HTML y CSS nuestros: no hay ninguna imagen que pueda faltar, y además nos deja
-   numerar la parada y colorearla por camión, que es lo que hace legible el mapa
-   cuando dos camiones recorren la misma ruta.
+   numerar la parada. Las paradas llevan el color de la RUTA, uno solo (la ruta es la
+   del viaje: los camiones paran juntos); los colores por camión van dentro del globo
+   de cada parada (ver RUTA_COLOR y COLORES_CAMION, más abajo).
 
    🔑 **Carga PEREZOSA de Leaflet** (`import()` dinámico). La librería y su CSS sólo
    se descargan si el supervisor abre esta sub-vista; el resto del tablero no paga

@@ -201,7 +201,7 @@ function pdfFooter(codigo, tsStr, tec, fid) {
 /**
  * Construye el documento HTML imprimible de UNA ficha (multipágina: 1 .ppage/día).
  * @param {object} o
- * @param {string} o.fid  ficha ('calidad'|'plg'|'params'|'poblacion'|'calagua'|'despacho')
+ * @param {string} o.fid  ficha ('calidad'|'plg'|'params'|'poblacion'|'calagua'|'despacho'|'desinfeccion': las de FICHA_IDS)
  * @param {string} o.mod  módulo ('M01'…'CIO')
  * @param {string} o.fileName  nombre sugerido del archivo
  * @param {Array<{d:object, tableHtml:string, obs?:string}>} o.pages  una por día

@@ -109,7 +109,7 @@ function lvDaily(rows) {
 
 /* ---- ICL (Índice de Calidad Larvaria) ----
    ICL = (SV + %Actividad + Int.Lleno + Lípidos)
-       − (Vacío + Semilleno + Deformidad + Estrés + Retraso + Necrosis
+       − (Vacío + Semilleno + Deformidad + Estrés × 10 + Retraso + Necrosis
           + Hongos + No Viables + Opacidad + Flácidez + Canibalismo + Parásitos)
    Variable ausente un día = 0 (no contribuye). */
 const ICL_POS = [{ key: 'sv', label: 'Supervivencia' }, { key: 'act', label: '% Actividad' }, { key: 'il', label: 'Intestino Lleno' }, { key: 'lip', label: 'Lípidos' }];

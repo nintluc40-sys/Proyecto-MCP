@@ -2,7 +2,7 @@
    SUPERVISOR · Cuadro de Siembras y Cosecha (capa pura, sin DOM)
    Agrupa los tanques de un módulo+corrida en SIEMBRAS y deriva por
    tanque la población sembrada, el transferido, el PL/g y la
-   supervivencia. Alimenta el modal que se abre desde el KPI Técnico.
+   supervivencia. Alimenta el modal que se abre desde el KPI Estadío.
 
    Reglas (decisión del usuario 2026-08-05):
      · Siembra  = tanques cuyo PRIMER registro en estadío N5 cae en la

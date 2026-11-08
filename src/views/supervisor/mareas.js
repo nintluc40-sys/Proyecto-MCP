@@ -6,7 +6,8 @@
    distribución de fases lunares) y "Correlación" (sólo en el modal del Supervisor).
    Capa de datos PURA (mareaDays, testeable) + render con SVG (luna/ola) y
    Chart.js gestionado (tendencia/donut). Tema del proyecto (claro/oscuro).
-   El modal ENTERO (marcado y cableado, al final) lo abren Supervisor y Maduración · Operativo (0r·1, 2026-09-28).
+   El modal (marcado y cableado, al final) lo abre el Supervisor (0r·1, 2026-09-28). Maduración · Operativo pinta el
+   mismo cuerpo como sub-vista 🌊, sin ventana (mareasPanelHTML y cablearPanelMareas, desde el 2026-09-29).
    0v·1 (2026-09-29) · «🗓 Calendario» (el calendario lunar del mes y el panel del día), sólo si lo pide quien lo pinta
    (`calendario`): hoy, la sub-vista 🌊 de Maduración.
    ============================================================ */
@@ -735,8 +736,9 @@ export function renderMareas(host, state, extras = {}, { delDia } = {}) {
 }
 
 /* ---------- el MODAL entero: su marcado y su cableado ----------
-   0r·1 (2026-09-28, usuario) · lo comparten Supervisor y Maduración · Operativo: vivían en
-   supervisor/module.js y se mudaron aquí sin cambiar nada, para que las dos pantallas no puedan divergir. */
+   0r·1 (2026-09-28, usuario) · vivían en supervisor/module.js y se mudaron aquí sin cambiar nada, para que las dos
+   pantallas no puedan divergir: el CUERPO (mareasCuerpoHTML) lo comparten Supervisor y Maduración · Operativo; la
+   ventana sólo la abre el Supervisor, y Maduración lo pinta como su sub-vista 🌊 (mareasPanelHTML, más abajo). */
 /** Lo que enseña el modal al ABRIRSE: la vista Día, en el día de hoy (o el último con marea). */
 export const mareasEstadoInicial = () => ({ mode: 'dia', key: null, month: null, corrKind: 'micro', corrPeriod: 'month', corrCell: null });
 

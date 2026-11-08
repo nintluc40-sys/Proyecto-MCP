@@ -1058,7 +1058,7 @@ function cwFichasHTML(rows, ranges) {
   return `${legend}<div class="cw-fichas">${cards}</div>`;
 }
 
-/* ---- Modal "Siembras y Cosecha" (se abre desde el KPI Técnico) ------------
+/* ---- Modal "Siembras y Cosecha" (se abre desde el KPI Estadío) ------------
    Estilo NATIVO: clase .sv-table + semáforo del sistema (svLevel/levelColor) +
    fmtPop. Datos: computeSiembras (views/supervisor/siembras.js). Solo lectura. */
 function svSiePct(v) {
@@ -1284,7 +1284,7 @@ export function renderModule(ctx, mod) {
   const cos = cosechaEstimate(ctx, mod, corrida, 'PL11');
   const cosechaLabel = cos ? (cos.reached ? 'En cosecha' : '≈ ' + cos.days + ' días') : '—';
 
-  // Cuadro de Siembras y Cosecha (modal del KPI Técnico). Se agrupa por fecha de N5.
+  // Cuadro de Siembras y Cosecha (modal del KPI Estadío). Se agrupa por fecha de N5.
   // Usa la línea base poblacional (larvCM: corrida+mes, SIN la ventana de fecha global)
   // para no truncar el transferido/cosecha más recientes del módulo.
   const siembrasRows = ctx.larvCM.filter((r) => getField(r, F.modulo) === mod);
@@ -1554,8 +1554,8 @@ export function renderModule(ctx, mod) {
   }
 
   // Modal de Mareas · referencia de SITIO (Anconcito · INOCAR), igual para todos los
-  // módulos. Lee la hoja "Marea" del store; render en views/supervisor/mareas.js (0r·1: el marcado también, porque
-  // Maduración · Operativo abre el MISMO modal).
+  // módulos. Lee la hoja "Marea" del store; render en views/supervisor/mareas.js (0r·1: el marcado también). Sólo el
+  // Supervisor lo abre como ventana: Maduración · Operativo pinta el mismo cuerpo como su sub-vista 🌊 (mareasPanelHTML).
   h += mareasModalHTML();
   // 🌦 Clima (2026-10-27): su modal, también de SITIO; la pastilla va junto a 🌊 Mareas. Vacío sin hojas de clima.
   h += climaModalHTML();
@@ -1594,7 +1594,7 @@ export function renderModule(ctx, mod) {
   </div>`;
 
   // Trazabilidad · descarga en PDF las fichas del módulo (datos del Sheet).
-  // Tipos = las 6 fichas estándar (fuente única: FICHA_IDS/fichaLabel de fichaPdf.js).
+  // Tipos = las fichas estándar, hoy 7 (fuente única: FICHA_IDS/fichaLabel de fichaPdf.js).
   const TRACE_FICHAS = FICHA_IDS.map((fid) => ({ fid, label: fichaLabel(fid) }));
   h += `<div class="sv-modal" id="svTraceModal" data-tracemodal>
     <div class="sv-modal-card">
@@ -1764,7 +1764,7 @@ export function renderModule(ctx, mod) {
 
     // Modal de Mareas (Día: ola+KPIs+luna+tipo+tabla · Mes: tendencia+donut). Datos: hoja "Marea".
     // Modal de SITIO (Anconcito): la Correlación usa siempre todos los módulos. 0r·1: su cableado vive en mareas.js,
-    // con el marcado, porque Maduración · Operativo abre el MISMO modal.
+    // con el marcado; Maduración · Operativo no abre este modal, cablea su sub-vista 🌊 con cablearPanelMareas.
     cablearMareas(root, root.querySelector('#svMareasModal'));
     cablearClima(root, root.querySelector('#climaModal'));
 
@@ -1784,7 +1784,7 @@ export function renderModule(ctx, mod) {
       // Horizonte de proyección: hasta la cosecha estimada (PL11); fallback 7 días.
       // Se reutiliza `cos`, ya calculado arriba para el KPI "Cosecha": era la MISMA
       // llamada —`cosechaEstimate(ctx, mod, corrida)` usa target='PL11' por defecto
-      // (moduleTrends.js:125), igual que el explícito de arriba— y se recomputaba entera.
+      // (el valor por defecto de su firma en moduleTrends.js), igual que el explícito de arriba— y se recomputaba entera.
       const projHorizon = (cos && !cos.reached && cos.days > 0) ? cos.days : 7;
       const cosechaReached = !!(cos && cos.reached);
       const TITLES = { sv: '📈 Tendencia de supervivencia', pop: '👥 Tendencia de población', plg: '🔬 Tendencia de PL/g (Larvia)', od: '💧 OD por hora (módulo)', tmp: '🌡️ Temperatura por hora (módulo)' };
