@@ -642,3 +642,14 @@ describe('modulosDisponibles · el render la llama con la corrida ELEGIDA', () =
     }
   });
 });
+
+describe('B5 · el botón 🧫 Control sanitario promete lo que enseña', () => {
+  it('no promete la «tendencia del mes» (se retiró): nombra las dos tablas que sí hay', () => {
+    const src = readFileSync(new URL('./index.js', import.meta.url), 'utf8');
+    const titulo = (src.match(/data-alg-sanit title="([^"]*)"/) || [])[1];
+    expect(titulo).toContain('patógenos por sistema, alertas y los patógenos más problemáticos del mes');
+    expect(titulo).not.toContain('tendencia');
+    expect(src).toContain('🧫 Patógenos por sistema');
+    expect(src).toContain('📊 Patógenos más problemáticos');
+  });
+});

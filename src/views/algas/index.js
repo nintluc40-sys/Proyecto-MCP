@@ -678,7 +678,7 @@ export function algasView(root) {
       ${algSelect('area', vState.area, areas, 'Todas las áreas')}
       <button class="alg-daybtn" data-alg-daysum title="Resumen diario de lo registrado en el Google Sheet">📅 Resumen del día</button>
       <button class="alg-daybtn" data-alg-indices title="Índices del mes: contaminación, estabilidad fisicoquímica y rendimiento por técnico">📊 Índices</button>
-      <button class="alg-daybtn" data-alg-sanit title="Control sanitario: microbiología de los cultivos de algas (patógenos, alertas y tendencia del mes)">🧫 Control sanitario</button>
+      <button class="alg-daybtn" data-alg-sanit title="Control sanitario: microbiología de los cultivos de algas (patógenos por sistema, alertas y los patógenos más problemáticos del mes)">🧫 Control sanitario</button>
     </div>`;
 
   // Subnav: una pestaña por sistema (Masivos/Premasivos/PBR/Fundas/Carboys).
