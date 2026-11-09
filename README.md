@@ -866,7 +866,8 @@ Dos consecuencias que conviene tener presentes al desplegar:
    preguntan para saltar la descarga, pero ⟳ (y la píldora) leen la marca antes —esperando como mucho 4 s— y la anotan si
    lo bajado se aplicó, así el ciclo siguiente no repite la descarga sin cambios (2026-10-07). Si hubiera que recrear el
    script, su código completo está en **`GAS/ConsultaLigera.gs`** (2026-11-08, usuario: «Sí, como archivo en GAS/»;
-   antes iba copiado aquí): pegarlo tal cual e implementarlo como aplicación web con esos permisos. Contesta
+   antes iba copiado aquí): pegarlo tal cual EN SU PROPIO proyecto —nunca junto a `Code.gs`: los dos declaran `SS_ID` y `doGet`— e
+   implementarlo como aplicación web con esos permisos. Contesta
    `{ ok: true, mod: <fecha de modificación del libro, en ms> }` o `{ ok: false, error }`.
 
    **🌦 Clima: otro Apps Script APARTE, «MCP · clima»** (2026-10-27; código en `GAS/Clima.gs`, prueba
