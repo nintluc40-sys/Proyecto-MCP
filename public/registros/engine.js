@@ -1901,24 +1901,50 @@ function _purgeQueueMark(mark){
   }catch(_){}
 }
 
-/* B5 (2026-11-08, usuario: «Decirlo bien») · ¿Espera en la cola algún envío de este registro? Quitarlo del dispositivo no
-   lo saca de la cola, así que llegará a la hoja: el aviso de 🗑 no puede decir «se pierde». `kind` es el de su marca; las
-   llaves son el id (Traslado) o `id@ts` (Score, Auditoría y Mantenimiento: la versión), y cualquier versión que espere llega. */
-function _colaTieneRegistro(kind, id){
-  if(!kind || id == null || id === "") return false;
-  const sid = String(id);
-  return _loadSyncQueue().some(function(it){
+/* B5 (2026-11-08, usuario: «Decirlo bien») · ¿Qué espera en la cola de este registro? Quitarlo del dispositivo no lo saca de
+   la cola, así que el aviso de 🗑 no puede decir siempre «se pierde».
+   Revisión del 08-11 (usuario: «Distinguir las dos») · y tampoco «llegará» con CUALQUIER versión: si se corrigió después de
+   encolarse, lo que espera es lo de ANTES y la corrección sí se pierde. Devuelve:
+     · "actual"   — espera la versión de AHORA: Score, Auditoría y Mantenimiento llevan la versión en la llave (`id@ts`);
+                    Traslado, en el sello de su marca (la huella de lo que viajó, `_marcaSellar`), igual a la de ahora;
+     · "anterior" — sólo una de antes (o, en Traslado, una sin sello con que comparar);
+     · null       — nada suyo en la cola. */
+function _colaVersionEnCola(kind, rec){
+  if(!kind || !rec || rec.id == null || rec.id === "") return null;
+  const sid = String(rec.id), conVersion = _COLA_CON_VERSION.indexOf(kind) !== -1, actual = sid + "@" + rec.ts;
+  let hay = null, huella;   // la huella de ahora, sólo si hace falta (Traslado)
+  _loadSyncQueue().forEach(function(it){
     const m = it && it.mark;
-    return !!(m && m.kind === kind && Array.isArray(m.keys)
-      && m.keys.some(function(k){ k = String(k); return k === sid || k.indexOf(sid + "@") === 0; }));
+    if(hay === "actual" || !m || m.kind !== kind || !Array.isArray(m.keys)) return;
+    m.keys.forEach(function(k){
+      k = String(k);
+      if(conVersion){
+        if(k === actual) hay = "actual";
+        else if(k.indexOf(sid + "@") === 0 && hay !== "actual") hay = "anterior";
+        return;
+      }
+      if(k !== sid) return;
+      if(huella === undefined){ try{ huella = _marcaHuellas([rec], function(r){ return r.id; })[sid]; }catch(_){ huella = null; } }
+      const sello = m.sellos && Object.prototype.hasOwnProperty.call(m.sellos, sid) ? m.sellos[sid] : undefined;
+      if(sello !== undefined && huella != null && sello === huella) hay = "actual";
+      else if(hay !== "actual") hay = "anterior";
+    });
   });
+  return hay;
 }
-/* El aviso de quitar algo NO enviado: «se pierde» sólo si no espera en la cola. `que` es «esta evaluación», «este traslado»… */
-function _avisoQuitarNoEnviado(enCola, que, femenino){
+/* El aviso de quitar (o, en Traslado, borrar) algo NO enviado, según lo que espere en la cola (`_colaVersionEnCola`).
+   `que` es «esta evaluación», «este traslado»…; con la versión de ahora en la cola no promete que LLEGUE: la cola aún
+   descarta por su tope o si la hoja lo rechaza por sus datos, y entonces ya no quedaría otra copia. */
+function _avisoQuitarNoEnviado(enCola, que, femenino, borrar){
   const pron = femenino ? "la" : "lo", fin = femenino ? "a" : "o";
-  return enCola
-    ? "Ya hay un envío de " + que + " esperando en la cola: llegará a la hoja aunque " + pron + " quites de este dispositivo.\n\n¿Quitarl" + fin + " del dispositivo?"
-    : (que.charAt(0).toUpperCase() + que.slice(1)) + " NO se ha enviado: si " + pron + " quitas, se pierde.\n\n¿Quitarl" + fin + " igualmente?";
+  const tu = borrar ? "borras" : "quitas", si = borrar ? "borres" : "quites", hacer = borrar ? "Borrarl" : "Quitarl";
+  if(enCola === "actual")
+    return "Ya hay un envío de " + que + " esperando en la cola: se enviará desde ahí aunque " + pron + " " + si
+      + " de este dispositivo (si la hoja lo rechazara, ya no quedaría otra copia).\n\n¿" + hacer + fin + " del dispositivo?";
+  if(enCola === "anterior")
+    return "En la cola espera una versión ANTERIOR de " + que + ": se enviará esa, pero lo cambiado después NO se ha enviado y, si "
+      + pron + " " + tu + ", se pierde.\n\n¿" + hacer + fin + " igualmente?";
+  return (que.charAt(0).toUpperCase() + que.slice(1)) + " NO se ha enviado: si " + pron + " " + tu + ", se pierde.\n\n¿" + hacer + fin + " igualmente?";
 }
 
 /* 2026-11-03 (pauta 1.2) · ¿Espera en la cola un envío con ALGUNA de estas llaves? Entonces no puede salir directo: si lleva otras que éste
@@ -21612,7 +21638,7 @@ function scoreBorrar(id){
   const r = _scoreRaw().find(function(x){ return x && x.id === id; });
   if(!r) return;
   if(!confirm(r.synced ? "¿Quitar esta evaluación del dispositivo? (Lo enviado sigue en la hoja.)"
-    : _avisoQuitarNoEnviado(_colaTieneRegistro("score", r.id), "esta evaluación", true))) return;
+    : _avisoQuitarNoEnviado(_colaVersionEnCola("score", r), "esta evaluación", true))) return;
   _scoreSave(_scoreRaw().filter(function(x){ return x && x.id !== id; }));
   renderScore(); updateDots(); updateSyncUI();
 }
@@ -22255,7 +22281,7 @@ function _mntBorrar(ronda, id){
   if(!r) return;
   const cual = ronda ? "esta ronda" : "este trabajo";
   if(!confirm(r.synced ? "¿Quitar " + cual + " del dispositivo? (Lo enviado sigue en la hoja.)"
-    : _avisoQuitarNoEnviado(_colaTieneRegistro(ronda ? "mntronda" : "mnttrabajo", r.id), cual, ronda))) return;
+    : _avisoQuitarNoEnviado(_colaVersionEnCola(ronda ? "mntronda" : "mnttrabajo", r), cual, ronda))) return;
   _mntSave(key, _mntRaw(key).filter(function(x){ return x && x.id !== id; }));
   if(ronda) renderMntRonda(); else renderMntTrabajo();
   updateDots(); updateSyncUI();
@@ -23207,7 +23233,7 @@ function audBorrar(id){
   const r = _audRaw().find(function(x){ return x && x.id === id; });
   if(!r) return;
   if(!confirm(r.synced ? "¿Quitar esta auditoría del dispositivo? (Lo enviado sigue en la hoja.)"
-    : _avisoQuitarNoEnviado(_colaTieneRegistro("auditoria", r.id), "esta auditoría", true))) return;
+    : _avisoQuitarNoEnviado(_colaVersionEnCola("auditoria", r), "esta auditoría", true))) return;
   _audSave(_audRaw().filter(function(x){ return x && x.id !== id; }));
   renderAud(); updateDots(); updateSyncUI();
 }
@@ -25674,11 +25700,10 @@ async function syncAllPendingTras(){
    ⚠ No toca Google Sheets: lo que ya se sincronizó sigue en la hoja. */
 function trasBorrarTraslado(){
   const rec = trasRegistroActivo();
+  // B5 (2026-11-08, usuario: «Decirlo bien») · borrarlo de aquí no lo saca de la cola; y si lo que espera es una versión
+  // ANTERIOR del viaje, lo añadido después sí se pierde (revisión del 08-11). El aviso es el de las demás fichas.
   const aviso = (rec && !rec.synced)
-    ? (_colaTieneRegistro("tras", rec.id)
-      // B5 (2026-11-08, usuario: «Decirlo bien») · borrarlo de aquí no lo saca de la cola.
-      ? "Ya hay un envío de este traslado esperando en la cola: llegará a la hoja aunque lo borres de este dispositivo.\n\n¿Vaciar la ficha y borrarlo del dispositivo?"
-      : "Este traslado NO se ha sincronizado todavía.\n\nSi lo borras, sus datos se pierden y no llegarán a la hoja.\n\n¿Borrarlo igualmente?")
+    ? _avisoQuitarNoEnviado(_colaVersionEnCola("tras", rec), "este traslado", false, true)
     : "¿Vaciar la ficha y borrar este traslado del dispositivo para empezar otro?";
   if(!confirm(aviso)) return;
   if(rec){

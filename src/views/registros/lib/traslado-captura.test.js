@@ -27,7 +27,7 @@ const EXPORTAR = ['renderTraslado', 'collectTraslado', 'saveTraslado', '_trasRaw
   'trasAgregarCamion', 'trasQuitarCamion', 'validarTraslado', 'trasSellarUbicacion',
   'trasGeoDisponible', 'trasFueraCadencia', 'trasCaidas', 'trasCamiones',
   'trasCamChange', 'trasIrRevision', 'trasRevEstado', 'trasBorrarTraslado', 'trasRefrescar', 'trasGuardarLocal',
-  'syncAllPendingTras', 'syncAll', '_trasSave', 'loadTras',
+  'syncAllPendingTras', 'syncAll', '_trasSave', 'loadTras', '_enqueueSync', '_loadSyncQueue',
   'buildGrid', '_reconcileMark',
   'trasTempAuto',
   'trasChkRango', 'trasChkRangoAll', 'TRAS_RANGO',   // 2026-09-17 · el rojo de fuera de rango
@@ -464,20 +464,34 @@ describe('Traslado · guardar', () => {
     expect(ultimoAviso()).toContain('Revisión 3');
   });
 
-  it('B5 · 🗑 Borrar traslado sin enviar que ya espera en la cola: avisa de que llegará igual, no «se pierden»', () => {
+  it('B5 + revisión · 🗑 Borrar traslado sin enviar: nada en la cola, el viaje de AHORA en la cola, o uno de ANTES', async () => {
     viajeCompleto(1);
     H.trasGuardarLocal();
-    const rec = H._trasRaw()[0];
-    expect(rec.synced).toBeFalsy();
     const vistas = [];
     window.confirm = (m) => { vistas.push(m); return false; };
     H.trasBorrarTraslado();
-    expect(vistas[0]).toContain('sus datos se pierden y no llegarán a la hoja');
-    // Su lote en la cola (la marca de Traslado lleva el id de cada traslado del lote, sin versión).
-    localStorage.setItem('larv4_syncqueue', JSON.stringify([{ ts: 1, payload: { sheetName: 'Registro_Traslado' }, mark: { kind: 'tras', keys: ['otro', rec.id] } }]));
+    expect(vistas[0]).toBe('Este traslado NO se ha enviado: si lo borras, se pierde.\n\n¿Borrarlo igualmente?');
+    /* Sin señal, por el camino de la app: syncAllPendingTras sella la marca (la huella de lo que viaja) y el envío entra
+       en la cola con ella. */
+    const postAntes = (payload) => { enviados.push(payload); return H.__envioOk; };
+    H.setPost(async (payload, url, opts) => { H._enqueueSync(payload, 'req-tras-1', url, opts && opts.mark); return false; });
+    try { await H.syncAllPendingTras(); } finally { H.setPost(async (p) => postAntes(p)); }
+    const enCola = H._loadSyncQueue();
+    expect(enCola, 'el fixture no encoló nada').toHaveLength(1);
+    expect(enCola[0].mark.sellos, 'la marca va sellada').toBeTruthy();
     H.trasBorrarTraslado();
-    expect(vistas[1]).toContain('esperando en la cola: llegará a la hoja aunque lo borres de este dispositivo');
-    expect(vistas[1]).not.toContain('se pierden');
+    expect(vistas[1]).toBe('Ya hay un envío de este traslado esperando en la cola: se enviará desde ahí aunque lo borres de este dispositivo'
+      + ' (si la hoja lo rechazara, ya no quedaría otra copia).\n\n¿Borrarlo del dispositivo?');
+    // Se sigue tecleando el viaje: lo que espera en la cola es lo de ANTES.
+    rev(1, 'hora', '23:59');
+    H.trasGuardarLocal();
+    H.trasBorrarTraslado();
+    expect(vistas[2]).toBe('En la cola espera una versión ANTERIOR de este traslado: se enviará esa, pero lo cambiado después NO se ha enviado y,'
+      + ' si lo borras, se pierde.\n\n¿Borrarlo igualmente?');
+    // Una marca sin sello (de antes de sellar) no deja saber cuál espera: se dice lo prudente.
+    localStorage.setItem('larv4_syncqueue', JSON.stringify([{ ts: 1, payload: {}, mark: { kind: 'tras', keys: [H._trasRaw()[0].id] } }]));
+    H.trasBorrarTraslado();
+    expect(vistas[3]).toBe(vistas[2]);
     expect(H._trasRaw(), '«no» no lo borra').toHaveLength(1);
     window.confirm = () => true;
   });

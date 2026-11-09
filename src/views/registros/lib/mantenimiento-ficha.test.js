@@ -271,20 +271,26 @@ describe('Mantenimiento · 🔧 Trabajo', () => {
     expect(H.loadMntTrabajos()).toHaveLength(0);
   });
 
-  it('B5 · quitar uno NO enviado que ya espera en la cola avisa de que llegará igual a la hoja', () => {
+  it('B5 · quitar uno NO enviado: según lo que espere en la cola (nada, ESTA versión o una anterior)', () => {
     trabajoCompleto();
     H.mntTrabGuardar();
     const rec = H.loadMntTrabajos()[0];
     const vistas = [];
     window.confirm = (t) => { vistas.push(t); return false; };
     const borrar = () => H.mntTrabBorrarEl(document.querySelector('#fp-mnttrabajo button[data-mnt-id]:not([onclick*="Abrir"])'));
+    const cola = (kind, k) => globalThis.localStorage.setItem('larv4_syncqueue', JSON.stringify([{ ts: 1, payload: {}, mark: { kind, keys: [k] } }]));
     // Lo de una RONDA con el mismo id no es este trabajo.
-    globalThis.localStorage.setItem('larv4_syncqueue', JSON.stringify([{ ts: 1, payload: {}, mark: { kind: 'mntronda', keys: [rec.id + '@1'] } }]));
+    cola('mntronda', rec.id + '@' + rec.ts);
     borrar();
     expect(vistas[0]).toBe('Este trabajo NO se ha enviado: si lo quitas, se pierde.\n\n¿Quitarlo igualmente?');
-    globalThis.localStorage.setItem('larv4_syncqueue', JSON.stringify([{ ts: 1, payload: { sheetName: 'Mantenimiento Trabajos' }, mark: { kind: 'mnttrabajo', keys: [rec.id + '@1'] } }]));
+    cola('mnttrabajo', rec.id + '@' + rec.ts);
     borrar();
-    expect(vistas[1]).toBe('Ya hay un envío de este trabajo esperando en la cola: llegará a la hoja aunque lo quites de este dispositivo.\n\n¿Quitarlo del dispositivo?');
+    expect(vistas[1]).toBe('Ya hay un envío de este trabajo esperando en la cola: se enviará desde ahí aunque lo quites de este dispositivo'
+      + ' (si la hoja lo rechazara, ya no quedaría otra copia).\n\n¿Quitarlo del dispositivo?');
+    cola('mnttrabajo', rec.id + '@1');   // una versión de antes
+    borrar();
+    expect(vistas[2]).toBe('En la cola espera una versión ANTERIOR de este trabajo: se enviará esa, pero lo cambiado después NO se ha enviado y,'
+      + ' si lo quitas, se pierde.\n\n¿Quitarlo igualmente?');
     expect(H.loadMntTrabajos(), '«no» no lo quita').toHaveLength(1);
   });
 });

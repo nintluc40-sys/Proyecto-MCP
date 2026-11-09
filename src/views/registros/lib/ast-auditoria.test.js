@@ -264,18 +264,22 @@ describe('Auditoría · la ficha en el módulo AsT', () => {
     expect(H._audRaw()).toHaveLength(0);
   });
 
-  it('B5 · 🗑 de una auditoría NO enviada: si ya espera en la cola, el aviso dice que llegará igual (no «se pierde»)', () => {
+  it('B5 · 🗑 de una auditoría NO enviada: según lo que espere en la cola (nada, ESTA versión o una anterior)', () => {
     globalThis.localStorage.setItem('larv4_aud_records', JSON.stringify([{ id: 'AUE-901-M04', ts: 5, synced: false, data: audit({ corrida: '901', siembras: [SI({})] }) }]));
     H.renderAud();
     const vistas = [];
     window.confirm = (m) => { vistas.push(m); return false; };
     const borrar = () => H.audBorrarEl(fp().querySelector('button[onclick="audBorrarEl(this)"]'));
+    const cola = (k) => globalThis.localStorage.setItem('larv4_syncqueue', JSON.stringify([{ ts: 1, payload: { sheetName: 'Registro_Auditoria' }, mark: { kind: 'auditoria', keys: [k] } }]));
     borrar();
-    expect(vistas[0]).toContain('se pierde');
-    globalThis.localStorage.setItem('larv4_syncqueue', JSON.stringify([{ ts: 1, payload: { sheetName: 'Registro_Auditoria' }, mark: { kind: 'auditoria', keys: ['AUE-901-M04@5'] } }]));
+    expect(vistas[0]).toBe('Esta auditoría NO se ha enviado: si la quitas, se pierde.\n\n¿Quitarla igualmente?');
+    cola('AUE-901-M04@5');
     borrar();
-    expect(vistas[1]).toContain('esperando en la cola: llegará a la hoja aunque la quites de este dispositivo');
+    expect(vistas[1]).toContain('esperando en la cola: se enviará desde ahí aunque la quites de este dispositivo');
     expect(vistas[1]).not.toContain('se pierde');
+    cola('AUE-901-M04@3');
+    borrar();
+    expect(vistas[2]).toContain('En la cola espera una versión ANTERIOR de esta auditoría: se enviará esa, pero lo cambiado después NO se ha enviado');
     expect(H._audRaw(), '«no» no la quita').toHaveLength(1);
   });
 

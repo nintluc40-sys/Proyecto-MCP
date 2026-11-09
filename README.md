@@ -1201,8 +1201,11 @@ Desde el 2026-09-24 (punto 2a, correcciones A y B, decisiones del usuario):
   sin marca)— no sale directo: entra DETRÁS y se vacía la cola, esperando como mucho 45 s; si no sale, queda «en cola».
   Al vaciarse, lo que se pisaría con un envío trabado tampoco se intenta antes que él (`_colaSolapa`, `_colaSePisan`).
 - **Quitar con 🗑 algo no enviado que ya espera en la cola** (Score, Auditoría, Mantenimiento y Traslado; 2026-11-08,
-  usuario: «Decirlo bien»): el aviso dice que llegará igual a la hoja y que sólo se quita del equipo; si no espera,
-  sigue diciendo que se pierde (`_colaTieneRegistro`).
+  usuario: «Decirlo bien» y, tras la revisión, «Distinguir las dos»): si espera la versión de AHORA, el aviso dice que
+  se enviará desde la cola (sin prometer que llegue: la cola aún descarta por su tope o si la hoja lo rechaza, y ya no
+  quedaría otra copia); si sólo espera una ANTERIOR —se corrigió después de encolarse—, que se enviará esa y lo cambiado
+  después se pierde; si no espera nada, que se pierde. Score, Auditoría y Mantenimiento llevan la versión en su llave
+  (`id@ts`); Traslado, en el sello de su marca (`_colaVersionEnCola`, `_avisoQuitarNoEnviado`).
 
 Y desde el 2026-10-04 (auditoría final de la sincronización, decisiones del usuario) **lo no enviado no se pierde
 sin avisar**:
