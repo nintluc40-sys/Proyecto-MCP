@@ -153,8 +153,10 @@ export const ROLES = {
   mantenimiento:  { label: 'Mantenimiento',  icon: '🛠️', allow: ['mantenimiento', 'registros'], inicio: 'mantenimiento' },
 };
 
-const roleAllows = (viewId) => {
-  const r = ROLES[store.role];
+/* ¿El rol (por defecto, el elegido) ve esta vista? La ÚNICA regla de permisos: la usan el menú y la vista inicial
+   (revisión del 08-11, usuario: una sola regla, para que no puedan discrepar). */
+const roleAllows = (viewId, role = store.role) => {
+  const r = ROLES[role];
   return !!r && (r.allow === '*' || r.allow.includes(viewId));
 };
 
@@ -185,7 +187,7 @@ function renderEntryRoles() {
 export function vistaInicialDeRol(key) {
   const r = ROLES[key];
   if (!r) return null;
-  const permite = (id) => r.allow === '*' || r.allow.includes(id);
+  const permite = (id) => roleAllows(id, key);
   const v = (r.inicio && permite(r.inicio) && MAIN_VIEWS.find((x) => x.id === r.inicio)) || MAIN_VIEWS.find((x) => permite(x.id));
   return v ? v.id : null;
 }
