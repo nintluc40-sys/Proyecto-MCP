@@ -954,7 +954,7 @@ Dos consecuencias que conviene tener presentes al desplegar:
    Sin Worker (`leerTodoAqui`: el Worker roto o caído en la primera carga) la página sigue el MISMO orden desde el
    2026-10-22 (pauta 17). Antes empezaba por el libro entero: un bloque de 12,6 s de SheetJS con la pantalla congelada,
    en cada refresco con cambios. Por CSV son 0,9 s, repartidos en una tarea por hoja de 0,12 s como mucho (medido ese
-   día en el PC con el libro real: 44 hojas, 225 384 filas).
+   día en el PC con el libro real entero).
    Si no, `connectSheets()` descarga el libro **completo** vía `export?format=xlsx`
    (1 petición, todas las hojas), con reintento y backoff. Si falla, el **respaldo** pide CADA hoja
    por su XLSX (`export?format=xlsx&gid=`; los `gid` salen de `/htmlview`) y sólo la que no llegue,
@@ -1108,8 +1108,8 @@ rechazado por su entorno (esquema, hoja no permitida…) lo olvida; entre medias
 🔑 **El sello ata los ENVÍOS, no las LECTURAS** (3.15 b, 2026-10-12): el ⚖️ Saldo lee «Maduración Mortalidad Desove» y
 su resumen lee «Maduración Tratamientos» SIEMPRE, sin preguntar a `?p=ver`; sólo una respuesta «Hoja no permitida» (un
 GAS que de verdad no conoce la hoja) las da por vacías. Hasta ese día, con el sello del GAS distinto del de la app, las
-daba por vacías sin pedirlas —un atajo de cuando eran hojas nuevas— y el Saldo descuadraba (medido el 09-10: +2 ♀ en
-Sala 4 · T1 · BP).
+daba por vacías sin pedirlas —un atajo de cuando eran hojas nuevas— y el Saldo descuadraba (medido el 09-10 en un
+tanque real).
 
 ### 2 · La FIRMA (`MAD_ESQUEMA_FIRMA`) — «¿el CLIENTE trae el esquema de hoy?»
 
@@ -1210,6 +1210,11 @@ sin avisar**:
   guardado sin hacerlo, como en el modo privado de algunos: se comprueba LEYENDO tras escribir—, primero se vacía la
   cola y, si ya no se pisa con nada, sale directo; sólo si eso tampoco puede, el envío da **error** con su motivo y lo
   tecleado se queda en pantalla. Antes decía «📶 en cola», vaciaba el formulario y se perdía.
+- **Y si el equipo no puede GUARDAR la ficha** (pauta del 04-11, A6): ☁️ de 🛢 Tanques y las fichas de Larvicultura
+  envían lo que hay en pantalla (usuario: «enviar lo de pantalla»). En Tanques, si llega a la hoja o queda en la cola,
+  la grilla se limpia y avisa de que el equipo no guardó copia, y lo que guardaba de esos registros se retira (si no, un envío
+  posterior escribiría lo viejo encima); si no llega, lo tecleado sigue en pantalla. 🏠 Salas, Biomol, Mareas,
+  Microbiología, Calidad y Patología, en cambio, **no envían** si no pueden guardar antes (sin decidir si deberían).
 - **Biomol, As Técnico (supervisión) y Traslado CONSERVAN lo no enviado.** A las 48 h sólo se retira lo ya
   enviado, contadas desde su envío (como ya hacían Score, Auditoría y Microbiología); lo pendiente se queda hasta
   enviarlo o borrarlo. Las fotos de un viaje caducan con su viaje.
@@ -1263,7 +1268,7 @@ contenido enviado dos veces seguidas conservan el suyo; pero un contenido que VU
 → 28), o tras recargar la página, lleva otro y se escribe de nuevo. No duplica filas: las hojas reemplazan por su llave.
 Pero la marca se miraba ANTES de esperar
 el candado, y un reintento que llegaba mientras el primero seguía escribiendo (el cliente corta a los 40 s) entraba
-después y escribía otra vez: así salieron las 945 parejas repetidas de `Control_Tanque` medidas ese día. Ahora
+después y escribía otra vez: así salieron las parejas repetidas de `Control_Tanque` medidas ese día. Ahora
 `doPost` vuelve a mirar la marca con el candado tomado y compromete lo escrito (`SpreadsheetApp.flush()`) antes de
 soltarlo. Las parejas que ya están en la hoja son datos: no las toca.
 
@@ -1280,8 +1285,8 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   GAS (fechas «yyyy-MM-dd», números y booleanos con su tipo, el texto tal cual, sin filas vacías). Hasta ese día
   eran dos exportaciones combinadas —gviz, con tipos pero que deja en blanco lo minoritario de una columna que
   mezcla números y texto, y el CSV—, y 🔴 **con un filtro puesto en la hoja gviz sólo da las filas visibles**: el
-  emparejamiento se descuadraba y todo caía al GAS (pasó con MATRIZ, Bitácora y Tanques). Medido ese día: 11
-  hojas y 7 336 filas iguales al GAS celda a celda, en 0,5–1,8 s. gviz queda sólo para saber si existe una hoja
+  emparejamiento se descuadraba y todo caía al GAS (pasó con MATRIZ, Bitácora y Tanques). Medido ese día: las
+  hojas comparadas, iguales al GAS celda a celda, en 0,5–1,8 s cada una. gviz queda sólo para saber si existe una hoja
   que no está en la lista (por un nombre que no existe devuelve otra hoja sin avisar).
 - **Lo que no se sabe imitar, o no es la hoja, se lee por el GAS, como antes**: un libro que no es de UNA hoja
   con ese nombre desde A1, una hora sola o una fecha anterior al 1-3-1900, un error (#N/A), una cabecera que es
@@ -1337,8 +1342,8 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   lectura no pidió hasta el 2026-09-24) el desempate caería en «la de más abajo en la hoja». Así que el
   evento y el TRASLADO se rechazan y el informe ofrece las dos, por su cuaterna, para registrar con la
   elegida (el traslado conserva su TR-ID). El alta ya avisa cuando el chip lo lleva una viva. Medido en
-  producción el 2026-09-17: 1665 filas, 1665 chips, ninguno con más de una. (El 2026-09-22 ya eran 67 chips
-  con dos hembras: los del lote del 29-08.)
+  producción el 2026-09-17: ningún chip con más de una hembra; cinco días después ya había chips con dos, todos
+  de un mismo lote.
 - 🔴 **Un chip reciclado es de la hembra que lo llevaba ESE día: la de ingreso más reciente, pero no antes
   de que muera la anterior.** La fecha de ingreso es la del LOTE, no la del chip: el lote del 29-08 recibió
   chips de hembras que murieron del 06 al 10-09. Un evento o traslado con fecha ANTERIOR a esa muerte no es
@@ -1616,8 +1621,8 @@ aquí porque explica POR QUÉ las cosas son como son.
    🔑 Cuántas filas tiene hoy, y si la cabecera sigue siendo la del código, **no se lee de aquí**: lo dice
    `estado-maduracion.mjs`, que mira también `Tanques` y `Sala`.
 - ✅ **Un parte de Tanques REENVIADO corrige su fila, no añade otra** (la llave de P12, `[0,1,2,13,14]`: Fecha, Sala,
-   Tanque, Hora y Parte). **Validado** (re-medido el 2026-10-26 sobre la hoja entera): ninguna llave repetida; las 9
-   sin «Parte» del 29-09 que se contaron el 15-10 ya no están. (Estuvo en «Pendiente» con su ✅ hasta el 2026-10-29.)
+   Tanque, Hora y Parte). **Validado** (re-medido el 2026-10-26 sobre la hoja entera): ninguna llave repetida; las filas
+   sin «Parte» que se contaron el 15-10 ya no están. (Estuvo en «Pendiente» con su ✅ hasta el 2026-10-29.)
 
 **Salvaguardas que siguen en pie**
 
