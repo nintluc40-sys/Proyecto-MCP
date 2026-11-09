@@ -1228,6 +1228,11 @@ sin avisar**:
   o queda en la cola, se quita la copia de HOY de esa ficha y se avisa; si no, se queda como estaba. La ficha sigue en
   pantalla. 🏠 Salas, Biomol, Mareas,
   Microbiología, Calidad y Patología, en cambio, **no envían** si no pueden guardar antes (sin decidir si deberían).
+- **Mientras ☁️ envía, no se teclea** (`_madGridBloqueada`, `engine.js`): las grillas de 🏠 Salas y 🛢 Tanques (04-11, usuario:
+  «Bloquear la grilla») y, desde el 2026-11-09, los **siete formularios** de Maduración —Ingreso, Movimientos, Desoves, Fin
+  de Ciclo, Tratamientos, Inf. Supervisor y Alimentación— (usuario: «Bloquear mientras envía»). Se vacían al TERMINAR, tras
+  leer la hoja (hasta 15 s) y vaciar la cola (hasta 45 s), y lo tecleado en esa espera se borraba sin viajar. Al terminar
+  —llegue, quede en la cola o la rechacen— el panel se suelta.
 - **Biomol, As Técnico (supervisión) y Traslado CONSERVAN lo no enviado.** A las 48 h sólo se retira lo ya
   enviado, contadas desde su envío (como ya hacían Score, Auditoría y Microbiología); lo pendiente se queda hasta
   enviarlo o borrarlo. Las fotos de un viaje caducan con su viaje.

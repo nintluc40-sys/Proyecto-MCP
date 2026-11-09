@@ -10136,7 +10136,7 @@ function madIngGuardarLocal(){
   madIngReiniciar();
   _madLocGuardado("ingreso");
 }
-async function madIngGuardar(){
+async function madIngGuardar(){ return _madGridBloqueada("fp-ingreso", async function(){   // pendiente 25: ver _madGridBloqueada
   const _loc=madLocLeer("ingreso").length;
   const _p=_madIngPreparar(_loc>0); if(!_p) return;
   const model=_p.model, payload=_p.payload;
@@ -10179,6 +10179,7 @@ async function madIngGuardar(){
     madIngReiniciar();
   }
   _syncNotOkUI(_t.outcome, "No se pudo registrar el ingreso", null, _t.gasMessage);
+  });
 }
 /* ⚠⚠ EL RENDER NO SE RE-PINTA SI YA ESTÁ MONTADO. `selTab` llama a este render cada vez que
    se vuelve a la pestaña, y volver a escribir innerHTML BORRA lo tecleado: varias
@@ -11438,7 +11439,7 @@ function madMovGuardarLocal(){
   madMovReiniciar();
   _madLocGuardado("movimientos");
 }
-async function madMovGuardar(){
+async function madMovGuardar(){ return _madGridBloqueada("fp-movimientos", async function(){   // pendiente 25: ver _madGridBloqueada
   const _loc=madLocLeer("movimientos").length;
   let _p=_madMovPreparar(_loc>0); if(!_p) return;
   if(!_p.payload.rows.length && !_loc){ toast("No hay ningún tramo completo que guardar.","warn",4000); return; }
@@ -11473,6 +11474,7 @@ async function madMovGuardar(){
     madMovReiniciar();
   }
   _syncNotOkUI(_t.outcome, "No se pudo registrar el movimiento", null, _t.gasMessage);
+  });
 }
 function madMovReiniciar(){
   const fp=document.getElementById("fp-movimientos");
@@ -12311,7 +12313,7 @@ async function _madDesConfirmarRepetidos(filas){
 function _madDesNoEnviado(){
   toast("Desoves NO enviado: lo tecleado y lo guardado siguen en este dispositivo. Si era el mismo desove con otra fecha, corrige la fecha antes de enviar.","warn",9000);
 }
-async function madDesGuardar(){
+async function madDesGuardar(){ return _madGridBloqueada("fp-desoves", async function(){   // pendiente 25: ver _madGridBloqueada
   const _loc=madLocLeer("desoves").length;
   const _p=_madDesPreparar(_loc>0); if(!_p) return;
   const model=_p.model, payload=_p.payload;
@@ -12355,6 +12357,7 @@ async function madDesGuardar(){
     madDesReiniciar();
   }
   _syncNotOkUI(_t.outcome, "No se pudo registrar el desove", null, _t.gasMessage);
+  });
 }
 function madDesReiniciar(){
   const fp=document.getElementById("fp-desoves");
@@ -13085,7 +13088,7 @@ function madFinGuardarLocal(){
   madFinReiniciar();
   _madLocGuardado("fin");
 }
-async function madFinGuardar(){
+async function madFinGuardar(){ return _madGridBloqueada("fp-fin", async function(){   // pendiente 25: ver _madGridBloqueada
   const _loc=madLocLeer("fin").length;
   const _p=_madFinPreparar(_loc>0); if(!_p) return;
   const model=_p.model, payload=_p.payload;
@@ -13123,6 +13126,7 @@ async function madFinGuardar(){
     madFinReiniciar();
   }
   _syncNotOkUI(_t.outcome, "No se pudo registrar el cierre", null, _t.gasMessage);
+  });
 }
 function madFinReiniciar(){
   const fp=document.getElementById("fp-fin");
@@ -13407,7 +13411,7 @@ function madTratGuardarLocal(){
   madTratReiniciar();
   _madLocGuardado("tratamientos");
 }
-async function madTratGuardar(){
+async function madTratGuardar(){ return _madGridBloqueada("fp-tratamientos", async function(){   // pendiente 25: ver _madGridBloqueada
   const _loc=madLocLeer("tratamientos").length;
   const _p=_madTratPreparar(_loc>0); if(!_p) return;
   const model=_p.model, payload=_p.payload;
@@ -13444,6 +13448,7 @@ async function madTratGuardar(){
     madTratReiniciar();
   }
   _syncNotOkUI(_t.outcome, "No se pudieron registrar los tratamientos", null, _t.gasMessage);
+  });
 }
 function madTratReiniciar(){
   const fp=document.getElementById("fp-tratamientos");
@@ -13846,7 +13851,7 @@ function madMortGuardarLocal(){
   madMortReiniciar();
   _madLocGuardado("mortdes");
 }
-async function madMortGuardar(){
+async function madMortGuardar(){ return _madGridBloqueada("fp-mortdes", async function(){   // pendiente 25: ver _madGridBloqueada
   const _loc=madLocLeer("mortdes").length;
   const _p=_madMortPreparar(_loc>0); if(!_p) return;
   const model=_p.model, payload=_p.payload;
@@ -13883,6 +13888,7 @@ async function madMortGuardar(){
     madMortReiniciar();
   }
   _syncNotOkUI(_t.outcome, "No se pudo registrar el Inf. Supervisor", null, _t.gasMessage);
+  });
 }
 function madMortReiniciar(){
   const fp=document.getElementById("fp-mortdes");
@@ -14525,7 +14531,7 @@ function madAlimGuardarLocal(){
   // Como al enviar, el cálculo sigue en pantalla; guardarlo otra vez no duplica (misma huella).
   _madLocGuardado("alimentacion");
 }
-async function madAlimGuardar(){
+async function madAlimGuardar(){ return _madGridBloqueada("fp-alimentacion", async function(){   // pendiente 25: ver _madGridBloqueada
   const _loc=madLocLeer("alimentacion").length;
   const _p=_madAlimPreparar(_loc>0); if(!_p) return;
   const model=_p.model, payload=_p.payload;
@@ -14556,6 +14562,7 @@ async function madAlimGuardar(){
   }
   if(ok){ toast("✅ Alimentación registrada · "+payload.rows.length+" fila(s)","ok",5000); return; }
   _syncNotOkUI(_t.outcome, "No se pudo registrar la alimentación", null, _t.gasMessage);
+  });
 }
 // PDF de una sala (con su ración por tanque y toma) o general (todas las salas y el resumen).
 function madAlimPdf(alcance){
@@ -16757,7 +16764,11 @@ function saveMadSalasGrid(opts){
 
 /* 2026-11-04 (usuario: «Bloquear la grilla») · Al terminar, ☁️ repinta la grilla desde lo guardado, y lo tecleado mientras esperaba se borraba
    sin aviso. Dejarlo en pantalla no es salida: en Tanques, ☁️ ya cerró el parte, y guardar de nuevo abriría otro con las mismas cifras, que el
-   libro restaría dos veces. Así que mientras envía no se puede teclear. */
+   libro restaría dos veces. Así que mientras envía no se puede teclear.
+   🆕 2026-11-09 (pendiente 25; usuario: «Bloquear mientras envía») · Y lo mismo los SIETE FORMULARIOS (Ingreso, Movimientos, Desoves, Fin de
+   Ciclo, Tratamientos, Inf. Supervisor y Alimentación): ☁️ los vacía al TERMINAR —tras leer la hoja (hasta 15 s) y vaciar la cola (hasta
+   45 s)—, y lo tecleado en esa espera se borraba sin haber viajado; la copia de ✏️ Editar, que se toma de la pantalla, lo daba por enviado.
+   Cada madXGuardar envuelve su cuerpo con esto; los avisos que preguntan por el camino son `confirm`, fuera del panel. */
 async function _madGridBloqueada(panel, enviar){
   const fp = document.getElementById(panel);
   if(fp){ fp.inert = true; fp.style.opacity = "0.6"; fp.style.pointerEvents = "none"; }
