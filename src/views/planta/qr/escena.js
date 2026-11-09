@@ -650,7 +650,7 @@ let qrDark = [], mesh = null, pieces = [], qrN = 0, center = V(0, 0, 0), SCALE =
 let speciesId = ESPECIE_POR_DEFECTO, formId = 'adulto', colorFade = 1;
 let phase = 0, target = 0, T = 0, last = performance.now();
 let userYaw = 0, userPitch = 0, currentUrl = '';
-const logos = {}; // por forma: { data, name, src, brand, uploaded }
+const logos = {}; // por forma: { data, name, src, brand }
 const curLogo = () => (FORM(formId).logo && logos[formId]) || null;
 const MAXD = .44, DUR = .56;
 

@@ -135,7 +135,11 @@ const bioIsMeas = (raw) => bioIsPos(raw) || ['negativo', 'negative', 'neg', 'n',
 /** C5 (2026-11-08, usuario: «Decir que está en curso») · un mes que AÚN NO HA TERMINADO: su mes de calendario llega a
  *  hoy, o todavía no empieza. Sus corridas no han cosechado, así que el resumen no juzga la calidad, dice que la
  *  supervivencia es parcial y pone «todavía» donde aún no hay nada. Antes, el mes por defecto (el más reciente) salía
- *  «🟢 Buena» o «🟡 Regular» junto a «0 de N» módulos revisados y «Sin análisis». `hoy` en `aaaa-mm-dd`, local. */
+ *  «🟢 Buena» o «🟡 Regular» junto a «0 de N» módulos revisados y «Sin análisis». `hoy` en `aaaa-mm-dd`, local.
+ *  Basta el fin del mes de CALENDARIO (revisión del 2026-11-08, usuario: «Seguir con el calendario»): el mes de producción
+ *  empieza unas dos semanas antes, y medido ese día sobre el libro, ninguna fila de las corridas de un mes pasado —tampoco
+ *  su despacho— caía después de ese día. Esperar a que estén despachadas del todo (`modCorDispatched`) dejaría «en curso»
+ *  para siempre un mes con un tanque sin despacho anotado. Es la ÚNICA regla: Microalgas recibe el `enCurso` del resumen. */
 function mesEnCurso(mIdx, hoy = hoyIso()) {
   const r = calendarRangeOfMonth(mIdx);
   return !!r && hoy <= r.hasta;
@@ -263,13 +267,14 @@ function algasSummaryCompute(mIdx) {
   };
 }
 
-/** Bloque “🌿 Microalgas” (2 tarjetas clicables, estilo algas) para Visitante. */
-function algasSummaryBlock(mIdx) {
+/** Bloque “🌿 Microalgas” (2 tarjetas clicables, estilo algas) para Visitante. `enCurso`: el del resumen del mes
+ *  (`monthSummary`), para que los dos bloques no puedan decir cosas distintas del mismo mes. */
+function algasSummaryBlock(mIdx, enCurso) {
   const s = algasSummary(mIdx);
   const titulo = `<div class="vt-card-title" style="color:#015B76">🌿 Microalgas · ${esc(monthLabelAt(mIdx))} <span class="muted" style="font-weight:600;font-size:12px">· laboratorio de algas</span></div>`;
   // Sin datos de algas en un mes CERRADO, no se muestra la sección. C5 (2026-11-08, usuario) · en el mes en curso se
   // dice, en vez de desaparecer sin aviso: aún pueden llegar.
-  if (!s.n) return mesEnCurso(mIdx) ? `<div class="card vt-card">${titulo}<p style="color:var(--c-text-muted);margin:0">Sin registros de algas este mes todavía.</p></div>` : '';
+  if (!s.n) return enCurso ? `<div class="card vt-card">${titulo}<p style="color:var(--c-text-muted);margin:0">Sin registros de algas este mes todavía.</p></div>` : '';
   const sanTier = (s.descPct >= 20 || s.protoPct >= 25) ? 'r' : (s.descPct >= 10 || s.protoPct >= 10) ? 'a' : 'v';
   return `<div class="card vt-card">
     ${titulo}
@@ -1000,7 +1005,7 @@ export function visitanteView(root) {
 
       ${summaryBlock(mIdx, d.monthSup, label)}
       ${labSummaryBlock(mIdx)}
-      ${algasSummaryBlock(mIdx)}
+      ${algasSummaryBlock(mIdx, monthSummary(mIdx, d.monthSup).enCurso)}
       <div data-vt-mad>${madBlockSeguro(mIdx)}</div>`;
 
     // Gráfico de barras por corrida.
