@@ -767,7 +767,8 @@ public/
   manifest.webmanifest     PWA instalable (standalone) + icons/ 192 · 512 · maskable
 GAS/
   Code.gs                  El GAS del Registro (las fichas escriben por él; su sello, GAS_VERSION)
-  Clima.gs                 «MCP · clima», un Apps Script APARTE: escribe «Clima» y «Clima horas»
+  Clima.gs                 «MCP · clima», un Apps Script APARTE: escribe «Clima» y «Clima horas» (su sello, CLIMA_VERSION)
+  ConsultaLigera.gs        «MCP · consulta ligera», otro APARTE: la fecha de modificación del libro (ver «Consulta ligera»)
 ```
 
 ### La PWA no es un adorno: es lo que permite capturar en campo
@@ -848,28 +849,23 @@ Dos consecuencias que conviene tener presentes al desplegar:
    y ~8,9 → ~1,2 s en celular ×4.
    **Consulta ligera antes de cada refresco** (2026-10-07): el ciclo de 5 min pregunta primero la fecha de modificación
    del libro en Drive (`core/marcaLibro.js`, `CONSULTA_CAMBIOS` en `config.js`) y, si es la misma que la de la última
-   descarga procesada, NO baja el XLSX (~14 MB). La da un Apps Script APARTE, «MCP · consulta ligera» (NO es el GAS del
+   descarga procesada, no vuelve a descargar el libro. La da un Apps Script APARTE, «MCP · consulta ligera» (NO es el GAS del
    Registro: no toca su sello ni `index (8)`), implementado como aplicación web («Ejecutar como: yo», «Cualquier
    usuario») con la cuenta dueña del libro. La marca se lee ANTES de descargar y sólo crece: un retraso de Drive cuesta
    como mucho una descarga de más, nunca un cambio perdido. Sin respuesta en 25 s (Apps Script arranca en frío a veces:
    medido hasta 19 s) o con una respuesta rara, se descarga como siempre; ⟳ y la primera carga no
    preguntan para saltar la descarga, pero ⟳ (y la píldora) leen la marca antes —esperando como mucho 4 s— y la anotan si
-   lo bajado se aplicó, así el ciclo siguiente no repite los ~14 MB sin cambios (2026-10-07). Si hubiera que recrear el
-   script, éste es su código completo:
-
-   ```js
-   const SS_ID = '1Rrpff6bD1pOQFsi2Lsagan3ttjncxJzXoXLPgtHM0Gs';
-   function doGet() {
-     let out;
-     try { out = { ok: true, mod: DriveApp.getFileById(SS_ID).getLastUpdated().getTime() }; }
-     catch (e) { out = { ok: false, error: String((e && e.message) || e) }; }
-     return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
-   }
-   ```
+   lo bajado se aplicó, así el ciclo siguiente no repite la descarga sin cambios (2026-10-07). Si hubiera que recrear el
+   script, su código completo está en **`GAS/ConsultaLigera.gs`** (2026-11-08, usuario: «Sí, como archivo en GAS/»;
+   antes iba copiado aquí): pegarlo tal cual e implementarlo como aplicación web con esos permisos. Contesta
+   `{ ok: true, mod: <fecha de modificación del libro, en ms> }` o `{ ok: false, error }`.
 
    **🌦 Clima: otro Apps Script APARTE, «MCP · clima»** (2026-10-27; código en `GAS/Clima.gs`, prueba
-   `core/clima-gas.test.js`). Tampoco es el GAS del Registro: no toca su sello, su `ALLOWED` ni `index (8)`, y se
-   despliega por su cuenta. Escribe en el libro dos hojas que el MCP lee como lee «Marea»: **«Clima horas»** (una fila
+   `core/clima-gas.test.js`). Tampoco es el GAS del Registro: no toca su `GAS_VERSION`, su `ALLOWED` ni `index (8)`, y se
+   despliega por su cuenta. Tiene **su propio sello**, `CLIMA_VERSION` (2026-11-08, usuario: «En el código y en su
+   registro»): la huella del resto del archivo, que exige `core/clima-version.test.js`; cada pasada lo escribe en el
+   registro de ejecuciones y `probar` lo dice primero, así que comparándolo con el del repo se sabe si lo instalado es
+   lo de aquí. Las hojas no lo llevan. Escribe en el libro dos hojas que el MCP lee como lee «Marea»: **«Clima horas»** (una fila
    por hora) y **«Clima»** (una por día: «Registro», el resumen de sus horas, y «Pronóstico», los 3 días siguientes).
    Cada hora toma la MEJOR fuente que la tenga (decisión del usuario): **1.** lo **observado** en el aeropuerto de Salinas
    (METAR **SESA**, a ~3 km; NOAA/AWC, dominio público), de 06 a 18 h y sin la lluvia en mm; AWC guarda sólo 15 días, y
