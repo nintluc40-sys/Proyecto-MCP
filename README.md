@@ -1222,7 +1222,11 @@ sin avisar**:
 - **Y si el equipo no puede GUARDAR la ficha** (pauta del 04-11, A6): ☁️ de 🛢 Tanques y las fichas de Larvicultura
   envían lo que hay en pantalla (usuario: «enviar lo de pantalla»). En Tanques, si llega a la hoja o queda en la cola,
   la grilla se limpia y avisa de que el equipo no guardó copia, y lo que guardaba de esos registros se retira (si no, un envío
-  posterior escribiría lo viejo encima); si no llega, lo tecleado sigue en pantalla. 🏠 Salas, Biomol, Mareas,
+  posterior escribiría lo viejo encima); si no llega, lo tecleado sigue en pantalla. En Larvicultura (las 7 fichas del
+  módulo, Desinfección incluida), igual desde el 2026-11-09 (usuario: «Como en Tanques»; hasta ese día ☁️ armaba el envío
+  con la copia GUARDADA, vieja o ninguna, y le ponía a ella la marca de enviada): viaja lo de pantalla, sin marca; si llega
+  o queda en la cola, se quita la copia de HOY de esa ficha y se avisa; si no, se queda como estaba. La ficha sigue en
+  pantalla. 🏠 Salas, Biomol, Mareas,
   Microbiología, Calidad y Patología, en cambio, **no envían** si no pueden guardar antes (sin decidir si deberían).
 - **Biomol, As Técnico (supervisión) y Traslado CONSERVAN lo no enviado.** A las 48 h sólo se retira lo ya
   enviado, contadas desde su envío (como ya hacían Score, Auditoría y Microbiología); lo pendiente se queda hasta

@@ -3639,21 +3639,30 @@ async function localSync(fid){
   // cuando MÁS se necesita. Solo se limpia _formDirty si el dato quedó realmente
   // persistido en local, para que el aviso de cierre siga protegiendo datos que
   // únicamente viven en el Sheet.
+  /* 2026-11-09 (pauta A6, «Enviar lo de pantalla»; usuario: «Como en Tanques») · Sin sitio, lo que viaja es LO DE PANTALLA.
+     Hasta hoy syncOneFicha armaba el envío con lo GUARDADO (loadE): la copia vieja, o ninguna, y la marca de enviada se la
+     llevaba esa copia; lo tecleado no llegaba a la hoja y se perdía al recargar, sin aviso. */
+  let _sinCopia = null;
   if(saveE(curMod, fid, data, false)){
     _formDirty = false;          // R3: lo tecleado quedó persistido
   } else {
-    toast("⚠️ No se pudo guardar localmente; se intentará sincronizar a Google Sheets de todos modos.","warn",5000);
+    _sinCopia = data;
+    toast("⚠️ No se pudo guardar localmente; se enviará a Google Sheets lo que hay en pantalla.","warn",5000);
   }
   _persistStdLote(fid, data);    // Lote congelado 25 d (Población/PLG)
   _persistStdCorr(data);         // Corrida congelada 25 d (a nivel módulo)
-  await syncOneFicha(fid);
+  await syncOneFicha(fid, _sinCopia);
 }
 
 // ── Sync individual por ficha ─────────────────────────────────────────
 // El botón ☁️ de cada ficha ahora envía SOLO esa ficha al GAS. Las demás
 // fichas (pendientes o no) NO se tocan. El botón global "Sincronizar"
 // del topbar sigue llamando a syncAll() para enviar TODO.
-async function syncOneFicha(fid){
+/* `sinCopia` (2026-11-09, pauta A6; usuario: «Como en Tanques») · los datos de PANTALLA de una ficha que el equipo no pudo
+   guardar (localSync). Viajan ellos y sin marca, porque lo guardado no es lo que viaja. Si llegan a la hoja o quedan en la
+   cola, se quita la copia de HOY de esa ficha —vieja—, para que un 🔄 posterior no escriba lo viejo encima, y se avisa,
+   como Tanques (_syncMadTanquesGrid). Si no, la copia se queda como estaba. */
+async function syncOneFicha(fid, sinCopia){
   if(!isValidMod(curMod)) return;
   if(isLabMod(curMod) || isMadMod(curMod) || isBioMod(curMod) || isAstMod(curMod)){
     await syncAll(); return;
@@ -3672,29 +3681,32 @@ async function syncOneFicha(fid){
   // H1 · recoge outcome/gasMessage de la rama que se ejecute, y lleva la marca de
   // reconciliación de ESTA ficha: si el envío acaba en la cola, al entregarse se marcará
   // sola — siempre que siga siendo la que se mandó (ver _marcaFichas).
-  const opts = { mark: _marcaFichas(curMod, [fid]) };
+  const opts = { mark: sinCopia ? null : _marcaFichas(curMod, [fid]) };
+  const _mod = curMod;   // el módulo de ESTE envío: al salir de la ficha, curMod cambia
 
   if(fid === "params"){
-    const cp = buildControlPayload(curMod);
+    const cp = buildControlPayload(curMod, sinCopia || undefined);
     if(cp.rows.length > 0){
       sent = await postPayload(cp, url, opts);
     } else { hadRows = false; }
     if(sent) _marcarEnviado(opts);
   } else if(fid === "desinfeccion"){
     // Desinfección → hoja propia "Registro_Desinfección" (formato tidy).
-    const dxp = buildDesinfeccionPayload(curMod), _mDx = curMod;   // el módulo de ESTE envío: al salir, curMod pasa a null
+    const dxp = buildDesinfeccionPayload(curMod, sinCopia || undefined), _mDx = curMod;   // el módulo de ESTE envío: al salir, curMod pasa a null
     if(dxp.rows.length > 0){
       sent = await postPayload(dxp, url, opts);
       if(sent || opts.outcome === "queued") _dxAnotarEnviado(_mDx, dxp);   // A10 · sólo lo que llegó o quedó en la cola
     } else { hadRows = false; }
     if(sent) _marcarEnviado(opts);
   } else if(["calidad","plg","poblacion","calagua","despacho"].includes(fid)){
-    const dp = buildDatosPayload(curMod, [fid]);
+    const dp = buildDatosPayload(curMod, [fid], sinCopia ? { dataByFicha: { [fid]: sinCopia } } : undefined);
     if(dp.rows.length > 0){
       sent = await postPayload(dp, url, opts);
     } else { hadRows = false; }
     if(sent) _marcarEnviado(opts);
   }
+  const _sinCopiaASalvo = !!sinCopia && hadRows && (sent || opts.outcome === "queued");
+  if(_sinCopiaASalvo){ localStorage.removeItem(skey(_mod, fid)); _invalidateLoadE(skey(_mod, fid)); }
 
   if(!hadRows){
     setSyncUI("idle","Sin datos por tanque");
@@ -3706,10 +3718,12 @@ async function syncOneFicha(fid){
 
   if(sent){
     setSyncUI("ok",(FICHA_LABELS[fid]||fid)+" sincronizada ✔");
-    toast("✅ "+(FICHA_LABELS[fid]||fid)+" enviada a Google Sheets","ok");
+    if(sinCopia) toast("✅ "+(FICHA_LABELS[fid]||fid)+" enviada a Google Sheets. Este equipo no tiene espacio y no guardó copia: si hay que corregir, se hace en la hoja.","warn",9000);
+    else toast("✅ "+(FICHA_LABELS[fid]||fid)+" enviada a Google Sheets","ok");
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
     _syncNotOkUI(opts.outcome, "Error al sincronizar "+(FICHA_LABELS[fid]||fid), null, opts.gasMessage);
+    if(_sinCopiaASalvo) toast("⚠️ Este equipo no tiene espacio: "+(FICHA_LABELS[fid]||fid)+" sólo queda en la cola, no guardada en el equipo.","warn",9000);
   }
   updateDots(); updateSyncUI();
   if(curTab === "historial") try{ renderHistorial(); }catch(_){}

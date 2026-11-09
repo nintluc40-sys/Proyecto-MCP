@@ -228,7 +228,9 @@ describe('D · las cuatro rutas llevan su marca', () => {
   });
 
   it('syncOneFicha sella la ficha que le pidieron, no todas', () => {
-    const i = engine.indexOf('async function syncOneFicha(fid){');
+    // 2026-11-09 · la firma ganó `sinCopia` (pauta A6: sin espacio viaja lo de pantalla, y ésa va sin marca).
+    const i = engine.indexOf('async function syncOneFicha(fid, sinCopia){');
+    expect(i).toBeGreaterThan(-1);
     const cuerpo = engine.slice(i, engine.indexOf('\n}\n', i));
     expect(cuerpo).toContain('_marcaFichas(curMod, [fid])');
   });
