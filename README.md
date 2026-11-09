@@ -26,15 +26,20 @@ npm run lint       # ESLint
 > es dependencia de npm. El gemelo `index (8)` no tiene servidor del que pedirlo: lleva SheetJS
 > **incrustado**, byte a byte el de `public/vendor/` (lo vigila `verificar-xlsx-index8`).
 
-### `npm audit` avisa de 12 (todos de desarrollo) · MEDIDO el 2026-09-21, re-medido el 2026-10-15, el 2026-10-23, el 2026-10-26 y el 2026-11-02
+### `npm audit` avisa de 7 (todos de desarrollo) · MEDIDO el 2026-09-21, re-medido el 2026-10-15, el 2026-10-23, el 2026-10-26, el 2026-11-02 y el 2026-11-08
 
 **Exposición en producción: cero** (`npm audit --omit=dev` da 0): ninguno de los paquetes señalados entra en el bundle;
 `dependencies` lleva `chart.js`, `leaflet`, `three` y `qrcode-generator`, y ninguno está entre los avisos. Antes de
 volver a abrir esto, esto es lo que ya se midió:
 
-- 🆕 **2026-11-02 · de 7 a 12** (8 moderate, 2 high, 2 critical): a los de abajo se suman `eslint`, `@eslint/config-array`,
-  `@eslint/eslintrc`, `@eslint-community/eslint-utils` y `minimatch`, que npm sólo cierra con un cambio de versión mayor de
-  eslint. Es la herramienta de lint, no llega al bundle: la decisión D-6 no los nombraba, así que subirla o no sigue por decidir.
+- 🆕 **2026-11-08 · de 12 a 7** (3 moderate, 2 high, 2 critical; 0 en producción), con el lockfile SIN cambios: los cinco de
+  eslint ya no salen (eslint 9.39.4) y quedan los seis de vite/vitest y `happy-dom`. `happy-dom` suma además dos avisos
+  (GHSA-c8p4-j97h-3vg8 y GHSA-5fpq-26gf-qwcr) que npm da por arreglados en una 20 posterior, sin salto mayor; el de abajo
+  (GHSA-834v-8h66-3h79) sigue pidiendo la 21. No se sube nada (decisión del usuario, C8 de la pauta del 04-11): se anota
+  la medida.
+- **2026-11-02 · de 7 a 12** (8 moderate, 2 high, 2 critical): a los de abajo se sumaban `eslint`, `@eslint/config-array`,
+  `@eslint/eslintrc`, `@eslint-community/eslint-utils` y `minimatch`, que npm sólo cerraba con un cambio de versión mayor de
+  eslint. Era la herramienta de lint, no llegaba al bundle. (El 2026-11-08 ya no salen, sin haber subido nada.)
 - 🆕 **2026-10-23 · de 11 avisos a 6** con `npm audit fix` SIN `--force` (decisión del usuario): cinco subidas menores
   del lockfile —`postcss` 8.5.15 → 8.5.31, `nanoid` 3.3.12 → 3.3.20, `source-map-js` 1.2.1 → 1.2.2, `js-yaml` 4.3.0 →
   4.3.2 y `brace-expansion` 1.1.16 → 1.1.21—, sin tocar `happy-dom`, vite ni vitest. La build salió **idéntica byte a
@@ -65,7 +70,7 @@ volver a abrir esto, esto es lo que ya se midió:
   Operativo del módulo → Visualización del Tanque → Análisis Biométrico LARVIA.
   Incluye navegación táctil (botón "Volver" + migas), tabla "Producción Omarsa"
   (con columna **Dens. siembra** = Σ siembra ÷ (volumen de los tanques sembrados × 1000), con el tonelaje registrado el
-  día de la siembra y 28 t de respaldo),
+  día de la siembra; si ese día falta, el primero que tenga el tanque; y si no tiene ninguno, 28 t de respaldo),
   estado de despacho ("Despachado"/"Despachando" excluyendo tanques agrupados/
   descartados), las sub-vistas Despacho, OM vs Tex, Traslado y Auditoría, y modales: Comparativa de tanques, Desinfección,
   Calidad de Agua, Historial As. Téc., Mareas, Resumen del día, Biomol, **Microbiología** (Placa de agar + Tabla + Heatmap + Tendencias por corrida+módulo; el
@@ -110,7 +115,9 @@ volver a abrir esto, esto es lo que ya se midió:
   (Líneas/Normalizado/Mini-curvas/Heatmap), parámetros fisicoquímicos, control sanitario,
   Índices del mes, biomasa, descartes por clase (`descartes.js`), cobertura, Resumen del día y export Excel por rango de fechas.
 - **Visitante** (🚪): resumen mensual en lenguaje llano (supervivencia, sanidad,
-  microalgas) mediante tarjetas que abren ventanas de detalle. Con datos de Maduración, el bloque
+  microalgas) mediante tarjetas que abren ventanas de detalle. Un mes que aún no ha terminado (el de por defecto, el
+  más reciente) no se juzga: dice «⏳ Mes en curso», la supervivencia sale como parcial y lo que aún no hay dice
+  «todavía» (C5, 2026-11-08, usuario: «Decir que está en curso»). Con datos de Maduración, el bloque
   **🥚 Maduración**: los nauplios (N5) producidos por lote y por sala, con las MISMAS funciones del
   tablero —un desove cuenta en las salas donde estaba su lote la víspera o ese día, así que un lote que
   se mudó cuenta en las dos y el detalle avisa de que las salas no suman el total—; el mes es el de
@@ -155,7 +162,8 @@ volver a abrir esto, esto es lo que ya se midió:
   tendencia de la suma diaria en % por día, sin tiempo de duplicación (H-007); el WQI dice sobre cuántos parámetros con
   rango se calcula (H-008); el PDF de la Placa firma con una línea por cada analista del día (H-006); las colonias van
   en escala fija de 10⁰ a 10⁷ UFC, también en la Placa del Supervisor (H-012); ejes y leyendas de todos los gráficos
-  toman el color del tema (H-013); las pestañas llevan `aria-selected`, foco itinerante y ← → Inicio Fin (H-014); y las
+  toman el color del tema (H-013); las barras de sub-vistas y de Placa/Matriz/Tendencias llevan `aria-selected`, foco itinerante y ← → Inicio Fin
+  (H-014; las dos de Calidad de Agua —modo de gráfico y parámetros—, sólo `aria-selected`); y las
   fechas del rango van por `parseAnyDate`, con las cotas del % de alerta en `config.js` (H-015). El PDF de la Placa
   lleva la UNIDAD en el título de cada tabla —agua UFC/mL, animal UFC/g, hisopados y placa ambiental UFC/placa;
   Muestras externas y el Despacho de Maduración según su tipo, y sin él «UFC»— (`unidadUFC`, en `data.js`; H-011,
@@ -499,8 +507,8 @@ del módulo se quede sin contraparte en el monolito.
 | 📈 **Broodstock** | `Maduración Broodstock` | (fecha de corte, piscina): la carga SEMANAL del Excel del área |
 | 🦐 **Reproductivo** | `Maduración MATRIZ` · `Maduración Bitácora` · `Maduración Transferencias` | en la MATRIZ, un individuo con su cuaterna (Trovan · Piscina · Código genético · Lote); en la Bitácora y Transferencias, un evento por fila |
 | 📷 **Fotos y Videos** | *(en el dispositivo)* | lo que se adjunta en el equipo: se borra solo a las 24 h |
-| 🏠 **Salas** · 🛢️ **Tanques** | `Maduración Sala` · `Maduración Tanques` | la grilla diaria; en Tanques, cada ronda de mortalidad es un **parte** con su hora |
-| 📜 **Historial** | *(lo enviado desde ESTE equipo)* | cada envío de las fichas de formulario y de Salas/Tanques: revisarlo, 📄 PDF, 🗑 y ✏️ corregirlo (ver «Las fichas de Maduración»); no escribe por sí mismo |
+| 🏠 **Salas** · 🛢️ **Tanques** | `Maduración Sala` · `Maduración Zonas` · `Maduración Tanques` | la grilla diaria; en Salas, también las zonas de desove y los reservorios: (fecha, zona, tanque), un reservorio sin tanque (2026-10-27); en Tanques, cada ronda de mortalidad es un **parte** con su hora |
+| 📜 **Historial** | *(lo enviado desde ESTE equipo)* | cada envío de las fichas de formulario y de Salas/Tanques (con sus zonas, que van con el día de Salas): revisarlo, 📄 PDF, 🗑 y ✏️ corregirlo (ver «Las fichas de Maduración»); no escribe por sí mismo |
 
 **Todas guardan un BORRADOR POR FECHA en el dispositivo (2026-09-15).** Salas y Tanques ya lo
 hacían por ser grillas —su lista local lleva la fecha dentro de cada fila—; desde esa fecha las
@@ -689,7 +697,8 @@ lo dice `estado-maduracion.mjs`. 🔑 La cifra de esta línea es la del código:
 
 🛡 **Y como se escriben por posición, el GAS comprueba el esquema antes de escribir.** En las
 hojas del registro operativo y en las dos de 🔧 Mantenimiento que escribe la app (`MAD_ESQUEMA_VIGILADO`; éstas, desde el
-2026-10-29, porque pueden nacer de pegar a mano los `.tsv` de la importación), si una cabecera del envío no coincide con la de la hoja en
+2026-10-29, porque pueden nacer de pegar a mano los `.tsv` de la importación; y Zonas y Broodstock desde el 2026-11-08,
+GAS `a1873bf5f9c9`, que hasta entonces sólo tenían su firma de dos columnas), si una cabecera del envío no coincide con la de la hoja en
 su misma posición, `doPost` responde «Esquema desactualizado» y **no toca nada**. Existe porque
 estas hojas cambiaron de columnas y siguen vivos clientes con el esquema anterior: sin la
 guarda, un guardado de Tanques desde uno de ellos corría una columna todo lo que va detrás de
@@ -880,8 +889,9 @@ Dos consecuencias que conviene tener presentes al desplegar:
    sólo NASA (la diaria a ~8 días). Cada fila dice de dónde vino cada grupo («Fuente», «Fuente lluvia», «Fuente
    nubosidad»), y una cifra del día sólo existe si las 24 horas tienen esa variable (con las 13 horas diurnas del
    aeropuerto, la «media» salía 2–3 °C alta). Activadores: `cadaTresHoras` (METAR + MET) y `nocturno` hacia las 02:30
-   (METAR de 48 h, MET, NASA desde el primer día con hueco y el archivo de la IEM de hace 3 a 5 días, éste sólo para las horas
-   que no tienen observación de SESA); una pasada sin cambios no escribe (esta consulta ligera vería un cambio), y una
+   (METAR de 48 h, sin MET; NASA —las horas desde el primer día con hueco, la radiación diaria desde el primero sin ella,
+   y nunca más de 120 días atrás— y el archivo de la IEM de hace 3 a 5 días, éste sólo para las horas que no tienen
+   observación de SESA); una pasada sin cambios no escribe (esta consulta ligera vería un cambio), y una
    fuente caída no impide guardar las otras, pero la ejecución termina en error para que Apps Script avise. Casi cada
    pasada de 3 h trae algo nuevo (MET rehace su pronóstico), así que esta consulta ligera verá el libro cambiado y cada
    equipo abierto hará una descarga más cada 3 h (aceptado). En el MCP (`core/sheets.js`), las dos hojas tienen su origen
@@ -892,7 +902,8 @@ Dos consecuencias que conviene tener presentes al desplegar:
    «(GMT-05:00) Guayaquil» → ejecutar `probar` (pide las fuentes sin escribir) y luego `instalar` (crea las hojas,
    carga el historial y deja los dos activadores; repetirla no duplica nada). Lo instalado ANTES del 2026-10-28: pegar el
    código nuevo y ejecutar UNA vez `rellenarObservado` (trae lo observado del archivo de la IEM; repetirla no cambia
-   nada). Una hoja que exista VACÍA —un tiempo de espera de Google a mitad de crearla la dejó así el 27-10— recibe su
+   nada). Cualquier cambio posterior: basta con pegar el código, sin volver a instalar (los activadores llaman a las
+   funciones por su nombre). Una hoja que exista VACÍA —un tiempo de espera de Google a mitad de crearla la dejó así el 27-10— recibe su
    cabecera en la pasada siguiente; una con otras columnas no se toca. La zona del PROYECTO es la del activador
    nocturno; la del LIBRO puede ser otra (el del MCP está en «America/Los_Angeles», medido el 27-10): una celda de fecha
    guarda una hora de pared en la zona del libro, así que «Fecha» se escribe como el día de Ecuador y «Actualizado» con
@@ -1185,13 +1196,20 @@ Desde el 2026-09-24 (punto 2a, correcciones A y B, decisiones del usuario):
   medias, y por eso lo que llega con más de 7 días también se avisa.
 - **Vaciarla no pierde nada**: al terminar se relee la cola y sólo se quita lo que ese vaciado
   resolvió; lo que se guardó, se purgó o se sustituyó mientras tanto se respeta.
+- **Lo que se pisa con algo que ya espera respeta el ORDEN** (pauta del 04-11, A1 y A4): un envío que toca registros
+  de algo que espera en la cola —o de su misma hoja, si las marcas no dicen qué registros tocan (formularios y envíos
+  sin marca)— no sale directo: entra DETRÁS y se vacía la cola, esperando como mucho 45 s; si no sale, queda «en cola».
+  Al vaciarse, lo que se pisaría con un envío trabado tampoco se intenta antes que él (`_colaSolapa`, `_colaSePisan`).
+- **Quitar con 🗑 algo no enviado que ya espera en la cola** (Score, Auditoría, Mantenimiento y Traslado; 2026-11-08,
+  usuario: «Decirlo bien»): el aviso dice que llegará igual a la hoja y que sólo se quita del equipo; si no espera,
+  sigue diciendo que se pierde (`_colaTieneRegistro`).
 
 Y desde el 2026-10-04 (auditoría final de la sincronización, decisiones del usuario) **lo no enviado no se pierde
 sin avisar**:
 - **Sin espacio, un envío no se da por «en cola».** Si no cabe en el almacenamiento —o el navegador acepta el
-  guardado sin hacerlo, como en el modo privado de algunos: se comprueba LEYENDO tras escribir—, el envío da
-  **error** con su motivo y lo tecleado se queda en pantalla. Antes decía «📶 en cola», vaciaba el formulario y se
-  perdía.
+  guardado sin hacerlo, como en el modo privado de algunos: se comprueba LEYENDO tras escribir—, primero se vacía la
+  cola y, si ya no se pisa con nada, sale directo; sólo si eso tampoco puede, el envío da **error** con su motivo y lo
+  tecleado se queda en pantalla. Antes decía «📶 en cola», vaciaba el formulario y se perdía.
 - **Biomol, As Técnico (supervisión) y Traslado CONSERVAN lo no enviado.** A las 48 h sólo se retira lo ya
   enviado, contadas desde su envío (como ya hacían Score, Auditoría y Microbiología); lo pendiente se queda hasta
   enviarlo o borrarlo. Las fotos de un viaje caducan con su viaje.
@@ -1239,7 +1257,10 @@ su botón, que se borra al terminar, y sus dos envíos (MATRIZ y Bitácora o Tra
 cuenta (`postPayload` con `sinAvisos`): se resumen en ese aviso. El resto de fichas avisa como siempre.
 
 Y **un mismo envío no se escribe dos veces** (B5, 2026-10-19). Cada envío lleva su `reqId`, y el GAS lo marca al
-escribirlo, y la marca dura 10 min: un reintento con esa marca contesta «ok» sin escribir.
+escribirlo, y la marca dura 10 min: un reintento con esa marca contesta «ok» sin escribir. Desde la pauta del 04-11
+(A5, usuario: «Solo en la app») el `reqId` es `sesión.n~huella`: un reintento —también desde la cola— y el mismo
+contenido enviado dos veces seguidas conservan el suyo; pero un contenido que VUELVE después de otro distinto (28 → 29
+→ 28), o tras recargar la página, lleva otro y se escribe de nuevo. No duplica filas: las hojas reemplazan por su llave.
 Pero la marca se miraba ANTES de esperar
 el candado, y un reintento que llegaba mientras el primero seguía escribiendo (el cliente corta a los 40 s) entraba
 después y escribía otra vez: así salieron las 945 parejas repetidas de `Control_Tanque` medidas ese día. Ahora
@@ -1446,13 +1467,17 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   paridad. Reenviar Alimentación el mismo día tras releer no pierde el peso tecleado.
 - **📜 Historial** (usuario, 2026-10-04; 60 días hasta el 2026-11-03): lo enviado desde ESTE equipo en los últimos
   **7 días** (hasta 200 POR ficha) de las siete fichas de formulario y de Salas/Tanques (de sus propios registros); Broodstock, fuera.
-  **Lo que sigue en la cola se queda**, por viejo que sea, con su copia para Editar (2026-11-05). Cada
+  **Lo que sigue en la cola se queda**, por viejo que sea, con su copia para Editar (2026-11-05), salvo sin espacio
+  (abajo). Cada
   envío —directo, en cola o desde 💾— guarda sus filas: se revisa, se imprime (📄) y se borra (🗑, sólo del
   equipo). **✏️ Editar** abre la ficha tal como se envió, en corrección (fecha FIJA y aviso), en los últimos
   **10** envíos de cada ficha (Alimentación, 3), y en lo que siga en la cola; guardar —con ☁️ o con 💾— reescribe las MISMAS filas (mismo ID) y
   avisa antes si cambió la llave. Desoves usa su propia corrección (sólo viaja lo cambiado). Un reenvío con las mismas filas
-  SUSTITUYE a su entrada («🔁 reenviado»). Sin espacio se liberan primero las copias para Editar y después la mitad
-  más vieja del Historial; la cola, nunca.
+  SUSTITUYE a su entrada («🔁 reenviado»). Sin espacio se suelta primero la copia de la MATRIZ (ver «El espacio del
+  navegador»), luego TODAS las copias para Editar —también las de lo que espera en la cola— y, al final, la mitad más
+  vieja del Historial, aunque espere en la cola; los envíos de la cola en sí no se tocan nunca. ⚠ Que sin espacio se
+  pierdan también las copias para Editar de lo que espera en la cola está ANOTADO para otra tanda (2026-11-08,
+  usuario: «Decirlo en el README y anotarlo»): el envío llega igual, pero ya no se puede corregir desde ✏️.
 - **🧹 El espacio del navegador** (usuario, 2026-11-03: 7 días, «Sola, con indicador y botón»). El navegador da a cada SITIO
   ~5,24 millones de caracteres (medido en Chrome), e `index (8)` y el MCP están en el mismo sitio, así que los comparten; las
   demás apps publicadas en esa misma dirección también gastan de ahí. Salas, Tanques y Zonas no caducaban, y las tablets
@@ -1477,7 +1502,8 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   filtros puestos se queda fuera de las cifras y se dice aparte («🔀 Además…»), salvo si el elegido es el propio MIX, que se sigue
   ofreciendo en el filtro con su aviso. La ficha y los reportes de cada lote dicen en qué MIX participó, con sus cifras. Con una
   sala, cuenta en las salas de sus lotes. No tiene fila en 🧬 Lotes, que es de animales, y 🛢 Tanques no cambia. Lo vigilan
-  `mad-mix.test.js`, `operativo.mix.test.js` y su banco `mutar-mad-mix`.
+  `mad-mix.test.js`, `operativo.mix.test.js` y su banco `mutar-mad-mix`. **Límite sabido:** las reglas están probadas con
+  datos de prueba y un MIX inyectado en Chrome; aún no hay un MIX real en la hoja, así que falta verlo con el primero.
 - **Los botones lentos leen en PARALELO.** Medido contra el GAS vivo: 13,5 s → 3,4 s.
 
 ### Otras que han costado caras
@@ -1488,7 +1514,8 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   conteo > 0), tope 100 %; el 0 cuenta como 0; con siembra escalonada, cada día sólo los tanques ya sembrados; y un
   tanque entra sólo con un conteo POSTERIOR al de su siembra (no se da por 100 % lo no medido; «Pob. actual» sí lo
   cuenta). La aplican el KPI del Supervisor (`survival`), la curva (`moduleSvPopSeries`), el relleno del ICL
-  (`svPopByDay`) y Producción Omarsa (`modCorStats`); lo vigila `supervisor/supervivencia-regla.test.js` con los
+  (`svPopByDay`) y la columna «Superv.» de cada módulo en Producción Omarsa (`modCorStats`; el «% Superv. corrida», el
+  Subtotal y el Total, no: dividen la cosecha entre la siembra de todos los tanques); lo vigila `supervisor/supervivencia-regla.test.js` con los
   mismos datos. Antes, con los mismos datos, daban cifras distintas. La tabla de Siembras
   mide otra cosa a propósito, hasta el TRASLADO (sin el despacho, para «A cosechar»): «Superv. al traslado».
 - **Microbiología:** los niveles se RECALCULAN desde el UFC con los umbrales por área × parámetro.
