@@ -11193,6 +11193,7 @@ function _madMovPintaSaldo(libro){
       ? '<span style="color:#991b1b">⚠ '+escapeHtml(_mal)+': lo de abajo está INCOMPLETO y puede quedarse corto.</span>'
       : '<span style="color:#166534">Saldo al '+escapeHtml(today())+'. Se recalcula al pulsar de nuevo.</span>';
   }
+  const _ing = _reproReadRows(MAD_LIBRO_SHEETS.ingreso);   // 2026-11-09 · la piscina de origen, como en Tanques
   document.querySelectorAll("#mv-tramos tr.mv-tramo").forEach(function(tr){
     const c = tr.querySelector(".mv-saldo-o"); if(!c) return;
     const s = tr.querySelector(".mv-so"), t = tr.querySelector(".mv-to");
@@ -11205,7 +11206,7 @@ function _madMovPintaSaldo(libro){
        copias del formato habrían divergido en el siguiente cambio. La prueba
        mad-saldo-origen-total.test.js exige que las dos escriban exactamente lo mismo.
        Un tanque que ningún ingreso explica no es «cero vivos»: es «el libro no lo conoce». */
-    _madTqVivosCelda(c, libro.tanques[madUbicKey(sala, tq)], roto ? "?" : "sin ingreso");
+    _madTqVivosCelda(c, libro.tanques[madUbicKey(sala, tq)], roto ? "?" : "sin ingreso", _ing);
   });
 }
 function madMovCollect(){
@@ -17258,18 +17259,50 @@ function _madTqVivosLeer(){
     return (g && g.ts > 0 && g.tanques && typeof g.tanques === "object") ? g : null;
   }catch(_){ return null; }
 }
-function _madTqVivosGuardar(libro){
+function _madTqVivosGuardar(libro, ingresos){
   const tanques = {};
   Object.keys(libro.tanques || {}).forEach(function(k){
     const T = libro.tanques[k];
-    if(T) tanques[k] = { machos: Number(T.machos) || 0, hembras: Number(T.hembras) || 0, lotes: madNombreComposicion(T) };
+    if(T) tanques[k] = { machos: Number(T.machos) || 0, hembras: Number(T.hembras) || 0, lotes: madNombreComposicion(T),
+      piscinas: madPiscinasDeTanque(T, ingresos) };   // 2026-11-09 · la piscina de origen (ver madPiscinasDeTanque)
   });
   return safeSetItem(MAD_TQ_VIVOS_KEY, JSON.stringify({ ts: Date.now(), hoy: today(), tanques: tanques }), { silent: true });
 }
+/* 2026-11-09 (usuario) · LA PISCINA DE ORIGEN, detrás de los lotes: «AB+AC (101,101) · 12♂ 34♀ · 46».
+   Sale del Ingreso por (lote, código genético), con las MISMAS llaves que el libro (madLibroTxt), como «📥 Cargar» de
+   Desoves: el lote solo no basta, porque un lote puede venir de dos piscinas, y el libro sigue a los animales de cada
+   tanque por lote y código. Decisiones del usuario: UNA POR LOTE, en el orden de los lotes, aunque se repita; un lote
+   con dos piscinas en el tanque, unidas por «/» («AB+AC (101/102,103)»); y también en Movimientos, por la regla de
+   _madTqVivosCelda. La que el Ingreso no conoce sale «?» (p. ej., un código escrito distinto en un movimiento). Sin
+   ninguna fila de Ingreso no se sabe ninguna y no se dice nada: "". Sólo los lotes con animales VIVOS, como el nombre
+   de madNombreComposicion, y en su mismo orden. Pura: sin DOM. */
+function madPiscinasDeTanque(T, ingresos){
+  if(!ingresos || !ingresos.length) return "";
+  const vivos=((T&&T.composicion)||[]).filter(function(c){ return c.machos>0||c.hembras>0; });
+  if(!vivos.length) return "";
+  const pisc={};
+  ingresos.forEach(function(r){
+    const p=madLibroTxt(r["Piscina Broodstock"]);
+    if(!p) return;
+    const k=madLibroTxt(r.Lote)+"|"+madLibroTxt(r["Código genético"]);
+    if(!pisc[k]) pisc[k]=[];
+    if(pisc[k].indexOf(p)===-1) pisc[k].push(p);
+  });
+  const porLote={}, lotes=[];
+  vivos.forEach(function(c){
+    if(!porLote[c.lote]){ porLote[c.lote]=[]; lotes.push(c.lote); }
+    (pisc[madLibroTxt(c.lote)+"|"+madLibroTxt(c.codigoGenetico)]||["?"]).forEach(function(p){
+      if(porLote[c.lote].indexOf(p)===-1) porLote[c.lote].push(p);
+    });
+  });
+  const orden=function(a,b){ return a==="?" ? 1 : b==="?" ? -1 : a.localeCompare(b, undefined, { numeric:true }); };
+  return lotes.sort().map(function(l){ return porLote[l].sort(orden).join("/"); }).join(",");
+}
 /* Una celda de vivos, escrita IGUAL venga del libro recién leído o de la referencia guardada:
    Movimientos y Tanques tienen que decir exactamente lo mismo del mismo tanque, y por eso
-   las dos la escriben con esta función. */
-function _madTqVivosCelda(c, T, desconocido){
+   las dos la escriben con esta función. `ingresos` (2026-11-09): las filas del Ingreso con las que se
+   leyó el libro, para la piscina de origen; la referencia guardada ya la trae. */
+function _madTqVivosCelda(c, T, desconocido, ingresos){
   /* `data-vivos` (2026-09-15) no es decoración: es lo que lee la bajada de los pesos para saber
      a qué filas toca. Vacío = «no se sabe», que NO es lo mismo que cero. */
   if(!T){
@@ -17292,7 +17325,10 @@ function _madTqVivosCelda(c, T, desconocido){
      tanque vaciado no lo ocupa nadie. Del libro sale de la composición; la referencia guardada
      ya lo trae, y una guardada antes de esto no: enseña las cifras solas hasta el próximo 🔄. */
   const lotes = T.composicion ? madNombreComposicion(T) : (typeof T.lotes === "string" ? T.lotes : "");
-  c.textContent = (lotes ? lotes + " · " : "") + T.machos + "♂ " + T.hembras + "♀ · " + (T.machos + T.hembras);
+  /* La PISCINA, entre paréntesis detrás de los lotes (usuario, 2026-11-09): del libro, con las filas del Ingreso; de la
+     referencia guardada, como se guardó. Una guardada antes de esto no la trae: lotes solos hasta el próximo 🔄. */
+  const pisc = !lotes ? "" : T.composicion ? madPiscinasDeTanque(T, ingresos) : (typeof T.piscinas === "string" ? T.piscinas : "");
+  c.textContent = (lotes ? lotes + (pisc ? " (" + pisc + ")" : "") + " · " : "") + T.machos + "♂ " + T.hembras + "♀ · " + (T.machos + T.hembras);
   c.style.color = (T.machos + T.hembras) > 0 ? "#0369a1" : "#92400e";
 }
 function _madTqVivosNotaRef(g){
@@ -17323,7 +17359,8 @@ function _madTanquesPintaVivos(libro){
      completo. Y por lo mismo NO se guarda como referencia: pisaría una buena con una a medias. */
   const _mal = madLibroIncompleto(libro);
   const roto = !!_mal;
-  if(!roto) _madTqVivosGuardar(libro);
+  const _ing = _reproReadRows(MAD_LIBRO_SHEETS.ingreso);   // 2026-11-09 · la piscina: las MISMAS filas con que se leyó el libro
+  if(!roto) _madTqVivosGuardar(libro, _ing);
   if(nota){
     const g = roto ? _madTqVivosLeer() : null;
     nota.innerHTML = roto
@@ -17335,7 +17372,7 @@ function _madTanquesPintaVivos(libro){
   document.querySelectorAll(".tq-vivos").forEach(function(c){
     const tq = c.getAttribute("data-tq");
     if(!sala || !tq){ c.textContent = "—"; return; }
-    _madTqVivosCelda(c, libro.tanques[madUbicKey(sala, tq)], roto ? "?" : "sin ingreso");
+    _madTqVivosCelda(c, libro.tanques[madUbicKey(sala, tq)], roto ? "?" : "sin ingreso", _ing);
   });
   _madTqAplicarBloqueo(!roto);   // con el libro incompleto no se bloquea nada
   _madTqDiaTrasLeer(libro);      // 2026-10-13 · 📊 partes del día, con las mismas filas

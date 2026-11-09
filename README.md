@@ -641,6 +641,11 @@ el libro **no conoce** no se toca: sus dos columnas se quedan como estaban.
 tanque —una sola función escribe las dos celdas—: **el lote o lotes que lo ocupan, delante de las
 cifras** —`AB · 12♂ 34♀ · 46`; mezclado, `BA+BC · …`, el nombre de la columna «Lote(s)» del
 Saldo— (usuario, 2026-09-24). Un tanque vaciado no lo ocupa nadie: `0♂ 0♀ · 0`.
+Detrás de los lotes, **la piscina de origen** (usuario, 2026-11-09): `AB+AC (101,101) · 12♂ 34♀ · 46`, una por
+lote y en su orden, aunque se repita; un lote con dos piscinas en el tanque, unidas por «/» (`AB+AC (101/102,103)`).
+Sale del Ingreso por **lote y código genético** (`madPiscinasDeTanque`), porque un mismo lote puede venir de dos
+piscinas y el libro sigue a cada tanque por lote y código; la que el Ingreso no conoce sale `?`. La referencia
+guardada la lleva; una guardada antes de este cambio enseña los lotes solos hasta el próximo 🔄.
 🔒 **En Tanques, un tanque SIN ANIMALES se bloquea** (usuario, 2026-10-04): con la referencia de vivos que haya —la de 🔄 o
 la última guardada en el equipo, aunque sea de otro día—, un tanque con 0 vivos o «sin ingreso» va en rojo y con sus casillas
 deshabilitadas; tras un ingreso o una transferencia, 🔄 Ver vivos con cantidad lo habilita. Sin desbloqueo a mano; sólo en la

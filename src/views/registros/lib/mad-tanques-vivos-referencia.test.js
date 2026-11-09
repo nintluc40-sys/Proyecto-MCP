@@ -93,8 +93,9 @@ describe('Tanques · los vivos quedan como referencia local', () => {
     H._madTanquesPintaVivos(libroCon());
     const g = JSON.parse(localStorage.getItem(H.MAD_TQ_VIVOS_KEY));
     expect(g && g.ts).toBeGreaterThan(0);
-    // `lotes` vacío: este fixture no trae composición (el lote se prueba en su bloque, abajo).
-    expect(g.tanques['Sala 1|1']).toEqual({ machos: 12, hembras: 34, lotes: '' });
+    // `lotes` vacío: este fixture no trae composición (el lote se prueba en su bloque, abajo). `piscinas`, igual
+    // (2026-11-09; se prueba en mad-tanques-vivos-piscinas.test.js).
+    expect(g.tanques['Sala 1|1']).toEqual({ machos: 12, hembras: 34, lotes: '', piscinas: '' });
   });
 
   it('🔴 la referencia cubre TODAS las salas, no sólo la que estaba en pantalla', () => {
@@ -186,7 +187,8 @@ describe('Tanques · la referencia guarda también el LOTE (punto 2)', () => {
     abrirSala('Sala 1');
     H._madTanquesPintaVivos(libroConLotes());
     const g = JSON.parse(localStorage.getItem(H.MAD_TQ_VIVOS_KEY));
-    expect(g.tanques['Sala 1|1']).toEqual({ machos: 12, hembras: 34, lotes: 'AB' });
+    // `piscinas` vacío: este fixture no trae filas de Ingreso (la piscina se prueba en mad-tanques-vivos-piscinas.test.js).
+    expect(g.tanques['Sala 1|1']).toEqual({ machos: 12, hembras: 34, lotes: 'AB', piscinas: '' });
     expect(g.tanques['Sala 1|2'].lotes).toBe('BA+BC');
   });
 
