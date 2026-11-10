@@ -3907,11 +3907,39 @@ function addToAlgHist(){
 // ── Editar un registro del Historial Lab. Algas ──
 // Vuelca la data al formulario y marca _algEditingId para que el siguiente
 // "Agregar al historial" ACTUALICE esa entrada en lugar de duplicarla.
+/* 2026-11-09 (pendiente 12; usuario: «Sólo si hay algo sin guardar», como A9) · ✏️ del historial y de la Bitácora de Algas cargan el
+   registro encima de la ficha sin preguntar. ¿Hay en la ficha algo que todavía no está en el historial? Tras «📋 Agregar» se quedan la
+   fecha, la corrida, el módulo y el técnico (para la siguiente): ésos no cuentan, ni la Sesión (oculta, es identidad). El resto arranca
+   vacío (visto en Chrome: también el Área y el Sistema), así que cualquier otro valor es de alguien. Si se está editando una entrada y lo
+   de pantalla es exactamente ella, tampoco cuenta. */
+const _ALG_NO_CUENTA = { fecha:1, corrida_larv:1, modulo_larv:1, tec:1, sid:1 };
+function _algContenido(d){
+  const r = {};
+  Object.keys(d || {}).forEach(function(k){ const v = d[k]; if(!_ALG_NO_CUENTA[k] && v !== "" && v != null) r[k] = String(v); });
+  return r;
+}
+function _algMismoContenido(a, b){
+  const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
+  return ka.length === kb.length && ka.every(function(k, i){ return k === kb[i] && a[k] === b[k]; });
+}
+function _algSinAgregar(){
+  // La ficha en pantalla; si no está pintada (la Bitácora se abre desde otra pestaña), lo guardado en el equipo: es lo que se pisaría.
+  const fp = document.getElementById("fp-algas");
+  const propio = _algContenido(fp && fp.querySelector("[name]") ? collect("algas", { quiet:true }) : (loadE(curMod, "algas") || { data:{} }).data);
+  if(!Object.keys(propio).length) return false;
+  if(_algEditingId){
+    const e = loadAlgHist().find(function(h){ return h.id === _algEditingId; });
+    if(e && _algMismoContenido(_algContenido(e.data), propio)) return false;
+  }
+  return true;
+}
+const _ALG_ABRIR_PISA = "Lo que hay en la ficha de Algas NO está en el historial: se perderá.\n\n¿Abrir el registro igualmente?";
 function editAlgHistEntry(id){
   if(!isLabMod(curMod)) return;
   const list = loadAlgHist();
   const entry = list.find(h => h.id === id);
   if(!entry){ toast("Registro no encontrado en el historial","warn"); return; }
+  if(_algSinAgregar() && !confirm(_ALG_ABRIR_PISA)) return;   // pendiente 12
   _algEditingId = id;
   saveE(curMod, "algas", Object.assign({}, entry.data), false);
   renderAlgas();
@@ -6492,6 +6520,7 @@ function bitEdit(id){
   closeHistMenu();
   const h = getAlgLogEntry(id);
   if(!h){ toast("Registro no encontrado o expirado","warn"); return; }
+  if(_algSinAgregar() && !confirm(_ALG_ABRIR_PISA)) return;   // pendiente 12 · antes de sacarlo de la Bitácora
   // Vuelca el registro a la ficha de Lab. Algas, lo elimina de la bitácora. El registro
   // conserva su "Sesión" (sid, viaja por el input oculto), así que al re-agregarlo al
   // historial y sincronizar se ACTUALIZA la fila existente en Sheets vía upsert por la
@@ -20925,6 +20954,9 @@ async function saveAstSync(){
 function editAstRecord(id){
   const r = loadAst().find(x => x.id === id);
   if(!r){ toast("Registro no encontrado","warn"); return; }
+  /* 2026-11-09 (pendiente 12; usuario: «Sólo si hay algo sin guardar», como A9) · ✏️ cargaba el registro encima de lo tecleado sin
+     mirar `_astFormDirty`, que ya dice si el formulario tiene algo sin guardar (lo usa el aviso de cerrar). */
+  if(_astFormDirty && !confirm("Lo tecleado en esta supervisión NO se ha guardado: se perderá.\n\n¿Abrir el registro guardado igualmente?")) return;
   _astEditing = id;
   renderAst();
   try{ document.getElementById("fp-ast").scrollIntoView({behavior:"smooth", block:"start"}); }catch(_){}
@@ -27331,6 +27363,7 @@ function saveMicLocal(){
   const _ok = _labGuardarJunto("mic", _anul, function(){ return _micSave(list); });
   updateDots(); updateSyncUI(); buildGrid();
   if(!_ok) return -2;                  // almacenamiento lleno: NO mentir "guardado"
+  _labAnotarGuardado(draft, _micConDatos, saveMicDraft);   // pendiente 12 · la huella de lo guardado
   return saved;
 }
 function micGuardarLocal(){
@@ -27515,9 +27548,43 @@ function renderMicHist(){
     <div class="fc-b"><div class="mad-list">${cards}</div>
     <div style="margin-top:10px;font-size:10.5px;color:var(--tx3)">ℹ️ Solo se guarda/sincroniza el <b>formato que tienes en pantalla</b>: cada formato es un registro independiente. Cambia de formato y guarda y los anteriores no se tocan ni se reenvían. Para registrar <b>otro</b> análisis del mismo día/corrida/formato, usa <b>🧹 Análisis en blanco</b>. <b>✏️</b> edita una sesión (re-guardar la actualiza, no la duplica), <b>📄</b> descarga su PDF, <b>🗑</b> la elimina <b>solo del historial local</b> (no afecta lo ya enviado a Google Sheets). Las sesiones <b>sincronizadas</b> se conservan localmente <b>7 días</b> y luego se borran solas; las pendientes, hasta que las sincronices.</div></div></div>`;
 }
+/* 2026-11-09 (pendiente 12; usuario: «Sólo si hay algo sin guardar», como A9 en Score, Auditoría y Mantenimiento) · ✏️ de una
+   sesión de Microbiología, Calidad o Patología sobrescribía el borrador de «Nuevo análisis» sin preguntar. LA HUELLA DE LO GUARDADO:
+   se anota en el propio borrador (meta.guardado, que viaja como meta.sid) al guardar y al abrir una sesión; ✏️ pregunta sólo si el
+   borrador tiene filas con datos y no es esa huella. No se compara con el historial: lo guardado pasa por transformaciones (la
+   corrida heredada, lo calculado) y daría avisos falsos. Cuenta la cabecera del análisis y las filas con datos de cada formato. */
+const _LAB_HUELLA_META = ["fechaMuestreo","fechaResultados","corrida","responsable","encabezado","hdrModulo","hdrEstadio","hdrSala"];
+function _labHuella(draft, conDatos){
+  const m = (draft && draft.meta) || {}, meta = _LAB_HUELLA_META.map(function(k){ return String(m[k]==null ? "" : m[k]); });
+  const filas = function(rows, fk){
+    return (rows||[]).filter(function(d){ return d && conDatos(d, fk); })
+      .map(function(d){ return Object.keys(d).sort().map(function(k){ return [k, String(d[k]==null ? "" : d[k])]; }); });
+  };
+  const cuerpo = (draft && draft.sections)
+    ? Object.keys(draft.sections).sort().map(function(fk){ const s = draft.sections[fk] || {}; return [fk, filas(s.rows, fk), String(s.obs||"")]; })
+    : filas(draft && draft.rows);
+  return String(_stringHash(JSON.stringify([meta, cuerpo])));
+}
+function _labTieneDatos(draft, conDatos){
+  if(draft && draft.sections) return Object.keys(draft.sections).some(function(fk){ return ((draft.sections[fk]||{}).rows||[]).some(function(d){ return d && conDatos(d, fk); }); });
+  return ((draft && draft.rows) || []).some(function(d){ return d && conDatos(d); });
+}
+function _labSinGuardar(draft, conDatos){
+  return _labTieneDatos(draft, conDatos) && _labHuella(draft, conDatos) !== String(((draft && draft.meta) || {}).guardado || "");
+}
+function _labAnotarGuardado(draft, conDatos, guardar){
+  draft.meta = draft.meta || {};
+  draft.meta.guardado = _labHuella(draft, conDatos);
+  guardar(draft);
+}
+const _micConDatos = function(d, fk){ const f = MIC_FORMATS[fk]; return !!f && micRowHasData(f, d); };
+const _calConDatos = function(d, fk){ const f = CAL_FORMATS[fk]; return !!f && calRowHasData(f, d); };
+const _patConDatos = function(d){ return patRowHasData(d); };
+const _LAB_ABRIR_PISA = "Lo que hay en «Nuevo análisis» NO se ha guardado: se perderá.\n\n¿Abrir la sesión guardada igualmente?";
 function micEditSession(k){
   const list = loadMic(); const rs = list.filter(r=> micSessionKey(r.data) === k);
   if(!rs.length){ toast("Sesión no encontrada","warn"); return; }
+  if(_labSinGuardar(collectMicDraft(), _micConDatos) && !confirm(_LAB_ABRIR_PISA)) return;   // pendiente 12
   const d0 = rs[0].data; const fmtKey = d0.formato; const fmt = MIC_FORMATS[fmtKey];
   if(!fmt){ toast("Formato no soportado en esta versión","warn"); return; }
   const rows = rs.slice().sort((a,b)=>(parseInt(a.data.fila)||0)-(parseInt(b.data.fila)||0)).map(r=>{
@@ -27534,6 +27601,7 @@ function micEditSession(k){
   draft.activeFmt = fmtKey;
   saveMicDraft(draft); _micExtra = {};
   micTypeSet("bact"); selTab("micnuevo"); renderMicNuevo();
+  _labAnotarGuardado(collectMicDraft(), _micConDatos, saveMicDraft);   // pendiente 12 · lo abierto ES lo guardado
   toast("✏️ Sesión cargada en Nuevo análisis · edita y guarda/sincroniza para actualizar","ok",5000);
 }
 function micDeleteSession(k){
@@ -28762,6 +28830,7 @@ function saveCalLocal(){
   const _ok = _labGuardarJunto("cal", _anul, function(){ return _calSave(list); });
   updateDots(); updateSyncUI(); buildGrid();
   if(!_ok) return -2;
+  _labAnotarGuardado(draft, _calConDatos, saveCalDraft);   // pendiente 12 · la huella de lo guardado
   return saved;
 }
 // Texto de referencia del último guardado local del análisis activo (Cal).
@@ -28898,6 +28967,7 @@ function renderCalHist(){
 function calEditSession(k){
   const list=loadCal(); const rs=list.filter(r=> calSessionKey(r.data)===k);
   if(!rs.length){ toast("Sesión no encontrada","warn"); return; }
+  if(_labSinGuardar(collectCalDraft(), _calConDatos) && !confirm(_LAB_ABRIR_PISA)) return;   // pendiente 12 (ver _labHuella)
   const d0=rs[0].data; const fmtKey=d0.formato; const fmt=CAL_FORMATS[fmtKey];
   if(!fmt){ toast("Formato no soportado","warn"); return; }
   const rows=rs.slice().sort((a,b)=>(parseInt(a.data.fila)||0)-(parseInt(b.data.fila)||0)).map(r=>{
@@ -28914,6 +28984,7 @@ function calEditSession(k){
   draft.sections[fmtKey]={ rows, obs:d0.obs||"" };
   saveCalDraft(draft); _calExtra={};
   micTypeSet("cal"); selTab("micnuevo"); renderCalNuevo();
+  _labAnotarGuardado(collectCalDraft(), _calConDatos, saveCalDraft);   // pendiente 12 · lo abierto ES lo guardado
   toast("✏️ Sesión cargada en Nuevo análisis · edita y guarda/sincroniza para actualizar","ok",5000);
 }
 function calDeleteSession(k){
@@ -29432,6 +29503,7 @@ function savePatLocal(){
   const _ok = _labGuardarJunto("pat", _anul, function(){ return _patSave(list); });
   updateDots(); updateSyncUI(); buildGrid();
   if(!_ok) return -2;
+  _labAnotarGuardado(draft, _patConDatos, savePatDraft);   // pendiente 12 · la huella de lo guardado
   return saved;
 }
 function patGuardarLocal(){
@@ -29540,6 +29612,7 @@ function renderPatHist(){
 function patEditSession(k){
   const list=loadPat(); const rs=list.filter(r=> patSessionKey(r.data)===k);
   if(!rs.length){ toast("Sesión no encontrada","warn"); return; }
+  if(_labSinGuardar(collectPatDraft(), _patConDatos) && !confirm(_LAB_ABRIR_PISA)) return;   // pendiente 12 (ver _labHuella)
   const d0=rs[0].data;
   const rows=rs.slice().sort((a,b)=>(parseInt(a.data.fila)||0)-(parseInt(b.data.fila)||0)).map(r=>{
     const d=r.data; const row={ muestra:d.muestra||"", lote:d.lote||"", sexo:d.sexo||"", peso:(d.peso!=null?String(d.peso):""), obs:d.obs||"" };
@@ -29551,6 +29624,7 @@ function patEditSession(k){
   savePatDraft(_pdraft);
   _patExtra=0;
   micTypeSet("pat"); selTab("micnuevo"); renderPatNuevo();
+  _labAnotarGuardado(collectPatDraft(), _patConDatos, savePatDraft);   // pendiente 12 · lo abierto ES lo guardado
   toast("✏️ Sesión cargada en Nuevo análisis · edita y guarda/sincroniza para actualizar","ok",5000);
 }
 function patDeleteSession(k){

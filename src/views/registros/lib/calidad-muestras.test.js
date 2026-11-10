@@ -298,7 +298,14 @@ describe('Calidad de Agua · Algas · lo guardado se reabre y se imprime entero'
   it('🔎 editar la sesión guardada devuelve Sulfato, la química y la muestra a su celda', () => {
     const k = guardarAlgas();
     document.getElementById('cal-resp').value = '';
-    H.calEditSession(k);
+    /* Pendiente 12 (2026-11-09): lo de pantalla ya no es lo guardado (falta el Analista), así que ✏️ pregunta; se acepta. */
+    const preguntas = [];
+    const confirmar = window.confirm;
+    window.confirm = (m) => { preguntas.push(String(m)); return true; };
+    globalThis.confirm = window.confirm;
+    try { H.calEditSession(k); } finally { window.confirm = confirmar; globalThis.confirm = confirmar; }
+    expect(preguntas).toHaveLength(1);
+    expect(preguntas[0]).toContain('NO se ha guardado');
     expect(celda('algas', 1, 'muestras').value).toBe('Agua Ultrafiltrada');
     expect(celda('algas', 1, 'ph').value).toBe('7.9');
     expect(celda('algas', 1, 'sulfato').value).toBe('2400');

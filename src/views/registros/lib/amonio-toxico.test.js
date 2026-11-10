@@ -245,6 +245,9 @@ describe('Amonio Tóxico · «no tocar nunca lo ya guardado»', () => {
   function sesionGuardada(amtox, vars) {
     localStorage.clear();
     H.micTypeSet('cal');
+    /* Pendiente 12 (2026-11-09) · la pantalla, en blanco como el almacén que se acaba de vaciar: si quedara pintado lo de la
+       prueba anterior, ✏️ preguntaría (con razón) por lo que no consta como guardado. */
+    H.renderCalNuevo();
     const v = vars === undefined ? { sal: '35', ph: '7.99', temp: '28.7', tan: '2' } : vars;
     const base = {
       fechaMuestreo: '2026-08-01', fechaResultados: '', corrida: '900',

@@ -443,6 +443,10 @@ volver a abrir esto, esto es lo que ya se midió:
   —observaciones, laboratorio, camaronera, quién la hizo y quién la revisó— que cambian o se vacían (2026-11-05: «Contarlas
   también»). Igual en 🧾 Auditoría, por sus filas, sus observaciones y quién registra; en 🔧 Mantenimiento sólo «✏️ Abrir»
   pregunta, porque cada ronda y trabajo lleva su propio ID, también con una ronda abierta y vaciada entera (anularía sus equipos).
+  Desde el 2026-11-09 (pendiente 12, «Sólo si hay algo sin guardar»), «✏️» pregunta igual en las sesiones de Microbiología,
+  Calidad de Agua y Patología (el borrador de «Nuevo análisis» lleva la huella de lo último guardado o abierto, así que vale
+  también tras recargar), en el historial y la Bitácora de Lab. Algas (cuenta lo que no está en el historial; no la fecha, la
+  corrida, el módulo ni el técnico, que se quedan tras «📋 Agregar») y en la supervisión del AsT.
   Y **🧾 Auditoría** (2026-10-03): las planillas «AUDITORIAS (MES) Cxxx» de una corrida y su módulo como ficha —la
   **siembra** (origen, guía, cantidad, toneladas del tanque, lote, código genético y el ingreso de reproductores: su
   fecha y sus guías, tecleados), la **transferencia** origen → destino (cantidad, estadío, PL/g y % de larvas pequeñas)
