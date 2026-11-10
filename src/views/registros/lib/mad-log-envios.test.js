@@ -85,9 +85,17 @@ const llenarTrat = () => {
   pon(q('#mt-prevs .mt-lotes'), 'BP');
 };
 const AJENO = { ts: Date.now(), url: 'https://script.google.com/macros/s/AKfycbPRUEBA/exec', payload: { sheetName: 'Datos Larvicultura', headers: ['A'], rows: [['x']] } };
+/* Pendiente 26 (2026-11-09) · la identidad del formulario, puesta a mano: así dos envíos son «el MISMO formulario» (un borrador
+   recuperado, un reintento). Volver a teclearlo en un formulario NUEVO es otro tratamiento, y lo caza «¿Tratamiento REPETIDO?». */
+const conIdentidad = (identidad) => {
+  let e = document.getElementById('mt-envio');
+  if (!e) { e = document.createElement('input'); e.type = 'hidden'; e.id = 'mt-envio'; document.getElementById('fp-tratamientos').appendChild(e); }
+  e.value = identidad;
+};
 /* Un tratamiento que queda EN COLA sin salir: con ?p=ver mudo, PV3 lo encola con su marca y no lo envía. */
-const tratEnCola = async () => {
+const tratEnCola = async (identidad) => {
   llenarTrat();
+  if (identidad) conIdentidad(identidad);
   respuestaVer = 'red';
   await H.madTratGuardar();
   respuestaVer = { ok: true, version: H._gasVersionLocal() };
@@ -100,6 +108,9 @@ beforeEach(() => {
   localStorage.removeItem('larv4_syncqueue');
   localStorage.removeItem(H.MAD_TRAT_LOG_KEY);
   localStorage.removeItem(H.MAD_MOV_LOG_KEY);
+  /* Pendiente 26 (2026-11-09) · el 📜 Historial no pasa de una prueba a otra: varias envían el MISMO tratamiento, y desde ese día
+     el segundo pregunta «¿Tratamiento REPETIDO?» (mad-trat-repetidos.test.js). Aquí cada prueba es un tratamiento nuevo. */
+  localStorage.removeItem('larv4_mad_hist');
   respuestaVer = { ok: true, version: H._gasVersionLocal() };
   H.madTratReiniciar();
 });
@@ -173,8 +184,8 @@ describe('Registro de envíos · cada entrada dice el estado de SU envío', () =
   });
 
   it('🔴 el mismo tratamiento guardado DOS veces mientras espera: se entrega una vez y las dos entradas lo saben', async () => {
-    await tratEnCola();
-    await tratEnCola();                                    // idéntico: misma huella, no se encola otra vez
+    await tratEnCola('mismo1');
+    await tratEnCola('mismo1');                            // el MISMO formulario: misma huella, no se encola otra vez
     expect(cola()).toHaveLength(1);
     const ids = H.madTratLogLeer().map((e) => e.id);
     expect(ids).toHaveLength(2);

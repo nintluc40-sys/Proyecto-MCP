@@ -501,8 +501,8 @@ del módulo se quede sin contraparte en el monolito.
 | 🔄 **Movimientos** | `Maduración Movimientos` | el **tramo** origen → destino y su **envío** (desde el 2026-11-04: el mismo día y la misma ruta pueden moverse animales más de una vez; las filas de antes conservan el ID sin envío) |
 | 🥚 **Desoves** | `Maduración Lotes` | (fecha, lote, código genético) |
 | 📋 **Inf. Supervisor** | `Maduración Mortalidad Desove` | (fecha, lote, código genético): mortalidad ♀ + una fila por revisión de nauplios |
-| 🏁 **Fin de Ciclo** | `Maduración Fin de Ciclo` | (fecha, lote, motivo) · Registro y sus pesos |
-| 🧪 **Tratamientos** | `Maduración Tratamientos` | una fila por tarjeta: preventivo por lote o desinfección por área |
+| 🏁 **Fin de Ciclo** | `Maduración Fin de Ciclo` | (fecha, lote, motivo) y su **envío** (desde el 2026-11-09, como Movimientos: dos cierres del mismo lote y motivo el mismo día ya no se pisan; antes de enviar se pregunta «¿Cierre REPETIDO?»; las filas de antes conservan el ID sin envío) · Registro y sus pesos |
+| 🧪 **Tratamientos** | `Maduración Tratamientos` | una fila por tarjeta: preventivo por lote o desinfección por área, y su **envío** (desde el 2026-11-09, como Movimientos: dos preventivos a los mismos lotes, o dos desinfecciones de la misma área, el mismo día ya no se pisan; antes de enviar se pregunta «¿Tratamiento REPETIDO?»; las filas de antes conservan el ID sin envío) |
 | 🍤 **Alimentación** | `Maduración Alimentación` | (fecha, sala, tanque): agenda de tomas y ración calculada |
 | 📈 **Broodstock** | `Maduración Broodstock` | (fecha de corte, piscina): la carga SEMANAL del Excel del área |
 | 🦐 **Reproductivo** | `Maduración MATRIZ` · `Maduración Bitácora` · `Maduración Transferencias` | en la MATRIZ, un individuo con su cuaterna (Trovan · Piscina · Código genético · Lote); en la Bitácora y Transferencias, un evento por fila |

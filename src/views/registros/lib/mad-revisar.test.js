@@ -123,6 +123,9 @@ beforeEach(() => {
   preguntasVer = 0;
   soltarVer = null;
   respuestaVer = { ok: true, version: H._gasVersionLocal() };   // el GAS desplegado ES el de esta app
+  /* Pendiente 26 (2026-11-09) · el 📜 Historial no pasa de una prueba a otra: varias envían el MISMO cierre, y desde ese día el
+     segundo pregunta «¿Cierre REPETIDO?» (mad-fin-repetidos.test.js). Aquí cada prueba es un cierre nuevo. */
+  localStorage.removeItem('larv4_mad_hist');
 });
 
 describe.each(FICHAS)('«🔍 Revisar» · $nombre', (F) => {
@@ -255,7 +258,7 @@ describe('Fin de Ciclo · sin sala, y los pesos del registro, en el envío', () 
     const v = (f, h) => f[headers.indexOf(h)];
     expect(headers).not.toContain('Sala');
     expect(headers.slice(4, 6)).toEqual(['Metabisulfito (kg)', 'Fecha aplicación']);
-    expect(v(rows[0], 'ID')).toMatch(/-BP-PEDIDO$/);
+    expect(v(rows[0], 'ID')).toMatch(/-BP-PEDIDO-[0-9a-z]+$/);   // pendiente 26: detrás, la identidad del formulario
     expect(rows.map((f) => [v(f, 'Rojos'), v(f, 'Peso promedio machos (g)'), v(f, 'Peso promedio hembras (g)'), v(f, 'Peso total (kg)')]))
       .toEqual([[1, 45.5, '', 0.47], ['', '', 60, 0.47]]);
     // A3: el MISMO registro en todas las filas del envío, y uno NUEVO para el siguiente formulario.

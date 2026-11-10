@@ -140,9 +140,18 @@ describe('💾 Guardar local · guarda en el dispositivo y no toca la red', () =
   });
 
   it('🔴 guardar dos veces LO MISMO no lo duplica', () => {
+    /* Pendiente 26 (2026-11-09) · «lo mismo» es el MISMO formulario (un borrador recuperado, un reintento): misma identidad.
+       Volver a teclearlo en un formulario NUEVO es otro tratamiento, y lo caza «¿Tratamiento REPETIDO?» al enviar. */
+    const conIdentidad = (identidad) => {
+      let e = document.getElementById('mt-envio');
+      if (!e) { e = document.createElement('input'); e.type = 'hidden'; e.id = 'mt-envio'; document.getElementById('fp-tratamientos').appendChild(e); }
+      e.value = identidad;
+    };
     llenarTrat();
+    conIdentidad('mismo1');
     H.madTratGuardarLocal();
     llenarTrat();
+    conIdentidad('mismo1');
     H.madTratGuardarLocal();
     expect(guardado()).toHaveLength(1);
     expect(avisos.some((a) => /ya estaba guardado/.test(a.msg))).toBe(true);

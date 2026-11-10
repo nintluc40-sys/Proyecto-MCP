@@ -58,6 +58,9 @@ beforeEach(() => {
   avisos.length = 0;
   envios.length = 0;
   respuestaVer = { ok: true, version: H._gasVersionLocal() };   // el GAS desplegado ES el de esta app
+  /* Pendiente 26 (2026-11-09) · el 📜 Historial no pasa de una prueba a otra: varias envían el MISMO tratamiento, y desde ese día
+     el segundo pregunta «¿Tratamiento REPETIDO?» (mad-trat-repetidos.test.js). Aquí cada prueba es un tratamiento nuevo. */
+  localStorage.removeItem('larv4_mad_hist');
   H.madTratReiniciar();
 });
 
@@ -132,10 +135,13 @@ describe('Tratamientos · guardar', () => {
     expect(sheetName).toBe(H.MAD_TRAT_SHEET);
     expect(headers).toEqual(MAD_TRAT_HEADERS);
     const v = (f, h) => f[headers.indexOf(h)];
+    /* Pendiente 26 (2026-11-09): detrás de la llave, la identidad del formulario, la MISMA en todas sus filas. */
+    const identidad = String(v(rows[0], 'ID')).slice('2026-09-15-S4-P-BC.BP-'.length);
+    expect(identidad).toMatch(/^[0-9a-z]+$/);
     expect(rows.map((f) => [v(f, 'Tipo'), v(f, 'Área'), v(f, 'Lotes'), v(f, 'ID')])).toEqual([
-      ['Preventivo', 'Lotes', 'BC, BP', '2026-09-15-S4-P-BC.BP'],
-      ['Desinfección', 'Líneas de agua y aire, tinas y reservorios', '', '2026-09-15-S4-D-LINEAS'],
-      ['Desinfección', 'Desove, Eclosión y Despacho', '', '2026-09-15-S4-D-DESOVE'],
+      ['Preventivo', 'Lotes', 'BC, BP', '2026-09-15-S4-P-BC.BP-' + identidad],
+      ['Desinfección', 'Líneas de agua y aire, tinas y reservorios', '', '2026-09-15-S4-D-LINEAS-' + identidad],
+      ['Desinfección', 'Desove, Eclosión y Despacho', '', '2026-09-15-S4-D-DESOVE-' + identidad],
     ]);
     expect(v(rows[0], 'Productos RAS')).toBe('Bicarbonato, EM-1, DB Aqua');   // «DB Aqua» pre-marcado (2026-10-07)
     expect(v(rows[1], 'Productos')).toBe('Formol, Cloro, Jabón neutro, Virkon, Vitamina C');

@@ -77,6 +77,12 @@ const MODELOS = {
     fecha: '2026-09-08',
     cierres: [{ lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', metabisulfito: 12.75, fechaMetabisulfito: '2026-09-10', machos: 40, hembras: 60, observaciones: 'camión 2' }],
   },
+  /* Pendiente 26 (2026-11-09) · la identidad del formulario entra en el ID de cada fila, en las DOS copias. */
+  'con la identidad del formulario': {
+    fecha: '2026-09-08',
+    envio: 'mh3k2x9ab',
+    cierres: [{ lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', machos: 4, hembras: 6 }],
+  },
   'un cierre TOTAL, que anota la diferencia': {
     fecha: '2026-09-08',
     cierres: [{ lote: 'AB', tipo: 'Total', motivo: 'Fin de vida útil', machos: 100, hembras: 80 }],
@@ -183,16 +189,21 @@ describe('Fin de Ciclo · el mismo payload, celda a celda', () => {
   it('y los fixtures escriben filas DE VERDAD', () => {
     expect(buildFinRows(MODELOS['mismo lote, dos motivos el mismo día'])).toHaveLength(2);
     expect(buildFinRows(MODELOS['sin llave completa y tipo desconocido'])).toHaveLength(1);
+    // Pendiente 26: el ID lleva la identidad del formulario detrás de la llave de siempre.
+    const iId = MAD_FIN_HEADERS.indexOf('ID');
+    expect(buildFinRows(MODELOS['con la identidad del formulario'])[0][iId]).toBe('2026-09-08-AB-PEDIDO-mh3k2x9ab');
   });
 });
 
 describe('Fin de Ciclo · la misma llave', () => {
   it('mismo ID, y el motivo lo distingue', () => {
+    /* 2026-11-09 (pendiente 26) · el 4.º argumento es ahora la identidad del formulario. Aquí iba «Sala 2», de cuando la
+       llave llevaba sala (hasta el 2026-10-09): ningún código la pasa ya (medido con grep). */
     const casos = [
       ['2026-09-08', 'AB', 'Pedido'],
       ['2026-09-08', ' ab ', 'Descarte parcial'],
       ['2026-12-31', 'BM', 'Fin de vida útil'],
-      ['2026-09-08', 'AB', 'Pedido', 'Sala 2'],
+      ['2026-09-08', 'AB', 'Pedido', 'mh3k2x9ab'],
       ['2026-09-08', 'AB', 'Pedido', ''],
     ];
     for (const c of casos) expect(api.madFinRowId(...c)).toBe(finRowId(...c));

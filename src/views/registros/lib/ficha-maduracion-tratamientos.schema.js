@@ -129,10 +129,18 @@ export function lotesDe(v) {
 }
 
 const salaId = (sala) => (sanitizeStr(sala, 30) ? salaTag(sala) : 'GEN');
-export const tratIdPreventivo = (fecha, sala, lotes) => sanitizeStr(fecha, 10) + '-' + salaId(sala) + '-P-' + lotesDe(lotes).join('.');
-export const tratIdDesinfeccion = (fecha, sala, area) => {
+/* 2026-11-09 (pendiente 26; usuario: «Como en Movimientos») · `envio`: la identidad del formulario. El mismo día pueden darse dos
+   preventivos a los mismos lotes o dos desinfecciones de la misma área, y con la llave sola el segundo caía en la fila del primero.
+   Sin él, el ID de siempre (las filas de antes). */
+const conEnvio = (base, envio) => {
+  const e = sanitizeStr(envio, 20);
+  return e ? base + '-' + e : base;
+};
+export const tratIdPreventivo = (fecha, sala, lotes, envio) =>
+  conEnvio(sanitizeStr(fecha, 10) + '-' + salaId(sala) + '-P-' + lotesDe(lotes).join('.'), envio);
+export const tratIdDesinfeccion = (fecha, sala, area, envio) => {
   const a = sanitizeStr(area, 80);
-  return sanitizeStr(fecha, 10) + '-' + salaId(sala) + '-D-' + (propia(AREA_TAG, a) ? AREA_TAG[a] : 'OTRA');
+  return conEnvio(sanitizeStr(fecha, 10) + '-' + salaId(sala) + '-D-' + (propia(AREA_TAG, a) ? AREA_TAG[a] : 'OTRA'), envio);
 };
 
 /** Una fila por tarjeta completa: un preventivo con lotes y algo aplicado; una desinfección con área y productos. */
@@ -150,7 +158,7 @@ export function buildTratRows(model) {
     const ras = productosDe(MAD_TRAT_RAS, x.ras);
     if (!lotes.length || (!productos.length && !ras.length)) return;
     fila({ fecha, sala, estado, tipo: 'Preventivo', area: 'Lotes', lotes: lotes.join(', '), productos: productos.join(', '),
-      ras: ras.join(', '), dosis: sanitizeStr(x.dosis, 300), id: tratIdPreventivo(fecha, sala, lotes) });
+      ras: ras.join(', '), dosis: sanitizeStr(x.dosis, 300), id: tratIdPreventivo(fecha, sala, lotes, m.envio) });
   });
   (m.desinfecciones || []).forEach((d) => {
     const x = d || {};
@@ -158,7 +166,7 @@ export function buildTratRows(model) {
     const productos = productosDe(MAD_TRAT_DESINFECTANTES, x.productos);
     if (MAD_TRAT_AREAS.indexOf(area) === -1 || !productos.length) return;
     fila({ fecha, sala, estado, tipo: 'Desinfección', area, lotes: '', productos: productos.join(', '),
-      ras: '', dosis: sanitizeStr(x.dosis, 300), id: tratIdDesinfeccion(fecha, sala, area) });
+      ras: '', dosis: sanitizeStr(x.dosis, 300), id: tratIdDesinfeccion(fecha, sala, area, m.envio) });
   });
   return filas;
 }

@@ -49,6 +49,9 @@ const MODELOS = {
       { area: 'Desove, Eclosión y Despacho', productos: 'cloro' }, { area: 'Desove, Eclosión y Despacho', productos: ['Formol'] }, null] },
   'vacío': { fecha: '2026-09-15', preventivos: [], desinfecciones: [] },
   'sala desconocida': { fecha: '2026-09-15', sala: 'Sala 9', desinfecciones: [{ area: 'Conos, baldes, tinas y tuberías', productos: ['Jabón neutro'] }] },
+  /* Pendiente 26 (2026-11-09) · la identidad del formulario entra en el ID de cada fila, en las DOS copias. */
+  'con la identidad del formulario': { fecha: '2026-09-15', sala: 'Sala 4', estado: 'Producción', envio: 'mh3k2x9ab',
+    preventivos: [{ lotes: 'AB, AC', productos: ['Bacmil'] }], desinfecciones: [{ area: 'Reservorio', productos: ['Cloro'] }] },
 };
 
 describe('Tratamientos · el monolito y el módulo dicen lo mismo', () => {
@@ -72,6 +75,14 @@ describe('Tratamientos · el monolito y el módulo dicen lo mismo', () => {
     }
     expect(api.madTratIdPreventivo('2026-09-15', 'Sala 4', 'bp, BC')).toBe(tratIdPreventivo('2026-09-15', 'Sala 4', 'bp, BC'));
     for (const a of MAD_TRAT_AREAS.concat(['Otra'])) expect(api.madTratIdDesinfeccion('2026-09-15', '', a)).toBe(tratIdDesinfeccion('2026-09-15', '', a));
+    // Pendiente 26 (2026-11-09): con la identidad del formulario, y sin ella (las filas de antes)
+    for (const e of ['mh3k2x9ab', '']) {
+      expect(api.madTratIdPreventivo('2026-09-15', 'Sala 4', 'AB, AC', e)).toBe(tratIdPreventivo('2026-09-15', 'Sala 4', 'AB, AC', e));
+      expect(api.madTratIdDesinfeccion('2026-09-15', 'Sala 4', 'Reservorio', e)).toBe(tratIdDesinfeccion('2026-09-15', 'Sala 4', 'Reservorio', e));
+    }
+    const [p, d] = buildTratPayload(MODELOS['con la identidad del formulario']).rows;
+    const iId = MAD_TRAT_HEADERS.indexOf('ID');
+    expect([p[iId], d[iId]]).toEqual(['2026-09-15-S4-P-AB.AC-mh3k2x9ab', '2026-09-15-S4-D-RESERVORIO-mh3k2x9ab']);
   });
 
   for (const [nombre, m] of Object.entries(MODELOS)) {

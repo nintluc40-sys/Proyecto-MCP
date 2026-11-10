@@ -414,19 +414,26 @@ describe('📜 Historial · cuántos se pueden editar, cuánto dura, y el espaci
 /* Auditoría (2026-10-04, usuario) · un reenvío con las MISMAS filas (mismo ID) sustituye a su entrada: el Historial dice lo
    que hay en la hoja, y Editar la vieja no podría devolverle datos viejos. Con otras filas, entrada nueva. */
 describe('📜 Historial · los reenvíos con las mismas filas', () => {
-  it('🔴 el mismo cierre reenviado desde la ficha: UNA entrada, con lo último y «reenviado»; otro cierre, otra entrada', async () => {
+  it('🔴 el mismo cierre corregido (✏️ desde 📜): UNA entrada, con lo último y «corregido»; otro cierre, otra entrada', async () => {
+    /* 2026-11-09 (pendiente 26; usuario: «Como en Movimientos») · hasta ese día, teclear OTRA VEZ el mismo lote y motivo en la
+       ficha daba el mismo ID y contaba como reenvío. Ahora cada formulario lleva su identidad: el reenvío de un cierre es
+       corregirlo desde ✏️ Editar (su mismo ID), y teclearlo otra vez es OTRO cierre, tras «¿Cierre REPETIDO?»
+       (mad-fin-repetidos.test.js). */
     llenarFin('BP', '5');
     await H.madFinGuardar();
     const primero = hist()[0];
-    llenarFin('BP', '7');                       // mismo lote, motivo y sala → mismo ID; otro dato
+    H.madHistEditar(primero.id);
+    /* happy-dom no respeta el `selected` de un <select> restaurado por innerHTML; un navegador, sí. */
+    document.querySelectorAll('#fp-fin select').forEach((s) => { const o = s.querySelector('option[selected]'); if (o) s.value = o.value; });
+    pon($('#fp-fin .mf-machos'), '7');          // el mismo cierre, otro dato
     await H.madFinGuardar();
     let l = hist();
     expect(l).toHaveLength(1);
     expect(l[0].id).toBe(primero.id);
-    expect(l[0].reenviado).toBeGreaterThan(0);
-    expect(l[0].primero).toBe(primero.ts);
+    expect(l[0].corregido).toBeGreaterThan(0);  // desde ✏️ es una corrección: la misma entrada, con su hora de siempre
+    expect(l[0].ts).toBe(primero.ts);
     expect(l[0].payload.rows[0][col(l[0].payload, 'Machos')]).toBe(7);
-    expect(filasLista()[0].textContent).toContain('🔁 reenviado');
+    expect(filasLista()[0].textContent).toContain('✏️ corregido');
     H.madHistEditar(l[0].id);
     expect($('#fp-fin .mf-machos').value, 'Editar abre lo ÚLTIMO enviado').toBe('7');
     H.madFinReiniciar();

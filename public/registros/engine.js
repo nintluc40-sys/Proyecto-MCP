@@ -2648,6 +2648,8 @@ async function syncAll(){
   let _tqQuitado = false;    // 2026-11-05 · partes de días ya quitados que no se quisieron enviar (_madTqConfirmarQuitados)
   let _movRetenido = false;  // 2026-11-04 · lo guardado de Movimientos no se envió: ante «¿movimiento repetido?», se contestó que no
   let _ingRetenido = false;  // 2026-11-09 (pendiente 26) · lo mismo con Ingreso, ante «¿ingreso repetido?»
+  let _finRetenido = false;  // 2026-11-09 (pendiente 26) · y con Fin de Ciclo, ante «¿cierre repetido?»
+  let _tratRetenido = false; // 2026-11-09 (pendiente 26) · y con Tratamientos, ante «¿tratamiento repetido?»
   let _desRetenido = false;  // H1 (2026-10-13) · lo guardado de Desoves no se envió: ante «¿desove repetido?», se contestó que no
 
   // Block sync without corrida/técnico for M01-M10 and CIO (no aplica a Lab. Algas ni Maduración).
@@ -2732,6 +2734,8 @@ async function syncAll(){
       if(!madLocLeer(f).length) continue;
       if(f === "movimientos" && !(await _madMovConfirmarRepetidos(_madMovFilasGuardadas()))){ _movRetenido = true; _madMovNoEnviado(); continue; }
       if(f === "ingreso" && !(await _madIngConfirmarRepetidos(_madIngFilasGuardadas()))){ _ingRetenido = true; _madIngNoEnviado(); continue; }
+      if(f === "fin" && !(await _madFinConfirmarRepetidos(_madFinFilasGuardadas()))){ _finRetenido = true; _madFinNoEnviado(); continue; }
+      if(f === "tratamientos" && !(await _madTratConfirmarRepetidos(_madTratFilasGuardadas()))){ _tratRetenido = true; _madTratNoEnviado(); continue; }
       if(f === "desoves" && !(await _madDesConfirmarRepetidos(_madDesFilasGuardadas()))){ _desRetenido = true; _madDesNoEnviado(); continue; }   // H1 · ¿desove repetido?
       total++;
       if(_gasLoc === undefined && _madLocCfg(f).sello) _gasLoc = await _madIngGasAlDia();
@@ -2852,8 +2856,8 @@ async function syncAll(){
   /* 2026-09-30 · con Tanques retenido ante «¿ronda repetida?», «Sin datos nuevos» y «Todo sincronizado» serían FALSOS:
      queda Tanques pendiente, y se dice. */
   // H1 (2026-10-13) · y lo mismo con Desoves retenido ante «¿desove repetido?»: se dice qué queda pendiente.
-  const _tqPend = [_tqRetenido ? "Tanques pendiente (¿ronda repetida?)" : "", _tqQuitado ? "Tanques pendiente (días ya quitados)" : "", _desRetenido ? "Desoves pendiente (¿desove repetido?)" : "", _movRetenido ? "Movimientos pendiente (¿movimiento repetido?)" : "", _ingRetenido ? "Ingreso pendiente (¿ingreso repetido?)" : ""].filter(Boolean).join(" · ");
-  _tqRetenido = _tqRetenido || _tqQuitado || _desRetenido || _movRetenido || _ingRetenido;
+  const _tqPend = [_tqRetenido ? "Tanques pendiente (¿ronda repetida?)" : "", _tqQuitado ? "Tanques pendiente (días ya quitados)" : "", _desRetenido ? "Desoves pendiente (¿desove repetido?)" : "", _movRetenido ? "Movimientos pendiente (¿movimiento repetido?)" : "", _ingRetenido ? "Ingreso pendiente (¿ingreso repetido?)" : "", _finRetenido ? "Fin de Ciclo pendiente (¿cierre repetido?)" : "", _tratRetenido ? "Tratamientos pendiente (¿tratamiento repetido?)" : ""].filter(Boolean).join(" · ");
+  _tqRetenido = _tqRetenido || _tqQuitado || _desRetenido || _movRetenido || _ingRetenido || _finRetenido || _tratRetenido;
   if(!total && _tqRetenido){ setSyncUI("pend", _tqPend); updateDots(); return; }
   /* 2026-11-05 (auditoría; usuario: «Decirlo bien») · Lo de días anteriores no lo envía 🔄 (es «☁️ Enviarlas»), pero tampoco se puede decir
      «No hay datos pendientes» mientras la cabecera y el aviso lo cuentan. */
@@ -12922,8 +12926,14 @@ const MAD_FIN_HEADERS = MAD_FIN_COLUMNS.map(function(c){ return c.h; });
 // mismo día compartirían ID y el segundo borraría al primero — y con él su registro.
 function madFinMotivoTag(s){ return sanitizeStr(s,60).toUpperCase().replace(/[^A-ZÁÉÍÓÚÑ0-9]+/g,""); }
 // La llave del cierre: fecha, lote y motivo (sin sala desde el 2026-10-09: el cierre es del lote entero).
-function madFinRowId(fecha, lote, motivo){
-  return sanitizeStr(fecha,10)+"-"+madDesNormLote(lote)+"-"+madFinMotivoTag(motivo);
+// 2026-11-09 (pendiente 26; usuario: «Como en Movimientos») · `envio`: el mismo día pueden cerrarse dos tandas del mismo lote con el
+// mismo motivo, y con la llave sola la segunda caía en la fila de la primera y el merge le sustituía las cifras, sin error. Sin él, el
+// ID de siempre (las filas de antes). No es el «Registro»: ése lo llevan también las copias de ✏️ de antes, y corregir una de ellas
+// tiene que seguir cayendo en su fila de siempre.
+function madFinRowId(fecha, lote, motivo, envio){
+  const base = sanitizeStr(fecha,10)+"-"+madDesNormLote(lote)+"-"+madFinMotivoTag(motivo);
+  const e = sanitizeStr(envio,20);
+  return e ? base+"-"+e : base;
 }
 // Dosis en kg: admite decimales, al revés que los conteos. Devuelve "" cuando no hay cifra
 // —no 0— para que el MERGE del GAS conserve la celda: un 0 por descuido borraría una dosis
@@ -12951,7 +12961,7 @@ function madFinBuildRows(model){
       pesoTotal: madFinKg(m.pesoTotal),
       registro: sanitizeStr(m.registro,40),
       observaciones: sanitizeStr(x.observaciones,300),
-      id: madFinRowId(fecha, lote, motivo)
+      id: madFinRowId(fecha, lote, motivo, m.envio)
     };
     filas.push(MAD_FIN_COLUMNS.map(function(col){ return v[col.k]; }));
   });
@@ -13089,7 +13099,7 @@ function madFinCollect(){
     });
   });
   const fp=document.getElementById("fp-fin") || document;
-  return { fecha:f?f.value:"", cierres:cierres, pesoTotal:g(fp,"#mf-ptotal"), registro:g(fp,"#mf-registro") };
+  return { fecha:f?f.value:"", cierres:cierres, pesoTotal:g(fp,"#mf-ptotal"), registro:g(fp,"#mf-registro"), envio:g(fp,"#mf-envio") };
 }
 /* A3: un identificador por FORMULARIO, no por pulsación: Revisar y Guardar dan el mismo, y reintentar un
    envío fallido no crea otro registro. Se renueva al vaciar o tras guardar (el render pinta uno nuevo). */
@@ -13146,7 +13156,73 @@ function madFinLogHTML(){
     + '</div>';
 }
 /* PE1.4 · lo que 💾 y ☁️ comparten: recoger, revisar y construir. null si hay errores (ya los pintó y avisó). */
+/* 2026-11-09 (pendiente 26; usuario: «Como en Movimientos») · LA IDENTIDAD DEL FORMULARIO, como _madMovAsegurarEnvio: va en el ID y se
+   guarda hasta que el formulario se limpia, así que reintentar un envío fallido escribe la misma fila, no otra. Corregir desde el Historial
+   conserva la que traiga, y un envío de antes, sin ella, conserva su ID de siempre: en los dos casos reemplaza su propia fila. */
+function _madFinAsegurarEnvio(){
+  const fp=document.getElementById("fp-fin");
+  if(!fp || _madHistCorrActiva("fin")) return;
+  let e=document.getElementById("mf-envio");
+  if(!e){ e=document.createElement("input"); e.type="hidden"; e.id="mf-envio"; fp.appendChild(e); }
+  if(!e.value){ e.value=Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
+}
+/** Las filas guardadas con 💾 que se van a enviar (las de un esquema anterior no salen: ver _madLocEnviar). */
+function _madFinFilasGuardadas(){
+  const out=[], cab=JSON.stringify(MAD_FIN_HEADERS);
+  madLocLeer("fin").forEach(function(e){
+    const p=e && e.payload;
+    if(p && Array.isArray(p.rows) && JSON.stringify(p.headers)===cab) p.rows.forEach(function(r){ out.push(r); });
+  });
+  return out;
+}
+/** Lo que YA hay ese día del mismo lote con el mismo motivo, con otro ID: en la hoja, en lo enviado desde este equipo y en este mismo
+ *  envío. La misma fila (mismo ID) no cuenta: reenviarla la reemplaza. Como madMovRepetidos. */
+function madFinRepetidos(filas, hoja, historial){
+  const col=function(h){ return MAD_FIN_HEADERS.indexOf(h); };
+  const iId=col("ID"), iF=col("Fecha"), iL=col("Lote"), iMo=col("Motivo"), iM=col("Machos"), iH=col("Hembras");
+  const cab=JSON.stringify(MAD_FIN_HEADERS);
+  const conocidas=[];
+  (hoja||[]).forEach(function(r){ if(r && r.ID) conocidas.push({ id:String(r.ID), machos:r.Machos, hembras:r.Hembras, donde:"la hoja" }); });
+  (historial||[]).forEach(function(e){
+    const p=e && e.payload;
+    if(!e || e.ficha!=="fin" || !p || !Array.isArray(p.rows) || JSON.stringify(p.headers)!==cab) return;
+    p.rows.forEach(function(r){ if(r[iId]) conocidas.push({ id:String(r[iId]), machos:r[iM], hembras:r[iH], donde:"este equipo" }); });
+  });
+  (filas||[]).forEach(function(r){ conocidas.push({ id:String(r[iId]), machos:r[iM], hembras:r[iH], donde:"este envío" }); });
+  const salida=[], vistos={};
+  (filas||[]).forEach(function(r){
+    const id=String(r[iId]), base=madFinRowId(r[iF], r[iL], r[iMo]);
+    conocidas.forEach(function(k){
+      // Con el guion: el motivo «DESCARTE» no es «DESCARTEPARCIAL».
+      if(k.id===id || (k.id!==base && k.id.indexOf(base+"-")!==0)) return;
+      const clave=[id,k.id].sort().join("|");
+      if(vistos[clave]) return;
+      vistos[clave]=1;
+      salida.push({ fecha:r[iF], lote:r[iL], motivo:r[iMo], machos:k.machos, hembras:k.hembras, donde:k.donde });
+    });
+  });
+  return salida;
+}
+/** ☁️ y 🔄 · true = enviar; false = quien sincroniza dijo que no. Sin poder leer la hoja, mira lo de este equipo y sigue, como
+ *  _madMovConfirmarRepetidos. */
+async function _madFinConfirmarRepetidos(filas){
+  if(!filas || !filas.length) return true;
+  toast("Comprobando la hoja de Fin de Ciclo…","info",2500);
+  const hoja=await _madHojaFresca(MAD_FIN_SHEET);
+  const rep=madFinRepetidos(filas, hoja, madHistLeer());
+  if(!rep.length) return true;
+  const lineas=rep.map(function(x){
+    return "· Lote "+x.lote+" · «"+x.motivo+"» el "+x.fecha+": ya hay "+(Number(x.machos)||0)+" ♂ y "+(Number(x.hembras)||0)+" ♀ en "+x.donde;
+  });
+  return confirm("⚠ ¿Cierre REPETIDO? Ese lote ya tiene otro cierre con ese motivo ese día:\n"+lineas.join("\n")
+    +"\n\nAceptar = es OTRO cierre: enviar. Va en su propia fila, aparte del anterior."
+    +"\nCancelar = no enviar Fin de Ciclo ahora; lo tecleado y lo guardado siguen en este dispositivo. Para corregir el anterior, usa ✏️ Editar en 📜 Historial.");
+}
+function _madFinNoEnviado(){
+  toast("Fin de Ciclo NO enviado: lo tecleado y lo guardado siguen en este dispositivo.","warn",9000);
+}
 function _madFinPreparar(conGuardados){
+  _madFinAsegurarEnvio();   // pendiente 26 · el ID lleva la identidad del formulario
   const model=madFinCollect();
   const res=madFinValidar(model);
   const payload=buildMadFinPayload(model);
@@ -13177,6 +13253,9 @@ async function madFinGuardar(){ return _madGridBloqueada("fp-fin", async functio
     toast(aviso, "err", 10000);
     return;
   }
+  // Pendiente 26 · se pregunta ANTES de enviar nada: «Cancelar» tampoco envía lo guardado. Una corrección reemplaza su propia fila: de ésa no se pregunta.
+  const _aMirar=(_madHistCorrActiva("fin") ? [] : payload.rows).concat(_loc ? _madFinFilasGuardadas() : []);
+  if(!(await _madFinConfirmarRepetidos(_aMirar))){ _madFinNoEnviado(); return; }
   // PE1.4 · primero lo guardado con 💾 (lo más viejo antes); si algo falla, lo de pantalla tampoco sale.
   if(_loc && (await _madLocEnviar("fin", _gas)).fallo) return;
   if(!payload.rows.length) return;
@@ -13308,8 +13387,12 @@ function madTratLotes(v){
   return out.sort();
 }
 function _madTratSalaId(sala){ return sanitizeStr(sala,30) ? madIngSalaTag(sala) : "GEN"; }
-function madTratIdPreventivo(fecha, sala, lotes){ return sanitizeStr(fecha,10)+"-"+_madTratSalaId(sala)+"-P-"+madTratLotes(lotes).join("."); }
-function madTratIdDesinfeccion(fecha, sala, area){ const a=sanitizeStr(area,80); return sanitizeStr(fecha,10)+"-"+_madTratSalaId(sala)+"-D-"+(_madTratPropia(_MAD_TRAT_AREA_TAG, a) ? _MAD_TRAT_AREA_TAG[a] : "OTRA"); }
+// 2026-11-09 (pendiente 26; usuario: «Como en Movimientos») · `envio`: el mismo día pueden darse dos preventivos a los mismos lotes
+// (mañana y tarde) o dos desinfecciones de la misma área, y con la llave sola el segundo caía en la fila del primero y el merge le
+// sustituía los productos, sin error. Sin él, el ID de siempre (las filas de antes).
+function _madTratConEnvio(base, envio){ const e=sanitizeStr(envio,20); return e ? base+"-"+e : base; }
+function madTratIdPreventivo(fecha, sala, lotes, envio){ return _madTratConEnvio(sanitizeStr(fecha,10)+"-"+_madTratSalaId(sala)+"-P-"+madTratLotes(lotes).join("."), envio); }
+function madTratIdDesinfeccion(fecha, sala, area, envio){ const a=sanitizeStr(area,80); return _madTratConEnvio(sanitizeStr(fecha,10)+"-"+_madTratSalaId(sala)+"-D-"+(_madTratPropia(_MAD_TRAT_AREA_TAG, a) ? _MAD_TRAT_AREA_TAG[a] : "OTRA"), envio); }
 function madTratBuildRows(model){
   const m=model||{}, fecha=sanitizeStr(m.fecha,10), sala=sanitizeStr(m.sala,30), estado=sanitizeStr(m.estado,60), filas=[];
   const fila=function(v){ filas.push(MAD_TRAT_COLUMNS.map(function(c){ return v[c.k]; })); };
@@ -13317,13 +13400,13 @@ function madTratBuildRows(model){
     const x=p||{}, lotes=madTratLotes(x.lotes), productos=madTratProductos(MAD_TRAT_PREVENTIVOS, x.productos), ras=madTratProductos(MAD_TRAT_RAS, x.ras);
     if(!lotes.length || (!productos.length && !ras.length)) return;
     fila({ fecha:fecha, sala:sala, estado:estado, tipo:"Preventivo", area:"Lotes", lotes:lotes.join(", "), productos:productos.join(", "),
-      ras:ras.join(", "), dosis:sanitizeStr(x.dosis,300), id:madTratIdPreventivo(fecha, sala, lotes) });
+      ras:ras.join(", "), dosis:sanitizeStr(x.dosis,300), id:madTratIdPreventivo(fecha, sala, lotes, m.envio) });
   });
   (m.desinfecciones||[]).forEach(function(d){
     const x=d||{}, area=sanitizeStr(x.area,80), productos=madTratProductos(MAD_TRAT_DESINFECTANTES, x.productos);
     if(MAD_TRAT_AREAS.indexOf(area)===-1 || !productos.length) return;
     fila({ fecha:fecha, sala:sala, estado:estado, tipo:"Desinfección", area:area, lotes:"", productos:productos.join(", "),
-      ras:"", dosis:sanitizeStr(x.dosis,300), id:madTratIdDesinfeccion(fecha, sala, area) });
+      ras:"", dosis:sanitizeStr(x.dosis,300), id:madTratIdDesinfeccion(fecha, sala, area, m.envio) });
   });
   return filas;
 }
@@ -13426,7 +13509,8 @@ function madTratCollect(){
   const preventivos=[], desinfecciones=[];
   document.querySelectorAll("#mt-prevs .mt-prev").forEach(function(c){ preventivos.push({ lotes:g(c,".mt-lotes"), productos:marcados(c,".mt-prod"), ras:marcados(c,".mt-ras"), dosis:g(c,".mt-dosis") }); });
   document.querySelectorAll("#mt-dess .mt-des").forEach(function(c){ desinfecciones.push({ area:g(c,".mt-area"), productos:marcados(c,".mt-prod"), dosis:g(c,".mt-dosis") }); });
-  return { fecha:g(document,"#mt-fecha"), sala:g(document,"#mt-sala"), estado:g(document,"#mt-estado"), preventivos:preventivos, desinfecciones:desinfecciones };
+  return { fecha:g(document,"#mt-fecha"), sala:g(document,"#mt-sala"), estado:g(document,"#mt-estado"), preventivos:preventivos, desinfecciones:desinfecciones,
+    envio:g(document,"#mt-envio") };
 }
 function _madTratPinta(res, filas){
   const box=document.getElementById("mt-report"); if(!box) return;
@@ -13469,7 +13553,76 @@ function madTratLogHTML(){
     + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Fecha</th><th>Tratamientos</th><th>Estado</th></tr></thead><tbody>'+filas+'</tbody></table></div></div>';
 }
 /* PE1.4 · lo que 💾 y ☁️ comparten: recoger, revisar y construir. null si hay errores (ya los pintó y avisó). */
+/* 2026-11-09 (pendiente 26; usuario: «Como en Movimientos») · LA IDENTIDAD DEL FORMULARIO, como _madMovAsegurarEnvio: va en el ID y se
+   guarda hasta que el formulario se limpia, así que reintentar un envío fallido escribe la misma fila, no otra. Corregir desde el Historial
+   conserva la que traiga, y un envío de antes, sin ella, conserva su ID de siempre: en los dos casos reemplaza su propia fila. */
+function _madTratAsegurarEnvio(){
+  const fp=document.getElementById("fp-tratamientos");
+  if(!fp || _madHistCorrActiva("tratamientos")) return;
+  let e=document.getElementById("mt-envio");
+  if(!e){ e=document.createElement("input"); e.type="hidden"; e.id="mt-envio"; fp.appendChild(e); }
+  if(!e.value){ e.value=Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
+}
+/** Las filas guardadas con 💾 que se van a enviar (las de un esquema anterior no salen: ver _madLocEnviar). */
+function _madTratFilasGuardadas(){
+  const out=[], cab=JSON.stringify(MAD_TRAT_HEADERS);
+  madLocLeer("tratamientos").forEach(function(e){
+    const p=e && e.payload;
+    if(p && Array.isArray(p.rows) && JSON.stringify(p.headers)===cab) p.rows.forEach(function(r){ out.push(r); });
+  });
+  return out;
+}
+/** Lo que YA hay ese día con la misma llave —el preventivo de los mismos lotes en la misma sala, o la desinfección de la misma área—,
+ *  con otro ID: en la hoja, en lo enviado desde este equipo y en este mismo envío. La misma fila (mismo ID) no cuenta: reenviarla la
+ *  reemplaza. Como madMovRepetidos; aquí no hay animales que contar, así que se dice con qué productos. */
+function madTratRepetidos(filas, hoja, historial){
+  const col=function(h){ return MAD_TRAT_HEADERS.indexOf(h); };
+  const iId=col("ID"), iF=col("Fecha"), iS=col("Sala"), iT=col("Tipo"), iA=col("Área"), iL=col("Lotes"), iP=col("Productos"), iR=col("Productos RAS");
+  const cab=JSON.stringify(MAD_TRAT_HEADERS);
+  const conocidas=[];
+  const prod=function(p, r){ return [p, r].filter(function(x){ return sanitizeStr(x,300); }).join(" + "); };
+  (hoja||[]).forEach(function(r){ if(r && r.ID) conocidas.push({ id:String(r.ID), productos:prod(r.Productos, r["Productos RAS"]), donde:"la hoja" }); });
+  (historial||[]).forEach(function(e){
+    const p=e && e.payload;
+    if(!e || e.ficha!=="tratamientos" || !p || !Array.isArray(p.rows) || JSON.stringify(p.headers)!==cab) return;
+    p.rows.forEach(function(r){ if(r[iId]) conocidas.push({ id:String(r[iId]), productos:prod(r[iP], r[iR]), donde:"este equipo" }); });
+  });
+  (filas||[]).forEach(function(r){ conocidas.push({ id:String(r[iId]), productos:prod(r[iP], r[iR]), donde:"este envío" }); });
+  const salida=[], vistos={};
+  (filas||[]).forEach(function(r){
+    const prev=r[iT]==="Preventivo";
+    const id=String(r[iId]), base=prev ? madTratIdPreventivo(r[iF], r[iS], r[iL]) : madTratIdDesinfeccion(r[iF], r[iS], r[iA]);
+    conocidas.forEach(function(k){
+      // Con el guion: los lotes «AB» no son «AB.AC».
+      if(k.id===id || (k.id!==base && k.id.indexOf(base+"-")!==0)) return;
+      const clave=[id,k.id].sort().join("|");
+      if(vistos[clave]) return;
+      vistos[clave]=1;
+      salida.push({ fecha:r[iF], sala:r[iS], que:prev ? "Preventivo a "+r[iL] : "Desinfección de «"+r[iA]+"»", productos:k.productos, donde:k.donde });
+    });
+  });
+  return salida;
+}
+/** ☁️ y 🔄 · true = enviar; false = quien sincroniza dijo que no. Sin poder leer la hoja, mira lo de este equipo y sigue, como
+ *  _madMovConfirmarRepetidos. */
+async function _madTratConfirmarRepetidos(filas){
+  if(!filas || !filas.length) return true;
+  toast("Comprobando la hoja de Tratamientos…","info",2500);
+  const hoja=await _madHojaFresca(MAD_TRAT_SHEET);
+  const rep=madTratRepetidos(filas, hoja, madHistLeer());
+  if(!rep.length) return true;
+  const lineas=rep.map(function(x){
+    return "· "+x.que+" en "+(sanitizeStr(x.sala,30)||"(sin sala)")+" el "+x.fecha+": ya hay uno ("+(x.productos||"sin productos")+") en "+x.donde;
+  });
+  return confirm("⚠ ¿Tratamiento REPETIDO? Ya hay otro igual ese día:\n"+lineas.join("\n")
+    +"\n\nAceptar = es OTRO tratamiento: enviar. Va en su propia fila, aparte del anterior."
+    +"\nCancelar = no enviar Tratamientos ahora; lo tecleado y lo guardado siguen en este dispositivo. Para corregir el anterior, usa ✏️ Editar en 📜 Historial.");
+}
+function _madTratNoEnviado(){
+  toast("Tratamientos NO enviado: lo tecleado y lo guardado siguen en este dispositivo.","warn",9000);
+}
 function _madTratPreparar(conGuardados){
+  _madTratAsegurarEnvio();   // pendiente 26 · el ID lleva la identidad del formulario
   const model=madTratCollect();
   const res=madTratValidar(model);
   const payload=buildMadTratPayload(model);
@@ -13501,6 +13654,9 @@ async function madTratGuardar(){ return _madGridBloqueada("fp-tratamientos", asy
     toast(aviso,"err",10000);
     return;
   }
+  // Pendiente 26 · se pregunta ANTES de enviar nada: «Cancelar» tampoco envía lo guardado. Una corrección reemplaza su propia fila: de ésa no se pregunta.
+  const _aMirar=(_madHistCorrActiva("tratamientos") ? [] : payload.rows).concat(_loc ? _madTratFilasGuardadas() : []);
+  if(!(await _madTratConfirmarRepetidos(_aMirar))){ _madTratNoEnviado(); return; }
   // PE1.4 · primero lo guardado con 💾 (lo más viejo antes); si algo falla, lo de pantalla tampoco sale.
   if(_loc && (await _madLocEnviar("tratamientos", _gas)).fallo) return;
   if(!payload.rows.length) return;

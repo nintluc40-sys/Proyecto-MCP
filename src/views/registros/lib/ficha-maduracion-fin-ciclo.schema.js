@@ -125,9 +125,14 @@ const kg = (v) => {
  *  lote el mismo día compartirían ID y el segundo borraría al primero. */
 export const motivoTag = (s) => sanitizeStr(s, 60).toUpperCase().replace(/[^A-ZÁÉÍÓÚÑ0-9]+/g, '');
 
-/** La llave del cierre: fecha, lote y motivo (sin sala desde el 2026-10-09: el cierre es del lote entero). */
-export function finRowId(fecha, lote, motivo) {
-  return sanitizeStr(fecha, 10) + '-' + normLote(lote) + '-' + motivoTag(motivo);
+/** La llave del cierre: fecha, lote y motivo (sin sala desde el 2026-10-09: el cierre es del lote entero).
+ *  2026-11-09 (pendiente 26; usuario: «Como en Movimientos») · `envio`: la identidad del formulario. El mismo día pueden cerrarse dos
+ *  tandas del mismo lote con el mismo motivo, y con la llave sola la segunda caía en la fila de la primera. Sin él, el ID de siempre
+ *  (las filas de antes). No es el «Registro»: ése lo llevan también las copias de ✏️ de antes. */
+export function finRowId(fecha, lote, motivo, envio) {
+  const base = sanitizeStr(fecha, 10) + '-' + normLote(lote) + '-' + motivoTag(motivo);
+  const e = sanitizeStr(envio, 20);
+  return e ? base + '-' + e : base;
 }
 
 /** Una fila por cierre. */
@@ -157,7 +162,7 @@ export function buildFinRows(model) {
       pesoPromMachos: kg(x.pesoPromMachos),
       pesoPromHembras: kg(x.pesoPromHembras),
       observaciones: sanitizeStr(x.observaciones, 300),
-      id: finRowId(fecha, lote, motivo),
+      id: finRowId(fecha, lote, motivo, m.envio),
     }, pesos);
     filas.push(MAD_FIN_COLUMNS.map((col) => valores[col.k]));
   });
