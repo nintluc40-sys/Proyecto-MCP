@@ -93,6 +93,9 @@ beforeEach(() => {
   envios.length = 0;
   preguntasVer = 0;
   localStorage.removeItem('larv4_syncqueue');
+  /* Pendiente 26 (2026-11-09) · el 📜 Historial tampoco pasa de una prueba a otra: varias envían el MISMO ingreso, y desde ese día
+     el segundo pregunta «¿Ingreso REPETIDO?» (mad-ingreso-repetidos.test.js). Aquí cada prueba es un ingreso nuevo. */
+  localStorage.removeItem('larv4_mad_hist');
   respuestaVer = { ok: true, version: H._gasVersionLocal() };   // el GAS desplegado ES el de esta app
   H.madIngReiniciar();
 });

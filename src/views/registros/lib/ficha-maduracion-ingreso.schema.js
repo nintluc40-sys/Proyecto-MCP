@@ -206,15 +206,19 @@ export function salaTag(sala) {
 
 /** Llave de fila: determinista y estable para (fecha, lote, código genético, sala, tanque).
  *  El mismo ingreso —misma fecha, composición, tanque y lote— produce SIEMPRE el
- *  mismo ID, se registre desde donde se registre y se escriba como se escriba. */
-export function ingresoRowId(fecha, lote, codigoGenetico, sala, tanque) {
-  return (
+ *  mismo ID, se registre desde donde se registre y se escriba como se escriba.
+ *  2026-11-09 (pendiente 26; usuario: «Como en Movimientos») · `envio`: la identidad del formulario. El mismo día pueden entrar dos
+ *  guías del mismo lote y código al mismo tanque, y con la llave sola la segunda caía en la fila de la primera y el merge del GAS le
+ *  sustituía los conteos. Sin él, el ID de siempre (las filas de antes). */
+export function ingresoRowId(fecha, lote, codigoGenetico, sala, tanque, envio) {
+  const base =
     sanitizeStr(fecha, 10) +
     '-' + normLote(lote) +
     '-' + normCodigoGenetico(codigoGenetico) +
     '-' + salaTag(sala) +
-    '-t' + Number(tanque)
-  );
+    '-t' + Number(tanque);
+  const e = sanitizeStr(envio, 20);
+  return e ? base + '-' + e : base;
 }
 
 /* ── Construcción de filas ─────────────────────────────────── */
@@ -278,7 +282,7 @@ export function buildIngresoRows(model) {
         librasHectarea: num(c.librasHectarea),
         densidad: num(c.densidad),
         agua: sanitizeStr(r.agua, 20),
-        id: ingresoRowId(fecha, lote, codigoGenetico, sala, tanque),
+        id: ingresoRowId(fecha, lote, codigoGenetico, sala, tanque, m.envio),
         guiaIngreso,
       };
       filas.push(MAD_INGRESO_COLUMNS.map((col) => valores[col.k]));

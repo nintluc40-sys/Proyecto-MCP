@@ -110,6 +110,14 @@ const MODELOS = {
       reparto: [{ sala: 'Sala 1', tanque: 1, machos: 150, hembras: 300, agua: 'RAS' }],
     }],
   },
+  /* Pendiente 26 (2026-11-09) · la identidad del formulario entra en el ID de cada fila, en las DOS copias. */
+  'con la identidad del formulario': {
+    fecha: '2026-09-08',
+    lote: 'AB',
+    envio: 'mh3k2x9ab',
+    composiciones: [{ codigoGenetico: 'CG01', machos: 10, hembras: 12,
+      reparto: [{ sala: 'Sala 1', tanque: 1, machos: 10, hembras: 12, agua: 'RAS' }] }],
+  },
   'reparto en varias salas': {
     fecha: '2026-09-08',
     lote: 'bd',
@@ -236,6 +244,9 @@ describe('Ingreso · el mismo payload, celda a celda', () => {
     expect(gr).toHaveLength(4);
     const iG = MAD_INGRESO_HEADERS.indexOf('Grupo');
     expect(gr.every((f) => f[iG] === '766/767')).toBe(true);
+    // Pendiente 26: el ID lleva la identidad del formulario detrás de la llave de siempre.
+    const iId = MAD_INGRESO_HEADERS.indexOf('ID');
+    expect(buildIngresoRows(MODELOS['con la identidad del formulario'])[0][iId]).toBe('2026-09-08-AB-CG01-S1-t1-mh3k2x9ab');
   });
 });
 
@@ -263,6 +274,9 @@ describe('Ingreso · las mismas funciones puras', () => {
       ['2026-08-29', 'BC', 'CG02', 'Sala 4', 3],
       // D1: el mismo lote y tanque en dos fechas tiene que dar dos llaves en las DOS copias
       ['2026-09-13', 'AB', 'CG01', 'Sala 1', 1],
+      // Pendiente 26 (2026-11-09): con la identidad del formulario, y sin ella (las filas de antes)
+      ['2026-09-13', 'AB', 'CG01', 'Sala 1', 1, 'mh3k2x9ab'],
+      ['2026-09-13', 'AB', 'CG01', 'Sala 1', 1, ''],
     ];
     for (const c of casos) expect(api.madIngRowId(...c)).toBe(ingresoRowId(...c));
   });
