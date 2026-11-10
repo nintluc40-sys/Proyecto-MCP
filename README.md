@@ -742,6 +742,7 @@ src/
     refresh.js             Auto-refresco silencioso con fingerprint e inactividad
     charts.js              Registro central de Chart.js + destrucción gestionada
     prodCalendar.js        Calendario de producción: el «mes interno» como rango de corridas
+    proyeccion.js          La proyección de población y supervivencia, UNA regla: por días y sin subir nunca (A24)
     aguaColor.js           Color del agua → tono, clasificación y mensaje (espejo de la ficha)
     trovan.js              Identidad de un Trovan ID — definición ÚNICA (escritura y lectura)
     util.js                Helpers puros compartidos (avg, natCmp, fmtPct)
@@ -1625,6 +1626,27 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
    puede romper, la decisión sobre el gemelo `index (8)` (generarlo desde el repo o seguir a mano) y las tajadas en orden
    de riesgo; el de `04-refactor-plan.md` y el del artifact del 2026-08-11 caducaron. De la misma familia, los módulos más
    grandes: `maduracion/operativo.view.js`, `microbiologia/index.js`, `biomolecular/index.js` y `supervisor/module.js`.
+5. **Lo que el diagnóstico del 2026-11-09 dejó abierto en el código** (el orden y las decisiones, en la lista de trabajo).
+   Del mismo diagnóstico ya están hechos y publicados: Larvicultura sin espacio envía lo de pantalla, los siete formularios
+   de Maduración se bloquean mientras envían, Ingreso, Fin de Ciclo y Tratamientos llevan ID propio por formulario, y ✏️
+   pregunta antes de pisar lo no guardado (cada uno, en su sección de arriba). Siguen:
+   - **Sin espacio, seis fichas no envían** (🏠 Salas, Biomol, Mareas, Microbiología, Calidad y Patología): ver «Y si el
+     equipo no puede GUARDAR la ficha», arriba. Sin decidir.
+   - **Fechas imposibles.** Score, Mantenimiento, Traslado y Auditoría responden «falta la fecha» ante una fecha que no
+     existe; Larvicultura deja pasar la fecha vacía y usa la de otra ficha o la de hoy, avisando sólo en la consola; Mareas
+     acepta «31/02».
+   - **Sin espacio, `_purgeMadHistPaneles`** borra todas las copias para ✏️ Editar, también las de lo que espera en la cola.
+   - **El respaldo** (`exportBackup`) da la copia por hecha justo después del clic: si el navegador bloquea la descarga, la
+     app no se entera.
+   - **Inf. Supervisor**: un borrador o un envío reabierto desde 📜 vuelve a poner el recuadro viejo (`_madBorrAdaptar` no
+     lo actualiza).
+   - **El aviso de 🗑** invita a quitar la copia del equipo aunque la versión actual espere en la cola.
+   - **Dos equipos, el mismo envío en menos de 10 min**: si otro escribió en medio, el GAS contesta «ok» sin escribir y la
+     app muestra ✅. Sin decidir si se acepta.
+   - **El nombre del TXT de Microbiología** usa la fecha local, pero ninguna prueba lo vigila.
+   - **Comentarios que ya no dicen la verdad**: la cabecera de `safeSetItem` (describe 4 estrategias y hay 7), la nota del
+     control de ocupación de Ingreso que dice que la llave «NO lleva el código genético» (`madIngRowId` sí lo lleva) y la
+     de `Code.gs` que dice que la cola «caduca» (ya no caduca; cambiarla cambia el sello, así que va con el próximo GAS).
 
 ## Hecho y vigilado
 

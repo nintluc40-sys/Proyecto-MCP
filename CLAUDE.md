@@ -10,7 +10,7 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
 - `src/core/` — **capa de datos SIN DOM**, pura y testeable: `store`, `dates`, `fields`, `format`,
   `sheets`, `sheets.worker` y `sheets.lector` (la lectura del libro en segundo plano), `csvLector` (el
   lector de CSV propio), `libroGuardado`, `marcaLibro`, `refresh`, `charts`, `prodCalendar`,
-  `aguaColor`, `trovan`, `util`.
+  `proyeccion` (la proyección de población que nunca sube, A24), `aguaColor`, `trovan`, `util`.
 - `src/ui/` — `router` (registro/cambio de vistas), `shell` (cabecera, drawer, roles, filtro de
   fecha), `accesoRol` (la entrada directa por enlace `?rol=`), `vistaDiferida` (el registro de una
   vista que se baja al abrirla), `versionNueva` (la franja «versión nueva») y las piezas
@@ -102,7 +102,7 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
 6. **Acceso tolerante a columnas del Sheet** vía `getField(row, F.x)` / `parseNum(...)`. No leas
    `row['Columna']` directo: las cabeceras varían en mayúsculas/tildes.
 
-   **Excepción vigente** (unas 170 lecturas, y a propósito: la razón está en `maduracion/operativo.fuentes.js`): las hojas cuya
+   **Excepción vigente** (unas 240 lecturas el 2026-11-09, y crecen con el tablero; a propósito: la razón está en `maduracion/operativo.fuentes.js`): las hojas cuya
    cabecera escribe el propio sistema y se vigila, con su esquema o su script, se leen por su nombre EXACTO. Son el tablero y los
    motores de Maduración (`maduracion/operativo.*`, `maduracion/data.js`, `registros/lib/{mad-libro,mad-resumen,reproductivo.data}.js`) y las de
    «Clima» (`clima/clima.data.js`). Tolerar variantes ahí haría que el tablero y el Saldo pudieran leer columnas distintas del mismo dato.
@@ -139,6 +139,12 @@ que este repo ya vigila a mano en los tres sitios donde no le queda más remedio
   mensajes. El pre-push local lo comprueba (`verificar-sin-reales.mjs`, en el utillaje).
 - La CI corre con **Node 24** (`deploy.yml`) en un runner en **UTC**: la receta para reproducirla
   está en el README («La CI corre las pruebas con Node 24»).
+- **happy-dom no es el navegador.** Lo que dependa de cómo arranca un formulario de verdad —el valor por defecto de un
+  `<select>`, qué hace `selTab` al cambiar de pestaña, el orden en que se pinta— se mira en Chrome (una sonda sobre
+  `index (8)` con Google simulado) antes de convertirlo en regla. El 2026-11-09 una regla de Algas suponía que el Área
+  traía un valor por defecto; en Chrome arranca vacía, y la prueba, en happy-dom, no lo podía ver.
+- **Una prueba que comprueba que algo NO pasa** («no pregunta», «no envía») comprueba también que lo demás SÍ pasó (la
+  sesión se abrió, el registro llegó): si no, pasa igual cuando la función no hizo nada.
 
 ## Estilo
 
