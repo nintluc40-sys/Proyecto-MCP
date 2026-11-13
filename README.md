@@ -1274,6 +1274,17 @@ sin avisar**:
   Auditoría exigen un día real. En 🌊 Mareas (texto) ☁️ no envía si alguna fila tiene una fecha que no existe («31/02», que
   salía como «2026-02-31») o que no se entiende (que salía como texto), y dice cuáles (usuario: «Bloquear las dos»). Lo
   vigilan `fechas-imposibles.test.js` y el banco `mutar-fechas-imposibles`.
+- **📝 Blanco, «↩ Recuperar» y el autoguardado** (2026-11-13). Blanco armaba su envío guardando la corrección ENCIMA de la
+  ficha de HOY y restaurándola después: sin espacio viajaba la ficha de hoy como si fuera la corrección, y si la restauración
+  no cabía, la ficha de hoy se quedaba con la corrección. Ahora el envío se arma con lo de pantalla y no escribe nada
+  (`buildDatosPayload(…, { dataByFicha })`). «↩ Recuperar» de Larvicultura, Biomol y Microbiología no miraba si guardaba:
+  borraba la copia y decía «✅ recuperado». Ahora, sin espacio, no se toca nada y se dice qué hacer, con el aviso de
+  Maduración (usuario: «Como en Maduración»; `_avisoRecuperarSinEspacio`). Y el autoguardado de cada minuto copiaba toda
+  ficha con algo en pantalla —la fecha y la hora de una ficha recién abierta cuentan— y, en Biomol y Maduración, la grilla
+  guardada: al volver a entrar tras cerrar sin guardar, la copia de lo tecleado se perdía en un minuto. Ahora copia sólo lo
+  TECLEADO sin guardar (usuario: «Sí, sólo lo tecleado»): en Larvicultura, por ficha (`_fichasTecleadas`; al guardarla, su
+  copia se suelta), en Lab. Algas lo que falta agregar, y en Biomol y Maduración su marca de «sin guardar». Lo vigilan
+  `recuperar-blanco-sin-espacio.test.js`, `pestanas-conservan.test.js` y el banco `mutar-recuperar-blanco`.
 - **Larvicultura y Lab. Algas: lo de días anteriores.** Se guardan por día y la app lee los de hoy, así que lo no
   enviado dejaba de verse a medianoche y la limpieza lo borraba. Ahora la limpieza no lo toca y, al abrir el módulo,
   un aviso dice qué quedó y de qué día, con **«☁️ Enviarlas»** (cada ficha a su hoja con SU fecha: las de Datos de un

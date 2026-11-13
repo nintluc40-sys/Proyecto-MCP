@@ -37,7 +37,10 @@ const EXPORTAR = ['PINS', 'LAB_MOD', 'MAD_MOD', 'AST_MOD',
   'AST_SUPERVISOR_OPTS', 'AST_MODULO_OPTS', 'AST_SIEMBRA_OPTS', 'AST_ESTADIO_OPTS',
   'saveAstLocal', 'editAstRecord', 'loadAst', '_trasRaw', 'trasAgregarCamion', 'trasGuardarLocal',
   'addToAlgHist', 'loadAlgHist', 'removeAlgHistConfirm', 'clearAlgHistConfirm', 'syncAll', 'loadRecovery',
-  'MAD_GRID_ERROR', 'MAD_GRID_SIN_ESPACIO'];
+  'MAD_GRID_ERROR', 'MAD_GRID_SIN_ESPACIO',
+  // punto 13 · el autoguardado no pisa la copia de «↩ Recuperar»
+  'localSave', 'clearFicha', 'saveRecovery', 'BIO_MOD', 'BIO_REC_KEY', 'BIO_RECOV_KEY', 'bioGridFecha', 'bioSidActivo', 'madKey',
+  'MAD_SALA_OPTS', 'MAD_RECOV_KEY'];
 const H = {};
 const enviados = [];
 let confirms = [];
@@ -340,6 +343,142 @@ describe('«← Cambiar módulo» deja la copia de «↩ Recuperar» de lo tecle
     H.goBack();
     expect(H.loadRecovery(H.LAB_MOD, 'algas')).toBeNull();
   });
+});
+
+/* 2026-11-13 (punto 13; usuario: «Sí, sólo lo tecleado») · el autoguardado de cada minuto copiaba toda ficha con algo en pantalla —y
+   la fecha y la hora que trae una ficha recién abierta cuentan—: al volver a entrar tras cerrar sin guardar, en un minuto la copia
+   de «↩ Recuperar» pasaba a ser la ficha vacía (o la guardada). En Biomol y Maduración, la grilla guardada. Ahora copia sólo lo
+   TECLEADO sin guardar. */
+describe('El autoguardado no pisa la copia de «↩ Recuperar» con lo que no se tecleó (punto 13)', () => {
+  const conReloj = (f) => { vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] }); try { f(); } finally { H.goBack(); vi.useRealTimers(); } };
+
+  it('🔴 Larvicultura: al volver a entrar, la ficha vacía no reemplaza lo tecleado', () => conReloj(() => {
+    entrar(1);
+    const el = teclear($('#fp-calidad input[type="number"][name]'), '4');
+    H.goBack();                                  // sale con su copia (punto 1)
+    entrar(1);                                   // vuelve: la ficha abre vacía, con su fecha y su hora
+    vi.advanceTimersByTime(60000);
+    const rec = H.loadRecovery(1, 'calidad');
+    expect(rec, 'se borró la copia').not.toBeNull();
+    expect(Number(rec.data[el.name]), 'la copia pasó a ser la ficha vacía').toBe(4);
+  }));
+
+  it('🔴 Larvicultura: tampoco la ficha GUARDADA de hoy reemplaza lo tecleado sin guardar', () => conReloj(() => {
+    entrar(1);
+    const el = teclear($('#fp-calidad input[type="number"][name]'), '9');
+    H.localSave('calidad');
+    teclear(el, '4');                            // sin guardar
+    H.goBack();
+    entrar(1);                                   // vuelve: la ficha abre con lo guardado (9)
+    vi.advanceTimersByTime(60000);
+    expect(Number(H.loadRecovery(1, 'calidad').data[el.name]), 'la copia pasó a ser lo guardado').toBe(4);
+  }));
+
+  it('🔴 guardar UNA ficha no deja sin copia lo tecleado en OTRA al salir del módulo', () => {
+    entrar(1);
+    teclear($('#fp-calidad input[type="number"][name]'), '4');
+    const otro = teclear($('#fp-plg input[type="number"][name]'), '7');
+    H.localSave('calidad');                      // apagaba el «sin guardar» de todo el módulo
+    H.goBack();
+    const rec = H.loadRecovery(1, 'plg');
+    expect(rec, 'lo tecleado en PLG salió sin copia').not.toBeNull();
+    expect(Number(rec.data[otro.name])).toBe(7);
+  });
+
+  it('🔴 sólo se copia la ficha en la que se tecleó: las demás no siembran «↩ Recuperar»', () => {
+    entrar(1);
+    teclear($('#fp-calidad input[type="number"][name]'), '4');
+    H.goBack();
+    expect(H.loadRecovery(1, 'calidad')).not.toBeNull();
+    ['plg', 'params', 'poblacion', 'calagua', 'despacho', 'desinfeccion'].forEach((f) => {
+      expect(H.loadRecovery(1, f), 'copia de ' + f + ' sin haber tecleado en ella').toBeNull();
+    });
+  });
+
+  it('🔴 al guardar la ficha, su copia se suelta (si no, «↩ Recuperar» ofrecería algo MÁS VIEJO que lo guardado)', () => conReloj(() => {
+    entrar(1);
+    const el = teclear($('#fp-calidad input[type="number"][name]'), '4');
+    vi.advanceTimersByTime(60000);
+    expect(Number(H.loadRecovery(1, 'calidad').data[el.name])).toBe(4);
+    teclear(el, '5');
+    H.localSave('calidad');
+    expect(H.loadRecovery(1, 'calidad'), 'quedó la copia de antes de guardar').toBeNull();
+    vi.advanceTimersByTime(60000);
+    expect(H.loadRecovery(1, 'calidad'), 'sin teclear nada más, no hay nada que copiar').toBeNull();
+  }));
+
+  it('🔴 lo tecleado en un módulo no hace copiar en OTRO las fichas del mismo nombre', () => conReloj(() => {
+    entrar(1);
+    const el = teclear($('#fp-calidad input[type="number"][name]'), '4');
+    H.goBack();
+    H.saveRecovery(2, 'calidad', { [el.name]: '8' });   // lo que quedó sin guardar en el módulo 2
+    entrar(2);
+    vi.advanceTimersByTime(60000);
+    expect(Number(H.loadRecovery(2, 'calidad').data[el.name]), 'la ficha vacía del módulo 2 pisó su copia').toBe(8);
+  }));
+
+  it('🔴 «🗑 Borrar datos» no pisa la copia: lo borrado se puede recuperar', () => conReloj(() => {
+    entrar(1);
+    const el = teclear($('#fp-calidad input[type="number"][name]'), '4');
+    vi.advanceTimersByTime(60000);
+    H.clearFicha('calidad');
+    vi.advanceTimersByTime(60000);
+    expect(Number(H.loadRecovery(1, 'calidad').data[el.name]), 'la ficha vacía pisó la copia').toBe(4);
+  }));
+
+  it('🔴 Lab. Algas: recién agregado al historial, el autoguardado no copia la ficha que queda (su regla, no la marca)', () => conReloj(() => {
+    entrar(H.LAB_MOD);
+    teclear($('#fp-algas [name="cel_ml"]'), '410000');
+    H.addToAlgHist();                            // queda la ficha con la fecha, la corrida y el técnico para la siguiente
+    vi.advanceTimersByTime(60000);
+    expect(H.loadRecovery(H.LAB_MOD, 'algas'), 'copió lo que ya está en el historial').toBeNull();
+  }));
+
+  it('lo tecleado después de entrar sí se sigue copiando cada minuto', () => conReloj(() => {
+    entrar(1);
+    const el = teclear($('#fp-calidad input[type="number"][name]'), '4');
+    H.goBack();
+    entrar(1);
+    teclear($('#fp-calidad input[type="number"][name]'), '5');
+    vi.advanceTimersByTime(60000);
+    expect(Number(H.loadRecovery(1, 'calidad').data[el.name])).toBe(5);
+  }));
+
+  it('🔴 Biomol: al volver a entrar, la grilla guardada no reemplaza lo tecleado', () => conReloj(() => {
+    const f = H.bioGridFecha();
+    globalThis.localStorage.setItem(H.BIO_REC_KEY, JSON.stringify([{ id: 'g', ts: Date.now(), synced: false, syncedAt: null,
+      data: { fecha: f, fila: 1, sid: H.bioSidActivo(f), codigo: 'BM-GUARDADO' } }]));
+    globalThis.localStorage.setItem(H.BIO_RECOV_KEY, JSON.stringify({ fecha: f, sid: H.bioSidActivo(f), ts: Date.now(),
+      rows: [{ fila: 1, fecha: f, codigo: 'BM-TECLEADO' }] }));
+    entrar(H.BIO_MOD);
+    expect($('#fp-biomol input[name="bg_1_codigo"]').value).toBe('BM-GUARDADO');
+    vi.advanceTimersByTime(60000);
+    const copia = () => { const rec = JSON.parse(globalThis.localStorage.getItem(H.BIO_RECOV_KEY) || 'null'); return rec && rec.rows.map((r) => r.codigo); };
+    expect(copia(), 'la copia pasó a ser la grilla guardada').toEqual(['BM-TECLEADO']);
+    H.goBack();
+    expect(copia(), 'al salir del módulo, igual').toEqual(['BM-TECLEADO']);
+  }));
+
+  it('🔴 Maduración: al volver a entrar, la grilla guardada no reemplaza lo tecleado', () => conReloj(() => {
+    entrar(H.MAD_MOD);
+    pulsar('salas');
+    const t = $('#fp-salas input[name^="sg_0_temp_"]');
+    const k = t.name.replace(/^sg_0_/, '');
+    const f = $('#mad-salas-fecha').value;
+    H.goBack();
+    globalThis.localStorage.setItem(H.madKey('salas'), JSON.stringify([{ id: 'g', ts: Date.now(), synced: false, syncedAt: null,
+      data: { fecha: f, sala: H.MAD_SALA_OPTS[0], [k]: 26 } }]));
+    globalThis.localStorage.setItem(H.MAD_RECOV_KEY, JSON.stringify({ ficha: 'salas', sala: '', fecha: f, ts: Date.now(),
+      rows: [{ fecha: f, sala: H.MAD_SALA_OPTS[0], [k]: '28.5' }] }));
+    entrar(H.MAD_MOD);
+    pulsar('salas');
+    expect($('#fp-salas input[name^="sg_0_temp_"]').value).toBe('26');
+    vi.advanceTimersByTime(60000);
+    const copia = () => { const rec = JSON.parse(globalThis.localStorage.getItem(H.MAD_RECOV_KEY) || 'null'); return rec && rec.rows.map((r) => String(r[k])); };
+    expect(copia(), 'la copia pasó a ser la grilla guardada').toEqual(['28.5']);
+    H.goBack();
+    expect(copia(), 'al salir del módulo, igual').toEqual(['28.5']);
+  }));
 });
 
 describe('Maduración · si guardar la grilla falla por un error, se pregunta antes de dejarla', () => {

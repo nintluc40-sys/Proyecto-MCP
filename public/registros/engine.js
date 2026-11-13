@@ -1228,7 +1228,8 @@ function startAutoRecovery(){
     if(curMod === null || curMod === undefined) return;
     // Biomol usa grilla propia: respalda esa grilla y omite el bucle de fichas
     // estándar (sus paneles no existen en este módulo).
-    if(isBioMod(curMod)){ try{ saveBioRecovery(); }catch(_){} return; }
+    // 2026-11-13 (punto 13) · sólo con algo tecleado sin guardar: si no, la copia pasaba a ser la grilla guardada (al volver a entrar).
+    if(isBioMod(curMod)){ try{ if(_bioGridDirty) saveBioRecovery(); }catch(_){} return; }
     // Microbiología usa borrador propio: respalda el Nuevo análisis (Bacteriología)
     // y omite el bucle de fichas estándar (sus paneles no existen aquí).
     if(isMicMod(curMod)){ try{ saveMicRecovery(); }catch(_){} return; }
@@ -1243,7 +1244,7 @@ function startAutoRecovery(){
       return;
     }
     // Maduración: respalda la grilla activa (sus paneles tampoco existen aquí).
-    if(isMadMod(curMod)){ try{ saveMadRecovery(); }catch(_){} return; }
+    if(isMadMod(curMod)){ try{ if(_madGridDirty) saveMadRecovery(); }catch(_){} return; }   // punto 13 · ídem
     // 🔧 Mantenimiento (2026-10-28): sus fichas se guardan al instante en su borrador; no hay paneles estándar que respaldar.
     if(isMntMod(curMod)) return;
     _respaldarFichasStd();
@@ -1251,16 +1252,42 @@ function startAutoRecovery(){
 }
 /* El respaldo de las fichas estándar (y la de Lab. Algas). 2026-11-12 (punto 1) · sacado del autoguardado para que «← Cambiar módulo»
    haga lo MISMO al salir (goBack): una sola regla. */
+/* 2026-11-13 (punto 13; usuario: «Sí, sólo lo tecleado») · LAS FICHAS CON ALGO TECLEADO desde que se abrió el módulo, se guardaron, se
+   recuperaron o se borraron. El autoguardado y la salida del módulo copian SÓLO éstas: antes copiaban toda ficha con algo en pantalla
+   —y la fecha y la hora que trae una ficha recién abierta cuentan—, así que al volver a entrar tras cerrar sin guardar, en un minuto
+   la copia de «↩ Recuperar» pasaba a ser la ficha vacía (o la guardada) y lo tecleado se perdía. La de Lab. Algas sigue su regla
+   (`_algSinAgregar`, la de su salida). */
+const _fichasTecleadas = new Set();
+function _marcarFichaTecleada(ev){
+  try{
+    const p = ev && ev.target && ev.target.closest ? ev.target.closest('[id^="fp-"]') : null;
+    const fid = p ? p.id.slice(3) : "";
+    if(ALL_FICHAS.includes(fid)) _fichasTecleadas.add(fid);
+  }catch(_){}
+}
+/* Lo tecleado de esa ficha quedó guardado: deja de copiarse y su copia se suelta. Si se quedara, podría ser de hasta un minuto
+   ANTES de guardar —más vieja que lo guardado— y «↩ Recuperar» ofrecería volver atrás (como `_madRecDescartar` en Maduración). */
+function _fichaGuardada(fid){
+  _fichasTecleadas.delete(fid);
+  try{ clearRecovery(curMod, fid); }catch(_){}
+}
 function _respaldarFichasStd(){
   ALL_FICHAS.forEach(fid => {
     const fp = document.getElementById("fp-"+fid);
     if(!fp) return;
+    if(fid === "algas" ? !_algSinAgregar() : !_fichasTecleadas.has(fid)) return;   // punto 13 · sólo lo tecleado
     const data = collect(fid, {quiet:true});   // #17: sin tocar _collectIssues ni .inp-bad
     const hasData = Object.values(data).some(v=>v!==null&&v!==undefined&&v!=="");
     if(hasData) saveRecovery(curMod, fid, data);
   });
 }
 
+/* 2026-11-13 (punto 13) · el aviso de ↩ Recuperar sin espacio, uno para todas (el de Maduración, del 05-11): no se ha recuperado
+   nada, la copia se conserva hasta que caduca y se dice qué hacer. */
+function _avisoRecuperarSinEspacio(ts){
+  const hasta = new Date(ts + RTTL).toLocaleTimeString("es-EC",{hour:"2-digit",minute:"2-digit"});
+  toast("No hay espacio en este equipo para recuperar el autoguardado: no se ha recuperado nada, y la copia se conserva (hasta las "+hasta+"). Libera espacio (🧹 en ⚙ Config) y vuelve a pulsar ↩ Recuperar.","err",12000);
+}
 function recoverFicha(fid){
   if(!ALL_FICHAS.includes(fid)) return;
   const rec = loadRecovery(curMod, fid);
@@ -1269,7 +1296,9 @@ function recoverFicha(fid){
   }
   const ts = new Date(rec.ts).toLocaleString("es-EC");
   if(!confirm("¿Recuperar los datos guardados automáticamente el " + ts + "?\nSe reemplazará el contenido actual de la ficha.")) return;
-  saveE(curMod, fid, rec.data, false);
+  /* 2026-11-13 (punto 13; usuario: «Como en Maduración») · SIN ESPACIO NO SE TOCA NADA. No se miraba si `saveE` guardaba: se
+     borraba la copia, se decía «✅ recuperados» y lo tecleado se perdía. Ahora la copia se queda y se dice qué hacer. */
+  if(!saveE(curMod, fid, rec.data, false)){ _avisoRecuperarSinEspacio(rec.ts); return; }
   clearRecovery(curMod, fid);
   _formDirty = false;            // R3: lo recuperado quedó persistido
   renderFicha(fid);
@@ -3218,6 +3247,7 @@ function enter(){
   // goBack() (p.ej., recarga parcial o reentrada al login).
   if(_recTimer){ clearInterval(_recTimer); _recTimer = null; }
   _formDirty = false;            // R3: arranca limpio al abrir el módulo
+  _fichasTecleadas.clear();      // punto 13 · y sin fichas tecleadas (las de otro módulo pisarían aquí las copias del mismo nombre)
   document.getElementById("rgLogin").classList.add("gone");
   document.getElementById("rgApp").classList.add("on");
   const badge = document.getElementById("tb-badge");
@@ -3259,13 +3289,16 @@ function goBack(){
   }
   // Respalda la grilla Biomol / el formulario As Técnico antes de salir
   // (recuperación de lo no guardado).
-  try{ if(isBioMod(curMod)) saveBioRecovery(); }catch(_){}
+  // 2026-11-13 (punto 13) · Biomol y Maduración, sólo con algo tecleado sin guardar (si no, la copia pasaba a ser lo guardado).
+  try{ if(isBioMod(curMod) && _bioGridDirty) saveBioRecovery(); }catch(_){}
   try{ if(isAstMod(curMod)) saveAstRecovery(); }catch(_){}
   try{ if(isAstMod(curMod)) saveTrasRecovery(); }catch(_){}
-  try{ if(isMadMod(curMod)) saveMadRecovery(); }catch(_){}
+  try{ if(isMadMod(curMod) && _madGridDirty) saveMadRecovery(); }catch(_){}
   /* 2026-11-12 (punto 1) · y las fichas de Larvicultura y la de Lab. Algas, que salían SIN su copia: lo tecleado desde el último
-     autoguardado (cada minuto) se perdía. Sólo si hay algo sin guardar, para no sembrar «↩ Recuperar» de lo que ya está guardado. */
-  try{ if(isStdMod(curMod) && _formDirty) _respaldarFichasStd(); }catch(_){}
+     autoguardado (cada minuto) se perdía. Sólo si hay algo sin guardar, para no sembrar «↩ Recuperar» de lo que ya está guardado.
+     🆕 13-11 (punto 13) · lo decide cada ficha (`_fichasTecleadas`): `_formDirty` es de todo el módulo y se apaga al guardar
+     CUALQUIER ficha, y entonces lo tecleado en otra salía sin copia. */
+  try{ if(isStdMod(curMod)) _respaldarFichasStd(); }catch(_){}
   try{ if(isLabMod(curMod) && _algSinAgregar()) saveRecovery(curMod, "algas", collect("algas", {quiet:true})); }catch(_){}
   // Lo de pantalla del AsT y de Traslado ya tiene su copia (arriba): no se pinta al volver al módulo, que abre con lo guardado.
   _astAlVolver = null; _trasAlVolver = null;
@@ -3673,6 +3706,7 @@ function localSave(fid){
   _persistStdLote(fid, data);    // Lote congelado 25 d (Población/PLG)
   _persistStdCorr(data);         // Corrida congelada 25 d (a nivel módulo)
   _formDirty = false;            // R3: lo tecleado quedó persistido
+  _fichaGuardada(fid);           // punto 13 · y su copia de «↩ Recuperar» ya no hace falta
   updateDots(); updateSyncUI();
   const sp=document.getElementById("sp-"+fid); if(sp) sp.innerHTML=sspill("pending");
   toast("Guardado localmente","ok");
@@ -3712,6 +3746,7 @@ async function localSync(fid){
   let _sinCopia = null;
   if(saveE(curMod, fid, data, false)){
     _formDirty = false;          // R3: lo tecleado quedó persistido
+    _fichaGuardada(fid);         // punto 13
   } else {
     _sinCopia = data;
     toast("⚠️ No se pudo guardar localmente; se enviará a Google Sheets lo que hay en pantalla.","warn",5000);
@@ -3901,6 +3936,7 @@ function clearFicha(fid){
   localStorage.removeItem(skey(curMod, fid));
   _invalidateLoadE(skey(curMod, fid));
   _formDirty = false;            // R3: ya no hay datos sin guardar en esta ficha
+  _fichasTecleadas.delete(fid);  // punto 13 · lo borrado no pisa la copia (queda para ↩ Recuperar)
   toast("Datos de " + label + " borrados","ok");
   renderFicha(fid);
   updateDots(); updateSyncUI();
@@ -7045,8 +7081,7 @@ function recoverMadGrid(){
     }
   }
   if(!cupo){
-    const hasta = new Date(rec.ts + RTTL).toLocaleTimeString("es-EC",{hour:"2-digit",minute:"2-digit"});
-    toast("No hay espacio en este equipo para recuperar el autoguardado: no se ha recuperado nada, y la copia se conserva (hasta las "+hasta+"). Libera espacio (🧹 en ⚙ Config) y vuelve a pulsar ↩ Recuperar.","err",12000);
+    _avisoRecuperarSinEspacio(rec.ts);   // 2026-11-13 (punto 13) · el mismo aviso, ahora de todas las ↩ Recuperar
     return;
   }
   if(rec.ficha==="tanques") _madTanquesSala = rec.sala;
@@ -20019,7 +20054,10 @@ function recoverBioGrid(){
     const prev = prevByFila[String(data.fila)];
     return { id: prev ? prev.id : (Date.now().toString(36)+Math.random().toString(36).slice(2,6)), ts: nowTs, synced:false, syncedAt:null, data: Object.assign({}, data, { sid }) };
   });
-  _bioSave(others.concat(restored));
+  /* 2026-11-13 (punto 13; usuario: «Como en Maduración») · SIN ESPACIO NO SE TOCA NADA: antes se borraba la copia y se decía
+     «✅ recuperadas» aunque no se hubiera guardado. Directo con `_lsSet`, no con `_bioSave`: su aviso («☁️ lo envía igual») habla
+     de lo tecleado en la grilla, y aquí lo recuperado no llega a la grilla. */
+  if(!_lsSet(BIO_REC_KEY, JSON.stringify(others.concat(restored)))){ _avisoRecuperarSinEspacio(rec.ts); return; }
   try{ localStorage.removeItem(BIO_RECOV_KEY); }catch(_){}
   _bioSid = sid;
   const el = document.getElementById("bio-grid-fecha");
@@ -27141,7 +27179,7 @@ function loadMicDraft(){
     return { meta: Object.assign({}, def.meta, o.meta||{}), sections: o.sections || {}, activeFmt: o.activeFmt || "larv-muestra" }; } }catch(_){}
   return def;
 }
-function saveMicDraft(d){ _lsSet(MIC_DRAFT_KEY, JSON.stringify(d||{})); }
+function saveMicDraft(d){ return _lsSet(MIC_DRAFT_KEY, JSON.stringify(d||{})); }   // true si quedó guardado (punto 13)
 
 // ── Recolección del borrador desde el DOM ──────────────
 function collectMicDraft(){
@@ -27576,7 +27614,9 @@ function recoverMicGrid(){
   if(!rec){ toast("No hay datos de recuperación disponibles","warn"); return; }
   const ts = new Date(rec.ts).toLocaleString("es-EC");
   if(!confirm("¿Recuperar el análisis autoguardado el "+ts+"?\nSe reemplazará lo que tengas ahora en Nuevo análisis (Bacteriología).")) return;
-  saveMicDraft(rec.draft); _micExtra = {};
+  // 2026-11-13 (punto 13; usuario: «Como en Maduración») · sin espacio no se toca nada (antes: copia borrada y «✅ recuperado»).
+  if(!saveMicDraft(rec.draft)){ _avisoRecuperarSinEspacio(rec.ts); return; }
+  _micExtra = {};
   try{ localStorage.removeItem(MIC_RECOV_KEY); }catch(_){}
   renderMicNuevo();
   toast("✅ Análisis recuperado del autoguardado","ok",4000);
@@ -33607,23 +33647,14 @@ async function syncBlanco(){
   const ficha = _blancoState.ficha;
   setSyncUI("pend","Sincronizando Blanco…");
 
-  // Guarda temporalmente en la clave de la ficha, construye payload, restaura.
-  const origE = loadE(curMod, ficha);
-  saveE(curMod, ficha, data, false);
+  /* 2026-11-13 (punto 13) · el envío se arma con lo de PANTALLA, sin escribir nada. Antes se guardaba la corrección ENCIMA de la
+     ficha de HOY para armarlo y se restauraba después: sin espacio ese guardado fallaba y viajaba la ficha de hoy como si fuera la
+     corrección (y se daba por hecha); y si lo que no cabía era la restauración, la ficha de hoy se quedaba con la corrección. */
   let payload, sent = false;
-  try{
-    if(ficha === "params"){
-      payload = buildControlPayload(curMod);
-    } else {
-      payload = buildDatosPayload(curMod, [ficha]);
-    }
-  } finally {
-    if(origE){
-      saveE(curMod, ficha, origE.data, origE.synced);
-    } else {
-      localStorage.removeItem(skey(curMod, ficha));
-      _invalidateLoadE(skey(curMod, ficha));
-    }
+  if(ficha === "params"){
+    payload = buildControlPayload(curMod, data);
+  } else {
+    payload = buildDatosPayload(curMod, [ficha], { dataByFicha: { [ficha]: data } });
   }
 
   if(!payload || !payload.rows || payload.rows.length === 0){
@@ -33921,6 +33952,8 @@ try{
   if(_mainEl){
     _mainEl.addEventListener("input",  _markFormDirty, true);
     _mainEl.addEventListener("change", _markFormDirty, true);
+    _mainEl.addEventListener("input",  _marcarFichaTecleada, true);   // punto 13 · en QUÉ ficha
+    _mainEl.addEventListener("change", _marcarFichaTecleada, true);
   }
 }catch(_){}
 // S3: reintenta automáticamente la cola de sincronización al volver la conexión.
