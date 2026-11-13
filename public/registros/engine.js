@@ -186,6 +186,12 @@ const BIO_TTL       = 48 * 60 * 60 * 1000;
 const BIO_SHEET     = "BIOMOL";
 // Recuperación de la grilla Biomol (autoguardado de lo NO guardado). TTL 1 h.
 const BIO_RECOV_KEY = RPRE + "biomolgrid";   // "larv4_rec_biomolgrid"
+/* 2026-11-12 (punto 38; usuario: «Enviar en siete» y, en Laboratorio, «Sólo el aviso») · EL AVISO DE LAS FICHAS QUE, SIN ESPACIO, NO
+   ENVÍAN: Microbiología, Calidad, Patología, Traslado, Score, Auditoría y Mantenimiento. Su envío se apoya en lo guardado (la sesión del
+   análisis, qué camiones o filas ya llegaron, qué hay que anular), así que sin guardarlo no salen. Antes unas decían «Usa ☁️ Guardar y
+   sincronizar» —que se detenía por lo mismo— y otras no decían qué hacer. */
+const SIN_ESPACIO_NO_ENVIA = "❌ Este navegador NO está guardando los datos (almacenamiento lleno, en modo privado o bloqueado): NO se guardó ni se envió."
+  + " Lo tecleado sigue en pantalla: no cambies de pestaña ni recargues. Libera espacio con «🧹 Liberar espacio» en ⚙ Config y vuelve a pulsar.";
 
 // ── As Técnico (AsT): constantes globales ──
 // Misma política que Biomol: hasta AST_MAX registros locales, expira en AST_TTL.
@@ -3633,7 +3639,8 @@ function localSave(fid){
   // con "Guardado localmente": avisar y abortar. El guardado local es lo único
   // que hace localSave, así que un fallo aquí debe ser visible.
   if(!saveE(curMod, fid, data, false)){
-    toast("❌ No se pudo guardar localmente. El almacenamiento del navegador está lleno o no es persistente (modo incógnito / 'borrar datos al salir'). Libera espacio o usa Sincronizar para no perder los datos.","err",6000);
+    // 2026-11-12 (punto 38) · decía «usa Sincronizar», y el 🔄 de arriba envía lo GUARDADO; el que envía lo de pantalla es el ☁️ de la ficha.
+    toast("❌ No se pudo guardar localmente. El almacenamiento del navegador está lleno o no es persistente (modo incógnito / 'borrar datos al salir'). Lo tecleado sigue en pantalla: «☁️ Guardar y sincronizar» lo envía igual a la hoja, sin guardar copia. Lo que ocupa el espacio, en ⚙ Config.","err",9000);
     return;
   }
   _persistStdLote(fid, data);    // Lote congelado 25 d (Población/PLG)
@@ -6615,9 +6622,9 @@ function saveMadList(ficha, list, callado){   // `callado` (2026-11-05): quien l
     const quedan = _madSinCaducados(list||[]);
     if(quedan.length !== (list||[]).length) ok = _lsSet(madKey(ficha), JSON.stringify(quedan));
   }
-  /* 2026-11-03 · aquí decía «Usa ☁️ Guardar y sincronizar para no perderlos»: en estas grillas el ☁️ guarda primero y, si no
-     puede, no envía, así que el consejo no llevaba a ningún sitio. */
-  if(!ok && !_reclaiming && !callado) toast("❌ No se pudo guardar: el espacio de este navegador está lleno, aun quitando lo antiguo (o tiene el guardado bloqueado). Lo tecleado sigue en pantalla: no cambies de pestaña ni recargues, y anótalo. Lo que ocupa el espacio, en ⚙ Config.","err",9000);
+  /* 2026-11-03 · aquí decía «Usa ☁️ Guardar y sincronizar para no perderlos»: en estas grillas el ☁️ guardaba primero y, si no
+     podía, no enviaba. 🆕 Desde A6 (Tanques, 04-11) y el punto 38 (🏠 Salas, 12-11) sí envía lo de pantalla: se dice. */
+  if(!ok && !_reclaiming && !callado) toast("❌ No se pudo guardar: el espacio de este navegador está lleno, aun quitando lo antiguo (o tiene el guardado bloqueado). Lo tecleado sigue en pantalla: ☁️ lo envía igual a la hoja, sin guardar copia. No cambies de pestaña ni recargues. Lo que ocupa el espacio, en ⚙ Config.","err",9000);
   return ok;
 }
 
@@ -6913,7 +6920,7 @@ function _madCommitActive(){
    módulo, repintaba y borraba lo tecleado sin remedio, mientras el aviso decía «sigue en pantalla». Ahora se pregunta. Con espacio, o sin nada
    tecleado, ni se pregunta. Devuelve true para seguir. */
 const MAD_GRID_SIN_ESPACIO = "⚠ No hay espacio en este equipo para guardar lo tecleado en esta grilla.\n\nAceptar = seguir y PERDERLO."
-  + "\nCancelar = quedarte aquí, con lo tecleado. En Tanques, ☁️ lo envía sin guardarlo; en Salas hay que liberar espacio en ⚙ Config o anotarlo.";
+  + "\nCancelar = quedarte aquí, con lo tecleado: ☁️ lo envía sin guardarlo, o libera espacio en ⚙ Config.";   // 2026-11-12 (punto 38) · también en Salas
 // 2026-11-12 (punto 1) · lo mismo cuando guardar falló por un error inesperado (no por espacio): no se le dice que es el espacio.
 const MAD_GRID_ERROR = "⚠ No se pudo guardar lo tecleado en esta grilla (error inesperado).\n\nAceptar = seguir y PERDERLO."
   + "\nCancelar = quedarte aquí, con lo tecleado, y volver a probar con 💾.";
@@ -17050,22 +17057,24 @@ function saveMadSalasGrid(opts){
   }
   if(rows.length === 0 && zRows.length === 0){ if(!silent) toast("No hay datos para guardar","warn"); return 0; }
   // Carga la lista UNA vez, mergea en memoria y persiste UNA vez (O(n)).
-  let saved = 0, zSaved = 0, _ok = true;
+  let saved = 0, zSaved = 0, _ok = true, lista = null, zLista = null;
   if(rows.length){
-    const list = _madSinIds(loadMad("salas"), opts.quitar);   // opts.quitar: lo que se lleva de otra fecha (_madGridLlevar)
-    rows.forEach(data => { if(!isValidDate(data.fecha)) return; _madMergeRow(list, "salas", data); saved++; });
-    _ok = saveMadList("salas", list);
+    lista = _madSinIds(loadMad("salas"), opts.quitar);   // opts.quitar: lo que se lleva de otra fecha (_madGridLlevar)
+    rows.forEach(data => { if(!isValidDate(data.fecha)) return; _madMergeRow(lista, "salas", data); saved++; });
+    _ok = saveMadList("salas", lista);
   }
   if(zRows.length){
-    const zl = _madSinIds(loadMad("zonas"), opts.quitarZonas);
-    zRows.forEach(data => { if(!isValidDate(data.fecha)) return; _madMergeRow(zl, "zonas", data); zSaved++; });
-    _ok = saveMadList("zonas", zl) && _ok;
+    zLista = _madSinIds(loadMad("zonas"), opts.quitarZonas);
+    zRows.forEach(data => { if(!isValidDate(data.fecha)) return; _madMergeRow(zLista, "zonas", data); zSaved++; });
+    _ok = saveMadList("zonas", zLista) && _ok;
   }
   if(_ok) _madGridDirty = false;
   /* 2026-11-03 · sin guardar NO se repinta: la grilla sale de lo guardado, y borraba de la pantalla lo recién tecleado. */
   if(_ok && !opts.noRender) renderMadSalas();
   updateDots(); updateSyncUI();
-  if(!_ok) return -1;                  // almacenamiento falló (ya avisó); no mentir "guardado"
+  /* 2026-11-12 (punto 38; usuario: «Enviar en siete») · sin espacio, lo que no se pudo guardar viaja a quien lo quiera enviar igual
+     (syncMadSalasGrid), como en Tanques (A6). `sinEspacio` lo distingue de la temperatura fuera de rango, que sigue sin enviarse. */
+  if(!_ok){ opts.sinEspacio = true; opts.lista = lista; opts.zLista = zLista; return -1; }   // almacenamiento falló (ya avisó); no mentir "guardado"
   if(!silent) toast("💾 "+(saved ? saved+" sala(s)" : "")+(saved && zSaved ? " y " : "")+(zSaved ? zSaved+" fila(s) de zonas" : "")+" guardada(s) localmente","ok",2500);
   return saved + zSaved;
 }
@@ -17084,30 +17093,51 @@ async function _madGridBloqueada(panel, enviar){
   finally{ if(fp){ fp.inert = false; fp.style.opacity = ""; fp.style.pointerEvents = ""; } }
 }
 async function syncMadSalasGrid(){ return _madGridBloqueada("fp-salas", _syncMadSalasGrid); }
+/* 2026-11-12 (punto 38; usuario: «Enviar en siete») · LO QUE SE ENVIÓ SIN COPIA (como _madTqSoltarEnviados, A6): la hoja ya lo tiene
+   (o la cola, si cupo allí) y el equipo no tiene sitio para anotarlo, así que lo que guardaba de esos mismos registros se retira, o un 🔄
+   posterior escribiría lo viejo encima. Una lista más corta siempre cabe; sin nada que retirar no se escribe. */
+function _madSoltarEnviados(ficha, pending){
+  const fuera = new Set(pending.map(r => r.id));
+  const antes = loadMad(ficha);
+  const quedan = antes.filter(r => !(r && fuera.has(r.id)));
+  if(quedan.length !== antes.length) saveMadList(ficha, quedan, true);
+  pending.forEach(r => { if(r.data) _madRecDescartar("salas", "", r.data.fecha); });   // la copia de ↩ de 🏠 Salas lleva también sus zonas
+}
 async function _syncMadSalasGrid(){
-  if(saveMadSalasGrid() === -1) return;   // almacenamiento falló, o una temperatura fuera de rango lo bloqueó (ya avisó): no enviar lo que no se guardó
+  /* 2026-11-12 (punto 38) · sin espacio para guardar, se envía igual lo que hay en pantalla, como en Tanques (A6): la hoja es el respaldo
+     que de verdad cuenta. Una temperatura fuera de rango sigue sin enviarse (-1 sin `sinEspacio`). */
+  const _g = {};
+  if(saveMadSalasGrid(_g) === -1 && !_g.sinEspacio) return;   // una temperatura fuera de rango lo bloqueó (ya avisó)
+  const sinCopia = !!_g.sinEspacio;
   const url = gasUrl();
   if(!url){ toast("Configura la URL de Google Apps Script","warn"); openCfg(); return; }
   if(!isValidGasUrl(url)){ toast("URL inválida","err"); return; }
   if(!syncRateOk()) return;
-  const pending = loadMad("salas").filter(r => !r.synced);
-  const zPend = loadMad("zonas").filter(r => !r.synced);   // 2026-10-27 · y las de las zonas, a su hoja
+  const pending = ((sinCopia && _g.lista) || loadMad("salas")).filter(r => !r.synced);
+  const zPend = ((sinCopia && _g.zLista) || loadMad("zonas")).filter(r => !r.synced);   // 2026-10-27 · y las de las zonas, a su hoja
   if(pending.length === 0 && zPend.length === 0){ toast("Sin pendientes","info"); return; }
-  if(pending.length === 0){ await _madZonasSync(zPend); renderMadSalas(); updateDots(); updateSyncUI(); return; }
-  setSyncUI("pend","Enviando "+pending.length+" sala(s)…");
-  const payload = buildMadPayload("salas", pending);
-  const opts = { mark:{ kind:"mad:salas", keys: pending.map(p=>p.id) } };   // F3
-  const sent = await postPayload(payload, url, opts);
-  if(sent){
-    _marcarEnviado(opts);
-    setSyncUI("ok",pending.length+" sala(s) sincronizada(s) ✔");
-    toast("✅ Salas enviadas a Google Sheets","ok");
-    setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
-  } else {
-    _syncNotOkUI(opts.outcome, "Error al sincronizar Salas", null, opts.gasMessage);
+  let aSalvo = true;   // sin copia: ¿llegó todo (o quedó en la cola)? Sólo entonces se repinta, que sale de lo guardado
+  if(pending.length){
+    setSyncUI("pend","Enviando "+pending.length+" sala(s)…");
+    const payload = buildMadPayload("salas", pending);
+    const opts = { mark:{ kind:"mad:salas", keys: pending.map(p=>p.id) } };   // F3
+    const sent = await postPayload(payload, url, opts);
+    const _aSalvo = sent || opts.outcome === "queued";
+    if(sinCopia && _aSalvo) _madSoltarEnviados("salas", pending);
+    if(!_aSalvo) aSalvo = false;
+    if(sent){
+      if(!sinCopia) _marcarEnviado(opts);
+      setSyncUI("ok",pending.length+" sala(s) sincronizada(s) ✔");
+      if(sinCopia) toast("✅ Salas enviadas a Google Sheets. Este equipo no tiene espacio y no guardó copia: si hay que corregir ese día, se hace en la hoja.","warn",9000);
+      else toast("✅ Salas enviadas a Google Sheets","ok");
+      setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
+    } else {
+      _syncNotOkUI(opts.outcome, "Error al sincronizar Salas", null, opts.gasMessage);
+      if(sinCopia && _aSalvo) toast("⚠️ Este equipo no tiene espacio: ese día de Salas sólo queda en la cola, no en la lista de Salas.","warn",9000);
+    }
   }
-  if(zPend.length) await _madZonasSync(zPend);
-  renderMadSalas();
+  if(zPend.length && !(await _madZonasSync(zPend, sinCopia))) aSalvo = false;
+  if(!sinCopia || aSalvo) renderMadSalas();
   updateDots(); updateSyncUI();
 }
 
@@ -17270,21 +17300,25 @@ async function _madZonasEnviar(payload, opts, gas){
   if(g === false){ opts.gasMessage = _madGasViejoMsg(MAD_SHEET.zonas); return false; }
   return _madPostConSello(payload, g, opts);
 }
-/** Envía las filas de zonas `pend` (☁️ de 🏠 Salas) y las marca enviadas. */
-async function _madZonasSync(pend){
+/** Envía las filas de zonas `pend` (☁️ de 🏠 Salas) y las marca enviadas. `sinCopia` (punto 38): no se pudieron guardar; si llegan
+ *  (o quedan en la cola), se retira lo que el equipo guardaba de ellas. Devuelve si quedaron a salvo (en la hoja o en la cola). */
+async function _madZonasSync(pend, sinCopia){
   setSyncUI("pend","Enviando "+pend.length+" fila(s) de zonas…");
   const payload = buildMadPayload("zonas", pend);
   const opts = { mark:{ kind:"mad:zonas", keys: pend.map(p=>p.id) } };   // F3: si acaba en la cola, se marcan solas al entregarse
   _marcaSellar(opts.mark, pend);   // pauta A2: `pend` se leyó antes de enviar las Salas
   const sent = await _madZonasEnviar(payload, opts);
+  const aSalvo = sent || opts.outcome === "queued";
+  if(sinCopia && aSalvo) _madSoltarEnviados("zonas", pend);
   if(sent){
-    _marcarEnviado(opts);
+    if(!sinCopia) _marcarEnviado(opts);
     setSyncUI("ok",pend.length+" fila(s) de zonas sincronizada(s) ✔");
-    toast("✅ Zonas enviadas a Google Sheets","ok");
+    toast(sinCopia ? "✅ Zonas enviadas a Google Sheets. Este equipo no tiene espacio y no guardó copia." : "✅ Zonas enviadas a Google Sheets", sinCopia ? "warn" : "ok", sinCopia ? 9000 : 3500);
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
     _syncNotOkUI(opts.outcome, "Error al sincronizar las zonas", null, opts.gasMessage);
   }
+  return aSalvo;
 }
 /** Las filas de zonas del PDF de Salas: con los MISMOS filtros que sus salas (fecha y búsqueda), en el orden de la grilla. */
 function _madZonasParaPdf(){
@@ -18967,7 +19001,8 @@ function _bioRaw(){
 }
 function _bioSave(list){
   const ok = _lsSet(BIO_REC_KEY, JSON.stringify(list||[]));
-  if(!ok && !_reclaiming) toast("❌ Este navegador NO está guardando los datos (almacenamiento lleno, en modo privado o bloqueado). Usa ☁️ Guardar y sincronizar para no perderlos.","err",7000);
+  // 2026-11-12 (punto 38) · el consejo era «Usa ☁️ Guardar y sincronizar» y ☁️ no enviaba sin guardar; ahora sí lo envía.
+  if(!ok && !_reclaiming) toast("❌ Este navegador NO está guardando los datos (almacenamiento lleno, en modo privado o bloqueado). Lo tecleado sigue en pantalla: ☁️ lo envía igual a la hoja, sin guardar copia. No cambies de pestaña ni recargues. Lo que ocupa el espacio, en ⚙ Config.","err",9000);
   return ok;
 }
 function pruneBio(){
@@ -19479,11 +19514,15 @@ function saveBioGrid(opts){
       ts: nowTs, synced: false, syncedAt: null, data
     };
   });
-  const _ok = _bioSave(others.concat(updated));
+  const lista = others.concat(updated);
+  const _ok = _bioSave(lista);
   if(_ok) _bioGridDirty = false;       // lo tecleado/pegado quedó persistido
-  if(!opts.noRender) renderBiomol();
+  // 2026-11-12 (punto 38) · sin guardar NO se repinta: la grilla sale de lo guardado y borraba lo recién pegado.
+  if(_ok && !opts.noRender) renderBiomol();
   updateDots(); updateSyncUI(); buildGrid();
-  if(!_ok) return -1;                  // almacenamiento lleno: NO mentir "guardado"
+  /* 2026-11-12 (punto 38; usuario: «Enviar en siete») · sin espacio, la lista sin guardar viaja a quien la quiera enviar igual
+     (syncBioGrid), como en Tanques (A6). */
+  if(!_ok){ opts.sinEspacio = true; opts.lista = lista; return -1; }   // almacenamiento lleno: NO mentir "guardado"
   return updated.length;
 }
 
@@ -19531,14 +19570,19 @@ function buildBioPayload(fecha, records, porFecha){
    análisis— y arrastra a todos los análisis de esa fecha para no dejar fuera
    ninguno. A partir de ahí, cada uno va por su cuenta. */
 async function syncBioGrid(sopts){
-  if(saveBioGrid() === -1) return;     // almacenamiento lleno (ya avisó): no enviar datos no persistidos
+  /* 2026-11-12 (punto 38; usuario: «Enviar en siete») · sin espacio para guardar, se envía igual lo que hay en pantalla, como en Tanques
+     (A6): viaja la lista que no se pudo guardar, sin marca de enviado, y si llega (o queda en la cola) se retira lo que el equipo
+     guardaba de ese análisis, o un 🔄 posterior mandaría lo viejo encima. */
+  const _g = {};
+  if(saveBioGrid(_g) === -1 && !_g.sinEspacio) return;
+  const sinCopia = !!_g.sinEspacio;
   const url = gasUrl();
   if(!url){ toast("Configura la URL de Google Apps Script","warn"); openCfg(); return; }
   if(!isValidGasUrl(url)){ toast("URL inválida","err"); return; }
   if(!syncRateOk()) return;
   const fecha = bioGridFecha();
   const sid   = bioSidActivo(fecha);
-  const todas = loadBio();
+  const todas = sinCopia ? _g.lista : loadBio();
 
   // ¿Queda algún análisis de esta fecha sin migrar? Entonces se migra la fecha entera.
   const delDia    = bioSesDelDia(fecha);
@@ -19563,8 +19607,15 @@ async function syncBioGrid(sopts){
      expulsaba al primero de la cola, y al entregarse marcaba a los dos como enviados: el primero nunca llegaba. */
   const opts = { mark:{ kind:"bio", keys: sidsEnviados.map(s => fecha + "|" + s) } };
   const sent = await postPayload(payload, url, opts);
+  const _aSalvo = sent || opts.outcome === "queued";
+  if(sinCopia && _aSalvo){   // punto 38 · lo que el equipo guardaba de lo enviado, fuera (una lista más corta siempre cabe)
+    const antes = _bioRaw();
+    const quedan = antes.filter(r => !(r && r.data && r.data.fecha === fecha && sidsEnviados.indexOf(r.data.sid) !== -1));
+    if(quedan.length !== antes.length) _lsSet(BIO_REC_KEY, JSON.stringify(quedan));
+    _bioGridDirty = false;
+  }
   if(sent){
-    _marcarEnviado(opts);
+    if(!sinCopia) _marcarEnviado(opts);
     // Migrados: desde ahora cada análisis de esta fecha va por su propia clave.
     const ses2 = _bioSesAll();
     sidsEnviados.forEach(s => { if(ses2[s]) ses2[s].legacy = false; });
@@ -19580,12 +19631,16 @@ async function syncBioGrid(sopts){
     if(!sopts || sopts.rotar !== false) bioSesCrear(fecha, "");
     setSyncUI("ok", payload.rows.length+" muestra(s) sincronizada(s) ✔");
     // Recorriendo otros análisis (rotar:false) no se abre ninguna grilla, y se dice de qué día es (auditoría, 2026-11-05).
-    toast("✅ "+payload.rows.length+" muestra(s) de "+quien+(sopts && sopts.rotar === false ? " (del "+fecha+") enviadas" : " enviadas · grilla en blanco para la siguiente tanda"),"ok",5000);
+    if(sinCopia) toast("✅ "+payload.rows.length+" muestra(s) de "+quien+" enviadas. Este equipo no tiene espacio y no guardó copia: si hay que corregir esa tanda, se hace en la hoja.","warn",9000);
+    else toast("✅ "+payload.rows.length+" muestra(s) de "+quien+(sopts && sopts.rotar === false ? " (del "+fecha+") enviadas" : " enviadas · grilla en blanco para la siguiente tanda"),"ok",5000);
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
     _syncNotOkUI(opts.outcome, "Error al sincronizar Biomol", null, opts.gasMessage);
+    if(sinCopia && _aSalvo) toast("⚠️ Este equipo no tiene espacio: esa tanda de Biomol sólo queda en la cola, no en la lista de Biomol.","warn",9000);
   }
-  renderBiomol(); updateDots(); updateSyncUI(); buildGrid();
+  // Sin copia y sin llegar, NO se repinta: la grilla sale de lo guardado y se llevaría lo único que hay.
+  if(!sinCopia || _aSalvo) renderBiomol();
+  updateDots(); updateSyncUI(); buildGrid();
 }
 
 /* El botón «Sincronizar» del topbar (syncAll → isBioMod) cubre TODOS los análisis pendientes —de ese día y, desde el 2026-11-05, de
@@ -19686,13 +19741,14 @@ function saveMareaDraft(opts){
   opts = opts || {};
   const rows = _collectMareaGrid();
   const ok = saveMareaDraftObj({ rows });
-  if(!opts.noRender) renderMarea();
+  // 2026-11-12 (punto 38) · sin guardar NO se repinta: la grilla sale del borrador guardado y borraba lo recién tecleado.
+  if(ok && !opts.noRender) renderMarea();
   return ok ? rows.length : -1;
 }
 function saveMareaLocal(){
   const n = saveMareaDraft();
   if(n >= 0) toast("💾 "+n+" fila(s) de mareas guardada(s) localmente","ok",2500);
-  else toast("Almacenamiento lleno: no se pudo guardar","err",3500);
+  else toast("❌ No hay espacio en este equipo para guardar las mareas. Lo tecleado sigue en pantalla: ☁️ lo envía igual a la hoja, sin guardar copia. Lo que ocupa el espacio, en ⚙ Config.","err",9000);
 }
 function mareaGridAddRows(){
   const cur = _mareaShownRows();
@@ -19725,7 +19781,9 @@ function buildMareaPayload(rows){
   return { sheetName: MAREA_SHEET, headers, rows: out, replaceKey: true, keyCols:[0] };
 }
 async function syncMareaGrid(){
-  if(saveMareaDraft({ noRender:true }) === -1){ toast("Almacenamiento lleno: no se envió","err",3500); return; }
+  /* 2026-11-12 (punto 38; usuario: «Enviar en siete») · sin espacio para el borrador se envía igual: el envío ya sale de lo que hay en
+     pantalla (_collectMareaGrid), así que no hacía falta guardarlo antes para poder mandarlo. */
+  const sinCopia = saveMareaDraft({ noRender:true }) === -1;
   const url = gasUrl();
   if(!url){ toast("Configura la URL de Google Apps Script","warn"); openCfg(); return; }
   if(!isValidGasUrl(url)){ toast("URL inválida","err"); return; }
@@ -19737,7 +19795,8 @@ async function syncMareaGrid(){
   const sent = await postPayload(payload, url, opts);
   if(sent){
     setSyncUI("ok", payload.rows.length+" fila(s) de mareas sincronizada(s) ✔");
-    toast("✅ "+payload.rows.length+" fila(s) enviadas a la hoja Marea","ok",4500);
+    if(sinCopia) toast("✅ "+payload.rows.length+" fila(s) enviadas a la hoja Marea. Este equipo no tiene espacio y no guardó copia: no cambies de pestaña ni recargues si te falta algo por teclear.","warn",9000);
+    else toast("✅ "+payload.rows.length+" fila(s) enviadas a la hoja Marea","ok",4500);
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
     _syncNotOkUI(opts.outcome, "Error al sincronizar Mareas", null, opts.gasMessage);
@@ -20888,7 +20947,8 @@ function _astRaw(){
 }
 function _astSave(list){
   const ok = _lsSet(AST_REC_KEY, JSON.stringify(list||[]));
-  if(!ok && !_reclaiming) toast("❌ Este navegador NO está guardando los datos (almacenamiento lleno, en modo privado o bloqueado). Usa ☁️ Guardar y sincronizar para no perderlos.","err",7000);
+  // 2026-11-12 (punto 38) · As Técnico: el consejo mandaba a un ☁️ que no enviaba sin guardar; ahora lo envía (_astEnviarSinCopia).
+  if(!ok && !_reclaiming) toast("❌ Este navegador NO está guardando los datos (almacenamiento lleno, en modo privado o bloqueado). Lo tecleado sigue en pantalla: ☁️ lo envía igual a la hoja, sin guardar copia. No cambies de pestaña ni recargues. Lo que ocupa el espacio, en ⚙ Config.","err",9000);
   return ok;
 }
 function pruneAst(){
@@ -20992,7 +21052,11 @@ function astEstadioChange(){
 }
 
 // ── CRUD ───────────────────────────────────────────────
-function _persistAst(){
+/* 2026-11-12 (punto 38; usuario: «Enviar en siete») · `opts`: sin espacio, `opts.sinEspacio` y `opts.entry` (el registro de pantalla,
+   sin guardar) para que ☁️ lo envíe igual. El ID de un registro NUEVO que no se pudo guardar se conserva (`_astIdSinGuardar`) hasta
+   que se guarde, se envíe o se vacíe el formulario: así reintentar ☁️ corrige SU fila en la hoja en vez de añadir otra. */
+let _astIdSinGuardar = null;
+function _persistAst(opts){
   const data = collectAst();
   if(!validateAst(data)) return null;
   const editingId = _astEditing;
@@ -21009,7 +21073,7 @@ function _persistAst(){
       });
       // #2: si el almacenamiento falló, _astSave ya avisó; NO mentir "guardado" ni
       // re-renderizar (conserva el formulario para reintentar/sincronizar).
-      if(!_astSave(list)) return null;
+      if(!_astSave(list)){ if(opts){ opts.sinEspacio = true; opts.entry = list[idx]; } return null; }
       try{ localStorage.removeItem(AST_RECOV_KEY); }catch(_){}
       _astFormDirty = false;
       _astEditing = null;
@@ -21024,14 +21088,19 @@ function _persistAst(){
     return null;
   }
   const entry = {
-    id: Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+    id: _astIdSinGuardar || (Date.now().toString(36) + Math.random().toString(36).slice(2,6)),
     ts: Date.now(),
     synced: false,
     syncedAt: null,
     data: data
   };
   list.unshift(entry);
-  if(!_astSave(list)) return null;     // #2: conserva el form si la persistencia falló
+  if(!_astSave(list)){   // #2: conserva el form si la persistencia falló
+    _astIdSinGuardar = entry.id;
+    if(opts){ opts.sinEspacio = true; opts.entry = entry; }
+    return null;
+  }
+  _astIdSinGuardar = null;
   try{ localStorage.removeItem(AST_RECOV_KEY); }catch(_){}
   _astFormDirty = false;
   _astEditing = null;
@@ -21047,10 +21116,41 @@ function saveAstLocal(){
         + " localmente (pendiente de sincronizar)","ok",3000);
 }
 async function saveAstSync(){
-  const res = _persistAst();
-  if(!res) return;
+  const _g = {};
+  const res = _persistAst(_g);
+  if(!res){ if(_g.sinEspacio) await _astEnviarSinCopia(_g.entry); return; }   // punto 38 · sin espacio, lo de pantalla
   toast(res.wasUpdate ? "Registro actualizado" : "Registro guardado","ok",2200);
   await syncOneAstFromList(res.id);
+}
+/* 2026-11-12 (punto 38; usuario: «Enviar en siete») · SIN ESPACIO, ☁️ ENVÍA LO DE PANTALLA, como Tanques (A6): viaja el registro que no se
+   pudo guardar, sin marca de enviado (no hay copia que marcar). Si llega a la hoja, o queda en la cola, lo que el equipo guardaba de ese
+   registro (al editar uno) se retira —o un 🔄 posterior escribiría lo viejo encima— y el formulario queda en blanco, como tras guardar; si
+   no llega, todo se queda como estaba y lo tecleado, en pantalla. */
+async function _astEnviarSinCopia(entry){
+  const url = gasUrl();
+  if(!url){ toast("Configura la URL de Google Apps Script primero","warn"); openCfg(); return; }
+  if(!isValidGasUrl(url)){ toast("URL de script inválida","err"); return; }
+  if(!syncRateOk()) return;
+  setSyncUI("pend","Sincronizando…");
+  const opts = { dedupeSalt: entry.id };
+  const sent = await postPayload(buildAstPayload([entry]), url, opts);
+  if(!(sent || opts.outcome === "queued")){
+    _syncNotOkUI(opts.outcome, "No fue posible sincronizar", null, opts.gasMessage);
+    return;
+  }
+  const antes = _astRaw(), quedan = antes.filter(r => r && r.id !== entry.id);
+  if(quedan.length !== antes.length) _lsSet(AST_REC_KEY, JSON.stringify(quedan));   // una lista más corta siempre cabe
+  try{ localStorage.removeItem(AST_RECOV_KEY); }catch(_){}   // ↩ Recuperar traería de vuelta lo ya enviado
+  _astIdSinGuardar = null;
+  _astEditing = null;
+  _astFormDirty = false;
+  renderAst();
+  updateDots(); updateSyncUI(); buildGrid();
+  if(sent){
+    setSyncUI("ok","Sincronizado ✔");
+    setTimeout(()=>{ setSyncUI("idle","Todo sincronizado"); }, 3000);
+    toast("✅ Registro enviado a "+AST_SHEET+". Este equipo no tiene espacio y no guardó copia: si hay que corregirlo, se hace en la hoja.","warn",9000);
+  } else toast("⚠️ Este equipo no tiene espacio: ese registro sólo queda en la cola, no en la lista del As Técnico.","warn",9000);
 }
 function editAstRecord(id){
   const r = loadAst().find(x => x.id === id);
@@ -21090,6 +21190,7 @@ function clearAstForm(){
     if(!confirm("¿Descartar lo que estás registrando?\nLos datos del formulario se perderán.")) return;
   }
   _astEditing = null;
+  _astIdSinGuardar = null;   // punto 38 · un formulario nuevo es un registro nuevo
   try{ localStorage.removeItem(AST_RECOV_KEY); }catch(_){}
   _astFormDirty = false;
   renderAst();
@@ -21800,7 +21901,7 @@ function _scoreRaw(){
 }
 function _scoreSave(list){
   const ok = _lsSet(SCORE_REC_KEY, JSON.stringify(list || []));
-  if(!ok && !_reclaiming) toast("❌ Este navegador NO está guardando los datos (almacenamiento lleno, en modo privado o bloqueado).","err",7000);
+  if(!ok && !_reclaiming) toast(SIN_ESPACIO_NO_ENVIA,"err",9000);   // punto 38
   return ok;
 }
 // Lo pendiente NO caduca (se perdería trabajo); lo enviado se purga a los 7 días.
@@ -22512,7 +22613,7 @@ function _mntRaw(key){
 }
 function _mntSave(key, list){
   const ok = _lsSet(key, JSON.stringify(list || []));
-  if(!ok && !_reclaiming) toast("❌ Este navegador NO está guardando los datos (almacenamiento lleno, en modo privado o bloqueado).","err",7000);
+  if(!ok && !_reclaiming) toast(SIN_ESPACIO_NO_ENVIA,"err",9000);   // punto 38
   return ok;
 }
 function _mntRondaRaw(){ return _mntRaw(MNT_RONDA_KEY); }
@@ -23151,7 +23252,7 @@ function _audRaw(){
 }
 function _audSave(list){
   const ok = _lsSet(AUD_REC_KEY, JSON.stringify(list || []));
-  if(!ok && !_reclaiming) toast("❌ Este navegador NO está guardando los datos (almacenamiento lleno, en modo privado o bloqueado).","err",7000);
+  if(!ok && !_reclaiming) toast(SIN_ESPACIO_NO_ENVIA,"err",9000);   // punto 38
   return ok;
 }
 // Lo pendiente NO caduca (se perdería trabajo); lo enviado se purga a los 7 días.
@@ -24179,7 +24280,7 @@ function _trasRaw(){
 }
 function _trasSave(list){
   const ok = _lsSet(TRAS_REC_KEY, JSON.stringify(list || []));
-  if(!ok && !_reclaiming) toast("❌ Este navegador NO está guardando los datos (almacenamiento lleno, en modo privado o bloqueado).","err",7000);
+  if(!ok && !_reclaiming) toast(SIN_ESPACIO_NO_ENVIA,"err",9000);   // punto 38
   return ok;
 }
 function pruneTras(){
@@ -26860,7 +26961,7 @@ function micComputeRecord(rec){
 function _micRaw(){ try{ const raw = localStorage.getItem(MIC_REC_KEY); if(!raw) return []; const a = JSON.parse(raw); return Array.isArray(a)?a:[]; }catch(_){ return []; } }
 function _micSave(list){
   const ok = _lsSet(MIC_REC_KEY, JSON.stringify(list||[]));
-  if(!ok && !_reclaiming) toast("❌ Este navegador NO está guardando los datos (almacenamiento lleno, en modo privado o bloqueado). Usa ☁️ Guardar y sincronizar para no perderlos.","err",7000);
+  if(!ok && !_reclaiming) toast(SIN_ESPACIO_NO_ENVIA,"err",9000);   // punto 38 · decía «Usa ☁️», que se detenía por lo mismo
   return ok;
 }
 // Purga del historial: elimina solo sesiones YA SINCRONIZADAS con más de 7 días
@@ -28148,7 +28249,7 @@ function calClassify(val, r){
 function _calRaw(){ try{ const raw=localStorage.getItem(CAL_REC_KEY); if(!raw) return []; const a=JSON.parse(raw); return Array.isArray(a)?a:[]; }catch(_){ return []; } }
 function _calSave(list){
   const ok = _lsSet(CAL_REC_KEY, JSON.stringify(list||[]));
-  if(!ok && !_reclaiming) toast("❌ Este navegador NO está guardando los datos (almacenamiento lleno, en modo privado o bloqueado). Usa ☁️ Guardar y sincronizar para no perderlos.","err",7000);
+  if(!ok && !_reclaiming) toast(SIN_ESPACIO_NO_ENVIA,"err",9000);   // punto 38 · decía «Usa ☁️», que se detenía por lo mismo
   return ok;
 }
 // Poda Calidad de Agua: igual que pruneMic → borra SOLO sesiones sincronizadas con
@@ -29386,7 +29487,7 @@ const PAT_SID_COL = PAT_SHEET_HEADERS.indexOf("Sesión");
 function _patRaw(){ try{ const raw=localStorage.getItem(PAT_REC_KEY); if(!raw) return []; const a=JSON.parse(raw); return Array.isArray(a)?a:[]; }catch(_){ return []; } }
 function _patSave(list){
   const ok = _lsSet(PAT_REC_KEY, JSON.stringify(list||[]));
-  if(!ok && !_reclaiming) toast("❌ Este navegador NO está guardando los datos (almacenamiento lleno, en modo privado o bloqueado). Usa ☁️ Guardar y sincronizar para no perderlos.","err",7000);
+  if(!ok && !_reclaiming) toast(SIN_ESPACIO_NO_ENVIA,"err",9000);   // punto 38 · decía «Usa ☁️», que se detenía por lo mismo
   return ok;
 }
 // Poda Patología: igual que pruneMic/pruneCal (sincronizadas con +7 d). Consistencia.

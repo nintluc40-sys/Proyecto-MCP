@@ -1231,8 +1231,13 @@ sin avisar**:
   módulo, Desinfección incluida), igual desde el 2026-11-09 (usuario: «Como en Tanques»; hasta ese día ☁️ armaba el envío
   con la copia GUARDADA, vieja o ninguna, y le ponía a ella la marca de enviada): viaja lo de pantalla, sin marca; si llega
   o queda en la cola, se quita la copia de HOY de esa ficha y se avisa; si no, se queda como estaba. La ficha sigue en
-  pantalla. 🏠 Salas, Biomol, Mareas,
-  Microbiología, Calidad y Patología, en cambio, **no envían** si no pueden guardar antes (sin decidir si deberían).
+  pantalla. Desde el 2026-11-12 (punto 38, usuario: «Enviar en siete») hacen lo mismo 🏠 Salas y 🌡️ Zonas, Biomol, Mareas
+  y As Técnico (el registro que no se pudo guardar conserva su ID para que reintentar ☁️ corrija su fila y no añada otra;
+  tras enviarse, el formulario queda en blanco). En cambio, Microbiología, Calidad, Patología, Traslado, Score, Auditoría
+  y Mantenimiento **no envían** sin guardar: su envío se apoya en lo guardado (la sesión del análisis —sin espacio, la que
+  se lee es la del análisis ANTERIOR y enviar lo sustituiría en la hoja; usuario: «Sólo el aviso»—, qué camiones o filas
+  ya llegaron, qué hay que anular). Su aviso (`SIN_ESPACIO_NO_ENVIA`) lo dice —«NO se guardó ni se envió»— y lleva a
+  «🧹 Liberar espacio» en ⚙ Config; antes, cinco avisos mandaban a un ☁️ que se detenía por lo mismo.
 - **Mientras ☁️ envía, no se teclea** (`_madGridBloqueada`, `engine.js`): las grillas de 🏠 Salas y 🛢 Tanques (04-11, usuario:
   «Bloquear la grilla») y, desde el 2026-11-09, los **siete formularios** de Maduración —Ingreso, Movimientos, Desoves, Fin
   de Ciclo, Tratamientos, Inf. Supervisor y Alimentación— (usuario: «Bloquear mientras envía»). Se vacían al TERMINAR, tras
@@ -1650,8 +1655,6 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
    Del mismo diagnóstico ya están hechos y publicados: Larvicultura sin espacio envía lo de pantalla, los siete formularios
    de Maduración se bloquean mientras envían, Ingreso, Fin de Ciclo y Tratamientos llevan ID propio por formulario, y ✏️
    pregunta antes de pisar lo no guardado (cada uno, en su sección de arriba). Siguen:
-   - **Sin espacio, seis fichas no envían** (🏠 Salas, Biomol, Mareas, Microbiología, Calidad y Patología): ver «Y si el
-     equipo no puede GUARDAR la ficha», arriba. Sin decidir.
    - **Fechas imposibles.** Score, Mantenimiento, Traslado y Auditoría responden «falta la fecha» ante una fecha que no
      existe; Larvicultura deja pasar la fecha vacía y usa la de otra ficha o la de hoy, avisando sólo en la consola; Mareas
      acepta «31/02».

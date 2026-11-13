@@ -234,7 +234,10 @@ describe('🔴 con el almacén lleno, lo tecleado no se pierde', () => {
     almacen.dejarLibres(5);
   };
 
-  it('🔴 Tanques · 💾: devuelve -1, lo tecleado SIGUE en pantalla y el aviso no aconseja el ☁️', () => {
+  /* 2026-11-12 (punto 38) · Esta prueba exigía que el aviso NO aconsejara el ☁️: era del 03-11, cuando ☁️ se detenía sin poder guardar.
+     Desde A6 (04-11) el ☁️ de Tanques SÍ envía lo de pantalla —lo prueba la de abajo— y desde el punto 38 también el de Salas, así que el
+     aviso ahora lo dice. */
+  it('🔴 Tanques · 💾: devuelve -1, lo tecleado SIGUE en pantalla y el aviso dice que ☁️ lo envía igual', () => {
     irASala('Sala 2');
     lleno();
     celda().value = '7';
@@ -242,7 +245,7 @@ describe('🔴 con el almacén lleno, lo tecleado no se pierde', () => {
     expect(celda().value).toBe('7');
     expect(avisos.at(-1)).toContain('No se pudo guardar');
     expect(avisos.at(-1)).toContain('Lo tecleado sigue en pantalla');
-    expect(avisos.at(-1)).not.toContain('☁️');
+    expect(avisos.at(-1)).toContain('☁️ lo envía igual a la hoja, sin guardar copia');
   });
 
   /* 2026-11-04 (pauta A6, usuario: «Enviar lo de pantalla») · ☁️ envía aunque no haya podido guardar, como las fichas de Larvicultura: la
