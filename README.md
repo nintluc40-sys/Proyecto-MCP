@@ -1266,6 +1266,14 @@ sin avisar**:
   guarda el resto) y lo ya guardado de esa celda no se toca. Lo ya ENVIADO con la coma cortada sigue así en la hoja: no se
   distingue de un dato entero, y se corrige allí si se sabe cuál fue. Lo vigilan `lab-coma-decimal.test.js`,
   `mad-coma-decimal.test.js` y el banco `mutar-coma-decimal`.
+- **Fechas que no existen** (2026-11-13). En un campo de fecha, 30/02 o 31/11 tecleados se VEN escritos pero el campo vale
+  vacío (`validity.badInput`; medido en Chrome). Las fichas de Larvicultura los guardaban así y el envío tomaba la fecha de
+  otra ficha o la de HOY; desde 📝 Blanco, la corrección de un día pasado pisaba la fila de hoy de esos tanques. Ahora 💾 y ☁️
+  no guardan ni envían una ficha (ni Blanco) sin una fecha que exista, y lo dicen (usuario: «Bloquear y decirlo»;
+  `_fechaFichaError`). Score, Mantenimiento y Traslado dicen «la fecha no existe» en vez de «falta la fecha», y Score y
+  Auditoría exigen un día real. En 🌊 Mareas (texto) ☁️ no envía si alguna fila tiene una fecha que no existe («31/02», que
+  salía como «2026-02-31») o que no se entiende (que salía como texto), y dice cuáles (usuario: «Bloquear las dos»). Lo
+  vigilan `fechas-imposibles.test.js` y el banco `mutar-fechas-imposibles`.
 - **Larvicultura y Lab. Algas: lo de días anteriores.** Se guardan por día y la app lee los de hoy, así que lo no
   enviado dejaba de verse a medianoche y la limpieza lo borraba. Ahora la limpieza no lo toca y, al abrir el módulo,
   un aviso dice qué quedó y de qué día, con **«☁️ Enviarlas»** (cada ficha a su hoja con SU fecha: las de Datos de un
@@ -1655,9 +1663,6 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
    Del mismo diagnóstico ya están hechos y publicados: Larvicultura sin espacio envía lo de pantalla, los siete formularios
    de Maduración se bloquean mientras envían, Ingreso, Fin de Ciclo y Tratamientos llevan ID propio por formulario, y ✏️
    pregunta antes de pisar lo no guardado (cada uno, en su sección de arriba). Siguen:
-   - **Fechas imposibles.** Score, Mantenimiento, Traslado y Auditoría responden «falta la fecha» ante una fecha que no
-     existe; Larvicultura deja pasar la fecha vacía y usa la de otra ficha o la de hoy, avisando sólo en la consola; Mareas
-     acepta «31/02».
    - **Sin espacio, `_purgeMadHistPaneles`** borra todas las copias para ✏️ Editar, también las de lo que espera en la cola.
    - **El respaldo** (`exportBackup`) da la copia por hecha justo después del clic: si el navegador bloquea la descarga, la
      app no se entera.

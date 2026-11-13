@@ -779,6 +779,23 @@ function _deobfuscate(s){
 const _LCFG_SENSITIVE = new Set(["gas-url", "gas-token"]);
 
 // ── Validate ficha data before saving ──
+/* 2026-11-13 (punto 27 de la pauta del 12-11) · UNA FECHA TECLEADA QUE NO EXISTE. Un <input type="date"> con 30/02 o 31/11 escritos se
+   VE con la fecha, pero su valor es "" y `validity.badInput` (medido en Chrome, es-EC). Quien sólo mira el valor cree que está vacía. */
+const FECHA_NO_EXISTE = "la fecha no existe (revisa el día y el mes)";
+function _fechaNoExiste(sel){
+  try{ const el = typeof sel === "string" ? document.querySelector(sel) : sel; return !!(el && el.validity && el.validity.badInput); }catch(_){ return false; }
+}
+/* 2026-11-13 (punto 27; usuario: «Bloquear y decirlo») · LA FECHA DE UNA FICHA DE LARVICULTURA (o de 📝 Blanco). Vacía o imposible, la
+   ficha se guardaba sin fecha y el envío tomaba la de OTRA ficha o la de HOY (buildDatosPayload, buildControlPayload…): los datos
+   acababan en otro día, y desde Blanco —que corrige días pasados— pisaban la fila de HOY de esos tanques. Devuelve el motivo, o "" si
+   la fecha vale o el panel no tiene fecha. */
+function _fechaFichaError(panelId){
+  const fp = document.getElementById(panelId);
+  const el = fp && fp.querySelector('input[type="date"][name="fecha"]');
+  if(!el) return "";
+  if(_fechaNoExiste(el)) return FECHA_NO_EXISTE;
+  return isValidDate(el.value) ? "" : "falta la fecha";
+}
 function validateFicha(fid, data){
   if(data.fecha && !isValidDate(data.fecha)){
     toast("Fecha inválida en la ficha","warn"); return false;
@@ -3629,10 +3646,20 @@ function _rangeGuard(){
         " Corrige el dato antes de continuar.","err",6500);
   return true;
 }
+/* 2026-11-13 (punto 27) · El aviso de una ficha de Larvicultura sin fecha válida; true = no seguir. Lab. Algas no entra (su regla es otra:
+   «la Fecha o las Cel/mL»). */
+function _fichaSinFecha(fid, que){
+  if(fid === "algas") return false;
+  const e = _fechaFichaError("fp-" + fid);
+  if(!e) return false;
+  toast("⚠️ " + (FICHA_LABELS[fid] || fid) + ": " + e + ". " + que + ": corrígela.", "warn", 6500);
+  return true;
+}
 function localSave(fid){
   const data = collect(fid);
   // R2: bloquea si hay valores fuera del rango declarado (min/max).
   if(_rangeGuard()) return;
+  if(_fichaSinFecha(fid, "No se guardó")) return;   // punto 27
   // SECURITY: validate inputs before persisting
   if(!validateFicha(fid, data)) return;
   // Si el navegador no persiste de verdad (cuota llena / incógnito), NO mentir
@@ -3654,6 +3681,7 @@ async function localSync(fid){
   const data = collect(fid);
   // R2: bloquea si hay valores fuera del rango declarado (min/max).
   if(_rangeGuard()) return;
+  if(_fichaSinFecha(fid, "No se guardó ni se envió")) return;   // punto 27
   if(!validateFicha(fid, data)) return;
   // Block sync without corrida y sin técnico para M01-M10 y CIO (las 6 fichas
   // estándar). Lab. Algas se excluye porque su validación se hace en syncAll.
@@ -19762,15 +19790,22 @@ function mareaGridAddRows(){
 // como yyyy-MM-dd; enviar ISO (misma convención que Micro/Cal/Patología) hace que la clave
 // case y el upsert por Fecha NO duplique al re-sincronizar. Si el formato no se reconoce,
 // se envía el texto tal cual (mejor esfuerzo). Convención es-EC: día primero.
+/* 2026-11-13 (punto 27; usuario: «Bloquear las dos») · Sólo un día que EXISTE (isValidDate): «31/02/2026» salía como «2026-02-31». Lo que no
+   es un día real, o no se entiende, vuelve tal cual, y syncMareaGrid NO envía mientras quede alguno (_mareaFechasMalas). */
 function mareaFechaIso(raw){
   const s = sanitizeStr(raw || "").trim();
   if(!s) return "";
   const p2 = (n)=> String(n).padStart(2,"0");
   let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);           // ya ISO (yyyy-mm-dd)
-  if(m){ const mm=+m[2], dd=+m[3]; if(mm>=1&&mm<=12&&dd>=1&&dd<=31) return m[1]+"-"+p2(mm)+"-"+p2(dd); }
+  if(m){ const iso = m[1]+"-"+p2(+m[2])+"-"+p2(+m[3]); if(isValidDate(iso)) return iso; }
   m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);            // dd/mm/yyyy (día primero)
-  if(m){ let y=m[3]; if(y.length===2) y="20"+y; const dd=+m[1], mm=+m[2]; if(dd>=1&&dd<=31&&mm>=1&&mm<=12) return y+"-"+p2(mm)+"-"+p2(dd); }
+  if(m){ let y=m[3]; if(y.length===2) y="20"+y; const iso = y+"-"+p2(+m[2])+"-"+p2(+m[1]); if(isValidDate(iso)) return iso; }
   return s;
+}
+/** Las fechas de la grilla de Mareas que no son un día real (no existen o no se entienden), tal como están escritas. */
+function _mareaFechasMalas(rows){
+  return (rows || []).map(function(a){ return sanitizeStr(a.fecha || "").trim(); })
+    .filter(function(f){ return f !== "" && !isValidDate(mareaFechaIso(f)); });
 }
 // Payload → hoja Marea. Sólo filas con Fecha (clave de upsert). El GAS reemplaza por Fecha.
 function buildMareaPayload(rows){
@@ -19788,7 +19823,14 @@ async function syncMareaGrid(){
   if(!url){ toast("Configura la URL de Google Apps Script","warn"); openCfg(); return; }
   if(!isValidGasUrl(url)){ toast("URL inválida","err"); return; }
   if(!syncRateOk()) return;
-  const payload = buildMareaPayload(_collectMareaGrid());
+  const _filas = _collectMareaGrid();
+  const _malas = _mareaFechasMalas(_filas);   // 2026-11-13 (punto 27) · antes viajaban: la imposible como «2026-02-31», la otra como texto
+  if(_malas.length){
+    toast("⚠️ " + (_malas.length === 1 ? "Esta fecha no existe o no se entiende" : "Estas fechas no existen o no se entienden") + ": «" + _malas.slice(0, 4).join("», «") + "»"
+      + (_malas.length > 4 ? " y " + (_malas.length - 4) + " más" : "") + ". Escríbelas como día/mes/año (12/11/2026). No se envió nada.", "warn", 8000);
+    return;
+  }
+  const payload = buildMareaPayload(_filas);
   if(!payload.rows.length){ toast("No hay filas con Fecha para enviar","warn",3000); return; }
   setSyncUI("pend","Enviando "+payload.rows.length+" fila(s) de mareas…");
   const opts = {};
@@ -21845,7 +21887,9 @@ function _scoreEvalId(d){ return "SCE-" + sanitizeStr(d.fecha, 10) + "-" + sanit
 function scoreValidar(d){
   const m = d || {}, err = [], tqs = m.tanques || {};
   const falta = [];
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(m.fecha || ""))) falta.push("la fecha");
+  /* 2026-11-13 (punto 27) · un día REAL (antes, sólo la forma aaaa-mm-dd), y una fecha imposible tecleada se dice como tal: llegaba
+     vacía y el aviso decía «falta la fecha» con la fecha a la vista. */
+  if(!isValidDate(String(m.fecha || ""))){ if(_fechaNoExiste('#fp-score [data-sk="fecha"]')) err.push(FECHA_NO_EXISTE); else falta.push("la fecha"); }
   if(!String(m.modulo || "").trim()) falta.push("el módulo");
   if(!_scoreCorrida(m)) falta.push("la corrida");
   if(falta.length) err.push("falta " + falta.join(", "));
@@ -22726,6 +22770,9 @@ function mntTrabCampo(el){
    la ronda o el trabajo siguiente se teclearía encima y, con el MISMO ID, sustituiría al ya guardado (y a su fila de la
    hoja). */
 function _mntRegistrar(ronda){
+  /* 2026-11-13 (punto 27) · una fecha imposible tecleada (30/02) llega vacía y la validación decía «falta la fecha» con la fecha a la
+     vista. Se mira aquí, que es quien ve la pantalla: mntValidar* tienen que decir lo mismo que su módulo (paridad). */
+  if(_fechaNoExiste(ronda ? '#fp-mntronda [data-mk="fecha"]' : '#fp-mnttrabajo [data-mk="fecha"]')){ toast("⚠ " + FECHA_NO_EXISTE, "warn", 8000); return null; }
   const m = ronda ? _mntRondaActual() : _mntTrabActual();
   // Lo que la versión guardada de esta ronda anotó y ésta deja vacío se ANULA en la hoja (mntAnulados).
   if(ronda){
@@ -23106,7 +23153,7 @@ function audValidar(d){
   const S = m.siembras || [], T = m.transferencias || [], C = m.cosechas || [];
   if(!S.length && !T.length && !C.length) err.push("registra al menos una siembra, una transferencia o una cosecha");
   const vistos = new Set();
-  const fecha = (x) => /^\d{4}-\d{2}-\d{2}$/.test(String(x || ""));
+  const fecha = (x) => isValidDate(String(x || ""));   // 2026-11-13 (punto 27) · un día REAL, no sólo la forma aaaa-mm-dd
   S.forEach(function(s, i){
     const n = "Siembra " + (i + 1);
     if(!s.modulo || !_audTq(s.tanque) || !fecha(s.fecha) || !(audEntero(s.cantidad) > 0) || AUD_SIEMBRAS.indexOf(s.siembra) < 0)
@@ -24698,7 +24745,8 @@ function buildTrasPdfHtml(data){
 function validarTraslado(data){
   const d = data || {};
   const errs = [];
-  if(!isValidDate(d.fecha || "")) errs.push("Falta la fecha de entrega");
+  // 2026-11-13 (punto 27) · una fecha imposible tecleada llega vacía: se dice que no existe, no que falta.
+  if(!isValidDate(d.fecha || "")) errs.push(_fechaNoExiste('#fp-traslado .mad-form > .meta [data-k="fecha"]') ? "La fecha de entrega no existe (revisa el día y el mes)" : "Falta la fecha de entrega");
   const cam = trasTxt(d.camaronera);
   if(cam === "") errs.push("Falta la camaronera de destino");
   else if(DESTINO_OPTS.indexOf(cam) === -1) errs.push("«"+cam+"» no está en el catálogo de camaroneras");
@@ -26078,7 +26126,7 @@ function _trasSacarRevision(data, i, revsOpt){
 function _trasValidarParcial(data){
   const d = data || {};
   const errs = [];
-  if(!isValidDate(d.fecha || "")) errs.push("falta la fecha de entrega");
+  if(!isValidDate(d.fecha || "")) errs.push(_fechaNoExiste('#fp-traslado .mad-form > .meta [data-k="fecha"]') ? "la fecha de entrega no existe (revisa el día y el mes)" : "falta la fecha de entrega");   // punto 27
   const cams = trasCamionesUI(d);
   if(cams.length === 0) errs.push("no hay ningún camión en el viaje");
   else {
@@ -33548,6 +33596,9 @@ async function syncBlanco(){
   if(!_blancoState){ toast("No hay registro en Blanco","warn"); return; }
   const data = collectBlanco();
   if(!data) return;
+  /* 2026-11-13 (punto 27; usuario: «Bloquear y decirlo») · sin fecha válida, el envío tomaba la de otra ficha —la de HOY— y la
+     corrección de un día pasado PISABA la fila de hoy de esos tanques. */
+  { const _fe = _fechaFichaError("fp-blanco"); if(_fe){ toast("⚠️ Blanco: " + _fe + ". No se envió: corrígela.", "warn", 6500); return; } }
   const url = gasUrl();
   if(!url){ toast("Configura la URL de Google Apps Script","warn"); return; }
   if(!isValidGasUrl(url)){ toast("URL inválida","err"); return; }
