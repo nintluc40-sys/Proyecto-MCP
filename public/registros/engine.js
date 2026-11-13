@@ -18057,11 +18057,27 @@ function _madGridLlevar(ficha){
   });
   return { nuevo: nuevo };
 }
+/* 2026-11-12 (punto 2; usuario: «Pegar en Maduración») · En las celdas NUMÉRICAS (🏠 Salas, 🌡️ Zonas, 🛢 Tanques) el navegador no
+   acepta «28,5» puesto por código ni pegado: la celda se quedaba VACÍA sin aviso (visto en Chrome con un bloque de Excel). Se leen con
+   las reglas del pegado de Larvicultura (_stdConvencion, _stdNumPegado: «28,5» = 28.5, «2.500.000» = 2500000, «4.300» según el resto
+   del bloque o, sin pista, como en un Excel de Ecuador); lo que no es un número no se pega y se dice. Las de texto (Biomol, Mareas),
+   como siempre. */
+function _madEsCeldaNum(el){ return !!el && el.tagName === 'INPUT' && el.type === 'number'; }
 function madGridPaste(ev, ficha){
   const cd = ev.clipboardData || window.clipboardData;
   if(!cd) return;
   const txt = cd.getData('text');
-  if(!txt || (txt.indexOf('\t')===-1 && txt.indexOf('\n')===-1)) return; // celda única → pegado normal
+  if(!txt) return;
+  if(txt.indexOf('\t')===-1 && txt.indexOf('\n')===-1){   // celda única → pegado normal, salvo en una numérica
+    if(!_madEsCeldaNum(ev.target)) return;
+    ev.preventDefault();
+    const uno = String(txt).trim();
+    const v = _stdNumPegado(uno, _stdConvencion([uno]));
+    if(v === null){ toast("«" + uno + "» no es un número: no se pegó", "warn", 4000); return; }
+    ev.target.value = v;
+    try{ ev.target.dispatchEvent(new Event('input', {bubbles:true})); }catch(_){}
+    return;
+  }
   ev.preventDefault();
   const lines = txt.replace(/\r/g,'').split('\n');
   if(lines.length && lines[lines.length-1] === "") lines.pop();
@@ -18072,6 +18088,8 @@ function madGridPaste(ev, ficha){
   if(!Number.isFinite(r0) || !Number.isFinite(c0)) return;
   const fp = document.getElementById('fp-'+ficha);
   if(!fp) return;
+  const conv = _stdConvencion([].concat.apply([], matrix));   // la pista de UN número vale para todo el bloque
+  let malos = 0;
   matrix.forEach((cells, dr) => {
     cells.forEach((raw, dc) => {
       const el = fp.querySelector(`[data-r="${r0+dr}"][data-c="${c0+dc}"]`);
@@ -18080,11 +18098,15 @@ function madGridPaste(ev, ficha){
       if(el.tagName === 'SELECT'){
         const opt = Array.from(el.options).find(o => o.value.toLowerCase()===val.toLowerCase() || o.text.toLowerCase()===val.toLowerCase());
         if(opt) el.value = opt.value;
+      } else if(_madEsCeldaNum(el)){
+        const v = _stdNumPegado(val, conv);
+        if(v === null) malos++; else el.value = v;   // lo que no es un número deja la celda como estaba
       } else {
         el.value = val;
       }
     });
   });
+  if(malos) toast("📋 " + malos + " celda(s) no eran números y no se pegaron", "warn", 5500);
   // El pegado escribe value directamente (sin disparar input); emite un 'input' en
   // la celda destino para marcar "cambios sin guardar" (Biomol: _bioDirty; demás
   // grillas: su propio oninput, p.ej. madDraftTouch).
@@ -18175,7 +18197,7 @@ function _collectTanquesGrid(salaOverride, fechaOverride){
   const tanks = MAD_TANQUES_POR_SALA[sala] || [];
   const fechaEl = document.getElementById("mad-tanques-fecha");
   const fecha = isValidDate(fechaOverride) ? fechaOverride : ((fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today());
-  const result = [];
+  const result = [], invalidos = [];
   tanks.forEach(tank => {
     const g = (k) => { const el = fp.querySelector(`[name="tg_${tank}_${k}"]`); return el ? el.value : ""; };
     // El Lote prellenado NO cuenta como dato por sí solo: la fila se guarda
@@ -18202,6 +18224,17 @@ function _collectTanquesGrid(salaOverride, fechaOverride){
         return;
       }
       const v = g(col.k);
+      /* 2026-11-12 (punto 2; usuario: «como la temperatura fuera de rango de Salas») · un CONTEO que no es un entero de 0 en
+         adelante («2,7», «-3») se guardaba igual: «-3» como 0, y «2,7» como 2,7, que el envío dejaba en 2. Y lo que el navegador
+         no entiende («--3») llega VACÍO y contaba como celda vaciada. Ahora la celda se marca y se anota, y saveMadTanquesGrid lo
+         DICE (con 💾 o ☁️ no guarda nada). La columna no se pone en `data`: ni es un dato ni cuenta como celda VACIADA
+         (_madTqVaciadas), que pondría a 0 lo ya guardado de ese tanque. */
+      const el = col.type === "int" ? fp.querySelector(`[name="tg_${tank}_${col.k}"]`) : null;
+      if(el){
+        const malo = (v !== "" && !/^\d+$/.test(String(v).trim())) || !!(el.validity && el.validity.badInput);
+        if(el.classList) el.classList.toggle("inp-bad", malo);
+        if(malo){ invalidos.push({ tanque: tank, k: col.k, valor: v }); return; }
+      }
       if(col.type === "text"){
         data[col.k] = sanitizeStr(v, 20);
         if(data[col.k] !== "") hasData = true;
@@ -18214,8 +18247,13 @@ function _collectTanquesGrid(salaOverride, fechaOverride){
     });
     if(hasData) result.push(data);
   });
+  /* Pegados al array, como los rechazos de Salas (`fueraDeRango`), y NO enumerables: quien no los mira no ve ningún cambio (ni una
+     comparación con `[]`, ni JSON.stringify). */
+  Object.defineProperty(result, "invalidos", { value: invalidos, enumerable: false });
   return result;
 }
+const _MAD_TQ_CONTEO_NOMBRE = { machos_muertos:"Machos muertos", hembras_muertas:"Hembras muertas", machos_descarte:"Machos descarte",
+  hembras_descarte:"Hembras descarte", copulas:"Cópulas", muda:"Muda" };
 
 /* ── EL PARTE DE LA RONDA (usuario, 2026-09-17) ───────────────────────────────
    «Se recogen mortalidades 5 veces al día… lo que hacen es en una hoja ir llenando poco a poco lo que
@@ -18358,6 +18396,8 @@ function _madTqVaciadosEnteros(rows, sala, fechaOverride){
     if(!fp.querySelector('[name="tg_' + d.tanque + '_machos_muertos"]')) return;   // un tanque que la grilla no pinta
     const vacio = { fecha: fecha, sala: sala, tanque: d.tanque };
     _TANQ_GRID_COLS.forEach(function(c){ vacio[c.k] = ""; });
+    // 2026-11-12 (punto 2) · menos un conteo inválido que siga en pantalla: no está vacío, sólo mal tecleado (lo guardado se queda).
+    (rows.invalidos || []).forEach(function(i){ if(String(i.tanque) === String(d.tanque)) delete vacio[i.k]; });
     rows.push(vacio);
   });
   return true;
@@ -18368,6 +18408,17 @@ function saveMadTanquesGrid(opts){
   const sala = opts.salaOverride || _madTanquesSala;
   if(!sala){ if(!silent) toast("Selecciona una sala","warn"); return 0; }
   const rows = _collectTanquesGrid(opts.salaOverride, opts.fechaOverride);
+  /* 2026-11-12 (punto 2) · un conteo inválido (ver _collectTanquesGrid) se DICE, como la temperatura fuera de rango de Salas (D13): a mano
+     (💾 / ☁️) no se guarda nada —`cancelado`, para que ☁️ no envíe lo guardado de antes—; al cambiar de sala, fecha o pestaña se guarda el
+     resto y esa celda no. */
+  const _inv = rows.invalidos || [];
+  if(_inv.length){
+    const _it = _inv[0];
+    const _msg = sala + " · tanque " + _it.tanque + ": «" + (String(_it.valor).trim() || "?") + "» en " + (_MAD_TQ_CONTEO_NOMBRE[_it.k] || _it.k)
+      + " no es un conteo (un número entero, de 0 en adelante)." + (_inv.length > 1 ? " Y " + (_inv.length - 1) + " celda(s) más." : "");
+    if(!silent){ toast(_msg + " Corrígelo antes de guardar.", "err", 6500); opts.cancelado = true; return 0; }
+    toast(_msg + " Esa celda NO se guardó; el resto sí.", "warn", 6500);
+  }
   const vaciar = _madTqVaciadosEnteros(rows, sala, opts.fechaOverride);   // 2026-09-30 (noche, punto 5 · A) · ver abajo
   if(rows.length === 0){ if(!silent) toast("No hay datos para guardar","warn"); return 0; }
   const list = _madSinIds(loadMad("tanques"), opts.quitar);   // opts.quitar: lo que se lleva de otra fecha (_madGridLlevar)
@@ -26637,8 +26688,32 @@ const MIC_PDF_CSS = "td.mic-v{background:#bbf7d0!important;color:#14532d!importa
 const MIC_PDF_LEGEND = '<div class="miclegend"><b>Niveles (UFC/mL):</b><span><span class="micbox" style="background:#bbf7d0;border-color:#4ade80"></span>Mínimo</span><span><span class="micbox" style="background:#fef08a;border-color:#facc15"></span>Leve</span><span><span class="micbox" style="background:#fed7aa;border-color:#fb923c"></span>Moderado</span><span><span class="micbox" style="background:#fecaca;border-color:#f87171"></span>Elevado</span><span style="color:#64748b">· bajo cada columna: umbrales Mín/Leve/Mod (UFC/mL)</span></div>';
 
 // ── Helpers de cálculo ─────────────────────────────────
+/* 2026-11-12 (punto 2; usuario: «Coma y punto») · UN NÚMERO TECLEADO EN LABORATORIO. Las celdas de Microbiología, Calidad de Agua y
+   Patología (y sus Factores y rangos) son de TEXTO con teclado decimal, y con un teclado en español el decimal es la coma: `parseFloat`
+   leía «7,5» como 7 y así se calculaba y llegaba a la hoja, sin aviso (visto en Chrome). La regla: un separador SUELTO —coma o punto— es
+   siempre el decimal («1.250» mg/L sigue siendo 1,25, como hasta hoy); con los dos, el ÚLTIMO es el decimal y el otro el de miles
+   («1.234,5», «1,234.5»); repetido, es de miles («2.500.000»). Lo que no lleva coma ni dos puntos se lee EXACTAMENTE como antes
+   (parseFloat), y lo que no es un número sigue dando NaN. La celda muestra lo tecleado: cambia lo que se calcula y lo que se envía. */
+function _labNum(v){
+  if(typeof v === "number") return v;
+  const s = String(v == null ? "" : v).trim();
+  if(s.indexOf(",") === -1 && (s.match(/\./g) || []).length < 2) return parseFloat(s);
+  // El número del PRINCIPIO, como parseFloat (lo que venga detrás se ignora); sin separadores colgando.
+  let t = (/^[+-]?[\d.,]+/.exec(s) || [""])[0].replace(/[.,]+$/, "");
+  if(!/\d/.test(t)) return NaN;
+  const comas = (t.match(/,/g) || []).length, puntos = (t.match(/\./g) || []).length;
+  if(comas && puntos){
+    const dec = t.lastIndexOf(",") > t.lastIndexOf(".") ? "," : ".";
+    t = t.split(dec === "," ? "." : ",").join("").replace(dec, ".");
+  } else if(comas > 1 || puntos > 1){
+    if(!/^[+-]?\d{1,3}([.,]\d{3})+$/.test(t)) return NaN;
+    t = t.replace(/[.,]/g, "");
+  } else t = t.replace(",", ".");
+  const n = Number(t);
+  return isFinite(n) ? n : NaN;
+}
 function micToSci(v){
-  const n = parseFloat(v);
+  const n = _labNum(v);
   if(!isFinite(n) || v === "" || v === null) return "—";
   if(n === 0) return "0.0E+00";
   const e = Math.floor(Math.log10(Math.abs(n)));
@@ -26757,7 +26832,7 @@ function micComputeRecord(rec){
   const fmt = MIC_FORMATS[d.formato];
   const rkey = fmt ? fmt.rkeyFn(d) : "larv-animal";
   const out = {};
-  const amar = parseFloat(d.vamar), verd = parseFloat(d.vverd);
+  const amar = _labNum(d.vamar), verd = _labNum(d.vverd);   // punto 2 · «7,5» es 7,5 (_labNum)
   Object.keys(MIC_PARAMS).forEach(pk=>{
     const p = MIC_PARAMS[pk];
     if(p.pa){ out[pk] = { pa: d[pk] || "" }; return; }
@@ -26769,7 +26844,7 @@ function micComputeRecord(rec){
       out.vtot = { crudo, ufc, lvl: micLvl(ufc, micFactorOf(rkey,"vtot")) };
       return;
     }
-    const raw = parseFloat(d[pk]);
+    const raw = _labNum(d[pk]);
     if(!isFinite(raw)){ out[pk] = { crudo:"", ufc:"", lvl:null }; return; }
     const r = micFactorOf(rkey, pk); const f = r.f || 1; const ufc = raw * f;
     // Clasifica cuando hay umbrales definidos para ese (área, parámetro). micLvl
@@ -26988,7 +27063,7 @@ function _micApply(inp, rkey){
   const pk = inp.dataset.param;
   const sub = inp.parentNode ? inp.parentNode.querySelector(".mic-sci") : null;
   const p = MIC_PARAMS[pk] || {};
-  const raw = parseFloat(inp.value);
+  const raw = _labNum(inp.value);
   if(inp.value.trim() === "" || !isFinite(raw)){ inp.className = "mic-in"; if(sub) sub.textContent = ""; return; }
   const r = micFactorOf(rkey, pk); const f = r.f || 1; const ufc = raw * f;
   if(sub) sub.textContent = micToSci(ufc);
@@ -27001,8 +27076,8 @@ function _micRecalcVtot(tr, rkey){
   const vtotInp = tr.querySelector('input[data-param="vtot"]'); if(!vtotInp) return;
   const amarInp = tr.querySelector('input[data-param="vamar"]');
   const verdInp = tr.querySelector('input[data-param="vverd"]');
-  const ar = amarInp ? parseFloat(amarInp.value) : NaN;
-  const vr = verdInp ? parseFloat(verdInp.value) : NaN;
+  const ar = amarInp ? _labNum(amarInp.value) : NaN;
+  const vr = verdInp ? _labNum(verdInp.value) : NaN;
   const sub = vtotInp.parentNode ? vtotInp.parentNode.querySelector(".mic-sci") : null;
   if(!isFinite(ar) && !isFinite(vr)){ vtotInp.value = ""; vtotInp.className = "mic-in"; if(sub) sub.textContent = ""; return; }
   const a = isFinite(ar)?ar:0, b = isFinite(vr)?vr:0;
@@ -27721,7 +27796,7 @@ function renderMicFactores(){
 }
 function micFactorSet(ak, pk, field, val){
   const F = loadMicFactors(); F[ak] = F[ak] || {}; F[ak][pk] = F[ak][pk] || {};
-  const n = parseFloat(val);
+  const n = _labNum(val);
   if(val === "" || !isFinite(n)) delete F[ak][pk][field]; else F[ak][pk][field] = n;
   saveMicFactors(F);
   toast("Factor actualizado","ok",1400);
@@ -28169,7 +28244,7 @@ function calRowHasData(fmt, d){ return fmt.params.some(pk=> d[pk]!=null && Strin
      hay resultado. */
 const CAL_AMTOX_K_MAX = 0.85;
 function calAmonioTox(sal, ph, temp, tan){
-  const S = parseFloat(sal), H = parseFloat(ph), T = parseFloat(temp), N = parseFloat(tan);
+  const S = _labNum(sal), H = _labNum(ph), T = _labNum(temp), N = _labNum(tan);   // punto 2 · con coma, antes daba otro NH₃
   if(!isFinite(S) || !isFinite(H) || !isFinite(T) || !isFinite(N)) return { estado:"faltan" };
   const den = 1000 - 1.005109 * S;
   if(den <= 0) return { estado:"fuera" };
@@ -28199,7 +28274,7 @@ function calAmonioTox(sal, ph, temp, tan){
 function _calAmtoxCongelar(row){
   const txt = String((row && row.amtox != null) ? row.amtox : "").trim();
   if(txt === "") return false;                 // no hay nada que conservar
-  const guardado = parseFloat(txt);
+  const guardado = _labNum(txt);
   if(!isFinite(guardado)) return true;         // texto que la fórmula jamás escribió
   const r = calAmonioTox(row.sal, row.ph, row.temp, row.tan);
   // Sin las cuatro variables la fórmula no pudo escribirlo: es de una persona. Y
@@ -28239,7 +28314,7 @@ function calRecalcAmtox(tr, fmtKey, fila){
 
 // ── Cálculo en vivo (clasificación por rango) ──────────
 function _calApplyCls(inp){
-  const raw = parseFloat(inp.value);
+  const raw = _labNum(inp.value);
   if(inp.value.trim()==="" || !isFinite(raw)){ inp.className = "mic-in"; return; }
   // data-fmt ya viaja en cada celda (ver el render de la rejilla): con él, un
   // formato con bandas propias se colorea con las suyas y no con las globales.
@@ -28990,11 +29065,12 @@ function buildCalPayload(records){
       sanitizeStr(d.tipoMuestra||""), sanitizeStr(d.modulo||""), sanitizeStr(d.estadio||""), sanitizeStr(d.tq||""),
       sanitizeStr(d.sala||""), sanitizeStr(d.estado||""), sanitizeStr(d.componente||""), sanitizeStr(d.muestras||"")
     ];
-    CAL_PARAM_ORDER.forEach(pk=>{ const v=parseFloat(d[pk]); row.push(isFinite(v)?v:""); });
+    // punto 2 (2026-11-12) · _labNum: «7,8» viajaba como 7.
+    CAL_PARAM_ORDER.forEach(pk=>{ const v=_labNum(d[pk]); row.push(isFinite(v)?v:""); });
     row.push(sanitizeStr(d.sid||""));   // Sesión
     row.push(sanitizeStr(d.lote||""));  // Lote
-    { const v=parseFloat(d.sulfato); row.push(isFinite(v)?v:""); }   // Sulfato (última columna)
-    { const v=parseFloat(d.sulfuro); row.push(isFinite(v)?v:""); }   // Sulfuros (2026-10-01: col. 49, ahora la última)
+    { const v=_labNum(d.sulfato); row.push(isFinite(v)?v:""); }   // Sulfato (última columna)
+    { const v=_labNum(d.sulfuro); row.push(isFinite(v)?v:""); }   // Sulfuros (2026-10-01: col. 49, ahora la última)
     return row;
   });
   return { sheetName:CAL_SHEET, headers:CAL_SHEET_HEADERS, rows, replaceKey:true, keyCols:[0,2,4,5,CAL_SID_COL] };
@@ -29125,7 +29201,7 @@ function calFmtRangeSet(fk, pk, field, val){
   // Si estaba declarado como null (sin rango), arranca vacío a propósito.
   if(!Object.prototype.hasOwnProperty.call(R[fk], pk)) R[fk][pk] = Object.assign({}, loadCalRanges()[pk]||{});
   else if(R[fk][pk] == null) R[fk][pk] = {};
-  const n=parseFloat(val);
+  const n=_labNum(val);
   if(val===""||!isFinite(n)) delete R[fk][pk][field]; else R[fk][pk][field]=n;
   saveCalFmtRanges(R);
   toast("Rango actualizado","ok",1400);
@@ -29137,7 +29213,7 @@ function calRangosGuardar(){
 }
 function calRangeSet(pk, field, val){
   const R=loadCalRanges(); R[pk]=R[pk]||{};
-  const n=parseFloat(val);
+  const n=_labNum(val);
   if(val===""||!isFinite(n)) delete R[pk][field]; else R[pk][field]=n;
   saveCalRanges(R);
   toast("Rango actualizado","ok",1400);
@@ -29166,7 +29242,7 @@ function _calReportBody(draft){
     const heads=[...fmt.ctx.map(c=>c.l), ...fmt.params.map(pk=>CAL_PARAMS[pk].l)];
     const trs=rows.map((d,i)=>{
       const tds=[...fmt.ctx.map(c=>`<td>${escapeHtml(d[c.k]||"—")}</td>`), ...fmt.params.map(pk=>{
-        const v=parseFloat(d[pk]);
+        const v=_labNum(d[pk]);
         if(!isFinite(v)) return `<td>—</td>`;
         const cls=calClassify(v, calRangeOf(pk, fmtKey));
         const c=cls==="in"?"mic-v":cls==="out"?"mic-r":"";
@@ -29210,7 +29286,7 @@ function _calPdfCols(fmt, fmtKey, rows){
   fmt.ctx.forEach(c=>{ if(hid.has(c.k)) return;
     if(rows.some(d=> d[c.k]!=null && String(d[c.k]).trim()!=="")) cols.push({ kind:"ctx", key:c.k, label:c.l }); });
   fmt.params.forEach(pk=>{ if(hid.has(pk)) return;
-    if(rows.some(d=> isFinite(parseFloat(d[pk])))) cols.push({ kind:"param", key:pk, label:_calHeadLabel(pk) }); });
+    if(rows.some(d=> isFinite(_labNum(d[pk])))) cols.push({ kind:"param", key:pk, label:_calHeadLabel(pk) }); });
   return cols;
 }
 function downloadCalPDF(){
@@ -29229,7 +29305,7 @@ function downloadCalPDF(){
     const trs=rows.map((d,i)=>{
       const tds=vis.map(co=>{
         if(co.kind==="ctx") return `<td>${escapeHtml(d[co.key]||"—")}</td>`;
-        const pk=co.key; const v=parseFloat(d[pk]);
+        const pk=co.key; const v=_labNum(d[pk]);
         if(!isFinite(v)) return `<td>—</td>`;
         const cls=calClassify(v, calRangeOf(pk, fmtKey));
         const _cls=cls==="in"?' class="mic-v"':cls==="out"?' class="mic-r"':'';
@@ -29370,7 +29446,7 @@ function patRowHasData(d){
 function _patAverages(rows){
   const sums={}, counts={};
   PAT_NUM_KEYS.forEach(k=>{ sums[k]=0; counts[k]=0; });
-  rows.forEach(d=>{ PAT_NUM_KEYS.forEach(k=>{ const v=parseFloat(d[k]); if(isFinite(v)){ sums[k]+=v; counts[k]++; } }); });
+  rows.forEach(d=>{ PAT_NUM_KEYS.forEach(k=>{ const v=_labNum(d[k]); if(isFinite(v)){ sums[k]+=v; counts[k]++; } }); });
   const avg={}; PAT_NUM_KEYS.forEach(k=>{ avg[k]= counts[k]>0 ? (Math.round((sums[k]/counts[k])*100)/100) : ""; });
   return avg;
 }
@@ -29591,7 +29667,7 @@ function patGuardarLocal(){
   }
 }
 function buildPatPayload(records){
-  const _n=(v)=>{ const x=parseFloat(v); return isFinite(x)?x:""; };
+  const _n=(v)=>{ const x=_labNum(v); return isFinite(x)?x:""; };   // punto 2 (2026-11-12) · un peso «1,5» viajaba como 1
   const rows=records.map(rec=>{
     const d=rec.data||{};
     const row=[

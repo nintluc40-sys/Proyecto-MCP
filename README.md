@@ -1250,6 +1250,17 @@ sin avisar**:
   lo tecleado, como ya hacían As Técnico, Traslado, Biomol y Maduración (antes, sólo la del autoguardado de cada minuto);
   y una grilla de Maduración que no se pudo guardar por un error inesperado pregunta antes de dejarla, como sin espacio
   (`MAD_GRID_ERROR`). Lo vigilan `pestanas-conservan.test.js` y el banco `mutar-pestanas-conservan`.
+- **La coma decimal** (2026-11-12). En Microbiología, Calidad de Agua y Patología —y en sus Factores y rangos— las celdas son
+  de texto, y con un teclado en español «7,5» se leía como 7 al calcular, colorear y ENVIAR (`parseFloat`). Ahora las lee
+  `_labNum` (usuario: «Coma y punto»): un separador suelto, coma o punto, es siempre el decimal («1.250» mg/L sigue siendo
+  1,25); con los dos, el último es el decimal y el otro el de miles; repetido, son miles. La celda muestra lo tecleado. En
+  🏠 Salas, 🌡️ Zonas y 🛢 Tanques, pegar «28,5» desde Excel dejaba la celda vacía (el navegador no lo acepta en una celda
+  numérica): se pega con las reglas del pegado de Larvicultura (`_stdNumPegado`) y se avisa de lo que no sea un número. Y un
+  CONTEO de 🛢 Tanques que no es un entero de 0 en adelante («2,7», «-3») ya no se guarda como 2,7 o 0: se marca y se dice,
+  como la temperatura fuera de rango de 🏠 Salas (con 💾 o ☁️ no se guarda nada; al cambiar de sala, fecha o pestaña se
+  guarda el resto) y lo ya guardado de esa celda no se toca. Lo ya ENVIADO con la coma cortada sigue así en la hoja: no se
+  distingue de un dato entero, y se corrige allí si se sabe cuál fue. Lo vigilan `lab-coma-decimal.test.js`,
+  `mad-coma-decimal.test.js` y el banco `mutar-coma-decimal`.
 - **Larvicultura y Lab. Algas: lo de días anteriores.** Se guardan por día y la app lee los de hoy, así que lo no
   enviado dejaba de verse a medianoche y la limpieza lo borraba. Ahora la limpieza no lo toca y, al abrir el módulo,
   un aviso dice qué quedó y de qué día, con **«☁️ Enviarlas»** (cada ficha a su hoja con SU fecha: las de Datos de un
