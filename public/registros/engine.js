@@ -1223,14 +1223,19 @@ function startAutoRecovery(){
     if(isMadMod(curMod)){ try{ saveMadRecovery(); }catch(_){} return; }
     // 🔧 Mantenimiento (2026-10-28): sus fichas se guardan al instante en su borrador; no hay paneles estándar que respaldar.
     if(isMntMod(curMod)) return;
-    ALL_FICHAS.forEach(fid => {
-      const fp = document.getElementById("fp-"+fid);
-      if(!fp) return;
-      const data = collect(fid, {quiet:true});   // #17: sin tocar _collectIssues ni .inp-bad
-      const hasData = Object.values(data).some(v=>v!==null&&v!==undefined&&v!=="");
-      if(hasData) saveRecovery(curMod, fid, data);
-    });
+    _respaldarFichasStd();
   }, 60000);
+}
+/* El respaldo de las fichas estándar (y la de Lab. Algas). 2026-11-12 (punto 1) · sacado del autoguardado para que «← Cambiar módulo»
+   haga lo MISMO al salir (goBack): una sola regla. */
+function _respaldarFichasStd(){
+  ALL_FICHAS.forEach(fid => {
+    const fp = document.getElementById("fp-"+fid);
+    if(!fp) return;
+    const data = collect(fid, {quiet:true});   // #17: sin tocar _collectIssues ni .inp-bad
+    const hasData = Object.values(data).some(v=>v!==null&&v!==undefined&&v!=="");
+    if(hasData) saveRecovery(curMod, fid, data);
+  });
 }
 
 function recoverFicha(fid){
@@ -2766,7 +2771,7 @@ async function syncAll(){
           _marcarEnviado(opts);
           ok++;
           // Re-render para reflejar historial vacío + bitácora actualizada
-          if(curTab === "algas")    try{ renderAlgas(); }catch(_){}
+          if(curTab === "algas")    try{ _algRepintarConservando(); }catch(_){}   // 2026-11-12 (punto 1) · sin borrar la ficha
           if(curTab === "bitacora") try{ renderBitacora(); }catch(_){}
         }
         else { const _b=_syncAllBucket(opts, "Lab. Algas"); if(_b==="queued") queued++; else if(_b==="fail") fail++; }
@@ -3235,6 +3240,13 @@ function goBack(){
   try{ if(isAstMod(curMod)) saveAstRecovery(); }catch(_){}
   try{ if(isAstMod(curMod)) saveTrasRecovery(); }catch(_){}
   try{ if(isMadMod(curMod)) saveMadRecovery(); }catch(_){}
+  /* 2026-11-12 (punto 1) · y las fichas de Larvicultura y la de Lab. Algas, que salían SIN su copia: lo tecleado desde el último
+     autoguardado (cada minuto) se perdía. Sólo si hay algo sin guardar, para no sembrar «↩ Recuperar» de lo que ya está guardado. */
+  try{ if(isStdMod(curMod) && _formDirty) _respaldarFichasStd(); }catch(_){}
+  try{ if(isLabMod(curMod) && _algSinAgregar()) saveRecovery(curMod, "algas", collect("algas", {quiet:true})); }catch(_){}
+  // Lo de pantalla del AsT y de Traslado ya tiene su copia (arriba): no se pinta al volver al módulo, que abre con lo guardado.
+  _astAlVolver = null; _trasAlVolver = null;
+  _astFormDirty = false;
   // 2026-09-24 · y el borrador de una ficha de formulario, si quedaba algo tecleado por guardar.
   try{ if(isMadMod(curMod) && MAD_BORR_FICHAS[curTab]) madBorrGuardarYa(curTab); }catch(_){}
   if(_recTimer){ clearInterval(_recTimer); _recTimer = null; }
@@ -3341,6 +3353,18 @@ function buildTabs(){
   }).join("");
 }
 
+/* 2026-11-12 (punto 1; usuario: «Que siga ahí») · AL DEJAR la pestaña del AsT o la de Traslado (o al volver a pulsarla), se toma lo que
+   hay en pantalla; al entrar, _astPintarAlVolver / _trasPintarAlVolver pintan eso. Las dos se repintaban desde lo GUARDADO y lo tecleado
+   sin guardar se perdía en silencio. Al entrar en el módulo no hay nada que tomar: «← Cambiar módulo» lo suelta (deja ↩ Recuperar). */
+function _astTrasAlSalir(){
+  if(curTab === "ast" && _astFormDirty){
+    try{ _astAlVolver = collectAst(); }catch(_){ _astAlVolver = null; }
+  }
+  if(curTab === "traslado"){
+    try{ _trasAlVolver = { data: collectTraslado(), sucio: _trasFormDirty }; }catch(_){ _trasAlVolver = null; }
+  }
+}
+
 function selTab(t){
   const tabs = isLabMod(curMod) ? LAB_TABS
              : isMadMod(curMod) ? MAD_TABS
@@ -3374,6 +3398,8 @@ function selTab(t){
   if(isMadMod(curMod) && MAD_BORR_FICHAS[curTab]){ try{ madBorrGuardarYa(curTab); }catch(_){} }
   // Grilla de Mareas: vuelca lo tecleado/pegado antes de cambiar de pestaña.
   if(curTab === "marea"){ try{ clearTimeout(_mareaDirtyTm); saveMareaDraftObj({ rows:_collectMareaGrid() }); }catch(_){} }
+  // 2026-11-12 (punto 1) · As Técnico y Traslado: lo que hay en pantalla, para pintarlo al volver (no guarda ni envía nada).
+  if(isAstMod(curMod)) _astTrasAlSalir();
   curTab = t;
   closeHistMenu();
   document.querySelectorAll(".ftab").forEach(b=>b.classList.toggle("on",b.dataset.f===t));
@@ -3399,8 +3425,8 @@ function selTab(t){
   if(t==="broodstock") renderMadBroodstock();
   if(t==="reproductivo") renderMadReproductivo();
   if(t==="biomol") renderBiomol();
-  if(t==="ast")    renderAst();
-  if(t==="traslado") renderTraslado();
+  if(t==="ast")    _astPintarAlVolver();
+  if(t==="traslado") _trasPintarAlVolver();
   if(t==="score")  renderScore();
   if(t==="auditoria") renderAud();
   if(t==="marea")  renderMarea();
@@ -3968,11 +3994,20 @@ function cancelAlgEdit(){
   renderAlgas();
 }
 
+/* 2026-11-12 (punto 1; usuario: «Que siga ahí») · 🗑 de una fila, «🗑 Vaciar todo» y el 🔄 de arriba cambian el HISTORIAL, no la ficha, y
+   la repintaban entera desde lo guardado: lo tecleado y aún sin agregar desaparecía. Se repinta con lo que hay en pantalla. */
+function _algRepintarConservando(){
+  const fp = document.getElementById("fp-algas");
+  let enPantalla = null;
+  try{ if(fp && fp.querySelector("[name]")) enPantalla = collect("algas", {quiet:true}); }catch(_){ enPantalla = null; }
+  renderAlgas(enPantalla);
+}
+
 function removeAlgHistConfirm(id){
   if(!confirm("¿Eliminar este registro del historial?\nNo afecta a registros ya sincronizados.")) return;
   removeAlgHistById(id);
   toast("Registro eliminado del historial","ok",2500);
-  renderAlgas();
+  _algRepintarConservando();
   updateDots(); updateSyncUI();
 }
 
@@ -3982,7 +4017,7 @@ function clearAlgHistConfirm(){
   if(!confirm("¿Vaciar TODO el historial? Se perderán "+list.length+" registro(s) que aún no fueron sincronizados.")) return;
   clearAlgHist();
   toast("Historial vaciado","ok",2500);
-  renderAlgas();
+  _algRepintarConservando();
   updateDots(); updateSyncUI();
 }
 
@@ -6017,10 +6052,11 @@ function algSistemaChange(){
   if(diaRow)  diaRow.style.display  = (stype==="masivo") ? "flex" : "none";
 }
 
-function renderAlgas(){
+/* `enPantalla` (2026-11-12, punto 1): lo que hay en la ficha ahora, para repintarla sin perderlo (_algRepintarConservando). */
+function renderAlgas(enPantalla){
   const fp  = document.getElementById("fp-algas");
   if(!fp) return;
-  const e   = loadE(curMod,"algas"); const d = e?e.data:{};
+  const e   = loadE(curMod,"algas"); const d = enPantalla || (e?e.data:{});
   const tec = escapeHtml(d.tec || gcfg("tec",""));
   const area    = d.area    || "";
   const sistema = d.sistema || "";
@@ -6839,10 +6875,12 @@ function _madTqVaciadas(guardado, data){
     return data[c.k] === "" && g !== "" && g != null && String(g) !== (c.type === "int" ? "0" : "");
   });
 }
+let _madCommitError = false;   // 2026-11-12 (punto 1) · el último _madCommitActive falló por un ERROR, no por falta de espacio
 // Persiste (silencioso, sin re-render) la grilla activa usando el contexto con que
 // se renderizó. Se llama ANTES de cambiar de sala/fecha o de pestaña.
 /* 2026-11-05 (pauta A7) · Devuelve false si había una grilla que guardar y no se pudo. Ver _madGridSePuedeDejar. */
 function _madCommitActive(){
+  _madCommitError = false;
   if(!isMadMod(curMod)) return true;
   /* 2026-09-15 · el borrador por fecha de las fichas de formulario se guarda en el MISMO
      momento que las grillas —cambiar de pestaña, volver atrás—, que es cuando se sabe que el
@@ -6862,7 +6900,13 @@ function _madCommitActive(){
        sin dar síntoma. Ahora cada ficha se nombra. */
     if(curTab==="salas")        return saveMadSalasGrid({ fechaOverride:r.fecha, silent:true, noRender:true }) !== -1;
     else if(curTab==="tanques") return saveMadTanquesGrid({ salaOverride:r.sala, fechaOverride:r.fecha, silent:true, noRender:true }) !== -1;
-  }catch(_){}
+  }catch(x){
+    /* 2026-11-12 (punto 1) · un error al guardar NO es «guardado»: devolvía true, se dejaba la grilla y, como al volver sale de lo
+       guardado, lo tecleado se perdía sin aviso. Ahora es «no se pudo», y _madGridSePuedeDejar pregunta. */
+    _silent("_madCommitActive", x);
+    _madCommitError = true;
+    return false;
+  }
   return true;
 }
 /* 2026-11-05 (pauta A7, usuario: «Preguntar») · ANTES DE DEJAR UNA GRILLA. Sin espacio, cambiar de sala, de fecha o de pestaña, o salir del
@@ -6870,10 +6914,13 @@ function _madCommitActive(){
    tecleado, ni se pregunta. Devuelve true para seguir. */
 const MAD_GRID_SIN_ESPACIO = "⚠ No hay espacio en este equipo para guardar lo tecleado en esta grilla.\n\nAceptar = seguir y PERDERLO."
   + "\nCancelar = quedarte aquí, con lo tecleado. En Tanques, ☁️ lo envía sin guardarlo; en Salas hay que liberar espacio en ⚙ Config o anotarlo.";
+// 2026-11-12 (punto 1) · lo mismo cuando guardar falló por un error inesperado (no por espacio): no se le dice que es el espacio.
+const MAD_GRID_ERROR = "⚠ No se pudo guardar lo tecleado en esta grilla (error inesperado).\n\nAceptar = seguir y PERDERLO."
+  + "\nCancelar = quedarte aquí, con lo tecleado, y volver a probar con 💾.";
 function _madGridSePuedeDejar(){
   const tecleado = _madGridDirty;
   if(_madCommitActive() || !tecleado) return true;
-  return confirm(MAD_GRID_SIN_ESPACIO);
+  return confirm(_madCommitError ? MAD_GRID_ERROR : MAD_GRID_SIN_ESPACIO);
 }
 // Autoguardado de recuperación (espejo de Biomol): la grilla activa cada 60s y en goBack.
 function saveMadRecovery(){
@@ -20735,6 +20782,9 @@ function renderBiomol(){
 let _astEditing = null;
 let _astFormDirty = false;          // hay datos en el formulario AÚN sin guardar (aviso de cierre)
 let _astRecovered = null;           // datos a precargar en renderAst tras "↩ Recuperar"
+/* 2026-11-12 (punto 1; usuario: «Que siga ahí») · lo que había en la ficha al dejar su pestaña SIN guardar. Entrar en la pestaña repinta,
+   y repintar sale de lo guardado: un «12» tecleado desaparecía al ir a Mareas y volver (visto en Chrome). Ver _astTrasAlSalir. */
+let _astAlVolver = null;
 function _astMarkDirty(){ _astFormDirty = true; }
 
 // ── As Técnico · Recuperación del formulario en curso (espejo de Biomol) ──
@@ -21248,7 +21298,9 @@ function renderAst(){
   const list = loadAst();
   const editingId = _astEditing;
   const rec = editingId ? list.find(r => r.id === editingId) : null;
-  const d = rec ? rec.data : (_astRecovered || {});
+  // 2026-11-12 (punto 1) · `_astRecovered` manda también al EDITAR: al volver a la pestaña trae lo tecleado sobre ese registro
+  // (_astPintarAlVolver). «↩ Recuperar» lo pone sin edición, así que para él no cambia nada.
+  const d = _astRecovered || (rec ? rec.data : {});
   // ↩ Recuperar: solo en formulario nuevo (no en edición) y si hay snapshot válido.
   const astRec = (!editingId) ? loadAstRecovery() : null;
   const astRecBtn = astRec
@@ -21488,6 +21540,15 @@ function renderAst(){
     fp.addEventListener("change", _astMarkDirty);
   }
   _astFormDirty = false;   // el formulario recién renderizado refleja lo guardado/recuperado (limpio)
+}
+/* 2026-11-12 (punto 1) · Al ENTRAR en la pestaña: si se dejó con algo sin guardar, se pinta ESO (sigue sin guardar); si no, lo guardado. */
+function _astPintarAlVolver(){
+  const d = _astAlVolver;
+  _astAlVolver = null;
+  if(!d){ renderAst(); return; }
+  _astRecovered = d;
+  try{ renderAst(); }finally{ _astRecovered = null; }
+  _astFormDirty = true;
 }
 
 
@@ -23891,6 +23952,11 @@ const TRAS_HEADERS = ["Fecha","Viaje","Corrida","Módulo","Camaronera","Placa","
    proyecto ha encontrado todos sus defectos. Queda un único id, `_trasViajeActivo`. */
 let _trasFormDirty = false;
 let _trasRecovered = null;
+/* 2026-11-12 (punto 1; usuario: «Que siga ahí») · el viaje como estaba en pantalla al dejar la pestaña, y si tenía cambios sin guardar:
+   { data, sucio }. Entrar en la pestaña re-siembra de lo GUARDADO, y un camión recién dado de alta con su medición desaparecía al ir a
+   Mareas y volver (visto en Chrome). Se toma SIEMPRE, no sólo con `_trasFormDirty`: los repintados internos (el alta, el selector)
+   lo dejan en false aunque lo de pantalla no esté guardado. Ver _astTrasAlSalir. */
+let _trasAlVolver = null;
 /* Vaciar la ficha con «🗑 Borrar traslado» es una decisión EXPLÍCITA y tiene que
    sobrevivir al repintado: sin esta bandera, `trasAdoptarActivo` volvería a abrir el
    traslado anterior que siguiera en el dispositivo y el chequeador pulsaría «Borrar»
@@ -25066,6 +25132,15 @@ function trasRefrescar(){
   _trasRecovered = data;
   renderTraslado();
   _trasRecovered = null;
+}
+/* 2026-11-12 (punto 1) · Al ENTRAR en la pestaña: el viaje como se dejó (con lo que tuviera sin guardar) o, si no hay, el guardado. */
+function _trasPintarAlVolver(){
+  const v = _trasAlVolver;
+  _trasAlVolver = null;
+  if(!v){ renderTraslado(); return; }
+  _trasRecovered = v.data;
+  try{ renderTraslado(); }finally{ _trasRecovered = null; }
+  _trasFormDirty = v.sucio;
 }
 
 /* ── Estado del guardado local ──────────────────────────────

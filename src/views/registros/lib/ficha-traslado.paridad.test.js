@@ -249,7 +249,9 @@ describe('Traslado · la pestaña está realmente cableada en el monolito', () =
   });
 
   it('se renderiza al entrar en la pestaña', () => {
-    expect(src).toContain('if(t==="traslado") renderTraslado();');
+    // 2026-11-12 (punto 1) · con lo que se dejó en pantalla, si lo hay (lo prueba entero pestanas-conservan.test.js).
+    expect(src).toContain('if(t==="traslado") _trasPintarAlVolver();');
+    expect(src).toMatch(/function _trasPintarAlVolver\(\)\{[^}]*if\(!v\)\{ renderTraslado\(\); return; \}/);
   });
 
   it('respalda lo tecleado al salir del módulo', () => {

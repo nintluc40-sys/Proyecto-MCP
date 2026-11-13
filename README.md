@@ -1241,6 +1241,15 @@ sin avisar**:
 - **Biomol, As Técnico (supervisión) y Traslado CONSERVAN lo no enviado.** A las 48 h sólo se retira lo ya
   enviado, contadas desde su envío (como ya hacían Score, Auditoría y Microbiología); lo pendiente se queda hasta
   enviarlo o borrarlo. Las fotos de un viaje caducan con su viaje.
+- **Cambiar de pestaña no borra lo tecleado** (2026-11-12, usuario: «Que siga ahí»). As Técnico y Traslado se repintaban
+  al entrar en su pestaña desde lo GUARDADO: un dato tecleado, o un camión recién dado de alta con su medición,
+  desaparecía al ir a 🌊 Mareas y volver. Ahora la ficha vuelve como se dejó, sin guardar ni enviar nada
+  (`_astTrasAlSalir`, `_astPintarAlVolver`, `_trasPintarAlVolver`); «← Cambiar módulo» sí la suelta (deja su «↩ Recuperar»).
+  De la misma familia: en Lab. Algas, 🗑 de una fila, «🗑 Vaciar todo» y el 🔄 de arriba cambian el historial sin borrar
+  la ficha (`_algRepintarConservando`); «← Cambiar módulo» deja en Larvicultura y en Algas la copia de «↩ Recuperar» con
+  lo tecleado, como ya hacían As Técnico, Traslado, Biomol y Maduración (antes, sólo la del autoguardado de cada minuto);
+  y una grilla de Maduración que no se pudo guardar por un error inesperado pregunta antes de dejarla, como sin espacio
+  (`MAD_GRID_ERROR`). Lo vigilan `pestanas-conservan.test.js` y el banco `mutar-pestanas-conservan`.
 - **Larvicultura y Lab. Algas: lo de días anteriores.** Se guardan por día y la app lee los de hoy, así que lo no
   enviado dejaba de verse a medianoche y la limpieza lo borraba. Ahora la limpieza no lo toca y, al abrir el módulo,
   un aviso dice qué quedó y de qué día, con **«☁️ Enviarlas»** (cada ficha a su hoja con SU fecha: las de Datos de un
