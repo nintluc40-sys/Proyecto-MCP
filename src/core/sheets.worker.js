@@ -24,8 +24,9 @@
                                                         de la descarga, las hojas hechas de cuántas, el reintento…)
      ← { id, latido: true }                             cada LATIDO_MS mientras atiende (A1, abajo)
      ← { id, hoja, filas }                              una por cada hoja que cambió (2026-10-06, abajo)
-     ← { id, ok: true, orden, huellas, completo, pestanas? }   al final; el lector junta las hojas en `cambiadas`
-                                                        (`completo`: A4; `pestanas`, si leyó por CSV: para recordarlas)
+     ← { id, ok: true, orden, huellas, completo, faltantes?, pestanas? }   al final; el lector junta las hojas en `cambiadas`
+                                                        (`completo`: A4; `faltantes`, si no llegó completo: los nombres de las
+                                                        que no llegaron, o null; `pestanas`, si leyó por CSV: para recordarlas)
      ← { id, ok: false, motivo: 'sin-xlsx' | 'xlsx' | 'sin-datos', error }
 
    A1 (2026-10-07, usuario) · el lector ya no corta el Worker a los 165 s pase lo que pase, sino cuando lleva
@@ -73,6 +74,9 @@ export async function atenderLectura(m, entorno) {
     // A4 (2026-10-11, usuario): ¿la lista de hojas es la de verdad? El libro entero, sí; el respaldo, si llegaron TODAS sus
     // pestañas (por XLSX o CSV). Completa, una hoja que falta se vació o se borró; si no, puede que sólo no llegara.
     let completo = !!sheets;
+    // Punto 3 (pauta del 12-11, usuario: «Avisar hasta que llegue completo») · si no llega completo, CUÁLES no llegaron
+    // (sus nombres; null si no se sabe qué pestañas hay), para que la píldora y el aviso de la página las nombren
+    let faltantes = null;
     /* 2026-10-01 (usuario) · si el libro entero no llega, el RESPALDO (cada hoja por su XLSX, inmune a los filtros de
        la hoja; si el de una falla, su CSV) se hace AQUÍ: en la página, cada hoja grande por XLSX la congelaba ~1,3 s en
        PC. Por este RESPALDO, el libro sólo se GUARDA en el equipo (P4) si llegó completo y todo por XLSX: una hoja por CSV
@@ -86,10 +90,11 @@ export async function atenderLectura(m, entorno) {
         sheets = r.sheets;
         guardable = !r.porCsv && !r.perdidas && !r.sinPestanas;
         completo = !r.perdidas && !r.sinPestanas;
+        faltantes = r.sinPestanas ? null : r.faltantes;
       }
     }
     // 4.2-B: sin libro ni respaldo, lo que llegó por CSV (incompleto: isDegraded no lo deja pisar un set mayor)
-    if (!sheets && porCsv && Object.keys(porCsv.sheets).length) { sheets = porCsv.sheets; guardable = false; completo = false; }
+    if (!sheets && porCsv && Object.keys(porCsv.sheets).length) { sheets = porCsv.sheets; guardable = false; completo = false; faltantes = porCsv.faltantes; }
     // A1: ni el libro ni ninguna hoja del respaldo (red caída o sin acceso): repetirlo en la página no traería nada
     if (!sheets) return { id, ok: false, motivo: 'sin-datos', error: 'No llegó ningún dato de Google.' };
     const d = planDelta(m.previas || {}, sheets);
@@ -98,7 +103,7 @@ export async function atenderLectura(m, entorno) {
       Promise.resolve().then(() => entorno.guardar(libro)).catch(() => { /* se reintenta en la próxima lectura */ });
     }
     // la lista de pestañas que usó la lectura por CSV, para que la página la recuerde (D)
-    return { id, ok: true, ...d, completo, ...(porCsv && porCsv.pestanas ? { pestanas: porCsv.pestanas } : {}) };
+    return { id, ok: true, ...d, completo, ...(completo ? {} : { faltantes }), ...(porCsv && porCsv.pestanas ? { pestanas: porCsv.pestanas } : {}) };
   } catch (err) {
     return sinXlsx || { id, ok: false, motivo: 'xlsx', error: String((err && err.message) || err) };
   }

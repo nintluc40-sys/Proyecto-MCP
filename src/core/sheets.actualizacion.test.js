@@ -11,7 +11,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { connectSheets, setLectorLibro, getLastFingerprint } from './sheets.js';
+import { connectSheets, setLectorLibro, getLastFingerprint, huellasPorHoja } from './sheets.js';
 import { store, on, EV } from './store.js';
 
 const VENDOR = join(process.cwd(), 'public/vendor/xlsx.full.min.js');
@@ -87,6 +87,58 @@ describe('A4 · ⟳ con hojas de menos', () => {
       expect(datos).toHaveLength(1);
       expect(store.sheetNames).toEqual(['Larvicultura M01']);
     } finally { setLectorLibro(null); }
+  });
+
+  /* 🔴 PUNTO 3 (pauta del 12-11) · LO QUE PASABA. En la PRIMERA carga, la lista de hojas que faltan se forzaba a vacía
+     (no había set previo con el que comparar) y el aviso sólo saltaba con 1 hoja o menos: un libro que llegaba con 40 de
+     44 hojas abría con la píldora en «40 hojas · hh:mm», como si todo estuviera bien, y esas vistas vacías sin explicación.
+     🔑 AHORA (usuario: «Avisar hasta que llegue completo»): la descarga dice qué hojas NO llegaron (`faltantes`); la
+     píldora lo dice y el evento lleva `incompleta` para que el shell saque un aviso con sus nombres. */
+  describe('punto 3 · una carga INCOMPLETA se dice también la primera vez', () => {
+    const conLector = (hojas, extra) => ({ disponible: () => true, leer: async () => {
+      const cambiadas = Object.fromEntries(hojas.map((h, i) => [h, [{ Fecha: '01/09/2026', Corrida: '900', Tanque: 'T' + (i + 1), Valor: '1' }]]));
+      return { ok: true, orden: hojas, huellas: huellasPorHoja(cambiadas), cambiadas, ...extra };
+    } });
+    let eventos;
+    beforeEach(() => { store.connected = false; store.sheetNames = []; eventos = []; offs.push(on(EV.CONN, (e) => eventos.push(e))); });
+    const final = () => eventos.filter((e) => e.state === 'connected').at(-1);
+
+    it('primera carga con hojas de menos y su lista: «faltó 1 hoja (se reintenta)» e `incompleta` con su nombre', async () => {
+      try {
+        setLectorLibro(conLector(['Larvicultura M01', 'Larvicultura M02'], { completo: false, faltantes: ['Larvicultura M03'] }));
+        expect(await connectSheets()).toBe(true);
+        expect(store.sheetNames).toEqual(['Larvicultura M01', 'Larvicultura M02']);   // se aplica lo que llegó
+        expect(final().label).toMatch(/^2 hojas · [^·]+ · faltó 1 hoja \(se reintenta\)$/);
+        expect(final()).toMatchObject({ warn: false, incompleta: { faltan: ['Larvicultura M03'] } });
+      } finally { setLectorLibro(null); }
+    });
+
+    it('sin saber qué pestañas hay (faltantes null): «llegó incompleto» y `incompleta` sin nombres', async () => {
+      try {
+        setLectorLibro(conLector(['Larvicultura M01', 'Larvicultura M02'], { completo: false }));
+        await connectSheets();
+        expect(final().label).toMatch(/^2 hojas · [^·]+ · llegó incompleto \(se reintenta\)$/);
+        expect(final()).toMatchObject({ incompleta: { faltan: null } });
+      } finally { setLectorLibro(null); }
+    });
+
+    it('completa: ni texto ni `incompleta` (control: la misma carga, con completo)', async () => {
+      try {
+        setLectorLibro(conLector(['Larvicultura M01', 'Larvicultura M02'], { completo: true }));
+        await connectSheets();
+        expect(final().label).toMatch(/^2 hojas · [^·]+$/);
+        expect(final().incompleta).toBeUndefined();
+      } finally { setLectorLibro(null); }
+    });
+
+    it('con 1 hoja sigue el aviso de siempre (`warn`), no el de incompleta', async () => {
+      try {
+        setLectorLibro(conLector(['Larvicultura M01'], { completo: false, faltantes: ['Larvicultura M02'] }));
+        await connectSheets();
+        expect(final()).toMatchObject({ warn: true });
+        expect(final().incompleta).toBeUndefined();
+      } finally { setLectorLibro(null); }
+    });
   });
 
   it('carga lenta D (2026-10-19) · la página le pasa al Worker las pestañas que recuerda y guarda las que él trae', async () => {

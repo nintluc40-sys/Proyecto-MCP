@@ -9,10 +9,24 @@ import { fmtShort, parseAnyDate } from '../core/dates.js';
 import { getField, F } from '../core/fields.js';
 import { toast } from './toast.js';
 import { rolDeEnlace, rolRecordado, recordarRol, olvidarRol, direccionSinRol } from './accesoRol.js';
+import { REFRESH_INTERVAL_S } from '../config.js';
 // Logo corporativo (pantalla de entrada). Vite lo resuelve a un asset con hash.
 import logoUrl from '../assets/logo.png';
 
 let els = {};
+
+/** Punto 3 (pauta del 12-11, usuario: «Avisar hasta que llegue completo») · el aviso de una carga INCOMPLETA del libro
+ *  (connectSheets manda `incompleta.faltan`: los nombres de las hojas que no llegaron, o null si no se sabe cuáles). Las
+ *  nombra (hasta 6) y dice que se reintenta solo: la píldora lo sigue diciendo en cada refresco hasta que lleguen. */
+export function textoCargaIncompleta(faltan) {
+  const cuando = `El MCP lo reintenta solo cada ${Math.round(REFRESH_INTERVAL_S / 60)} minutos; también puedes pulsar el indicador de conexión.`;
+  if (!Array.isArray(faltan) || !faltan.length) {
+    return `El libro llegó incompleto (no se pudo saber qué hojas faltan). Algunas vistas pueden salir vacías o sin lo último. ${cuando}`;
+  }
+  const n = faltan.length;
+  const nombres = faltan.slice(0, 6).join(', ') + (n > 6 ? ` y ${n - 6} más` : '');
+  return `El libro llegó incompleto: ${n === 1 ? 'faltó 1 hoja' : `faltaron ${n} hojas`} (${nombres}). Las vistas que la${n === 1 ? '' : 's'} usan pueden salir vacías o sin lo último. ${cuando}`;
+}
 
 // Clave de tema en localStorage. Namespace del proyecto; NO es una clave de contrato
 // de Registros (esas persisten datos de fichas), sólo preferencia visual.
@@ -91,12 +105,15 @@ export function mountShell(appEl) {
   try { applyTheme(localStorage.getItem(THEME_KEY) === 'dark'); } catch (_) { /* storage no disponible */ }
   showEntry(); // pantalla de ingreso por rol antes de usar el sistema
 
-  on(EV.CONN, ({ state, label, warn }) => {
+  on(EV.CONN, ({ state, label, warn, incompleta }) => {
     setConnStatus(state, label);
     // Carga degradada (solo 1 hoja): avisa explícitamente en lugar de dejar todas
     // las vistas vacías en silencio. Ver `warn` en connectSheets (core/sheets.js).
     if (warn) {
       toast('Solo se cargó 1 hoja del documento. La descarga completa (todas las hojas) probablemente falló: reintenta con el indicador de conexión o publica el Sheet en la web (Archivo → Compartir → Publicar). Mientras tanto, la mayoría de vistas quedarán sin datos.', 'err', 9000);
+    } else if (incompleta) {
+      // Punto 3: más de 1 hoja, pero no todas (primera carga o ⟳): se nombran las que faltan
+      toast(textoCargaIncompleta(incompleta.faltan), 'warn', 9000);
     }
   });
   on(EV.VIEW, renderDrawer);

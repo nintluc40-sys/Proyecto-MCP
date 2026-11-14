@@ -580,7 +580,11 @@ export async function respaldoPorHojas(ids, obtenerXLSX = getXLSX, avisar = null
   const targets = discovered.length ? discovered : [{ gid: 0, title: '' }];
   // A1 (2026-10-07): el aviso cuenta las hojas que ya terminaron (bien o mal), para que no se quede quieto minutos
   let hechas = 0;
-  const results = await mapLimit(targets, 6, async ({ gid, title }) => {
+  // Punto 3 (pauta del 12-11) · pestaña → nombre de las que NO llegaron (aquí una hoja vacía también devuelve null)
+  const perdidaDe = new Map();
+  const results = await mapLimit(targets, 6, async (pestana) => {
+    const { gid, title } = pestana;
+    const perder = (nombre) => { perdidas++; perdidaDe.set(pestana, nombre || title || 'pestaña ' + gid); return null; };
     try {
       // Su XLSX primero (inmune a los filtros de la hoja); el CSV, sólo si el de ESTA hoja no llega. Una pestaña sin
       // nombre (el Worker no tiene la caché de pestañas) toma el que trae su propio XLSX antes que adivinarlo.
@@ -592,23 +596,25 @@ export async function respaldoPorHojas(ids, obtenerXLSX = getXLSX, avisar = null
       const rows = parseCSV(await fetchCSV(buildCsvUrl(ids, gid), 1));
       if (!rows.length) return null;
       const name = title || detectSheetName(rows, gid);
-      if (rows.length < filasAplicadas(previas, name)) { perdidas++; return null; }   // B4: gviz recortó
+      if (rows.length < filasAplicadas(previas, name)) return perder(name);   // B4: gviz recortó
       // B3 · gviz sale con el formato regional del libro, como el CSV de exportación: se convierte igual y cuenta para la
       // misma guarda (un libro en otro formato no se convierte a ciegas: la hoja falta).
       return { name, rows: convertirNumeros(rows, valorDeCsv, senales), csv: true, gviz: true };
-    } catch (_) { perdidas++; return null; } finally {
+    } catch (_) { return perder(); } finally {
       hechas++;
       if (avisar) avisar({ fase: 'respaldo', hechas, de: targets.length });
     }
   });
   const otroFormato = senales.en > senales.es;   // como en hojasPorCsv: la conversión de los números no valdría
-  results.forEach((res) => {
+  results.forEach((res, i) => {
     if (!res || sheets[res.name]) return;
-    if ((res.exportacion || res.gviz) && otroFormato) { perdidas++; return; }
+    if ((res.exportacion || res.gviz) && otroFormato) { perdidas++; perdidaDe.set(targets[i], res.name); return; }
     sheets[res.name] = stampRows(res.rows, res.name);
     if (res.csv) porCsv++;
   });
-  return { sheets, porCsv, perdidas, sinPestanas: !discovered.length };
+  // Punto 3 · las que no llegaron, en el orden de las pestañas (sin pestañas conocidas, no se sabe: sinPestanas)
+  const faltantes = targets.filter((t) => perdidaDe.has(t)).map((t) => perdidaDe.get(t));
+  return { sheets, porCsv, perdidas, sinPestanas: !discovered.length, faltantes };
 }
 
 /* ---------- B · cada hoja por su CSV de EXPORTACIÓN (2026-10-11, usuario, punto 4.2-B) ----------
@@ -738,14 +744,18 @@ export async function hojasPorCsv(ids, obtenerXLSX = getXLSX, avisar = null, pre
   if (senales.en > senales.es) return null;   // el libro ya no está en formato es: la conversión no valdría
   const sheets = {};
   leidas.forEach((h) => { if (h && h.filas.length && !sheets[h.title]) sheets[h.title] = stampRows(h.filas, h.title); });
-  return { sheets, completo: !perdidas, porXlsx, pestanas };
+  // Punto 3 (pauta del 12-11, usuario: «Avisar hasta que llegue completo») · CUÁLES no llegaron, en el orden de las
+  // pestañas, para que la píldora y el aviso las nombren. Una hoja vacía sí llegó (trae { filas: [] }): no está aquí.
+  const faltantes = pestanas.filter((_, i) => !leidas[i]).map((p) => p.title);
+  return { sheets, completo: !perdidas, porXlsx, pestanas, faltantes };
 }
 
 /** El respaldo leído aquí: { sheets, completo } (A4, 2026-10-11: `completo` = llegaron TODAS sus pestañas). B4: con las
  *  huellas aplicadas, para que una hoja recortada por gviz no pise la buena. */
 async function fetchViaCsv(ids, avisar = null) {
   const r = await respaldoPorHojas(ids, getXLSX, avisar, null, _huellasAplicadas);
-  return { sheets: r.sheets, completo: !r.perdidas && !r.sinPestanas };
+  // punto 3: las que no llegaron; null si no se sabe qué pestañas hay
+  return { sheets: r.sheets, completo: !r.perdidas && !r.sinPestanas, faltantes: r.sinPestanas ? null : r.faltantes };
 }
 
 // ---------- pipeline público ----------
@@ -932,10 +942,13 @@ export function fundirDelta(aplicadas, { orden, cambiadas }) {
   return out;
 }
 
-/** { sheets, huellas, fp } de un set leído entero (camino sin Worker o CSV). */
-function descargaCompleta(sheets, completo = false) {
+/** Punto 3 (pauta del 12-11) · `faltantes`: las hojas que la descarga sabe que NO llegaron. Completa, ninguna; incompleta,
+ *  sus nombres, o null si no se sabe qué pestañas hay. */
+const faltantesDe = (completo, faltantes) => (completo ? [] : Array.isArray(faltantes) ? faltantes : null);
+/** { sheets, huellas, fp, completo, faltantes } de un set leído entero (camino sin Worker o CSV). */
+function descargaCompleta(sheets, completo = false, faltantes = null) {
   const huellas = huellasPorHoja(sheets);
-  return { sheets, huellas, fp: huellaDe(huellas), completo };
+  return { sheets, huellas, fp: huellaDe(huellas), completo, faltantes: faltantesDe(completo, faltantes) };
 }
 
 // Lo último APLICADO, por hoja: contra eso compara el Worker y de ahí salen las hojas sin cambios.
@@ -965,13 +978,13 @@ export async function descargarLibro({ alAvanzar } = {}) {
   if (!ids) throw new Error('URL de Google Sheets inválida.');
   // A4 (2026-10-11, usuario): `completo` = la lista de hojas es la de verdad (el libro entero, o el respaldo con TODAS sus
   // pestañas): entonces una hoja que falta se vació o se borró y se aplica; si no, isDegraded la descarta (ver allí).
-  let sheets, completo = false;
+  let sheets, completo = false, faltantes = null;
   if (_lector && _lector.disponible()) {
     // carga lenta D (2026-10-19): el Worker no tiene localStorage; la página le pasa las pestañas que recuerda y guarda
     // las que él trae (discoverGids · `recordadas`)
     const r = await _lector.leer({ realId: ids.realId, previas: _huellasAplicadas, alAvanzar, pestanas: cachedTabs(ids.realId) });
     if (r.ok && Array.isArray(r.pestanas) && r.pestanas.length) cacheTabs(ids.realId, r.pestanas);
-    if (r.ok) return { sheets: fundirDelta(_hojasAplicadas, r), huellas: r.huellas, fp: huellaDe(r.huellas, r.orden), completo: r.completo === true };
+    if (r.ok) return { sheets: fundirDelta(_hojasAplicadas, r), huellas: r.huellas, fp: huellaDe(r.huellas, r.orden), completo: r.completo === true, faltantes: faltantesDe(r.completo === true, r.faltantes) };
     /* A1 (2026-10-07, usuario) · NO se repite aquí lo que el Worker ya intentó: si no le llegó nada, o si calló
        SILENCIO_MS (trabado), la página tampoco lo conseguiría y, en la primera carga, volvía a empezar toda la cadena
        (7–17 min con la red colgada). Sólo se lee aquí si el Worker no arrancó, o se cayó en la primera carga. */
@@ -979,12 +992,12 @@ export async function descargarLibro({ alAvanzar } = {}) {
     if (r.motivo === 'tiempo' || (r.motivo === 'caido' && store.connected)) {
       throw new Error('No se pudo leer el libro en segundo plano.');
     }
-    if (r.motivo === 'xlsx') ({ sheets, completo } = await fetchViaCsv(ids, alAvanzar));
+    if (r.motivo === 'xlsx') ({ sheets, completo, faltantes } = await fetchViaCsv(ids, alAvanzar));
   }
-  if (!sheets) ({ sheets, completo } = await leerTodoAqui(alAvanzar));
+  if (!sheets) ({ sheets, completo, faltantes } = await leerTodoAqui(alAvanzar));
   // Nada por ningún camino (sin Worker o tras su fallo): lo mismo que «sin-datos», no «Sin datos en las hojas.»
   if (!Object.keys(sheets).length) throw new Error(SIN_DATOS_DE_GOOGLE);
-  return descargaCompleta(sheets, completo);
+  return descargaCompleta(sheets, completo, faltantes);
 }
 
 /** Aplica una descarga al store y la registra como lo APLICADO (hojas, huellas y huella global).
@@ -1067,7 +1080,7 @@ async function leerTodoAqui(avisar = null) {
   if (libro) return { sheets: libro, completo: true };
   const r = await fetchViaCsv(ids, avisar);
   // como en el Worker: sin libro ni respaldo, lo que llegó por CSV (incompleto: isDegraded no lo deja pisar un set mayor)
-  if (!Object.keys(r.sheets).length && porCsv && Object.keys(porCsv.sheets).length) return { sheets: porCsv.sheets, completo: false };
+  if (!Object.keys(r.sheets).length && porCsv && Object.keys(porCsv.sheets).length) return { sheets: porCsv.sheets, completo: false, faltantes: porCsv.faltantes };
   return r;
 }
 
@@ -1098,6 +1111,24 @@ export function textoFaltan(faltan, aplicada) {
   return n === 1 ? ' · faltó 1 hoja (se reintenta)' : ` · faltaron ${n} hojas (se reintenta)`;
 }
 
+/** Punto 3 (pauta del 12-11, usuario: «Avisar hasta que llegue completo») · las hojas que NO llegaron en una descarga
+ *  INCOMPLETA (`completo === false`): las aplicadas que no trae (`faltanAplicadas`, A4) y las que ella misma sabe que no
+ *  llegaron (`faltantes`), sin repetir. null si no se sabe cuáles (sin lista de pestañas); [] si llegó completa. */
+export function hojasSinLlegar(d, faltanAplicadas = []) {
+  if (!d || d.completo !== false) return [];
+  const todas = [...new Set([...(faltanAplicadas || []), ...(Array.isArray(d.faltantes) ? d.faltantes : [])])];
+  return todas.length ? todas : null;
+}
+
+/** Punto 3 · lo que añade la píldora por las hojas que faltan, mirando también lo que dice la propia descarga. Completa
+ *  (o sin decirlo), lo de siempre (A4: `textoFaltan`); incompleta, «faltó… (se reintenta)» con las que no llegaron, o
+ *  «llegó incompleto» si no se sabe cuáles. Lo usan connectSheets (primera carga y ⟳) y el auto-refresco. */
+export function textoDeFaltantes(d, faltanAplicadas = [], aplicada = false) {
+  if (!d || d.completo !== false) return textoFaltan(faltanAplicadas, aplicada);
+  const nombres = hojasSinLlegar(d, faltanAplicadas);
+  return nombres ? textoFaltan(nombres, false) : ' · llegó incompleto (se reintenta)';
+}
+
 /** Conexión inicial: descarga + commit + emisión de estado. */
 export async function connectSheets() {
   emit(EV.CONN, { state: 'connecting', label: 'Descargando datos…' });
@@ -1109,13 +1140,18 @@ export async function connectSheets() {
     const faltan = firstLoad ? [] : hojasQueFaltan(d.sheets);   // A4: antes de aplicar, contra lo que había
     const resultado = commit(d, firstLoad);
     const n = store.sheetNames.length;
+    // Punto 3 (pauta del 12-11, usuario: «Avisar hasta que llegue completo») · la descarga INCOMPLETA se dice también en la
+    // PRIMERA carga: antes `faltan` se quedaba vacío (no hay set previo) y la píldora decía «40 hojas · hh:mm» como si
+    // nada; ahora cuenta también las que la propia descarga sabe que no llegaron (`faltantes`).
     const ts = new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' })
-      + (resultado === 'sin-cambios' ? ' · sin cambios' : '') + textoFaltan(faltan, resultado === 'aplicado');
+      + (resultado === 'sin-cambios' ? ' · sin cambios' : '') + textoDeFaltantes(d, faltan, resultado === 'aplicado');
     // Señal de carga DEGRADADA: si tras conectar solo hay 1 hoja, casi siempre es
     // que el camino XLSX (todas las hojas) falló y se cayó al fallback CSV, que sin
     // el documento "publicado en la web" solo recupera la 1ª pestaña → la mayoría de
     // vistas quedan sin datos. Se marca `warn` para que la shell avise al usuario.
-    emit(EV.CONN, { state: 'connected', label: `${n} hoja${n > 1 ? 's' : ''} · ${ts}`, warn: n <= 1 });
+    // Punto 3 · con más de 1 hoja pero incompleta, `incompleta` (sus nombres; null si no se sabe cuáles): el shell avisa.
+    const incompleta = n > 1 && d.completo === false ? { faltan: hojasSinLlegar(d, faltan) } : null;
+    emit(EV.CONN, { state: 'connected', label: `${n} hoja${n > 1 ? 's' : ''} · ${ts}`, warn: n <= 1, ...(incompleta ? { incompleta } : {}) });
     return true;
   } catch (err) {
     const msg = err?.name === 'AbortError'

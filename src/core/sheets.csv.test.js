@@ -135,10 +135,13 @@ describe('hojasPorCsv', () => {
     r = await hojasPorCsv(ids, xlsx, null, { [H1]: H1 + ':3:123;' });   // aplicadas 3, el CSV trae 2
     expect(r.porXlsx).toBe(1);
     expect(r.sheets[H1]).toHaveLength(3);
+    expect(r.faltantes, 'punto 3: completa, no falta ninguna').toEqual([]);
     csvPorGid[2222] = 500;
     r = await hojasPorCsv(ids, xlsx);
     expect(Object.keys(r.sheets)).toEqual([H1]);
     expect(r.completo).toBe(false);
+    // Punto 3 (pauta del 12-11, usuario: «Avisar hasta que llegue completo») · dice CUÁLES no llegaron, para nombrarlas
+    expect(r.faltantes).toEqual([H2]);
   });
 
   it('se aparta (null) sin pestañas, con una pestaña sin nombre o si el libro no está en formato es', async () => {
@@ -172,6 +175,7 @@ describe('hojasPorCsv', () => {
     expect(r).not.toBe(null);
     expect(Object.keys(r.sheets)).toEqual(['Hoja 6', 'Hoja 7', 'Hoja 8', 'Hoja 9']);
     expect(r.completo).toBe(false);   // las 6 rechazadas tampoco llegan por su XLSX: falta, y el Worker pedirá el libro
+    expect(r.faltantes, 'punto 3: las 6 que no llegaron, por su nombre').toEqual(titulos.slice(0, 6));
   });
 
   it('R1 · se cuentan HOJAS de la primera tanda, no intentos: los rechazos rápidos no tiran el CSV mientras el resto de esa tanda llega', async () => {
@@ -285,6 +289,20 @@ describe('el Worker lee PRIMERO por CSV', () => {
     expect(r.orden).toEqual([H2]);
     expect(r.completo).toBe(true);
   });
+
+  it('punto 3 (pauta 12-11) · sin libro ni respaldo, lo que llegó por CSV (completo: false) dice cuál no llegó', async () => {
+    csvPorGid[2222] = 500;
+    xlsxPorGid = {};
+    const base = globalThis.fetch;
+    let csv1111 = 0;
+    // como en la página: el CSV de la 1111 llega UNA vez (la lectura por CSV) y ya no (el respaldo)
+    globalThis.fetch = async (url) => (/export\?format=csv/.test(String(url)) && /gid=1111/.test(String(url)) && ++csv1111 > 1 ? error(500) : base(url));
+    try {
+      const r = await atenderLectura({ id: 9, realId: 'X', previas: {} }, entorno());
+      expect(r).toMatchObject({ id: 9, ok: true, completo: false, orden: [H1] });
+      expect(r.faltantes).toEqual([H2]);
+    } finally { globalThis.fetch = base; }
+  });
 });
 
 describe('pauta 17 (2026-10-22) · SIN Worker, la página también lee PRIMERO por CSV (no congela con el libro entero)', () => {
@@ -294,6 +312,7 @@ describe('pauta 17 (2026-10-22) · SIN Worker, la página también lee PRIMERO p
     libroEntero = xlsxDe(H1, [['Fecha'], ['x']]);            // si se pidiera, daría otra cosa
     const d = await descargarLibro();                        // sin lector registrado: se lee aquí (leerTodoAqui)
     expect(d.completo).toBe(true);
+    expect(d.faltantes, 'punto 3: completa, la lista de las que faltan es vacía (no «no se sabe»)').toEqual([]);
     expect(Object.keys(d.sheets)).toEqual([H1, H2]);
     expect(d.sheets[H1][0].Supervivencia).toBe('85.5');
     expect(libroPedido()).toBe(false);
@@ -337,6 +356,7 @@ describe('pauta 17 (2026-10-22) · SIN Worker, la página también lee PRIMERO p
       const d = await descargarLibro();
       expect(Object.keys(d.sheets)).toEqual([H1]);
       expect(d.completo).toBe(false);
+      expect(d.faltantes, 'punto 3: el último recurso dice cuál no llegó por el CSV').toEqual([H2]);
       expect(libroPedido()).toBe(true);
     } finally { globalThis.fetch = base; }
   });

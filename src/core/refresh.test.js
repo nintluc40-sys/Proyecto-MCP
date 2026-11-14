@@ -307,6 +307,40 @@ describe('auto-refresco · aplicar sólo en reposo', () => {
   });
 });
 
+/* 🔴 PUNTO 3 (pauta del 12-11) · LO QUE PASABA. Tras una primera carga incompleta (lo aplicado ya no tiene esas hojas), el
+   refresco comparaba sólo contra lo aplicado: si volvía a llegar sin ellas, decía «sin cambios» y nadie se enteraba.
+   🔑 AHORA (usuario: «Avisar hasta que llegue completo»): mientras la DESCARGA llegue incompleta, la píldora lo dice en
+   cada refresco; cuando llegan todas, desaparece. */
+describe('punto 3 · mientras la descarga llegue incompleta, la píldora lo sigue diciendo', () => {
+  it('sin cambios pero incompleta → «sin cambios · faltó 1 hoja (se reintenta)»; completa → ya no', async () => {
+    descargarLibro.mockResolvedValue({ ...descarga(set(1)), completo: false, faltantes: ['Larvicultura M03'] });
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(datos).toBe(0);
+    expect(etiquetas.at(-1)).toMatch(/^2 hojas · .* · sin cambios · faltó 1 hoja \(se reintenta\)$/);
+    descargarLibro.mockResolvedValue({ ...descarga(set(1)), completo: false, faltantes: null });
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(etiquetas.at(-1)).toMatch(/· sin cambios · llegó incompleto \(se reintenta\)$/);
+    descargarLibro.mockResolvedValue({ ...descarga(set(1)), completo: true, faltantes: [] });
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(etiquetas.at(-1)).toMatch(/^2 hojas · .* · sin cambios$/);
+  });
+
+  it('con cambios e incompleta → se aplica y lo dice; la que falta no se da por «vacía o borrada»', async () => {
+    descargarLibro.mockResolvedValue({ ...descarga(set(2)), completo: false, faltantes: ['Larvicultura M03'] });
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(datos).toBe(1);
+    expect(valor()).toBe(2);
+    expect(etiquetas.at(-1)).toMatch(/^2 hojas · .* · faltó 1 hoja \(se reintenta\)$/);
+  });
+
+  it('degradada (trae menos que lo aplicado) e incompleta: nombra también las que ella misma dice que no llegaron', async () => {
+    descargarLibro.mockResolvedValue({ ...descarga({ 'Larvicultura M01': [{ Fecha: '01/09/2026', Tanque: 'T1', Valor: 7 }] }), completo: false, faltantes: ['Larvicultura M02', 'Larvicultura M03'] });
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(datos).toBe(0);
+    expect(etiquetas.at(-1)).toMatch(/· faltaron 2 hojas \(se reintenta\)$/);   // M02 (aplicada) y M03, sin contarla dos veces
+  });
+});
+
 describe('asegurarLibro · con un libro GUARDADO en el equipo (P4)', () => {
   const guardado = (v, t = Date.now()) => ({ ...descarga(set(v)), t });
   beforeEach(() => { store.connected = false; store.sheetNames = []; });

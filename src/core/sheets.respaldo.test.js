@@ -137,6 +137,25 @@ describe('el respaldo lee cada hoja por su XLSX (los filtros de la hoja no la re
     expect(gvizDe(2222).length).toBeGreaterThan(0);
   });
 
+  /* Punto 3 (pauta del 12-11, usuario: «Avisar hasta que llegue completo») · la lectura de la PÁGINA (sin Worker) también
+     dice qué hojas no llegaron, para que la píldora y el aviso las nombren; sin lista de pestañas, null (no se sabe). */
+  it('punto 3 · descargarLibro sin Worker: incompleta, dice cuál no llegó; sin pestañas, null; completa, ninguna', async () => {
+    setLectorLibro(null);
+    let d = await descargarLibro();
+    expect(d).toMatchObject({ completo: true, faltantes: [] });
+    xlsxPorGid[2222] = 404;
+    gvizCae = true;
+    d = await descargarLibro();
+    expect(Object.keys(d.sheets)).toEqual([H1]);
+    expect(d).toMatchObject({ completo: false, faltantes: [H2] });
+    localStorage.clear();   // sin la lista que recuerda la página: no se sabe qué pestañas hay
+    htmlCae = true;
+    xlsxPorGid[0] = xlsxDe(H1, hoja1());
+    d = await descargarLibro();
+    expect(d.completo).toBe(false);
+    expect(d.faltantes).toBe(null);
+  });
+
   it('si lo que llega no es un XLSX (p. ej. una página de acceso), esa hoja va al CSV', async () => {
     xlsxPorGid[1111] = 'html';
     const s = await fetchAllSheets();
@@ -166,6 +185,7 @@ describe('en el Worker: el respaldo se hace allí, no en la página', () => {
     const r = await atenderLectura({ id: 1, realId: 'X', previas: {} }, e);
     expect(r).toMatchObject({ id: 1, ok: true, completo: true });   // A4: llegaron todas sus pestañas
     expect(r.orden).toEqual([H1, H2]);
+    expect(r.faltantes, 'punto 3: completa, no lleva lista de faltantes').toBeUndefined();
     expect(r.cambiadas[H1]).toHaveLength(3);                 // entera, aunque gviz la diera recortada
     expect(gvizDe(1111)).toEqual([]);
     await tic();
@@ -189,6 +209,7 @@ describe('en el Worker: el respaldo se hace allí, no en la página', () => {
     const r = await atenderLectura({ id: 3, realId: 'X', previas: {} }, e);
     expect(r).toMatchObject({ id: 3, ok: true, completo: false });  // A4: una NO llegó: no se sabe si existe
     expect(r.orden).toEqual([H1]);
+    expect(r.faltantes, 'punto 3 (pauta 12-11): dice cuál no llegó, para nombrarla en el aviso').toEqual([H2]);
     await tic();
     expect(e.guardar).not.toHaveBeenCalled();
   });
@@ -200,6 +221,7 @@ describe('en el Worker: el respaldo se hace allí, no en la página', () => {
     const r = await atenderLectura({ id: 5, realId: 'X', previas: {} }, e);
     expect(r).toMatchObject({ id: 5, ok: true, completo: false });  // A4: sin pestañas, la lista no vale
     expect(r.orden).toEqual([H1]);                           // el nombre de su XLSX, no una adivinanza por columnas
+    expect(r.faltantes, 'punto 3: sin lista de pestañas no se sabe CUÁLES faltan (null, no [])').toBe(null);
     await tic();
     expect(e.guardar).not.toHaveBeenCalled();
   });
@@ -240,9 +262,10 @@ describe('B4 (2026-10-22) · el CSV del respaldo es el de EXPORTACIÓN, y gviz n
   const previas = (n1, n2) => ({ [H1]: `${H1}:${n1}:1;`, [H2]: `${H2}:${n2}:2;` });
   // El respaldo de la página TAL CUAL: el Worker contesta «xlsx» y descargarLibro va directo a fetchViaCsv. (Con
   // fetchAllSheets, desde la pauta 17 la lectura por CSV de hojasPorCsv va delante y la hoja llegaría por ella.)
+  let ultima = null;   // punto 3: la descarga entera, para mirar sus `faltantes`
   const respaldoDeLaPagina = async () => {
     setLectorLibro({ disponible: () => true, leer: async () => ({ ok: false, motivo: 'xlsx' }) });
-    try { return (await descargarLibro()).sheets; } finally { setLectorLibro(null); }
+    try { ultima = await descargarLibro(); return ultima.sheets; } finally { setLectorLibro(null); }
   };
 
   it('si el XLSX de una hoja falla, va su CSV de exportación: ENTERA, con las filas del libro y sin pedir gviz', async () => {
@@ -264,6 +287,7 @@ describe('B4 (2026-10-22) · el CSV del respaldo es el de EXPORTACIÓN, y gviz n
     const s = await respaldoDeLaPagina();
     expect(s[H1]).toBeUndefined();
     expect(s[H2]).toHaveLength(2);
+    expect(ultima.faltantes, 'punto 3: la que no se usó por el formato se nombra').toEqual([H1]);
   });
 
   it('Worker · gviz con MENOS filas que lo aplicado: la hoja cuenta como perdida y no se manda (completo: false)', async () => {
@@ -272,6 +296,7 @@ describe('B4 (2026-10-22) · el CSV del respaldo es el de EXPORTACIÓN, y gviz n
     expect(r).toMatchObject({ id: 9, ok: true, completo: false });
     expect(r.orden).toEqual([H2]);
     expect(gvizDe(1111).length).toBeGreaterThan(0);          // se pidió, pero no pisa las 3 aplicadas
+    expect(r.faltantes, 'punto 3: la recortada por gviz cuenta como la que no llegó').toEqual([H1]);
   });
 
   it('Worker · gviz con las MISMAS filas que lo aplicado sí vale', async () => {
@@ -310,11 +335,12 @@ describe('B3 (2026-10-22) · los miles del XLSX y de gviz llegan como los del CS
   }
   /* El respaldo de la página tal cual (como en B4), con un sheets.js NUEVO: así lo aplicado por otras pruebas (3 filas de
      la hoja 1) no hace saltar la guarda B4 de gviz, que no es lo que se mira aquí. */
+  let ultima = null;   // punto 3: la descarga entera, para mirar sus `faltantes`
   const respaldoDeLaPagina = async () => {
     vi.resetModules();
     const S = await import('./sheets.js');
     S.setLectorLibro({ disponible: () => true, leer: async () => ({ ok: false, motivo: 'xlsx' }) });
-    try { return (await S.descargarLibro()).sheets; } finally { S.setLectorLibro(null); }
+    try { ultima = await S.descargarLibro(); return ultima.sheets; } finally { S.setLectorLibro(null); }
   };
 
   it('el libro entero: los números con miles salen sin ellos; el decimal y los TEXTOS con coma, intactos', () => {
@@ -357,6 +383,7 @@ describe('B3 (2026-10-22) · los miles del XLSX y de gviz llegan como los del CS
       const s = await respaldoDeLaPagina();
       expect(s[H1]).toBeUndefined();
       expect(s[H2]).toHaveLength(2);
+      expect(ultima.faltantes, 'punto 3: la que no se convirtió por el formato se nombra').toEqual([H1]);
     } finally { CSV[1111] = antes; }
   });
 });

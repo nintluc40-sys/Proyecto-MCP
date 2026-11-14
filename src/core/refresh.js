@@ -33,7 +33,7 @@ import { REFRESH_INTERVAL_S } from '../config.js';
 import { store, emit, EV } from './store.js';
 import {
   descargarLibro, aplicarDescarga, aplicarLibroGuardado, lecturaEnSegundoPlano, connectSheets, isDegraded,
-  getLastFingerprint, hojasQueFaltan, textoFaltan,
+  getLastFingerprint, hojasQueFaltan, textoDeFaltantes,
 } from './sheets.js';
 import { marcaDelLibro } from './marcaLibro.js';
 
@@ -154,9 +154,12 @@ async function check() {
     // hasta que el usuario refrescaba a mano.
     // A4 (2026-10-11, usuario): sólo si alguna hoja NO LLEGÓ (descarga incompleta); con la lista de hojas completa, la
     // que falta se vació o se borró y se aplica. Las dos cosas las dice la píldora (antes, el descarte era en silencio).
+    // Punto 3 (pauta del 12-11, usuario: «Avisar hasta que llegue completo») · mientras la DESCARGA llegue incompleta, la
+    // píldora lo dice en cada ciclo (textoDeFaltantes mira también sus `faltantes`), no sólo cuando trae menos que lo
+    // aplicado: tras una primera carga incompleta, lo aplicado ya no tiene esas hojas y antes salía «sin cambios».
     const faltan = hojasQueFaltan(d.sheets);
     if (isDegraded(d.sheets, d.completo)) {
-      emit(EV.CONN, { state: 'connected', label: etiqueta(ts, textoFaltan(faltan, false)) });
+      emit(EV.CONN, { state: 'connected', label: etiqueta(ts, textoDeFaltantes(d, faltan, false)) });
       return;
     }
     // A5 (2026-10-11, usuario): la marca (la de ANTES de bajar) se anota si lo descargado trae cambios, al APLICARLO
@@ -172,9 +175,9 @@ async function check() {
         if (marca === marcaSinCambios) marcaVista = marca;
         else marcaSinCambios = marca;
       }
-      emit(EV.CONN, { state: 'connected', label: etiqueta(ts, ' · sin cambios') });
+      emit(EV.CONN, { state: 'connected', label: etiqueta(ts, ' · sin cambios' + (d.completo === false ? textoDeFaltantes(d) : '')) });
     } else {
-      pending = { d, ts, extra: textoFaltan(faltan, true), marca };
+      pending = { d, ts, extra: textoDeFaltantes(d, faltan, true), marca };
       if (!tryApply(pedidoManual)) emit(EV.CONN, { state: 'connected', label: etiqueta(ts, ' · datos nuevos en espera') });
     }
   } catch (_) {
