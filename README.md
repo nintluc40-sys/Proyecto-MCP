@@ -1288,6 +1288,15 @@ sin avisar**:
   TECLEADO sin guardar (usuario: «Sí, sólo lo tecleado»): en Larvicultura, por ficha (`_fichasTecleadas`; al guardarla, su
   copia se suelta), en Lab. Algas lo que falta agregar, y en Biomol y Maduración su marca de «sin guardar». Lo vigilan
   `recuperar-blanco-sin-espacio.test.js`, `pestanas-conservan.test.js` y el banco `mutar-recuperar-blanco`.
+- **Laboratorio envía en lotes** (2026-11-14). Microbiología, Calidad de Agua y Patología mandaban todo lo pendiente en un
+  envío, y la hoja rechaza ENTERO uno de más de 300 filas (`LIMITS.<hoja>.maxRows` del GAS): tras unos días sin conexión, nada
+  llegaba nunca. Ahora se reparte por SESIONES en envíos que caben (usuario: «Repartir por sesiones»; `_labEnviarPendiente`,
+  `_labLotes`, `LAB_MAX_FILAS`), como Traslado con sus viajes: una sesión no se parte nunca, porque la hoja reemplaza por sesión y
+  el segundo envío borraría lo del primero. Una sesión que sola pasa del límite no se envía y se dice; si un envío falla, lo
+  enviado queda enviado y se dice cuántas sesiones quedan; sin señal, cada lote va a la cola con su marca. 🧬 Biomol: un día
+  heredado (de antes de los análisis separados) va entero, porque la hoja reemplaza el día, y con más de 200 filas
+  (`BIO_MAX_FILAS`) no se envía y se dice (usuario: «Avisar antes de enviar»). Lo vigilan `lab-lotes.test.js` (con los límites
+  leídos de `GAS/Code.gs`) y el banco `mutar-lab-lotes`.
 - **Larvicultura y Lab. Algas: lo de días anteriores.** Se guardan por día y la app lee los de hoy, así que lo no
   enviado dejaba de verse a medianoche y la limpieza lo borraba. Ahora la limpieza no lo toca y, al abrir el módulo,
   un aviso dice qué quedó y de qué día, con **«☁️ Enviarlas»** (cada ficha a su hoja con SU fecha: las de Datos de un

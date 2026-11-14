@@ -19516,6 +19516,7 @@ const BIO_GRID_DEFAULT_ROWS = 20;
 // en sitios distintos, así que subir ÉSTE por encima de 150 vuelve a exigir mirar el del GAS.
 const BIO_GRID_ROW_STEP     = 20;
 const BIO_GRID_MAX_ROWS     = 100;
+const BIO_MAX_FILAS         = 200;   // el maxRows de biomol en el GAS (punto 4: un día heredado no se reparte); lo vigila una prueba
 const BIO_WIDE_KEYS         = { codigo:1, lugar:1, otros:1, tanque:1 };  // celdas más anchas
 let _bioGridExtra = {};   // { "YYYY-MM-DD": filas extra agregadas (0..80) }
 let _bioRenderedFecha = null;   // día con el que se renderizó la grilla en pantalla (para commit al cambiar de día)
@@ -19716,6 +19717,15 @@ async function syncBioGrid(sopts){
 
   const payload = buildBioPayload(fecha, envio, migrarDia);
   if(!payload.rows.length){ toast("No hay filas válidas para enviar","warn",3000); return; }
+  /* 2026-11-14 (punto 4; usuario: «Avisar antes de enviar») · un día HEREDADO (de antes de los análisis separados) se envía entero y
+     la hoja reemplaza el DÍA: repartirlo borraría en el segundo envío lo escrito en el primero. Con más de BIO_MAX_FILAS (el maxRows de
+     biomol en el GAS) la hoja lo rechazaría entero: no se envía y se dice. */
+  if(migrarDia && payload.rows.length > BIO_MAX_FILAS){
+    toast("⚠️ El día "+fecha+" es de antes de los análisis separados y tiene "+payload.rows.length+" muestras: la hoja admite como mucho "
+      +BIO_MAX_FILAS+" por envío y ese día tiene que ir entero (repartirlo borraría parte de lo enviado). NO se ha enviado: sigue guardado en "
+      +"este equipo. Avisa a quien mantiene la app para enviarlo por partes.","warn",12000);
+    return;
+  }
   const quien = migrarDia ? ("el día "+fecha) : ("«"+bioSesNombre(sid, fecha)+"»");
   setSyncUI("pend","Enviando "+payload.rows.length+" muestra(s) de "+quien+"…");
   /* F3: reconciliación al entregar desde cola. 2026-11-03 (pauta 1.1) · con la fecha sola, el segundo análisis del día sin señal
@@ -27224,6 +27234,73 @@ function _labAnulacionesSalieron(tipo, lista, clave){
   _labAnulacionesGuardar(tipo, _labAnulaciones(tipo).filter(function(a){ return !(a && a.data && ido.has(clave(a.data))); }));
 }
 
+/* 2026-11-14 (punto 4; usuario: «Repartir por sesiones») · LO PENDIENTE DE LABORATORIO VA EN VARIOS ENVÍOS SI NO CABE EN UNO. El GAS
+   rechaza ENTERO un envío de más de `LIMITS.<hoja>.maxRows` filas («Límite de filas excedido») y no escribe nada: con unos días sin
+   conexión, Microbiología, Calidad o Patología mandaban todo junto y no llegaba nunca. Ahora se reparte por SESIONES —una sesión no se
+   parte nunca: la hoja reemplaza por sesión, y el segundo envío borraría lo que escribió el primero—, como Traslado reparte por viajes
+   (`_trasLotes`). Una sesión que SOLA pasa del límite no se envía (la hoja la rechazaría) y se dice. Si un envío falla, lo enviado queda
+   enviado y se dice cuántas sesiones quedan. `LAB_MAX_FILAS` es el `maxRows` de micro, cal y pat en el GAS: lo vigila una prueba que lee
+   GAS/Code.gs. */
+const LAB_MAX_FILAS = 300;
+function _labLotes(registros, clave, construir, tope){
+  const orden = [], por = {};
+  (registros || []).forEach(function(r){ const k = clave(r.data); if(!por[k]){ por[k] = []; orden.push(k); } por[k].push(r); });
+  const lotes = [], grandes = [];
+  let actual = null;
+  orden.forEach(function(k){
+    const n = construir(por[k]).rows.length;
+    if(n > tope){ grandes.push({ clave:k, filas:n }); return; }
+    if(actual && actual.filas + n > tope){ lotes.push(actual); actual = null; }
+    if(!actual) actual = { claves:[], registros:[], filas:0 };
+    actual.claves.push(k); actual.registros = actual.registros.concat(por[k]); actual.filas += n;
+  });
+  if(actual) lotes.push(actual);
+  return { lotes:lotes, grandes:grandes };
+}
+/* Envía lo pendiente de un laboratorio en lotes. `c`: { tipo, nombre, toSend, clave, construir, url, ind }. Las anulaciones de A10 van
+   con el primer envío si caben; si no, en uno propio, delante. Avisa y pinta como antes con un solo envío. */
+async function _labEnviarPendiente(c){
+  const rep = _labLotes(c.toSend, c.clave, c.construir, LAB_MAX_FILAS);
+  const anul = _labFilasAnuladas(c.tipo, c.construir);
+  const lotes = rep.lotes.slice();
+  if(anul.filas.length){
+    if(lotes.length && lotes[0].filas + anul.filas.length <= LAB_MAX_FILAS) lotes[0].anul = true;
+    else lotes.unshift({ claves:[], registros:[], filas:0, anul:true });
+  }
+  if(rep.grandes.length) toast("⚠️ " + rep.grandes.length + " sesión(es) de " + c.nombre + " con más de " + LAB_MAX_FILAS + " muestras ("
+    + rep.grandes.map(function(g){ return g.filas; }).join(", ") + "): la hoja admite como mucho " + LAB_MAX_FILAS
+    + " por envío, así que NO se han enviado. Siguen guardadas en este equipo.", "warn", 10000);
+  if(!lotes.length){ if(!rep.grandes.length) toast("No hay filas para enviar","warn",3000); return; }
+  let muestras = 0, sesiones = 0, encoladas = 0, fallo = null, anulSalio = false;
+  const total = rep.lotes.reduce(function(a, L){ return a + L.claves.length; }, 0);
+  for(let i = 0; i < lotes.length; i++){
+    const L = lotes[i];
+    const payload = c.construir(L.registros);
+    const n = payload.rows.length;
+    if(L.anul) payload.rows = payload.rows.concat(anul.filas);
+    if(!payload.rows.length) continue;
+    setSyncUI("pend", "Enviando " + n + " muestra(s)" + (lotes.length > 1 ? " · envío " + (i+1) + " de " + lotes.length : "") + "…");
+    const opts = { mark:{ kind:c.tipo, keys:L.claves } };   // F3: reconciliación al entregar desde cola
+    const sent = await postPayload(payload, c.url, opts);
+    if((sent || opts.outcome === "queued") && L.anul){ _labAnulacionesSalieron(c.tipo, anul.lista, c.clave); anulSalio = true; }
+    if(sent){ _marcarEnviado(opts); muestras += n; sesiones += L.claves.length; continue; }
+    if(opts.outcome === "queued"){ encoladas += L.claves.length; continue; }   // sin señal: los demás, también a la cola
+    fallo = opts; break;
+  }
+  if(!fallo && !encoladas){
+    setSyncUI("ok", muestras + " muestra(s) sincronizada(s) ✔");
+    toast("✅ " + muestras + " muestra(s) enviadas a " + c.nombre + " (sesión reemplazada)" + (lotes.length > 1 ? " · en " + lotes.length + " envíos" : "")
+      + (anulSalio ? " · " + anul.filas.length + " sesión(es) anulada(s) por corrección de fecha" : ""), "ok", 4500);
+    const ind = document.getElementById(c.ind);
+    if(ind) ind.textContent = "✅ Sincronizado · " + new Date().toLocaleString("es-EC");
+    setTimeout(function(){ setSyncUI("idle","Todo sincronizado"); }, 3500);
+    return;
+  }
+  _syncNotOkUI(fallo ? fallo.outcome : "queued", "Error al sincronizar " + c.nombre, c.ind, fallo ? fallo.gasMessage : undefined);
+  if(fallo && (sesiones || encoladas)) toast("⚠️ De " + total + " sesión(es) pendientes, " + (sesiones ? sesiones + " llegaron a la hoja" : "")
+    + (sesiones && encoladas ? " y " : "") + (encoladas ? encoladas + " quedaron en la cola" : "") + "; las demás siguen pendientes: vuelve a pulsar ☁️.", "warn", 9000);
+}
+
 function loadMicDraft(){
   const def = { meta:{ fechaMuestreo:today(), fechaResultados:"", corrida:"", responsable:"", encabezado:"", hdrModulo:"", hdrEstadio:"", hdrSala:"" }, sections:{}, activeFmt:"larv-muestra" };
   try{ const raw = localStorage.getItem(MIC_DRAFT_KEY); if(raw){ const o = JSON.parse(raw); if(o && typeof o === "object")
@@ -27785,28 +27862,8 @@ async function syncMic(){
   const _fillMic = _fillPendingAnalista(list, _anMic);
   if(_fillMic){ _micSave(list); toast("ℹ️ Se completó el Analista («"+_anMic+"») en "+_fillMic+" muestra(s) pendiente(s) que se habían guardado sin él","info",4600); }
   if(_pendingLacksAnalista(toSend)){ setSyncUI("idle","Sin analista"); toast(_avisoSinAnalista(toSend, k=> (MIC_FORMATS[k] && MIC_FORMATS[k].label) || k),"warn",6500); const _el=document.getElementById("mic-resp"); if(_el){ try{ _el.focus(); }catch(_){} } return; }
-  const payload = buildMicPayload(toSend);
-  if(!payload.rows.length){ toast("No hay filas para enviar","warn",3000); return; }
-  setSyncUI("pend","Enviando "+payload.rows.length+" muestra(s)…");
-  // A10 · y, en el mismo envío, las sesiones que una corrección de fecha dejó anuladas (con su clave exacta).
-  const _anul = _labFilasAnuladas("mic", buildMicPayload);
-  if(_anul.filas.length) payload.rows = payload.rows.concat(_anul.filas);
-  // F3: marca de reconciliación → si el envío se encola por timeout, al entregarse
-  // la cola marcará synced estas sesiones (sin reenvío manual ni "pendiente" eterno).
-  const opts = { mark:{ kind:"mic", keys:Array.from(pendKeys) } };
-  const sent = await postPayload(payload, url, opts);
-  if(sent || opts.outcome === "queued") _labAnulacionesSalieron("mic", _anul.lista, micSessionKey);
-  if(sent){
-    _marcarEnviado(opts);
-    const _nMic = payload.rows.length - _anul.filas.length;   // A10: las anuladas no son muestras
-    setSyncUI("ok", _nMic+" muestra(s) sincronizada(s) ✔");
-    toast("✅ "+_nMic+" muestra(s) enviadas a Microbiología (sesión reemplazada)"+(_anul.filas.length ? " · "+_anul.filas.length+" sesión(es) anulada(s) por corrección de fecha" : ""),"ok",4500);
-    const ind = document.getElementById("mic-saved-ind");
-    if(ind) ind.textContent = "✅ Sincronizado · "+new Date().toLocaleString("es-EC");
-    setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
-  } else {
-    _syncNotOkUI(opts.outcome, "Error al sincronizar Microbiología", "mic-saved-ind", opts.gasMessage);
-  }
+  // Punto 4 · en lotes de sesiones que quepan en la hoja; A10 (las anuladas) y F3 (la marca de cada lote) van dentro.
+  await _labEnviarPendiente({ tipo:"mic", nombre:"Microbiología", toSend:toSend, clave:micSessionKey, construir:buildMicPayload, url:url, ind:"mic-saved-ind" });
   updateDots(); updateSyncUI(); buildGrid();
   if(curTab === "michist" && micTypeGet() === "bact") renderMicHist();
 }
@@ -29259,25 +29316,8 @@ async function syncCal(){
   const _fillCal = _fillPendingAnalista(list, _anCal);
   if(_fillCal){ _calSave(list); toast("ℹ️ Se completó el Analista («"+_anCal+"») en "+_fillCal+" muestra(s) pendiente(s) que se habían guardado sin él","info",4600); }
   if(_pendingLacksAnalista(toSend)){ setSyncUI("idle","Sin analista"); toast(_avisoSinAnalista(toSend, k=> (CAL_FORMATS[k] && CAL_FORMATS[k].label) || k),"warn",6500); const _el=document.getElementById("cal-resp"); if(_el){ try{ _el.focus(); }catch(_){} } return; }
-  const payload=buildCalPayload(toSend);
-  if(!payload.rows.length){ toast("No hay filas para enviar","warn",3000); return; }
-  setSyncUI("pend","Enviando "+payload.rows.length+" muestra(s)…");
-  const _anul = _labFilasAnuladas("cal", buildCalPayload);   // A10 (ver syncMic)
-  if(_anul.filas.length) payload.rows = payload.rows.concat(_anul.filas);
-  const opts = { mark:{ kind:"cal", keys:Array.from(pendKeys) } };   // F3: reconciliación al entregar desde cola
-  const sent=await postPayload(payload, url, opts);
-  if(sent || opts.outcome === "queued") _labAnulacionesSalieron("cal", _anul.lista, calSessionKey);
-  if(sent){
-    _marcarEnviado(opts);
-    const _nCal = payload.rows.length - _anul.filas.length;
-    setSyncUI("ok", _nCal+" muestra(s) sincronizada(s) ✔");
-    toast("✅ "+_nCal+" muestra(s) enviadas a Calidad de Agua (sesión reemplazada)"+(_anul.filas.length ? " · "+_anul.filas.length+" sesión(es) anulada(s) por corrección de fecha" : ""),"ok",4500);
-    const ind=document.getElementById("cal-saved-ind");
-    if(ind) ind.textContent = "✅ Sincronizado · "+new Date().toLocaleString("es-EC");
-    setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
-  } else {
-    _syncNotOkUI(opts.outcome, "Error al sincronizar Calidad de Agua", "cal-saved-ind", opts.gasMessage);
-  }
+  // Punto 4 · en lotes de sesiones (ver syncMic y _labEnviarPendiente).
+  await _labEnviarPendiente({ tipo:"cal", nombre:"Calidad de Agua", toSend:toSend, clave:calSessionKey, construir:buildCalPayload, url:url, ind:"cal-saved-ind" });
   updateDots(); updateSyncUI(); buildGrid();
   if(curTab==="michist" && micTypeGet()==="cal") renderCalHist();
 }
@@ -29941,24 +29981,8 @@ async function syncPat(){
   const _fillPat = _fillPendingAnalista(list, _anPat);
   if(_fillPat){ _patSave(list); toast("ℹ️ Se completó el Analista («"+_anPat+"») en "+_fillPat+" muestra(s) pendiente(s) que se habían guardado sin él","info",4600); }
   if(_pendingLacksAnalista(toSend)){ setSyncUI("idle","Sin analista"); toast(_avisoSinAnalista(toSend, null),"warn",6500); const _el=document.getElementById("pat-resp"); if(_el){ try{ _el.focus(); }catch(_){} } return; }
-  const payload=buildPatPayload(toSend);
-  if(!payload.rows.length){ toast("No hay filas para enviar","warn",3000); return; }
-  setSyncUI("pend","Enviando "+payload.rows.length+" muestra(s)…");
-  const _anul = _labFilasAnuladas("pat", buildPatPayload);   // A10 (ver syncMic)
-  if(_anul.filas.length) payload.rows = payload.rows.concat(_anul.filas);
-  const opts = { mark:{ kind:"pat", keys:Array.from(pendKeys) } };   // F3: reconciliación al entregar desde cola
-  const sent=await postPayload(payload, url, opts);
-  if(sent || opts.outcome === "queued") _labAnulacionesSalieron("pat", _anul.lista, patSessionKey);
-  if(sent){
-    _marcarEnviado(opts);
-    const _nPat = payload.rows.length - _anul.filas.length;
-    setSyncUI("ok", _nPat+" muestra(s) sincronizada(s) ✔");
-    toast("✅ "+_nPat+" muestra(s) enviadas a Patología en Fresco (sesión reemplazada)"+(_anul.filas.length ? " · "+_anul.filas.length+" sesión(es) anulada(s) por corrección de fecha" : ""),"ok",4500);
-    const ind=document.getElementById("pat-saved-ind"); if(ind) ind.textContent="✅ Sincronizado · "+new Date().toLocaleString("es-EC");
-    setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
-  } else {
-    _syncNotOkUI(opts.outcome, "Error al sincronizar Patología en Fresco", "pat-saved-ind", opts.gasMessage);
-  }
+  // Punto 4 · en lotes de sesiones (ver syncMic y _labEnviarPendiente).
+  await _labEnviarPendiente({ tipo:"pat", nombre:"Patología en Fresco", toSend:toSend, clave:patSessionKey, construir:buildPatPayload, url:url, ind:"pat-saved-ind" });
   updateDots(); updateSyncUI(); buildGrid();
   if(curTab==="michist" && micTypeGet()==="pat") renderPatHist();
 }

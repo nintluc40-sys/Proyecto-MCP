@@ -334,7 +334,15 @@ describe('🔴 nadie marca «enviado» por su cuenta al terminar un envío', () 
       syncBioGrid: 1,
       syncOneAstFromList: 1, syncAllPendingAst: 1,
       syncAllPendingTras: 1,
-      syncMic: 1, syncCal: 1, syncPat: 1,
+      _labEnviarPendiente: 1,   // Microbiología, Calidad y Patología: desde el 2026-11-14 (punto 4) envían por lotes con ella
+    });
+    // …y las tres siguen pasando por ella (sin esto, una podría volver a mandar todo junto sin que nada lo notara).
+    ['syncMic', 'syncCal', 'syncPat'].forEach((f) => {
+      const ini = lineas.findIndex((l) => new RegExp('^async\\s+function\\s+' + f + '\\(').test(l.t));
+      expect(ini, f + ' no está').toBeGreaterThan(-1);
+      const cuerpo = [];
+      for (let i = ini + 1; i < lineas.length && !/^(?:async\s+)?function\s/.test(lineas[i].t); i++) cuerpo.push(lineas[i].t);
+      expect(cuerpo.join('\n'), f).toContain('await _labEnviarPendiente(');
     });
   });
 });
