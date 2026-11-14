@@ -912,6 +912,11 @@ function getStatus(m,f){
    true/false REAL para que las funciones de guardado no mientan.
 ══════════════════════════════════════════ */
 let _reclaiming = false;
+/* 2026-11-14 (punto 25; usuario: «No, sólo lo necesario») · MIENTRAS CORRE EL AUTOGUARDADO DE CADA MINUTO, nada se hace sitio: sus
+   copias son comodidad, y si no caben no se guardan (sin la MATRIZ, lo caducado ni el 📜 Historial de Maduración). Antes, con el
+   equipo lleno y una grilla tecleada, cada minuto la copia recortaba el Historial a la mitad hasta tres veces. La copia de la SALIDA
+   del módulo (goBack) sí se hace sitio: entonces es lo único que guarda lo tecleado. */
+let _sinHacerSitio = false;
 function _reclaimSpace(){
   if(_reclaiming) return false;              // evita recursión (los prune llaman a _*Save→_lsSet)
   _reclaiming = true;
@@ -955,6 +960,7 @@ function _lsSet(key, valueStr){
     return true;
   }catch(e){
     if(_reclaiming) return false;            // dentro del reclamo: no re-entrar
+    if(_sinHacerSitio) return false;         // punto 25 · el autoguardado de cada minuto no suelta nada para su copia
     /* 2026-11-03 · antes que nada, lo que se puede volver a bajar: la copia de la MATRIZ no es de nadie. */
     if(_soltarCopiaMatriz()){
       try{ localStorage.setItem(key, valueStr); if(localStorage.getItem(key) === valueStr) return true; }catch(_){}
@@ -1224,7 +1230,14 @@ function removeAlgLogById(id){
 let _recTimer = null;
 function startAutoRecovery(){
   if(_recTimer) clearInterval(_recTimer);
+  /* 2026-11-14 (punto 25; usuario: «No, sólo lo necesario») · las copias de cada minuto son comodidad: si no caben, no se guardan,
+     y no sueltan nada para hacerse sitio (`_sinHacerSitio`, que mira `_lsSet`). */
   _recTimer = setInterval(()=>{
+    _sinHacerSitio = true;
+    try{ _autoguardadoTic(); }finally{ _sinHacerSitio = false; }
+  }, 60000);
+}
+function _autoguardadoTic(){
     if(curMod === null || curMod === undefined) return;
     // Biomol usa grilla propia: respalda esa grilla y omite el bucle de fichas
     // estándar (sus paneles no existen en este módulo).
@@ -1248,7 +1261,6 @@ function startAutoRecovery(){
     // 🔧 Mantenimiento (2026-10-28): sus fichas se guardan al instante en su borrador; no hay paneles estándar que respaldar.
     if(isMntMod(curMod)) return;
     _respaldarFichasStd();
-  }, 60000);
 }
 /* El respaldo de las fichas estándar (y la de Lab. Algas). 2026-11-12 (punto 1) · sacado del autoguardado para que «← Cambiar módulo»
    haga lo MISMO al salir (goBack): una sola regla. */
@@ -10479,22 +10491,38 @@ function madHistLeer(){
     return enCola.has(String(e.envio));
   });
 }
-/* Libera TODAS las copias para Editar (primera estrategia de safeSetItem y de _reclaimSpace): el historial sigue, sin Editar. */
-function _purgeMadHistPaneles(){
+/* 2026-11-14 (punto 25; usuario: «No se tocan nunca») · LO QUE ESPERA EN LA COLA no lo suelta ninguna purga: ni su entrada ni su
+   copia para Editar, que es la única forma de verlo y corregirlo (el formulario se limpió al encolarse). La regla de la limpieza
+   normal (A8, 05-11) valía también sin espacio sólo a medias: aquí se soltaba TODO. Los ids de esas entradas. */
+function _madHistIdsEnCola(){
+  const enCola=_madHistEnCola(), ids={};
+  if(!enCola.size) return ids;
+  let l=[]; try{ const v=JSON.parse(localStorage.getItem(MAD_HIST_KEY)||"[]"); if(Array.isArray(v)) l=v; }catch(_){}
+  l.forEach(function(e){ if(e && e.id && enCola.has(String(e.envio))) ids[e.id]=true; });
+  return ids;
+}
+/* Libera las copias para Editar (primera estrategia de safeSetItem y de _reclaimSpace) —salvo las de lo que espera en la cola
+   (punto 25)—: el historial sigue, sin Editar. `guardar` (ids → true): quién llama sabe ya cuáles quedan (`_madHistGuardar`, con
+   la lista que AÚN no está guardada); si no, se miran en el historial guardado. */
+function _purgeMadHistPaneles(guardar){
+  guardar=guardar || _madHistIdsEnCola();
   const rm=[];
-  for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.indexOf(MAD_HIST_PANEL_PRE)===0) rm.push(k); }
+  for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.indexOf(MAD_HIST_PANEL_PRE)===0 && !guardar[k.slice(MAD_HIST_PANEL_PRE.length)]) rm.push(k); }
   rm.forEach(function(k){ try{ localStorage.removeItem(k); }catch(_){} });
   return rm.length ? (rm.length + " copia(s) para editar del Historial de Maduración") : null;
 }
 /* Auditoría (2026-10-04, usuario) · si liberar lo seguro no basta, la mitad MÁS VIEJA del Historial de Maduración (con sus
    copias para Editar): es una comodidad de este equipo, y lo que espera envío —la cola, lo pendiente— no puede fallar por él.
-   Lo usan _lsSet (después de _reclaimSpace) y safeSetItem (la última estrategia). null si no hay nada que liberar. */
+   Lo usan _lsSet (después de _reclaimSpace) y safeSetItem (la última estrategia). null si no hay nada que liberar.
+   🆕 Punto 25 · lo que espera en la cola se queda aunque sea de la mitad vieja (y su copia con él). */
 function _purgeMadHistViejo(){
   let l=[];
   try{ const v=JSON.parse(localStorage.getItem(MAD_HIST_KEY)||"[]"); if(Array.isArray(v)) l=v.filter(Boolean); }catch(_){ return null; }
   if(!l.length) return null;
   l.sort(function(a,b){ return (b.ts||0)-(a.ts||0); });
-  const quedan=l.slice(0, Math.floor(l.length/2)), vivas={};
+  const enCola=_madHistEnCola(), mitad=Math.floor(l.length/2);
+  const quedan=l.filter(function(e, i){ return i < mitad || enCola.has(String(e.envio)); }), vivas={};
+  if(quedan.length === l.length) return null;   // lo viejo espera todo en la cola: no hay nada que soltar
   quedan.forEach(function(e){ vivas[e.id]=true; });
   try{ if(quedan.length) localStorage.setItem(MAD_HIST_KEY, JSON.stringify(quedan)); else localStorage.removeItem(MAD_HIST_KEY); }
   catch(_){ try{ localStorage.removeItem(MAD_HIST_KEY); }catch(__){} }
@@ -10529,10 +10557,13 @@ function _madHistGuardar(l){
   sobran.forEach(function(k){ try{ localStorage.removeItem(k); }catch(_){} });
   try{ localStorage.setItem(MAD_HIST_KEY, JSON.stringify(lista)); return true; }
   catch(_){
-    // Sin espacio: fuera las copias para Editar y, si no basta, la mitad más vieja del historial.
-    _purgeMadHistPaneles(); lista.forEach(function(e){ e.panel=false; });
+    // Sin espacio: fuera las copias para Editar y, si no basta, la mitad más vieja del historial. Punto 25 · lo que espera en la
+    // cola se queda, con su copia: se le dice a la purga desde ESTA lista (la guardada puede no tenerlo aún).
+    const quedanCopias={}; lista.forEach(function(e){ if(espera(e)) quedanCopias[e.id]=true; });
+    _purgeMadHistPaneles(quedanCopias); lista.forEach(function(e){ if(!espera(e)) e.panel=false; });
     try{ localStorage.setItem(MAD_HIST_KEY, JSON.stringify(lista)); return true; }catch(_2){}
-    try{ localStorage.setItem(MAD_HIST_KEY, JSON.stringify(lista.slice(0, Math.ceil(lista.length/2)))); return true; }catch(_3){ return false; }
+    const mitad=Math.ceil(lista.length/2);
+    try{ localStorage.setItem(MAD_HIST_KEY, JSON.stringify(lista.filter(function(e, i){ return i < mitad || espera(e); }))); return true; }catch(_3){ return false; }
   }
 }
 function _madHistResumen(p){
@@ -17696,7 +17727,9 @@ function _madTqVivosGuardar(libro, ingresos){
     if(T) tanques[k] = { machos: Number(T.machos) || 0, hembras: Number(T.hembras) || 0, lotes: madNombreComposicion(T),
       piscinas: madPiscinasDeTanque(T, ingresos) };   // 2026-11-09 · la piscina de origen (ver madPiscinasDeTanque)
   });
-  return safeSetItem(MAD_TQ_VIVOS_KEY, JSON.stringify({ ts: Date.now(), hoy: today(), tanques: tanques }), { silent: true });
+  /* 2026-11-14 (punto 25; usuario: «No, sólo lo necesario») · la referencia es comodidad: si no cabe, no se guarda y no suelta
+     nada (antes, sin espacio, se hacía sitio con las copias para Editar y la mitad del 📜 Historial de Maduración). */
+  return safeSetItem(MAD_TQ_VIVOS_KEY, JSON.stringify({ ts: Date.now(), hoy: today(), tanques: tanques }), { silent: true, purgeOnFail: false });
 }
 /* 2026-11-09 (usuario) · LA PISCINA DE ORIGEN, detrás de los lotes: «AB+AC (101,101) · 12♂ 34♀ · 46».
    Sale del Ingreso por (lote, código genético), con las MISMAS llaves que el libro (madLibroTxt), como «📥 Cargar» de

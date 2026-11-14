@@ -1546,10 +1546,14 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   **10** envíos de cada ficha (Alimentación, 3), y en lo que siga en la cola; guardar —con ☁️ o con 💾— reescribe las MISMAS filas (mismo ID) y
   avisa antes si cambió la llave. Desoves usa su propia corrección (sólo viaja lo cambiado). Un reenvío con las mismas filas
   SUSTITUYE a su entrada («🔁 reenviado»). Sin espacio se suelta primero la copia de la MATRIZ (ver «El espacio del
-  navegador»), luego TODAS las copias para Editar —también las de lo que espera en la cola— y, al final, la mitad más
-  vieja del Historial, aunque espere en la cola; los envíos de la cola en sí no se tocan nunca. ⚠ Que sin espacio se
-  pierdan también las copias para Editar de lo que espera en la cola está ANOTADO para otra tanda (2026-11-08,
-  usuario: «Decirlo en el README y anotarlo»): el envío llega igual, pero ya no se puede corregir desde ✏️.
+  navegador»), luego las copias para Editar y, al final, la mitad más vieja del Historial; **lo que espera en la cola no se
+  suelta nunca, ni su entrada ni su copia para Editar** (2026-11-14, usuario: «No se tocan nunca»; antes se soltaba todo y el
+  envío llegaba, pero ya no se podía corregir desde ✏️), y los envíos de la cola en sí tampoco. Y sólo se hace sitio para lo
+  NECESARIO (las fichas, las grillas, la cola): la copia del autoguardado de cada minuto y la referencia de vivos de 🛢 Tanques,
+  si no caben, no se guardan y no sueltan nada (usuario: «No, sólo lo necesario»; antes, con el equipo lleno y una grilla
+  tecleada, cada minuto la copia recortaba el Historial a la mitad hasta tres veces). La copia de la SALIDA del módulo sí se
+  hace sitio con lo ya enviado: entonces es lo único que guarda lo tecleado. Lo vigilan `purgas-cola.test.js` y el banco
+  `mutar-purgas-cola`.
 - **🧹 El espacio del navegador** (usuario, 2026-11-03: 7 días, «Sola, con indicador y botón»). El navegador da a cada SITIO
   ~5,24 millones de caracteres (medido en Chrome), e `index (8)` y el MCP están en el mismo sitio, así que los comparten; las
   demás apps publicadas en esa misma dirección también gastan de ahí. Salas, Tanques y Zonas no caducaban, y las tablets
@@ -1674,7 +1678,6 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
    Del mismo diagnóstico ya están hechos y publicados: Larvicultura sin espacio envía lo de pantalla, los siete formularios
    de Maduración se bloquean mientras envían, Ingreso, Fin de Ciclo y Tratamientos llevan ID propio por formulario, y ✏️
    pregunta antes de pisar lo no guardado (cada uno, en su sección de arriba). Siguen:
-   - **Sin espacio, `_purgeMadHistPaneles`** borra todas las copias para ✏️ Editar, también las de lo que espera en la cola.
    - **El respaldo** (`exportBackup`) da la copia por hecha justo después del clic: si el navegador bloquea la descarga, la
      app no se entera.
    - **Inf. Supervisor**: un borrador o un envío reabierto desde 📜 vuelve a poner el recuadro viejo (`_madBorrAdaptar` no
