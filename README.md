@@ -1297,6 +1297,13 @@ sin avisar**:
   heredado (de antes de los análisis separados) va entero, porque la hoja reemplaza el día, y con más de 200 filas
   (`BIO_MAX_FILAS`) no se envía y se dice (usuario: «Avisar antes de enviar»). Lo vigilan `lab-lotes.test.js` (con los límites
   leídos de `GAS/Code.gs`) y el banco `mutar-lab-lotes`.
+- **Pegar en una grilla lo que no cabe** (2026-11-14). El pegado desde Excel (`madGridPaste`) escribía cada celda en su sitio y
+  saltaba, sin decir nada, lo que caía fuera: 60 filas pegadas en 🌊 Mareas (abre con 30) dejaban 30 fuera. Ahora (usuario:
+  «Mareas crece; todas avisan») Mareas se agranda sola hasta que quepa (máximo 400 filas), guardando antes su borrador con
+  cada fila EN SU SITIO (`_mareaGridEnSuSitio`: el de siempre compacta las filas vacías y lo pegado caería junto a la fila
+  equivocada); si el borrador no se puede guardar, no crece. Lo que aun así no cabe —y en Biomol, Salas y Tanques, que no crecen
+  solas: Biomol crece GUARDANDO— no se pega y un aviso dice cuántas filas o columnas quedaron fuera. Lo vigilan
+  `pegar-grilla.test.js` y el banco `mutar-pegar-grilla`.
 - **Larvicultura y Lab. Algas: lo de días anteriores.** Se guardan por día y la app lee los de hoy, así que lo no
   enviado dejaba de verse a medianoche y la limpieza lo borraba. Ahora la limpieza no lo toca y, al abrir el módulo,
   un aviso dice qué quedó y de qué día, con **«☁️ Enviarlas»** (cada ficha a su hoja con SU fecha: las de Datos de un

@@ -18237,9 +18237,22 @@ function madGridPaste(ev, ficha){
   if(!Number.isFinite(r0) || !Number.isFinite(c0)) return;
   const fp = document.getElementById('fp-'+ficha);
   if(!fp) return;
+  /* 2026-11-14 (punto 10; usuario: «Mareas crece; todas avisan») · lo pegado que caía fuera de la grilla se perdía SIN aviso (60 filas
+     en Mareas, que abre con 30). Mareas crece sola hasta que quepa (su máximo, MAREA_GRID_MAX_ROWS), guardando antes su borrador, como
+     su ➕: si el borrador no se puede guardar, no crece (repintar borraría lo tecleado). Lo que aun así no cabe —y en las grillas que
+     no crecen solas: Biomol crece GUARDANDO, Salas y Tanques tienen sus tanques— no se pega y se dice. */
+  if(ficha === 'marea'){
+    const hace = Math.min(MAREA_GRID_MAX_ROWS, r0 + matrix.length), hay = _mareaShownRows();
+    if(hace > hay && saveMareaDraftObj({ rows:_mareaGridEnSuSitio() })){ _mareaExtra += hace - hay; renderMarea(); }
+  }
+  const filaExiste = (r) => !!fp.querySelector(`[data-r="${r}"]`);
+  const maxC = Array.from(fp.querySelectorAll('[data-c]')).reduce((m, x) => Math.max(m, parseInt(x.getAttribute('data-c'),10) || 0), 0);
+  let filasFuera = 0, colsFuera = 0;
   const conv = _stdConvencion([].concat.apply([], matrix));   // la pista de UN número vale para todo el bloque
   let malos = 0;
   matrix.forEach((cells, dr) => {
+    if(!filaExiste(r0+dr)){ filasFuera++; return; }
+    if(c0 + cells.length - 1 > maxC) colsFuera = Math.max(colsFuera, c0 + cells.length - 1 - maxC);
     cells.forEach((raw, dc) => {
       const el = fp.querySelector(`[data-r="${r0+dr}"][data-c="${c0+dc}"]`);
       if(!el) return;
@@ -18256,9 +18269,13 @@ function madGridPaste(ev, ficha){
     });
   });
   if(malos) toast("📋 " + malos + " celda(s) no eran números y no se pegaron", "warn", 5500);
+  if(filasFuera || colsFuera) toast("📋 Lo pegado no cabía en la grilla: "
+    + [filasFuera ? filasFuera + " fila(s)" : "", colsFuera ? colsFuera + " columna(s) de la derecha" : ""].filter(Boolean).join(" y ")
+    + " NO se pegaron." + (filasFuera ? (ficha === 'marea' ? " Mareas admite como mucho " + MAREA_GRID_MAX_ROWS + " filas." : " Agrega filas (➕) si la grilla lo permite y pega el resto.") : ""), "warn", 9000);
   // El pegado escribe value directamente (sin disparar input); emite un 'input' en
   // la celda destino para marcar "cambios sin guardar" (Biomol: _bioDirty; demás
-  // grillas: su propio oninput, p.ej. madDraftTouch).
+  // grillas: su propio oninput, p.ej. madDraftTouch). (Si Mareas creció, la celda de origen ya no está en pantalla, pero su oninput
+  // —mareaDirty, que guarda la grilla NUEVA— salta igual.)
   try{ ev.target.dispatchEvent(new Event('input', {bubbles:true})); }catch(_){}
   /* Biomol · un pegado puede volver POSITIVAS filas enteras sin tocar la celda del
      patógeno: basta que el bloque la CRUCE. El 'input' de arriba sólo avisa a la celda
@@ -19855,6 +19872,18 @@ function _collectMareaGrid(){
     const row = {}; let hasData = false;
     MAREA_GRID_COLS.forEach(c=>{ const v = sanitizeStr(g(c.k)); row[c.k] = v; if(v !== "") hasData = true; });
     if(hasData) out.push(row);
+  }
+  return out;
+}
+/* 2026-11-14 (punto 10) · la grilla TAL CUAL, cada fila en su sitio (también las vacías). `_collectMareaGrid` quita las vacías y
+   sube el resto: para crecer al pegar, repintar desde ahí movería lo tecleado de fila y lo pegado caería junto a la fila equivocada. */
+function _mareaGridEnSuSitio(){
+  const fp = document.getElementById("fp-marea"); if(!fp) return [];
+  const n = _mareaShownRows(), out = [];
+  for(let fila=1; fila<=n; fila++){
+    const row = {};
+    MAREA_GRID_COLS.forEach(c=>{ const el = fp.querySelector(`[name="mg_${fila}_${c.k}"]`); row[c.k] = el ? sanitizeStr(el.value) : ""; });
+    out.push(row);
   }
   return out;
 }
