@@ -49,6 +49,8 @@
 .lq-sem-verde { background: rgba(46,160,67,.10); border-color: rgba(46,160,67,.45); color: #1b7a36; }
 .lq-sem-ambar { background: rgba(245,166,35,.12); border-color: rgba(245,166,35,.5); color: #9a6a00; }
 .lq-sem-rojo  { background: rgba(229,57,53,.10); border-color: rgba(229,57,53,.5); color: #b71c1c; }
+/* Punto 8 (pauta del 12-11) · sin nada que juzgar: gris, no verde. Con los tonos neutros del tema, que ya cambian en oscuro. */
+.lq-sem-sin   { background: var(--c-surface-2); border-color: var(--c-border); color: var(--c-text-soft); }
 /* Tema oscuro: los textos oscuros de las franjas-semáforo pierden contraste sobre el
    tinte casi-oscuro; se aclaran (el fondo/borde se mantienen). Tema claro intacto. */
 [data-theme="dark"] .lq-sem-verde { color: #6fe39a; }

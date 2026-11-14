@@ -110,6 +110,24 @@ describe('Mantenimiento · 📈 Lecturas', () => {
     expect(root.querySelectorAll('.mn-kpi-v')[3].textContent, 'el contador de lecturas a revisar').toBe('1');
   });
 
+  // Punto 8 (pauta del 12-11, usuario: «"SIN REFERENCIA" en gris») · un equipo sin referencias en su hoja salía «NORMAL» en verde.
+  it('🔴 una lectura que no se puede juzgar: «SIN REFERENCIA» en gris, no cuenta como «a revisar», y la nota lo explica', () => {
+    const sinRef = E('BLW-05', { 'Corriente ref (A)': '', 'Presión ref (psi)': '', 'Temperatura ref (°C)': '' });
+    pintar(LIBRO.filter((f) => !(f._SheetOrigin === 'Mantenimiento Equipos' && f['Código'] === 'BLW-05'))
+      .concat([sinRef, L('23/10/2026', 'BLW-05', '490', { 'Corriente (A)': '99', 'Presión (psi)': '9', 'Temperatura (°C)': '99' })]));
+    root.querySelector('[data-mn-tab="lecturas"]').click();
+    const fila = [...root.querySelectorAll('.mn-tabla tbody tr')].find((tr) => tr.children[0].textContent.startsWith('BLW-05'));
+    const est = fila.querySelector('.mn-est');
+    expect(est.textContent).toBe('SIN REFERENCIA');
+    expect(est.className).toContain('mn-est--sindatos');
+    expect(fila.querySelector('.mn-fuera'), 'nada se marca fuera').toBeNull();
+    expect(root.querySelectorAll('.mn-kpi-v')[3].textContent, 'sólo el BLW-02 está a revisar').toBe('1');
+    expect(root.textContent).toContain('SIN REFERENCIA si no se pudo juzgar ninguna');
+    // control: el BLW-02, con sus referencias, sigue REVISAR en rojo
+    const b2 = [...root.querySelectorAll('.mn-tabla tbody tr')].find((tr) => tr.children[0].textContent.startsWith('BLW-02'));
+    expect(b2.querySelector('.mn-est').className).toContain('mn-est--vencido');
+  });
+
   it('🔴 la curva del primer equipo con lecturas, con la línea de alerta; cambiar el equipo la rehace', () => {
     abrir();
     expect(graf.makeChart).toHaveBeenCalled();

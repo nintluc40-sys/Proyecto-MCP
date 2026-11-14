@@ -296,6 +296,9 @@ export function waterSemaforo(esp, suc, colorLevel) {
   const colorBad = colorLevel === 'warn';
   if (colorBad || (espBad && sucBad) || (esp != null && esp >= 15) || (suc != null && suc >= 15)) return { level: 'rojo', label: 'Alerta', icon: '🔴' };
   if (espBad || sucBad) return { level: 'ambar', label: 'Revisar', icon: '⚠️' };
+  // Punto 8 (pauta del 12-11, usuario: «Sí, también Supervisor») · sin espuma, suciedad ni color juzgado no hay juicio: era
+  // «✅ Normal» con sólo el recambio (que no se juzga). Como las franjas de Larvicultura, gris «Sin datos».
+  if (esp == null && suc == null && colorLevel !== 'ok') return { level: 'sin', label: 'Sin datos', icon: '⚪' };
   return { level: 'verde', label: 'Normal', icon: '✅' };
 }
 

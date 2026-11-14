@@ -1,10 +1,48 @@
 import { describe, it, expect } from 'vitest';
-import { waterSemaforo, linForecast, iclSeries } from './params.js';
+import { readFileSync } from 'node:fs';
+import { waterSemaforo, linForecast, iclSeries, buildParamSection } from './params.js';
+
+/* Punto 8 · en el panel «Diagnóstico por parámetros» del tanque: Manejo de agua con sólo el recambio (que no se juzga) era
+   «✅ Normal». Cifras INVENTADAS. */
+describe('punto 8 · Supervisor › Manejo de agua sin nada que juzgar', () => {
+  const fila = (fecha, v) => ({ _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '600', Tanque: 'TQ1', Fecha: fecha, 'Estadío': 'Z1', ...v });
+  const cabecera = (html) => (html.match(/<div class="lv-grp-sem lv-grp-[a-z]+">\s*<span class="lv-grp-sem-status">💧[^]*?<\/div>/) || [''])[0];
+  it('🔴 sólo con el recambio: franja gris «⚪ Sin datos», no «✅ Normal»', () => {
+    const { html } = buildParamSection([fila('01/10/2026', { '% Recambio': '30' })], 'larv', [], null);
+    const c = cabecera(html);
+    expect(c).toContain('lv-grp-sin');
+    expect(c).toContain('⚪ <b>Sin datos</b>');
+    expect(c).not.toContain('Normal');
+  });
+  it('control: con espuma y suciedad en rango, verde «✅ Normal»', () => {
+    const { html } = buildParamSection([fila('01/10/2026', { '% Espuma': '3', '% Suciedad': '4', '% Recambio': '30' })], 'larv', [], null);
+    const c = cabecera(html);
+    expect(c).toContain('lv-grp-verde');
+    expect(c).toContain('✅ <b>Normal</b>');
+  });
+  it('el gris tiene su estilo, con los tonos neutros del tema (cambian en oscuro)', () => {
+    const css = readFileSync(new URL('./supervisor.css', import.meta.url), 'utf8');
+    expect(css).toMatch(/\.lv-grp-sin\s*\{\s*background: var\(--c-surface-2\); border-color: var\(--c-border\); color: var\(--c-text-soft\); \}/);
+  });
+});
 
 describe('waterSemaforo', () => {
   it('todo en rango → verde', () => {
     expect(waterSemaforo(4, 5, 'ok').level).toBe('verde');
-    expect(waterSemaforo(null, null, null).level).toBe('verde');
+  });
+
+  // Punto 8 (pauta del 12-11, usuario: «Sí, también Supervisor») · antes, sin nada que juzgar salía «✅ Normal».
+  it('sin espuma, sin suciedad y sin color juzgado → «sin» (⚪ Sin datos), no verde', () => {
+    expect(waterSemaforo(null, null, null)).toEqual({ level: 'sin', label: 'Sin datos', icon: '⚪' });
+    expect(waterSemaforo(undefined, undefined, undefined).level).toBe('sin');
+  });
+  it('con el color juzgado (aunque falten espuma y suciedad) ya hay juicio', () => {
+    expect(waterSemaforo(null, null, 'ok')).toEqual({ level: 'verde', label: 'Normal', icon: '✅' });
+    expect(waterSemaforo(null, null, 'warn').level).toBe('rojo');
+  });
+  it('con una de las dos ya se juzga', () => {
+    expect(waterSemaforo(4, null, null).level).toBe('verde');
+    expect(waterSemaforo(null, 12, null).level).toBe('ambar');
   });
 
   it('una variable sobre umbral → ámbar', () => {

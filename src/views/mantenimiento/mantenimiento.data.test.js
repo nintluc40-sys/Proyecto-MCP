@@ -179,9 +179,21 @@ describe('Mantenimiento · 📈 lecturas', () => {
     const r2 = resumenLecturas(leerLecturas(LIBRO.concat(extra)), m.equipos);
     expect(r2.find((x) => x.equipo === 'BLW-02')).toMatchObject({ estado: 'REVISAR', fuera: ['corriente'], n: 2 });
     expect(r2.find((x) => x.equipo === 'BLW-02').promedio.corriente).toBe(69.6);
-    expect(r2.find((x) => x.equipo === 'BLW-11').estado).toBe('NORMAL');
+    // Punto 8 (pauta del 12-11, usuario: «"SIN REFERENCIA" en gris») · antes «NORMAL»: verde sin haber juzgado nada.
+    expect(r2.find((x) => x.equipo === 'BLW-11')).toMatchObject({ estado: 'SIN REFERENCIA', fuera: [], n: 1 });
     const justo = resumenLecturas(leerLecturas([L('23/10/2026', 'BLW-02', '1', { 'Presión (psi)': '4,025', 'Corriente (A)': '70,4' })]), m.equipos);
     expect(justo.find((x) => x.equipo === 'BLW-02').estado, 'justo EN el umbral no lo pasa').toBe('NORMAL');
+  });
+
+  it('punto 8 · con UNA lectura juzgable, NORMAL o REVISAR como siempre; sin ninguna, SIN REFERENCIA', () => {
+    const ultima = (v) => resumenLecturas(leerLecturas(LIBRO.concat([L('23/10/2026', 'BLW-11', '170', v)])), m.equipos).find((x) => x.equipo === 'BLW-11');
+    expect(ultima({ 'Corriente (A)': '150', 'Presión (psi)': '3' }).estado, 'la presión sí tiene referencia').toBe('NORMAL');
+    expect(ultima({ 'Corriente (A)': '150', 'Presión (psi)': '5' })).toMatchObject({ estado: 'REVISAR', fuera: ['presion'] });
+    expect(ultima({ 'Temperatura (°C)': '60' }).estado).toBe('NORMAL');
+    // un FB 441 C (con todas sus referencias) cuya hoja de equipos no trae ninguna
+    const sinRefs = leerEquipos([E('BLW-02', 'FB 441 C', { 'Corriente ref (A)': '', 'Presión ref (psi)': '', 'Temperatura ref (°C)': '' })]);
+    const r = resumenLecturas(leerLecturas([L('23/10/2026', 'BLW-02', '1', { 'Corriente (A)': '99', 'Presión (psi)': '9', 'Temperatura (°C)': '99' })]), sinRefs);
+    expect(r.find((x) => x.equipo === 'BLW-02')).toMatchObject({ estado: 'SIN REFERENCIA', fuera: [], n: 1 });
   });
 
   it('la serie de un equipo, en orden y con el horómetro ajustado', () => {

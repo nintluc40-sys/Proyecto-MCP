@@ -117,7 +117,7 @@ function semaforoHTML(m) {
 }
 
 /* ── 📈 Lecturas ── */
-const ESTADO_LEC = { NORMAL: 'aldia', REVISAR: 'vencido', 'SIN LECTURA': 'sindatos' };
+const ESTADO_LEC = { NORMAL: 'aldia', REVISAR: 'vencido', 'SIN LECTURA': 'sindatos', 'SIN REFERENCIA': 'sindatos' };   // punto 8: gris
 function lecturasHTML(m) {
   const v = (x, u) => (x == null ? '—' : fmtH(x) + (u ? ' ' + u : ''));
   const c = (r, k, u) => '<td class="mn-num' + (r.fuera.includes(k) ? ' mn-fuera' : '') + '">' + v(r.ultima && r.ultima[k], u) + '</td>';
@@ -144,7 +144,7 @@ function lecturasHTML(m) {
   return '<section class="card mn-card"><h3 class="mn-h3">Lecturas por equipo</h3>'
     + '<p class="mn-nota">Lo último anotado contra la referencia de cada equipo (hoja «' + esc(MNT_EQUIPOS_SHEET) + '»): REVISAR si la corriente pasa la referencia +'
     + (MNT_TOLERANCIAS.corriente * 100) + ' %, la presión +' + (MNT_TOLERANCIAS.presion * 100) + ' % o la temperatura +' + MNT_TOLERANCIAS.temperatura
-    + ' °C. Sin referencia, esa lectura no se juzga. Carga = última corriente ÷ plena carga.</p>'
+    + ' °C. Sin referencia, esa lectura no se juzga: SIN REFERENCIA si no se pudo juzgar ninguna. Carga = última corriente ÷ plena carga.</p>'
     + '<div class="mn-scroll"><table class="mn-tabla"><thead><tr><th>Equipo</th><th>Ubicación</th><th>Lecturas</th><th>Última</th>'
     + '<th>Corriente</th><th>prom. / máx.</th><th>Presión</th><th>prom.</th><th>Temp.</th><th>prom. / máx.</th><th>Carga</th><th>Estado</th></tr></thead>'
     + '<tbody>' + filas + '</tbody></table></div></section>'

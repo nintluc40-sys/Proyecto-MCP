@@ -92,6 +92,22 @@ describe('moduleEnv', () => {
     expect(env.level).toBe('verde');
   });
 
+  /* Punto 8 (pauta del 12-11, usuario: «Sí, "Sin datos" en gris») · con SÓLO la salinidad (informativa) no hay nada juzgado:
+     antes era 'verde' y la tarjeta decía «✓ en rango». */
+  it('punto 8 · sólo con la salinidad: nivel «sin», no verde', () => {
+    store.globalData = [lrow('M9', '2026-06-01', { Salinidad: 32 })];
+    const env = moduleEnv('M9');
+    expect(env.vars.map((v) => v.status)).toEqual(['sin', 'sin', 'info']);
+    expect(env.level).toBe('sin');
+    expect(env.out).toBe(0);
+  });
+  it('punto 8 · con T° u OD juzgados ya hay nivel (verde o rojo)', () => {
+    store.globalData = [lrow('M9', '2026-06-01', { Salinidad: 32, OD: 6 })];
+    expect(moduleEnv('M9').level).toBe('verde');
+    store.globalData = [lrow('M9', '2026-06-01', { Salinidad: 32, Temperatura: 40 })];
+    expect(moduleEnv('M9').level).toBe('rojo');
+  });
+
   it('salinidad es informativa: fuera de banda NO marca nivel rojo', () => {
     store.globalData = [trow('M3', '2026-06-01', { Temperatura: 31, OD: 6, Salinidad: 50 })];
     const env = moduleEnv('M3');

@@ -216,12 +216,14 @@ function docChip(cInfo) {
 /** KPI de fisicoquímicos del módulo (T°/OD/Sal) — clickeable, abre el modal de tendencia. */
 function envKpi(env) {
   if (!env) return '';
-  const col = env.level === 'rojo' ? '#E0413E' : '#2E9E5B';
+  // punto 8: 'sin' (sólo la salinidad, que no se juzga) → gris «Sin datos», no «✓ en rango»
+  const [col, cls, msg] = env.level === 'rojo' ? ['#E0413E', 'down', '⚠ fuera de rango']
+    : env.level === 'sin' ? ['var(--c-border)', 'flat', 'Sin datos'] : ['#2E9E5B', 'up', '✓ en rango'];
   const txt = env.vars.map((v) => `${v.icon} ${v.last == null ? '—' : v.last.toFixed(1) + v.unit.trim()}`).join(' · ');
   return `<div class="lq-kpi lq-env-kpi" data-envopen role="button" tabindex="0" title="Ver tendencia diaria de T° / OD / Salinidad del módulo" style="border-color:${col}">
     <div class="lq-kpi-lbl">🌊 Fisicoquímicos · módulo</div>
     <div class="lq-kpi-val" style="font-size:15px">${esc(txt)}</div>
-    <span class="lq-kpi-delta ${env.level === 'rojo' ? 'down' : 'up'}">${env.level === 'rojo' ? '⚠ fuera de rango' : '✓ en rango'}</span>
+    <span class="lq-kpi-delta ${cls}">${msg}</span>
   </div>`;
 }
 

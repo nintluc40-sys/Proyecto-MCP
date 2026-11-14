@@ -7,10 +7,13 @@ import { getField, F } from '../../core/fields.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { larviZone, larviLabel } from '../../core/format.js';
 
+/* Punto 8 (pauta del 12-11, usuario: «Gris "Sin datos"») · `sin`: no hay NADA que juzgar. Antes esas franjas salían en
+   verde, «✅ Normal», y un tanque sin un solo registro parecía sano; el verde es para lo medido y en rango. */
 const SEM = {
   verde: { icon: '✅', label: 'Normal' },
   ambar: { icon: '⚠️', label: 'Revisar' },
   rojo:  { icon: '🔴', label: 'Alerta' },
+  sin:   { icon: '⚪', label: 'Sin datos' },
 };
 export const semMeta = (level) => SEM[level] || SEM.verde;
 
@@ -21,7 +24,7 @@ export function diagSemaforo(last, vars) {
   const zones = vars
     .map((v) => ({ v, z: larviZone(last ? last[v.key] : null) }))
     .filter((x) => x.z !== 'sin');
-  if (!zones.length) return { level: 'verde', detail: 'Sin datos de calidad' };
+  if (!zones.length) return { level: 'sin', detail: 'Sin datos de calidad' };
   const crit = zones.filter((x) => x.z === 'critico').length;
   const alert = zones.filter((x) => x.z === 'alerta').length;
   const aten = zones.filter((x) => x.z === 'atencion').length;
@@ -44,7 +47,7 @@ export function diagSemaforo(last, vars) {
  *  tiene historia suficiente (`ref` null). Cuando el laboratorio dé sus cifras, mandan ellas. */
 export const POP_MINIMO = { ambar: 5, rojo: 10 };
 export function popSemaforo(pStats, ref) {
-  if (!pStats || !pStats.validTanks || !(pStats.totalInit > 0)) return { level: 'verde', detail: 'Sin población válida' };
+  if (!pStats || !pStats.validTanks || !(pStats.totalInit > 0)) return { level: 'sin', detail: 'Sin población válida' };
   const loss = (pStats.totalInit - pStats.totalCurr) / pStats.totalInit * 100;
   const tanques = ` · ${pStats.validTanks} tanque(s)`;
   if (!ref) {
@@ -63,7 +66,7 @@ export function popSemaforo(pStats, ref) {
 export function aguaSemaforo(mgmt) {
   const lastOf = (arr) => { for (let i = (arr || []).length - 1; i >= 0; i--) { if (arr[i] != null) return arr[i]; } return null; };
   const esp = lastOf(mgmt && mgmt.espuma), suc = lastOf(mgmt && mgmt.suciedad), rec = lastOf(mgmt && mgmt.recambio);
-  if (esp == null && suc == null) return { level: 'verde', detail: 'Sin variables de manejo' };
+  if (esp == null && suc == null) return { level: 'sin', detail: 'Sin variables de manejo' };   // el recambio no se juzga
   const espBad = esp != null && esp >= 10, sucBad = suc != null && suc >= 10;
   const level = ((espBad && sucBad) || (esp != null && esp >= 15) || (suc != null && suc >= 15)) ? 'rojo'
     : (espBad || sucBad) ? 'ambar' : 'verde';

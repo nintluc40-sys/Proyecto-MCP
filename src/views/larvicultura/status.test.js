@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { diagSemaforo, popSemaforo, aguaSemaforo, expectedStage, stageRank, cultivoInfo } from './status.js';
+import { diagSemaforo, popSemaforo, aguaSemaforo, expectedStage, stageRank, cultivoInfo, semMeta } from './status.js';
 
 const VARS = [{ key: 'a', label: 'A' }, { key: 'b', label: 'B' }, { key: 'c', label: 'C' }];
 
@@ -13,8 +13,21 @@ describe('diagSemaforo', () => {
   it('una en crítico → rojo', () => {
     expect(diagSemaforo({ a: 10, b: 90, c: 20 }, VARS).level).toBe('rojo');
   });
-  it('sin datos → verde con detalle', () => {
-    expect(diagSemaforo(null, VARS).detail).toMatch(/Sin datos/);
+  // Punto 8 (pauta del 12-11, usuario: «Gris "Sin datos"») · antes, «verde con detalle»: un tanque sin medir parecía sano.
+  it('sin datos → «sin» (gris), no verde; con detalle', () => {
+    expect(diagSemaforo(null, VARS)).toEqual({ level: 'sin', detail: 'Sin datos de calidad' });
+    expect(diagSemaforo({ a: null, b: undefined }, VARS).level).toBe('sin');   // lo que da lastState sin dato
+  });
+  it('con UNA variable medida ya se juzga (no es «sin»)', () => {
+    expect(diagSemaforo({ a: 10 }, VARS).level).toBe('verde');
+  });
+});
+
+describe('semMeta · punto 8', () => {
+  it('«sin» es ⚪ «Sin datos»; los otros tres, como siempre', () => {
+    expect(semMeta('sin')).toEqual({ icon: '⚪', label: 'Sin datos' });
+    expect(semMeta('verde')).toEqual({ icon: '✅', label: 'Normal' });
+    expect(semMeta('rojo').label).toBe('Alerta');
   });
 });
 
@@ -31,6 +44,11 @@ describe('popSemaforo · sin historia de la planta (20 % / 40 % fijos)', () => {
   it('lo dice en el detalle', () => {
     expect(popSemaforo({ validTanks: 2, totalInit: 100, totalCurr: 50 }).detail)
       .toBe('Pérdida acumulada 50.0% · sin historia suficiente: umbral fijo 20% / 40% · 2 tanque(s)');
+  });
+  it('punto 8 · sin población válida → «sin» (gris), no verde', () => {
+    expect(popSemaforo(null)).toEqual({ level: 'sin', detail: 'Sin población válida' });
+    expect(popSemaforo({ validTanks: 0, totalInit: 100, totalCurr: 90 }).level).toBe('sin');
+    expect(popSemaforo({ validTanks: 2, totalInit: 0, totalCurr: 0 }).level).toBe('sin');
   });
 });
 
@@ -87,6 +105,14 @@ describe('aguaSemaforo', () => {
   });
   it('ambas altas → rojo', () => {
     expect(aguaSemaforo({ espuma: [11], suciedad: [12], recambio: [50] }).level).toBe('rojo');
+  });
+  it('punto 8 · sin espuma ni suciedad → «sin» (gris), aunque haya recambio (no se juzga)', () => {
+    expect(aguaSemaforo({ espuma: [null], suciedad: [], recambio: [50] })).toEqual({ level: 'sin', detail: 'Sin variables de manejo' });
+    expect(aguaSemaforo(null).level).toBe('sin');
+  });
+  it('con una de las dos ya se juzga', () => {
+    expect(aguaSemaforo({ espuma: [3], suciedad: [] }).level).toBe('verde');
+    expect(aguaSemaforo({ espuma: [], suciedad: [16] }).level).toBe('rojo');
   });
 });
 

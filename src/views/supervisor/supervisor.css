@@ -598,6 +598,8 @@ button.sv-marea-cal-d:focus-visible { outline: 2px solid var(--c-brand); outline
 .lv-grp-verde { background: rgba(46,160,67,.10); border-color: rgba(46,160,67,.45); color: #1b7a36; }
 .lv-grp-ambar { background: rgba(245,166,35,.12); border-color: rgba(245,166,35,.5); color: #9a6a00; }
 .lv-grp-rojo  { background: rgba(229,57,53,.10); border-color: rgba(229,57,53,.5); color: #b71c1c; }
+/* Punto 8 (pauta del 12-11) · sin nada que juzgar: gris, no verde. Con los tonos neutros del tema, que ya cambian en oscuro. */
+.lv-grp-sin   { background: var(--c-surface-2); border-color: var(--c-border); color: var(--c-text-soft); }
 /* Tema oscuro: aclara el texto (mismo criterio que .lq-sem-* de Larvicultura). */
 [data-theme="dark"] .lv-grp-verde { color: #6fe39a; }
 [data-theme="dark"] .lv-grp-ambar { color: #ffcc66; }

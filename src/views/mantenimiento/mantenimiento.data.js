@@ -240,11 +240,15 @@ export function resumenLecturas(lecturas, equipos) {
     const prom = (k) => { const v = vals(k); return v.length ? r2(v.reduce((a, b) => a + b, 0) / v.length) : null; };
     const max = (k) => { const v = vals(k); return v.length ? Math.max(...v) : null; };
     const lim = umbrales(e);
-    const fuera = u ? ['corriente', 'presion', 'temperatura'].filter((k) => lim[k] != null && u[k] != null && pasa(u[k], lim[k])) : [];
+    // las lecturas de la última que SÍ se pueden juzgar: con su valor y con su referencia en la hoja de equipos
+    const juzgadas = u ? ['corriente', 'presion', 'temperatura'].filter((k) => lim[k] != null && u[k] != null) : [];
+    const fuera = juzgadas.filter((k) => pasa(u[k], lim[k]));
+    /* Punto 8 (pauta del 12-11, usuario: «"SIN REFERENCIA" en gris») · si no se pudo juzgar ninguna, no es «NORMAL»: era verde
+       sin haber comparado nada (p. ej. un equipo con sólo la corriente y sin «Corriente ref (A)»). Con una juzgada, como siempre. */
     return { equipo: e.codigo, ubicacion: e.ubicacion, fueraDeServicio: e.fueraDeServicio, n: l.length, ultima: u,
       promedio: { corriente: prom('corriente'), presion: prom('presion'), temperatura: prom('temperatura') },
       maximo: { corriente: max('corriente'), presion: max('presion'), temperatura: max('temperatura') },
-      estado: !u ? 'SIN LECTURA' : fuera.length ? 'REVISAR' : 'NORMAL', fuera, umbrales: lim,
+      estado: !u ? 'SIN LECTURA' : !juzgadas.length ? 'SIN REFERENCIA' : fuera.length ? 'REVISAR' : 'NORMAL', fuera, umbrales: lim,
       carga: u && u.corriente != null && e.plenaCarga ? Math.round(u.corriente / e.plenaCarga * 100) : null };
   });
 }

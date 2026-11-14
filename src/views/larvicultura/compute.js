@@ -99,7 +99,10 @@ export function moduleEnv(modulo, corrida, monthCorridas) {
   });
   if (!vars.some((v) => v.last !== null)) return null;
   const out = vars.filter((v) => v.status === 'out').length;
-  return { vars, out, level: out >= 1 ? 'rojo' : 'verde' };
+  /* Punto 8 (pauta del 12-11, usuario: «Sí, "Sin datos" en gris») · con sólo la salinidad (informativa) no se juzgó nada: era
+     'verde' y la tarjeta decía «✓ en rango». 'sin' cuando ni la T° ni el OD tienen dato. */
+  const juzgadas = vars.filter((v) => v.status === 'ok' || v.status === 'out').length;
+  return { vars, out, level: out >= 1 ? 'rojo' : juzgadas ? 'verde' : 'sin' };
 }
 
 /** Filtra filas a los últimos `days` días relativos a la fecha MÁS reciente
