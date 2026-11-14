@@ -271,7 +271,7 @@ describe('Mantenimiento · 🔧 Trabajo', () => {
     expect(H.loadMntTrabajos()).toHaveLength(0);
   });
 
-  it('B5 · quitar uno NO enviado: según lo que espere en la cola (nada, ESTA versión o una anterior)', () => {
+  it('B5 · quitar uno NO enviado: sin nada en la cola, «se pierde»; con ESTA versión o una anterior, no se quita (punto 14)', () => {
     trabajoCompleto();
     H.mntTrabGuardar();
     const rec = H.loadMntTrabajos()[0];
@@ -283,15 +283,18 @@ describe('Mantenimiento · 🔧 Trabajo', () => {
     cola('mntronda', rec.id + '@' + rec.ts);
     borrar();
     expect(vistas[0]).toBe('Este trabajo NO se ha enviado: si lo quitas, se pierde.\n\n¿Quitarlo igualmente?');
+    // 2026-11-14 (punto 14; usuario: «No dejar quitarlo») · con algo suyo en la cola, ni se pregunta ni se quita: se dice.
+    window.confirm = (t) => { vistas.push(t); return true; };
     cola('mnttrabajo', rec.id + '@' + rec.ts);
+    H.ultimoAviso = '';
     borrar();
-    expect(vistas[1]).toBe('Ya hay un envío de este trabajo esperando en la cola: se enviará desde ahí aunque lo quites de este dispositivo'
-      + ' (si la hoja lo rechazara, ya no quedaría otra copia).\n\n¿Quitarlo del dispositivo?');
+    expect(H.ultimoAviso).toContain('Este trabajo espera en la cola para enviarse: no se puede quitar de este dispositivo');
     cola('mnttrabajo', rec.id + '@1');   // una versión de antes
+    H.ultimoAviso = '';
     borrar();
-    expect(vistas[2]).toBe('En la cola espera una versión ANTERIOR de este trabajo: se enviará esa, pero lo cambiado después NO se ha enviado y,'
-      + ' si lo quitas, se pierde.\n\n¿Quitarlo igualmente?');
-    expect(H.loadMntTrabajos(), '«no» no lo quita').toHaveLength(1);
+    expect(H.ultimoAviso, 'una versión ANTERIOR, tampoco').toContain('espera en la cola');
+    expect(vistas, 'no se preguntó').toHaveLength(1);
+    expect(H.loadMntTrabajos(), 'no se quita').toHaveLength(1);
   });
 });
 

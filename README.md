@@ -1211,12 +1211,15 @@ Desde el 2026-09-24 (punto 2a, correcciones A y B, decisiones del usuario):
   de algo que espera en la cola —o de su misma hoja, si las marcas no dicen qué registros tocan (formularios y envíos
   sin marca)— no sale directo: entra DETRÁS y se vacía la cola, esperando como mucho 45 s; si no sale, queda «en cola».
   Al vaciarse, lo que se pisaría con un envío trabado tampoco se intenta antes que él (`_colaSolapa`, `_colaSePisan`).
-- **Quitar con 🗑 algo no enviado que ya espera en la cola** (Score, Auditoría, Mantenimiento y Traslado; 2026-11-08,
-  usuario: «Decirlo bien» y, tras la revisión, «Distinguir las dos»): si espera la versión de AHORA, el aviso dice que
-  se enviará desde la cola (sin prometer que llegue: la cola aún descarta por su tope o si la hoja lo rechaza, y ya no
-  quedaría otra copia); si sólo espera una ANTERIOR —se corrigió después de encolarse—, que se enviará esa y lo cambiado
-  después se pierde; si no espera nada, que se pierde. Score, Auditoría y Mantenimiento llevan la versión en su llave
-  (`id@ts`); Traslado, en el sello de su marca (`_colaVersionEnCola`, `_avisoQuitarNoEnviado`).
+- **🗑 no quita lo que espera en la cola** (2026-11-14, usuario: «No dejar quitarlo»; antes, desde el 08-11, se preguntaba
+  e invitaba a quitarlo). En Score, Auditoría, Mantenimiento y Traslado, si espera en la cola la versión de AHORA o una
+  ANTERIOR (corregida después de encolarse), 🗑 no la quita, no pregunta y dice por qué (`_quitarNoEnviado`,
+  `QUITAR_EN_COLA`): la cola aún descarta —por su tope, o si la hoja lo rechaza— y entonces no quedaría otra copia, y con
+  una versión anterior lo cambiado después se perdería. Si no espera nada, pregunta, porque se perdería. Score, Auditoría y
+  Mantenimiento llevan la versión en su llave (`id@ts`); Traslado, en el sello de su marca (`_colaVersionEnCola`). Lo mismo
+  en el 📜 Historial de Maduración (un envío en la cola no ha llegado, y desde ahí se ve y se corrige) y en 📋 Desoves
+  pendientes (un envío con ese desove, o su corrección, en la cola). Lo vigilan `borrar-en-cola.test.js`, las pruebas B5
+  de esas fichas y el banco `mutar-borrar-en-cola`.
 
 Y desde el 2026-10-04 (auditoría final de la sincronización, decisiones del usuario) **lo no enviado no se pierde
 sin avisar**:
@@ -1500,7 +1503,9 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   avisa); si sigue **en cola**, se corrige **el envío pendiente en su sitio**, con huella nueva (con la
   vieja el GAS lo daría por escrito); si **no llegó**, se envía completo. La fila dice «✏️ corregido
   hh:mm» y conserva su hora. Una llave equivocada se corrige borrando esa fila en la hoja y registrando
-  el desove de nuevo: la app no borra filas.
+  el desove de nuevo: la app no borra filas. **Lo que espera en la cola no sale del historial de 36 h**, por viejo que sea
+  (2026-11-14, usuario: «Como el Historial»): antes, pasadas las 36 h, ✏️ desde el 📜 lo daba por llegado y mandaba sólo lo
+  cambiado, que podía llegar antes que el original y quedar pisado por él.
   ⚠ Y la fecha de un desove que se completa o se corrige es su **llave**: traer su borrador no la mueve
   al día en que se tecleó (hasta el 2026-09-24 la movía, y el guardado iba a una fila nueva de hoy).
 - **Fin de Ciclo · la fecha de aplicación** sale igual que la del registro y la sigue salvo que se
@@ -1682,7 +1687,6 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
      app no se entera.
    - **Inf. Supervisor**: un borrador o un envío reabierto desde 📜 vuelve a poner el recuadro viejo (`_madBorrAdaptar` no
      lo actualiza).
-   - **El aviso de 🗑** invita a quitar la copia del equipo aunque la versión actual espere en la cola.
    - **Dos equipos, el mismo envío en menos de 10 min**: si otro escribió en medio, el GAS contesta «ok» sin escribir y la
      app muestra ✅. Sin decidir si se acepta.
    - **El nombre del TXT de Microbiología** usa la fecha local, pero ninguna prueba lo vigila.

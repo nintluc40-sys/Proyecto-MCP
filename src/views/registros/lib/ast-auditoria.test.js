@@ -264,7 +264,7 @@ describe('Auditoría · la ficha en el módulo AsT', () => {
     expect(H._audRaw()).toHaveLength(0);
   });
 
-  it('B5 · 🗑 de una auditoría NO enviada: según lo que espere en la cola (nada, ESTA versión o una anterior)', () => {
+  it('B5 · 🗑 de una auditoría NO enviada: sin nada en la cola, «se pierde»; con ESTA versión o una anterior, no se quita (punto 14)', () => {
     globalThis.localStorage.setItem('larv4_aud_records', JSON.stringify([{ id: 'AUE-901-M04', ts: 5, synced: false, data: audit({ corrida: '901', siembras: [SI({})] }) }]));
     H.renderAud();
     const vistas = [];
@@ -273,14 +273,18 @@ describe('Auditoría · la ficha en el módulo AsT', () => {
     const cola = (k) => globalThis.localStorage.setItem('larv4_syncqueue', JSON.stringify([{ ts: 1, payload: { sheetName: 'Registro_Auditoria' }, mark: { kind: 'auditoria', keys: [k] } }]));
     borrar();
     expect(vistas[0]).toBe('Esta auditoría NO se ha enviado: si la quitas, se pierde.\n\n¿Quitarla igualmente?');
+    // 2026-11-14 (punto 14; usuario: «No dejar quitarlo») · con algo suyo en la cola, ni se pregunta ni se quita: se dice.
+    window.confirm = (m) => { vistas.push(m); return true; };
     cola('AUE-901-M04@5');
+    H.ultimoAviso = '';
     borrar();
-    expect(vistas[1]).toContain('esperando en la cola: se enviará desde ahí aunque la quites de este dispositivo');
-    expect(vistas[1]).not.toContain('se pierde');
+    expect(H.ultimoAviso).toContain('Esta auditoría espera en la cola para enviarse: no se puede quitar de este dispositivo');
     cola('AUE-901-M04@3');
+    H.ultimoAviso = '';
     borrar();
-    expect(vistas[2]).toContain('En la cola espera una versión ANTERIOR de esta auditoría: se enviará esa, pero lo cambiado después NO se ha enviado');
-    expect(H._audRaw(), '«no» no la quita').toHaveLength(1);
+    expect(H.ultimoAviso, 'una versión ANTERIOR, tampoco').toContain('espera en la cola');
+    expect(vistas, 'no se preguntó').toHaveLength(1);
+    expect(H._audRaw(), 'no se quita').toHaveLength(1);
   });
 
   it('lo pendiente NO caduca; lo enviado se purga a los 7 días', () => {

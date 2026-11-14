@@ -2001,19 +2001,19 @@ function _colaVersionEnCola(kind, rec){
   });
   return hay;
 }
-/* El aviso de quitar (o, en Traslado, borrar) algo NO enviado, según lo que espere en la cola (`_colaVersionEnCola`).
-   `que` es «esta evaluación», «este traslado»…; con la versión de ahora en la cola no promete que LLEGUE: la cola aún
-   descarta por su tope o si la hoja lo rechaza por sus datos, y entonces ya no quedaría otra copia. */
-function _avisoQuitarNoEnviado(enCola, que, femenino, borrar){
+/* El 🗑 de algo NO enviado (Score, Mantenimiento, Auditoría y Traslado), según lo que espere en la cola (`_colaVersionEnCola`).
+   `que` es «esta evaluación», «este traslado»…; `borrar`, el verbo de Traslado. Devuelve si se puede seguir.
+   2026-11-14 (punto 14; usuario: «No dejar quitarlo») · SI ALGO SUYO ESPERA EN LA COLA —la versión de ahora o una ANTERIOR—, NO SE
+   QUITA y se dice por qué. Antes se preguntaba y el aviso invitaba a quitarlo: la cola aún descarta (por su tope, o si la hoja lo
+   rechaza) y entonces ya no quedaba otra copia; con una versión anterior en la cola, lo cambiado después se perdía. Es la regla de la
+   limpieza y del espacio (A8, punto 25): lo que espera en la cola no se toca. Sin nada en la cola, se pregunta: se perdería. */
+const QUITAR_EN_COLA = "espera en la cola para enviarse: no se puede quitar de este dispositivo hasta que llegue a la hoja (o la cola lo descarte). 🔄 lo envía en cuanto haya conexión.";
+function _quitarNoEnviado(enCola, que, femenino, borrar){
+  const Que = que.charAt(0).toUpperCase() + que.slice(1);
+  if(enCola === "actual" || enCola === "anterior"){ toast("⏳ " + Que + " " + QUITAR_EN_COLA, "warn", 9000); return false; }
   const pron = femenino ? "la" : "lo", fin = femenino ? "a" : "o";
-  const tu = borrar ? "borras" : "quitas", si = borrar ? "borres" : "quites", hacer = borrar ? "Borrarl" : "Quitarl";
-  if(enCola === "actual")
-    return "Ya hay un envío de " + que + " esperando en la cola: se enviará desde ahí aunque " + pron + " " + si
-      + " de este dispositivo (si la hoja lo rechazara, ya no quedaría otra copia).\n\n¿" + hacer + fin + " del dispositivo?";
-  if(enCola === "anterior")
-    return "En la cola espera una versión ANTERIOR de " + que + ": se enviará esa, pero lo cambiado después NO se ha enviado y, si "
-      + pron + " " + tu + ", se pierde.\n\n¿" + hacer + fin + " igualmente?";
-  return (que.charAt(0).toUpperCase() + que.slice(1)) + " NO se ha enviado: si " + pron + " " + tu + ", se pierde.\n\n¿" + hacer + fin + " igualmente?";
+  const tu = borrar ? "borras" : "quitas", hacer = borrar ? "Borrarl" : "Quitarl";
+  return confirm(Que + " NO se ha enviado: si " + pron + " " + tu + ", se pierde.\n\n¿" + hacer + fin + " igualmente?");
 }
 
 /* 2026-11-03 (pauta 1.2) · ¿Espera en la cola un envío con ALGUNA de estas llaves? Entonces no puede salir directo: si lleva otras que éste
@@ -10733,6 +10733,9 @@ function _madHistEditarDesove(e){
 function madHistBorrar(id){
   const l=madHistLeer(), e=l.filter(function(x){ return x.id===id; })[0];
   if(!e) return;
+  // 2026-11-14 (punto 14; usuario: «No dejar quitarlo») · si aún espera en la cola, no ha llegado nada: y desde aquí es desde donde
+  // se ve y se corrige (el formulario se limpió al encolarse). Antes se borraba diciendo «lo que llegó a la hoja no cambia».
+  if(_madHistEnCola().has(String(e.envio))){ toast("⏳ Este envío "+QUITAR_EN_COLA,"warn",9000); return; }
   if(!confirm("¿Borrar este envío del historial de este dispositivo?\nLo que llegó a la hoja no cambia.")) return;
   try{ localStorage.removeItem(_madHistPanelKey(id)); }catch(_){}
   _madHistGuardar(l.filter(function(x){ return x.id!==id; }));
@@ -12464,13 +12467,22 @@ function madDesRevisar(){
 // durante 36 h, el plazo en el que ya deberían estar N2 y N5, sin tener que leer la hoja.
 const MAD_DES_LOG_KEY = "larv4_mad_des_log";
 const MAD_DES_LOG_TTL = 36*60*60*1000;
+/* 2026-11-14 (punto 14; usuario: «Como el Historial») · lo que espera en la cola se queda, por viejo que sea (como el 📜 desde A8): pasadas
+   las 36 h, ✏️ desde el 📜 lo daba por llegado y mandaba sólo lo cambiado, que podía llegar ANTES que el original y quedar pisado por él. */
 function madDesLogLeer(){
   try{
     const v=JSON.parse(localStorage.getItem(MAD_DES_LOG_KEY)||"[]"), desde=Date.now()-MAD_DES_LOG_TTL;
-    return Array.isArray(v) ? v.filter(function(e){ return e && e.ts>=desde; }) : [];
+    if(!Array.isArray(v)) return [];
+    let q=null;
+    return v.filter(function(e){
+      if(!e) return false;
+      if(e.ts>=desde) return true;
+      if(!q) q=_loadSyncQueue();
+      return _madDesEnvioEnCola(q, e.id)!==-1;
+    });
   }catch(_){ return []; }
 }
-// La lista llega siempre de madDesLogLeer, que ya quitó lo de más de 36 h: aquí sólo se pone tope.
+// La lista llega siempre de madDesLogLeer, que ya quitó lo de más de 36 h (salvo lo que espera en la cola): aquí sólo se pone tope.
 function madDesLogGuardar(list){
   try{ localStorage.setItem(MAD_DES_LOG_KEY, JSON.stringify(list.slice(-200))); }catch(_){}
 }
@@ -12662,6 +12674,9 @@ function _madDesPendRepinta(){
 function madDesPendEliminar(k){
   const d=(_madDesPendUltimos||[]).filter(function(x){ return madDesLlave(x)===k; })[0];
   if(!d){ toast("Ese desove ya no está en la lista: pulsa 🔄 Leer la hoja.","warn",4000); return; }
+  // 2026-11-14 (punto 14; usuario: «No dejar quitarlo») · si un envío con ESTE desove (el desove o su corrección) espera en la cola,
+  // no se quita: se enviará igual y llegará a la hoja, y aquí se habría borrado lo único que lo muestra.
+  if(_madDesLlaveEnCola(k)){ toast("⏳ El desove "+d.lote+" · "+d.codigoGenetico+" del "+d.fecha+" "+QUITAR_EN_COLA,"warn",9000); return; }
   // Lo que sólo está AQUÍ (aún no en la hoja leída) no se podrá recuperar desde esta lista: se dice.
   const soloAqui = d.origen==="dispositivo";
   if(!confirm("¿Quitar de este dispositivo el desove "+d.lote+" · "+d.codigoGenetico+" del "+d.fecha+"?\n"
@@ -12827,6 +12842,10 @@ function _madDesEntradaLog(id, k){
   const e=madDesLogLeer().filter(function(x){ return x && String(x.id)===String(id); })[0];
   const x=e ? (e.desoves||[]).filter(function(dd){ return dd && madDesLlave({ fecha:e.fecha, lote:dd.lote, codigoGenetico:dd.codigoGenetico })===k; })[0] : null;
   return x ? { e:e, x:x } : null;
+}
+// ¿Espera en la cola algún envío de Desoves con este desove (su llave) en sus filas? (punto 14: el 🗑 de Desoves pendientes)
+function _madDesLlaveEnCola(k){
+  return _loadSyncQueue().some(function(it){ return !!(it && it.payload && it.payload.sheetName===MAD_DESOVE_SHEET && _madDesFilaDelEnvio(it.payload, k)); });
 }
 // Posición en la cola del envío que lleva la marca de esa entrada, o -1.
 function _madDesEnvioEnCola(q, id){
@@ -22291,8 +22310,8 @@ function scoreAbrir(id){
 function scoreBorrar(id){
   const r = _scoreRaw().find(function(x){ return x && x.id === id; });
   if(!r) return;
-  if(!confirm(r.synced ? "¿Quitar esta evaluación del dispositivo? (Lo enviado sigue en la hoja.)"
-    : _avisoQuitarNoEnviado(_colaVersionEnCola("score", r), "esta evaluación", true))) return;
+  if(r.synced ? !confirm("¿Quitar esta evaluación del dispositivo? (Lo enviado sigue en la hoja.)")
+    : !_quitarNoEnviado(_colaVersionEnCola("score", r), "esta evaluación", true)) return;   // punto 14
   _scoreSave(_scoreRaw().filter(function(x){ return x && x.id !== id; }));
   renderScore(); updateDots(); updateSyncUI();
 }
@@ -22937,8 +22956,8 @@ function _mntBorrar(ronda, id){
   const r = _mntRaw(key).find(function(x){ return x && x.id === id; });
   if(!r) return;
   const cual = ronda ? "esta ronda" : "este trabajo";
-  if(!confirm(r.synced ? "¿Quitar " + cual + " del dispositivo? (Lo enviado sigue en la hoja.)"
-    : _avisoQuitarNoEnviado(_colaVersionEnCola(ronda ? "mntronda" : "mnttrabajo", r), cual, ronda))) return;
+  if(r.synced ? !confirm("¿Quitar " + cual + " del dispositivo? (Lo enviado sigue en la hoja.)")
+    : !_quitarNoEnviado(_colaVersionEnCola(ronda ? "mntronda" : "mnttrabajo", r), cual, ronda)) return;   // punto 14
   _mntSave(key, _mntRaw(key).filter(function(x){ return x && x.id !== id; }));
   if(ronda) renderMntRonda(); else renderMntTrabajo();
   updateDots(); updateSyncUI();
@@ -23889,8 +23908,8 @@ function audAbrir(id){
 function audBorrar(id){
   const r = _audRaw().find(function(x){ return x && x.id === id; });
   if(!r) return;
-  if(!confirm(r.synced ? "¿Quitar esta auditoría del dispositivo? (Lo enviado sigue en la hoja.)"
-    : _avisoQuitarNoEnviado(_colaVersionEnCola("auditoria", r), "esta auditoría", true))) return;
+  if(r.synced ? !confirm("¿Quitar esta auditoría del dispositivo? (Lo enviado sigue en la hoja.)")
+    : !_quitarNoEnviado(_colaVersionEnCola("auditoria", r), "esta auditoría", true)) return;   // punto 14
   _audSave(_audRaw().filter(function(x){ return x && x.id !== id; }));
   renderAud(); updateDots(); updateSyncUI();
 }
@@ -26374,10 +26393,9 @@ function trasBorrarTraslado(){
   const rec = trasRegistroActivo();
   // B5 (2026-11-08, usuario: «Decirlo bien») · borrarlo de aquí no lo saca de la cola; y si lo que espera es una versión
   // ANTERIOR del viaje, lo añadido después sí se pierde (revisión del 08-11). El aviso es el de las demás fichas.
-  const aviso = (rec && !rec.synced)
-    ? _avisoQuitarNoEnviado(_colaVersionEnCola("tras", rec), "este traslado", false, true)
-    : "¿Vaciar la ficha y borrar este traslado del dispositivo para empezar otro?";
-  if(!confirm(aviso)) return;
+  // 🆕 2026-11-14 (punto 14; usuario: «No dejar quitarlo») · con algo suyo en la cola, no se borra (ver _quitarNoEnviado).
+  if(rec && !rec.synced){ if(!_quitarNoEnviado(_colaVersionEnCola("tras", rec), "este traslado", false, true)) return; }
+  else if(!confirm("¿Vaciar la ficha y borrar este traslado del dispositivo para empezar otro?")) return;
   if(rec){
     const list = _trasRaw().filter(x => x && x.id !== rec.id);
     _trasSave(list);

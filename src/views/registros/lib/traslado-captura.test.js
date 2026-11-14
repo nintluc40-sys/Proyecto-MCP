@@ -464,11 +464,12 @@ describe('Traslado · guardar', () => {
     expect(ultimoAviso()).toContain('Revisión 3');
   });
 
-  it('B5 + revisión · 🗑 Borrar traslado sin enviar: nada en la cola, el viaje de AHORA en la cola, o uno de ANTES', async () => {
+  it('B5 + revisión · 🗑 Borrar traslado sin enviar: nada en la cola, «se pierde»; el viaje de AHORA o uno de ANTES en la cola, no se borra (punto 14)', async () => {
     viajeCompleto(1);
     H.trasGuardarLocal();
     const vistas = [];
     window.confirm = (m) => { vistas.push(m); return false; };
+    try {
     H.trasBorrarTraslado();
     expect(vistas[0]).toBe('Este traslado NO se ha enviado: si lo borras, se pierde.\n\n¿Borrarlo igualmente?');
     /* Sin señal, por el camino de la app: syncAllPendingTras sella la marca (la huella de lo que viaja) y el envío entra
@@ -479,21 +480,25 @@ describe('Traslado · guardar', () => {
     const enCola = H._loadSyncQueue();
     expect(enCola, 'el fixture no encoló nada').toHaveLength(1);
     expect(enCola[0].mark.sellos, 'la marca va sellada').toBeTruthy();
+    /* 2026-11-14 (punto 14; usuario: «No dejar quitarlo») · con el viaje de AHORA en la cola: ni se pregunta ni se borra; se dice. */
+    window.confirm = (m) => { vistas.push(m); return true; };
     H.trasBorrarTraslado();
-    expect(vistas[1]).toBe('Ya hay un envío de este traslado esperando en la cola: se enviará desde ahí aunque lo borres de este dispositivo'
-      + ' (si la hoja lo rechazara, ya no quedaría otra copia).\n\n¿Borrarlo del dispositivo?');
-    // Se sigue tecleando el viaje: lo que espera en la cola es lo de ANTES.
+    expect(vistas, 'no se preguntó').toHaveLength(1);
+    expect(ultimoAviso()).toContain('Este traslado espera en la cola para enviarse: no se puede quitar de este dispositivo');
+    // Se sigue tecleando el viaje: lo que espera en la cola es lo de ANTES. Tampoco (lo tecleado después se perdería).
     rev(1, 'hora', '23:59');
     H.trasGuardarLocal();
+    toasts.length = 0;
     H.trasBorrarTraslado();
-    expect(vistas[2]).toBe('En la cola espera una versión ANTERIOR de este traslado: se enviará esa, pero lo cambiado después NO se ha enviado y,'
-      + ' si lo borras, se pierde.\n\n¿Borrarlo igualmente?');
-    // Una marca sin sello (de antes de sellar) no deja saber cuál espera: se dice lo prudente.
+    expect(ultimoAviso()).toContain('espera en la cola');
+    // Una marca sin sello (de antes de sellar) no deja saber cuál espera: lo prudente, tampoco.
     localStorage.setItem('larv4_syncqueue', JSON.stringify([{ ts: 1, payload: {}, mark: { kind: 'tras', keys: [H._trasRaw()[0].id] } }]));
+    toasts.length = 0;
     H.trasBorrarTraslado();
-    expect(vistas[3]).toBe(vistas[2]);
-    expect(H._trasRaw(), '«no» no lo borra').toHaveLength(1);
-    window.confirm = () => true;
+    expect(ultimoAviso()).toContain('espera en la cola');
+    expect(vistas, 'no se preguntó').toHaveLength(1);
+    expect(H._trasRaw(), 'no se borra').toHaveLength(1);
+    } finally { window.confirm = () => true; }
   });
 });
 
