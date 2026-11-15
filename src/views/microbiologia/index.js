@@ -275,18 +275,21 @@ function patRows() {
 /* Aviso de Patología en Fresco.
    El módulo de captura está COMPLETO y sincroniza; lo que no ha ocurrido todavía es
    que alguien registre un análisis. Medido el 2026-08-31 contra el despliegue real
-   (GET ?p=rows + enumeración de pestañas): el documento tiene 35 hojas y NINGUNA casa
-   /patolog/i. Y eso es prueba, no indicio: el GAS crea la hoja en el primer envío
+   (GET ?p=rows + enumeración de pestañas): ninguna hoja del documento casa /patolog/i
+   (y el 15-11, lo mismo). Y eso es prueba, no indicio: el GAS crea la hoja en el primer envío
    (`if (!ws) ss.insertSheet(...)`, en el doPost de Code.gs), así que «sin pestaña» equivale a
-   «nunca se ha capturado». El mensaje de abajo es, pues, CIERTO hoy.
+   «nunca se ha capturado».
    ⚠ Por eso mismo NO puede ser una constante, que es lo que era: el día que entre el
    primer análisis la hoja nacerá y sus filas llegarán al store, y un cartel fijo
    seguiría diciendo que no está disponible — pasando por alto el estreno del módulo.
-   Se resuelve por el DATO: 0 filas → el aviso de siempre; ≥1 → se declaran. */
+   Se resuelve por el DATO: 0 filas → que aún no hay ninguno; ≥1 → se declaran.
+   Punto 28 (pauta del 12-11, usuario: «Sólo el texto, por ahora») · el texto de antes («…aún no está disponible en el
+   Google Sheet origen; se conectará cuando exista») hacía pensar que faltaba algo por conectar: ahora dice qué pasa y cómo
+   nace la hoja; y, con datos, dónde verlos mientras no exista la pantalla de detalle. */
 function patologiaAvisoHTML() {
   const rows = patRows();
   if (!rows.length) {
-    return { icono: '🚧', texto: 'La hoja de Patología en fresco aún no está disponible en el Google Sheet origen; se conectará cuando exista.' };
+    return { icono: '⏳', texto: 'Todavía no se ha registrado ningún análisis de Patología en fresco. La hoja se crea sola con el primer envío desde 📝 Registros, y entonces aparecen aquí.' };
   }
   const fechas = rows.map((r) => parseAnyDate(patFecha(r))).filter((d) => d && !isNaN(d)).sort((a, b) => a - b);
   const rango = fechas.length
@@ -297,7 +300,7 @@ function patologiaAvisoHTML() {
   const n = rows.length;
   return {
     icono: '✅',
-    texto: `${n} análisis de Patología en Fresco ${n === 1 ? 'sincronizado' : 'sincronizados'}${rango}. La visualización detallada llega en una tanda posterior.`,
+    texto: `${n} análisis de Patología en Fresco ${n === 1 ? 'sincronizado' : 'sincronizados'}${rango}. La pantalla de detalle aún no existe: por ahora se consultan en la hoja «Patología en Fresco».`,
   };
 }
 

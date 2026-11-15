@@ -1723,8 +1723,10 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
 **Abierto**
 
 3. **Microbiología · Patología en fresco** espera a que los usuarios estrenen su hoja (nace con su primer envío).
-   Cuando lleguen filas, la vista las CUENTA y lo dice («La visualización detallada llega en una tanda posterior»,
-   `patologiaAvisoHTML` en `microbiologia/index.js`): su pantalla de detalle está por hacer.
+   Mientras no haya ninguna, la vista lo dice tal cual (y cómo nace la hoja); cuando lleguen filas, las CUENTA y dice
+   dónde verlas («La pantalla de detalle aún no existe: por ahora se consultan en la hoja…», `patologiaAvisoHTML` en
+   `microbiologia/index.js`; punto 28 de la pauta del 12-11, «Sólo el texto, por ahora»): su pantalla de detalle está
+   por hacer, cuando haya análisis reales con los que diseñarla.
 4. **Deuda técnica.** `public/registros/engine.js` sigue siendo un monolito (`wc -l` da la cifra). Su plan de retirada
    es [`docs/analisis/10-plan-engine.md`](docs/analisis/10-plan-engine.md) (2026-10-28): la anatomía medida, lo que no se
    puede romper, la decisión sobre el gemelo `index (8)` (generarlo desde el repo o seguir a mano) y las tajadas en orden

@@ -126,10 +126,14 @@ describe('H3 · el aviso de la sub-vista depende del DATO', () => {
     return root.querySelector('.empty-state')?.textContent || '';
   }
 
-  it('SIN registros mantiene EXACTAMENTE el mensaje acordado con el usuario', () => {
+  /* Punto 28 (pauta del 12-11, usuario: «Sólo el texto, por ahora») · el texto acordado antes («…aún no está disponible en el
+     Google Sheet origen; se conectará cuando exista») confundía: la ficha está lista y la hoja la crea el GAS con el primer
+     envío; no hay nada que «conectar». Ahora dice lo que pasa y qué hacer. */
+  it('SIN registros dice EXACTAMENTE que aún no hay ninguno y cómo nace la hoja (punto 28)', () => {
     const txt = abrirPatologia([]);
-    expect(txt).toContain('La hoja de Patología en fresco aún no está disponible en el Google Sheet origen; se conectará cuando exista.');
-    expect(txt).toContain('🚧');
+    expect(txt).toContain('Todavía no se ha registrado ningún análisis de Patología en fresco. La hoja se crea sola con el primer envío desde 📝 Registros, y entonces aparecen aquí.');
+    expect(txt).not.toContain('se conectará');
+    expect(txt).not.toContain('no está disponible');
     expect(txt).not.toContain('sincronizado');
   });
 
@@ -140,6 +144,9 @@ describe('H3 · el aviso de la sub-vista depende del DATO', () => {
     expect(txt).not.toContain('aún no está disponible');
     expect(txt).toContain('2 análisis de Patología en Fresco sincronizados');
     expect(txt).toContain('✅');
+    // punto 28: antes «La visualización detallada llega en una tanda posterior»; ahora dice dónde verlos mientras tanto
+    expect(txt).toContain('La pantalla de detalle aún no existe: por ahora se consultan en la hoja «Patología en Fresco».');
+    expect(txt).not.toContain('tanda posterior');
   });
 
   it('con UN solo registro concuerda en singular y da su fecha, no un rango', () => {
