@@ -10708,8 +10708,7 @@ function madHistEditar(id){
   if((_madBorrTocado[e.ficha] || _madBorrOrigen[e.ficha]==="borrador") && !confirm("Se reemplazará lo tecleado en "+_madHistNombre(e.ficha)+" por el envío del "+e.fecha+", para corregirlo. ¿Continuar?")) return;
   /* Como la corrección de Desoves: lo que se teclee se guarda como borrador del día de la ficha (_madBorrFecha), no bajo
      la fecha del envío, que va FIJA (es llave); al recargar, el borrador trae la corrección con su aviso. */
-  fp.innerHTML=html;
-  _madBorrAdaptar(e.ficha, fp, e.fecha);
+  _madPanelRestaurar(e.ficha, fp, html, e.fecha);   // punto 7
   _madBorrTocado[e.ficha]=false;
   _madBorrOrigen[e.ficha]="limpio";
   const f=document.getElementById(cfg.fecha);
@@ -11066,8 +11065,7 @@ function madBorrTraerDelDia(ficha){
   if(!cfg) return;
   const dia = _madBorrFecha[ficha], html = madBorrLeer(ficha, dia), fp = document.getElementById(cfg.panel);
   if(!html || !fp) return;
-  fp.innerHTML = html;
-  _madBorrAdaptar(ficha, fp, dia);
+  _madPanelRestaurar(ficha, fp, html, dia);   // punto 7
   const f = document.getElementById(cfg.fecha);
   /* 🔴 2026-09-24 (punto 1) · una fecha de SÓLO LECTURA es la llave de lo que se completa o se corrige (✏️ Completar,
      ✏️ del historial): su borrador se guarda bajo el día en que se tecleó, no bajo la suya. Ponerle ese día la movía
@@ -11075,6 +11073,28 @@ function madBorrTraerDelDia(ficha){
   if(f && !f.hasAttribute("readonly")) f.value = dia;
   _madBorrOrigen[ficha] = "borrador";
   _madBorrTocado[ficha] = false;
+}
+/* 2026-11-15 (punto 7 de la pauta del 12-11) · TRAER UN BORRADOR O UN ENVÍO DEL 📜 SIN LO VIEJO QUE NO SE TECLEÓ. Un borrador y la copia
+   para ✏️ Editar son el HTML del panel TAL COMO ESTABA, y sólo _madBorrAdaptar lo retocaba (campos de la ficha que cambiaron): volvían
+   como eran al guardarse el cuadro ℹ️ de ayuda (el texto nuevo del de Inf. Supervisor, A20, no salía), la lista 💾 y el registro de
+   envíos, el veredicto 🔍 y, en Desoves, los totales del día y la lista de pendientes. Lo que no es de quien teclea se pone al día: la
+   ayuda, la del panel que había (la de la versión en uso); la lista 💾, el registro y los pendientes, repintados; y el veredicto viejo
+   se quita (usuario: «Quitarlo al abrir»): ya no corresponde a lo de ahora, y se vuelve a pulsar 🔍. Guardar revisa por su cuenta. */
+function _madAyudaDe(fp){
+  const spans = fp ? fp.querySelectorAll(".fc-b > div > span:first-child") : [];
+  for(let i = 0; i < spans.length; i++){ if(spans[i].textContent.trim() === "ℹ️") return spans[i].parentElement; }
+  return null;
+}
+function _madPanelRestaurar(ficha, fp, html, dia){
+  const viva = _madAyudaDe(fp), ayuda = viva ? viva.outerHTML : "";
+  fp.innerHTML = html;
+  _madBorrAdaptar(ficha, fp, dia);
+  const vieja = _madAyudaDe(fp);
+  if(ayuda && vieja) vieja.outerHTML = ayuda;
+  const cfg = MAD_BORR_FICHAS[ficha], rep = cfg ? document.getElementById(cfg.fecha.replace(/-fecha$/, "-report")) : null;
+  if(rep) rep.innerHTML = "";
+  try{ _madLocRepinta(ficha); }catch(_){}
+  if(ficha === "desoves"){ try{ _madDesPendRepinta(); }catch(_){} }
 }
 /* Cada ficha se nombra, en vez de un `window[nombre]`: el monolito se arranca en las pruebas
    con `new Function`, donde nada cuelga de `window`, y ahí un despacho por nombre se caería
@@ -11241,13 +11261,14 @@ function madBorrFechaChange(ficha){
   /* Se trae el día elegido. Sin borrador, la ficha se monta LIMPIA: arrastrar lo de ayer a un día en el que no se
      tecleó nada es lo que pedía el 2026-09-15. Sin tocar, lo que se deja no se guarda: ya estaba guardado, o no
      había nada (y guardar una ficha en blanco pisaría el borrador de ese día). */
-  fp.innerHTML = html;
-  if(html) _madBorrAdaptar(ficha, fp, nueva);
-  else _madBorrRender(ficha);
+  if(html) _madPanelRestaurar(ficha, fp, html, nueva);   // punto 7
+  else { fp.innerHTML = html; _madBorrRender(ficha); }
   /* DESPUÉS del render: el montaje escribe today() en su campo de fecha, y aquí manda la
-     fecha elegida. Y `_madBorrFecha` se fija al final por lo mismo. */
+     fecha elegida. Y `_madBorrFecha` se fija al final por lo mismo.
+     2026-11-15 (punto 7) · Salvo si es de SÓLO LECTURA, como en madBorrTraerDelDia: el borrador de ese día es una corrección
+     (✏️ del 📜, ✏️ Completar) y ésa es la llave de lo que se corrige; ponerle el día elegido la guardaba como fila NUEVA de otro día. */
   const f2 = document.getElementById(cfg.fecha);
-  if(f2) f2.value = nueva;
+  if(f2 && !f2.hasAttribute("readonly")) f2.value = nueva;
   _madBorrFecha[ficha] = nueva;
   _madBorrOrigen[ficha] = html ? "borrador" : "limpio";
   _madBorrTocado[ficha] = false;

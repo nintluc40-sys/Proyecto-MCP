@@ -1326,6 +1326,13 @@ sin avisar**:
   MATRIZ. Un segundo toque mandaba lo mismo dos veces y lo tecleado en la espera se borraba sin haber viajado. Ahora los
   seis se envuelven en `_madGridBloqueada`, como los demás. Lo vigilan `bloqueo-al-enviar.test.js` y el banco
   `mutar-bloqueo-al-enviar`.
+- **Un borrador o un ✏️ de Maduración vuelve sin lo viejo que no se tecleó** (2026-11-15). Un borrador y la copia para ✏️
+  Editar son el panel tal como estaba: al traerlos volvían el cuadro ℹ️ de ayuda de entonces (el de Inf. Supervisor no
+  enseñaba su texto nuevo), la lista 💾 y el registro de envíos, el resultado de 🔍 Revisar y, en Desoves, los totales y
+  los pendientes. Ahora `_madPanelRestaurar` pone la ayuda de la versión en uso, repinta la lista, el registro y los
+  pendientes, y quita el 🔍 viejo (usuario: «Quitarlo al abrir»). Y al cambiar de día, la fecha de SÓLO LECTURA de una
+  corrección ya no toma la del día elegido: se habría guardado como fila nueva de otro día. Lo vigilan
+  `mad-restaurar-panel.test.js` y el banco `mutar-mad-restaurar-panel`.
 - **Larvicultura y Lab. Algas: lo de días anteriores.** Se guardan por día y la app lee los de hoy, así que lo no
   enviado dejaba de verse a medianoche y la limpieza lo borraba. Ahora la limpieza no lo toca y, al abrir el módulo,
   un aviso dice qué quedó y de qué día, con **«☁️ Enviarlas»** (cada ficha a su hoja con SU fecha: las de Datos de un
