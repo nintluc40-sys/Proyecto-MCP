@@ -1319,6 +1319,13 @@ sin avisar**:
   archivo, y sin un «sí» no toca nada; 📥 Exportar todo dice qué archivo bajó y que se revise en Descargas, en vez de
   «exportado». Medido en Chrome: con la pregunta abierta, la descarga empieza y termina. Lo vigilan `respaldo.test.js` y el
   banco `mutar-respaldo-copia`.
+- **Lo que quedaba sin bloquear mientras se envía** (2026-11-15). Desde la pendiente 25 (usuario: «Bloquear mientras
+  envía») los siete formularios de Maduración bloquean su panel mientras ☁️ espera a la red; seguían sin hacerlo ☁️ Guardar
+  corrección de un desove (espera a que se vacíe la cola), ☁️ del Control Broodstock y los cuatro envíos del reproductivo
+  (📋 Procesar registro, ➕ Registrar todos, 🔄 Procesar transferencia, ✅ Registrar con la elegida), que esperan a leer la
+  MATRIZ. Un segundo toque mandaba lo mismo dos veces y lo tecleado en la espera se borraba sin haber viajado. Ahora los
+  seis se envuelven en `_madGridBloqueada`, como los demás. Lo vigilan `bloqueo-al-enviar.test.js` y el banco
+  `mutar-bloqueo-al-enviar`.
 - **Larvicultura y Lab. Algas: lo de días anteriores.** Se guardan por día y la app lee los de hoy, así que lo no
   enviado dejaba de verse a medianoche y la limpieza lo borraba. Ahora la limpieza no lo toca y, al abrir el módulo,
   un aviso dice qué quedó y de qué día, con **«☁️ Enviarlas»** (cada ficha a su hoja con SU fecha: las de Datos de un

@@ -12985,7 +12985,13 @@ function _madDesCorreccionRemata(model, desove){
   _madBorrOlvidarPantalla("desoves", model.fecha);
   madDesReiniciar();
 }
-async function madDesCorregirGuardar(){
+/* 2026-11-15 (punto 15 de la pauta del 12-11; la decisión de la pendiente 25: «Bloquear mientras envía») · LA CORRECCIÓN DE UN DESOVE,
+   EL BROODSTOCK Y LOS CUATRO ENVÍOS DEL REPRODUCTIVO TAMBIÉN BLOQUEAN SU PANEL. Esperan a la red —la corrección, hasta 90 s a que se
+   vacíe la cola; el reproductivo, a leer la MATRIZ— sin bloquear: un segundo toque mandaba lo mismo dos veces (en el reproductivo, dos
+   desoves o dos traslados de la misma hembra) y lo tecleado o pegado en la espera se borraba al terminar sin haber viajado. Como los
+   siete formularios, cada uno envuelve su cuerpo con _madGridBloqueada. */
+async function madDesCorregirGuardar(){ return _madGridBloqueada("fp-desoves", _madDesCorregirGuardar); }
+async function _madDesCorregirGuardar(){
   const b=document.getElementById("md-edit");
   const id=b ? (b.getAttribute("data-corrige")||"") : "", k=b ? (b.getAttribute("data-k")||"") : "";
   if(!id || !k){ toast("No hay ninguna corrección abierta.","warn",3500); return; }
@@ -15558,7 +15564,8 @@ function madBsGuardarLocal(){
   _madBs=null; madBsPintar();
   _madLocGuardado("broodstock");
 }
-async function madBsGuardar(){
+async function madBsGuardar(){ return _madGridBloqueada("fp-broodstock", _madBsGuardar); }   // punto 15 · ver madDesCorregirGuardar
+async function _madBsGuardar(){
   const _loc=madLocLeer("broodstock").length;
   const p=_madBsPreparar(_loc>0); if(!p) return;
   if(!p.envios.length && !_loc){ toast("No hay piscinas con datos que subir.","warn",4000); return; }
@@ -16435,7 +16442,9 @@ function _reproNadaOElegir(id, vivas, rojo, atencion, dur){
   _reproNada(id, rojo + extra, extra ? 9000 : dur);
 }
 
-async function madReproProcess(){
+// Punto 15 · los cuatro envíos del reproductivo bloquean su panel mientras esperan (ver madDesCorregirGuardar).
+async function madReproProcess(){ return _madGridBloqueada("fp-reproductivo", _madReproProcess); }
+async function _madReproProcess(){
   const fEl=document.getElementById("repro-fecha"), tEl=document.getElementById("repro-tipo"), cEl=document.getElementById("repro-codes");
   if(!fEl||!tEl||!cEl) return;
   const fecha=fEl.value, tipo=tEl.value;
@@ -16532,7 +16541,8 @@ function _reproAltaCollect(fecha){
    usado no es un caso especial que haya que negociar con el servidor — es otra fila más.
    🔑 Y el GAS al día se comprueba igual, pero donde corresponde: `_madIngGasAlDia` compara el
    SELLO para TODAS las fichas, así que esta pregunta suelta ya no añadía nada. */
-async function madReproAltaBatch(){
+async function madReproAltaBatch(){ return _madGridBloqueada("fp-reproductivo", _madReproAltaBatch); }   // punto 15
+async function _madReproAltaBatch(){
   const fEl=document.getElementById("repro-a-fecha"); const fecha=fEl?fEl.value:"";
   if(!isValidDate(fecha)){ toast("Fecha de ingreso inválida.","err",3500); return; }
   const _fut=_reproFechaFutura(fecha); if(_fut){ toast(_fut,"err",7000); return; }
@@ -16618,7 +16628,8 @@ function madReproDelDest(btn){
 }
 function madReproMezclaToggle(){ const t=document.getElementById("repro-t-tipo"); const comp=document.getElementById("repro-t-comp"); if(comp) comp.style.display=(t && t.value==="Mezcla")?"block":"none"; }
 
-async function madReproTransfer(){
+async function madReproTransfer(){ return _madGridBloqueada("fp-reproductivo", _madReproTransfer); }   // punto 15
+async function _madReproTransfer(){
   const g=function(id){ const e=document.getElementById(id); return e?e.value:""; };
   const fecha=g("repro-t-fecha"), tipo=g("repro-t-tipo");
   if(!isValidDate(fecha)){ toast("Fecha inválida.","err",3500); return; }
@@ -16807,7 +16818,8 @@ function _reproElegirHTML(clase){
   });
   return h + '<button class="btn bp" type="button" id="repro-eleg-btn" onclick="madReproRegistrarElegidas('+p.seq+')">✅ Registrar con la elegida</button></div>';
 }
-async function madReproRegistrarElegidas(seq){
+async function madReproRegistrarElegidas(seq){ return _madGridBloqueada("fp-reproductivo", function(){ return _madReproRegistrarElegidas(seq); }); }   // punto 15
+async function _madReproRegistrarElegidas(seq){
   const p = _reproElegirPend, mIdx = _reproMatrixIndex();
   if(!p || p.seq !== seq){ toast("Ese aviso ya no está vigente: vuelve a procesar el registro.","warn",5000); return; }
   if(!mIdx){ toast("No se pudo leer la MATRIZ: vuelve a intentarlo con 🔄.","err",6000); return; }
