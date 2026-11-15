@@ -1341,6 +1341,12 @@ sin avisar**:
   prefijo de la app, así que entran en el respaldo; lo guardado con su nombre viejo pasa al nuevo (revisión del 07-11).
   El sistema no carga las filas «⛔ ANULADA»
   (`filaAnulada`, `src/core/sheets.js`). Las sesiones heredadas (sin número) siguen como antes.
+  «Llegó a la hoja» (2026-11-14, punto 5 de la pauta del 12-11) es haber llegado ALGUNA VEZ: también si después se volvió
+  a guardar con 💾 (sus registros se rehacen «sin enviar» y heredan `enHoja`) o si su envío espera en la cola; antes, en
+  esos dos casos no se anulaba y la hoja quedaba con el análisis dos veces. El envío que lleva las anulaciones va marcado
+  también con sus claves, para que la cola no lo deje adelantar a la sesión vieja. Y 🗑 de una corrección que no salió
+  retira su anulación pendiente: la hoja conserva la fecha vieja, como promete el aviso (usuario: «Se queda como estaba»).
+  Lo vigilan `lab-correccion-llego.test.js` y el banco `mutar-lab-correccion-llego`.
   **🎯 Score:** un tanque ya enviado que se vacía (🧹, siguiendo con la misma evaluación) viaja **anulado**: el mismo ID,
   sin puntos y «⛔ ANULADA · tanque vaciado» en Interpretación. Cambiar la fecha, el módulo o la corrida de la evaluación
   abierta pregunta: **corrección** (sus filas enviadas viajan anuladas, «pasó al …», y la de antes sale del dispositivo),

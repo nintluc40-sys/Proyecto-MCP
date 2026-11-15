@@ -27258,8 +27258,9 @@ function _labCorregir(tipo, lista, previos, nuevos, clave, llave){
   const kNuevas = new Set(nuevos.map(function(r){ return clave(r.data); }));
   const anul = _labAnulaciones(tipo).filter(function(a){ return a && a.data && !kNuevas.has(clave(a.data)); });
   const ya = new Set(anul.map(function(a){ return clave(a.data); }));
+  const enCola = _labClavesEnCola(tipo);
   previos.forEach(function(r){
-    if(!(r.synced || r.syncedAt)) return;   // nunca salió: no hay nada que anular en la hoja
+    if(!_labLlego(r, clave, enCola)) return;   // nunca salió: no hay nada que anular en la hoja (punto 5: ver _labLlego)
     const k = clave(r.data);
     if(ya.has(k)) return;
     ya.add(k);
@@ -27298,6 +27299,47 @@ function _labAnulacionesSalieron(tipo, lista, clave){
   if(!lista.length) return;
   const ido = new Set(lista.map(function(a){ return clave(a.data); }));
   _labAnulacionesGuardar(tipo, _labAnulaciones(tipo).filter(function(a){ return !(a && a.data && ido.has(clave(a.data))); }));
+}
+/* 2026-11-14 (punto 5 de la pauta del 12-11) · ¿LLEGÓ ALGUNA VEZ A LA HOJA? Al corregir la fecha, la sesión vieja sólo se anulaba si
+   sus registros seguían marcados como enviados (`synced`/`syncedAt`), y no lo están en dos casos: si se volvió a guardar con 💾 tras
+   enviarse (sus registros se rehacen sin enviar) o si su envío espera en la cola. La hoja se quedaba entonces con el análisis DOS
+   veces, con la fecha vieja y con la nueva. Cuenta como llegada: enviada, con `enHoja` (lo hereda al volver a guardarse:
+   _labHeredarEnHoja) o con un envío suyo en la cola (marca F3: `kind` = tipo, `keys` = claves de sesión). */
+function _labClavesEnCola(tipo){
+  const s = new Set();
+  _loadSyncQueue().forEach(function(it){
+    const m = it && it.mark;
+    if(m && m.kind === tipo && Array.isArray(m.keys)) m.keys.forEach(function(k){ s.add(String(k)); });
+  });
+  return s;
+}
+function _labLlego(r, clave, enCola){
+  return !!(r && (r.synced || r.syncedAt || r.enHoja || (r.data && enCola.has(String(clave(r.data))))));
+}
+/** Al volver a guardar una sesión con su MISMA clave, lo nuevo hereda que lo de antes llegó a la hoja. No guarda nada. */
+function _labHeredarEnHoja(tipo, lista, nuevos, clave){
+  const enCola = _labClavesEnCola(tipo), llegaron = new Set();
+  (lista || []).forEach(function(r){ if(r && r.data && _labLlego(r, clave, enCola)) llegaron.add(clave(r.data)); });
+  (nuevos || []).forEach(function(r){ if(r && r.data && llegaron.has(clave(r.data))) r.enHoja = true; });
+}
+/* Punto 5 (usuario: «Se queda como estaba») · 🗑 DE UNA CORRECCIÓN QUE NO SALIÓ. Borrar del equipo no toca la hoja (lo promete el
+   aviso de 🗑), pero la anulación de la fecha vieja seguía pendiente y salía con el siguiente envío: la hoja perdía el análisis
+   entero. Si la sesión borrada no llegó a la hoja, sus anulaciones pendientes (misma sesión) se retiran con ella. Devuelve las
+   retiradas. */
+function _labRetirarAnulDe(tipo, borrados, clave, mismaSesion){
+  const d0 = borrados && borrados[0] && borrados[0].data;
+  if(!d0 || !d0.sid) return [];
+  const enCola = _labClavesEnCola(tipo);
+  if(borrados.some(function(r){ return _labLlego(r, clave, enCola); })) return [];   // salió: su anulación salió con ella
+  const todas = _labAnulaciones(tipo);
+  const fuera = todas.filter(function(a){ return a && a.data && a.data.sid === d0.sid && mismaSesion(a.data, d0); });
+  if(fuera.length) _labAnulacionesGuardar(tipo, todas.filter(function(a){ return fuera.indexOf(a) === -1; }));
+  return fuera;
+}
+/** El aviso de 🗑 cuando además se retiró una anulación: qué sigue en la hoja como estaba. */
+function _labAvisoBorrado(fuera){
+  return "🗑 Sesión eliminada del historial local" + (fuera.length ? " · en la hoja sigue como estaba el análisis del "
+    + fuera.map(function(a){ return _labDescribir(a.data); }).join(" y del ") + ", que ya no se anula" : "");
 }
 
 /* 2026-11-14 (punto 4; usuario: «Repartir por sesiones») · LO PENDIENTE DE LABORATORIO VA EN VARIOS ENVÍOS SI NO CABE EN UNO. El GAS
@@ -27346,7 +27388,9 @@ async function _labEnviarPendiente(c){
     if(L.anul) payload.rows = payload.rows.concat(anul.filas);
     if(!payload.rows.length) continue;
     setSyncUI("pend", "Enviando " + n + " muestra(s)" + (lotes.length > 1 ? " · envío " + (i+1) + " de " + lotes.length : "") + "…");
-    const opts = { mark:{ kind:c.tipo, keys:L.claves } };   // F3: reconciliación al entregar desde cola
+    /* F3: reconciliación al entregar desde cola. Punto 5 · el envío que lleva las anulaciones lleva también SUS claves: si la sesión
+       vieja aún espera en la cola, _colaSolapa lo pone detrás —anulada antes de llegar, al llegar después volvería a la hoja—. */
+    const opts = { mark:{ kind:c.tipo, keys: L.anul ? L.claves.concat(anul.lista.map(function(a){ return c.clave(a.data); })) : L.claves } };
     const sent = await postPayload(payload, c.url, opts);
     if((sent || opts.outcome === "queued") && L.anul){ _labAnulacionesSalieron(c.tipo, anul.lista, c.clave); anulSalio = true; }
     if(sent){ _marcarEnviado(opts); muestras += n; sesiones += L.claves.length; continue; }
@@ -27889,6 +27933,7 @@ function saveMicLocal(){
   // algún registro nuevo y re-añade los nuevos. Otros formatos/fechas/corridas
   // quedan INTACTOS (conservan su estado synced). Editar una sesión (misma clave)
   // la actualiza; para registrar otro análisis igual usa 🧹 (rota el sid).
+  _labHeredarEnHoja("mic", list, newRecords, micSessionKey);   // punto 5 · lo que se rehace sigue contando como llegado
   const newKeys = new Set(newRecords.map(r=> micSessionKey(r.data)));
   list = list.filter(r=> !(r.data && newKeys.has(micSessionKey(r.data))));
   list = list.concat(newRecords);
@@ -28124,8 +28169,9 @@ function micDeleteSession(k){
   if(!rs.length) return;
   if(!confirm("¿Eliminar esta sesión del historial local ("+rs.length+" muestra(s))?\nSolo se borra del sistema; lo ya enviado a Google Sheets NO se elimina.")) return;
   _micSave(list.filter(r=> micSessionKey(r.data) !== k));
+  const _fuera = _labRetirarAnulDe("mic", rs, micSessionKey, function(a, b){ return a.departamento === b.departamento && a.formato === b.formato; });   // punto 5
   renderMicHist(); updateDots(); updateSyncUI(); buildGrid();
-  toast("🗑 Sesión eliminada del historial local","ok",3000);
+  toast(_labAvisoBorrado(_fuera),"ok",_fuera.length ? 7000 : 3000);
 }
 
 // ── Vista Factores ─────────────────────────────────────
@@ -29336,6 +29382,7 @@ function saveCalLocal(){
   // Reemplazo espejo de la hoja SOLO para la clave del formato activo: quita las
   // sesiones cuya clave coincide con la de algún registro nuevo y re-añade los
   // nuevos. Otros formatos quedan intactos (conservan su estado synced).
+  _labHeredarEnHoja("cal", list, newRecords, calSessionKey);   // punto 5
   const newKeys = new Set(newRecords.map(r=> calSessionKey(r.data)));
   list = list.filter(r=> !(r.data && newKeys.has(calSessionKey(r.data))));
   list = list.concat(newRecords);
@@ -29491,8 +29538,9 @@ function calDeleteSession(k){
   if(!rs.length) return;
   if(!confirm("¿Eliminar esta sesión del historial local ("+rs.length+" muestra(s))?\nSolo se borra del sistema; lo ya enviado a Google Sheets NO se elimina.")) return;
   _calSave(list.filter(r=> calSessionKey(r.data)!==k));
+  const _fuera = _labRetirarAnulDe("cal", rs, calSessionKey, function(a, b){ return a.departamento === b.departamento && a.formato === b.formato; });   // punto 5
   renderCalHist(); updateDots(); updateSyncUI(); buildGrid();
-  toast("🗑 Sesión eliminada del historial local","ok",3000);
+  toast(_labAvisoBorrado(_fuera),"ok",_fuera.length ? 7000 : 3000);
 }
 
 // ── Vista Rangos ───────────────────────────────────────
@@ -29993,6 +30041,7 @@ function savePatLocal(){
     list = _c.lista; _anul = _c.anul;
   }
   // Reemplazo espejo de la hoja: quita la sesión cuya clave coincide y re-añade.
+  _labHeredarEnHoja("pat", list, newRecords, patSessionKey);   // punto 5
   const newKeys = new Set(newRecords.map(r=> patSessionKey(r.data)));
   list = list.filter(r=> !(r.data && newKeys.has(patSessionKey(r.data))));
   list = list.concat(newRecords);
@@ -30115,8 +30164,9 @@ function patDeleteSession(k){
   if(!rs.length) return;
   if(!confirm("¿Eliminar esta sesión del historial local ("+rs.length+" muestra(s))?\nSolo se borra del sistema; lo ya enviado a Google Sheets NO se elimina.")) return;
   _patSave(list.filter(r=> patSessionKey(r.data)!==k));
+  const _fuera = _labRetirarAnulDe("pat", rs, patSessionKey, function(){ return true; });   // punto 5 (en Patología la sesión es sólo su número)
   renderPatHist(); updateDots(); updateSyncUI(); buildGrid();
-  toast("🗑 Sesión eliminada del historial local","ok",3000);
+  toast(_labAvisoBorrado(_fuera),"ok",_fuera.length ? 7000 : 3000);
 }
 
 // ── Vista Factores (no aplica) ─────────────────────────
