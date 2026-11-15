@@ -1046,9 +1046,10 @@ Lo que el libro no explica por sí solo. Sólo lo que ya se puede decir en públ
 
 - **Vitest** (`npm test`): la capa de datos (`core/*`, `supervisor/stats`, `microbiologia/data`,
   las fichas de Registros…) y el monolito `public/registros/engine.js`, que se arranca entero en
-  happy-dom sobre el shell real. **ESLint flat v9** (`npm run lint` = `eslint src`, lo que corre la CI;
-  desde el 2026-10-15 `eslint .` también sale limpio: `public/vendor/` fuera y con sus globales `public/sw.js`
-  y `scripts/`). **Prettier** va aparte, con `npm run format`: no lo corre ni `lint` ni la CI.
+  happy-dom sobre el shell real. **ESLint flat v9** (`npm run lint` = `eslint .`, lo que corre la CI: todo el repo,
+  también `public/sw.js`, las auditorías de `scripts/` y los `*.config.js`, con sus globales; fuera, `public/registros/`
+  y `public/vendor/`. Hasta el 2026-11-15 era `eslint src` y lo demás no se revisaba nunca: punto 34 de la pauta del
+  12-11, `src/lintAlcance.test.js`). **Prettier** va aparte, con `npm run format`: no lo corre ni `lint` ni la CI.
 - ⚠ **La CI corre las pruebas con Node 24** (`deploy.yml`; hasta el 2026-09-19, con Node 20), no con el
   Node de tu equipo, y happy-dom no se comporta igual en todas las versiones: el 2026-09-18 una prueba en
   verde aquí tumbó la CI —y con ella el despliegue— porque su simulación del `localStorage` no
