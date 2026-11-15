@@ -794,7 +794,24 @@ function _fechaFichaError(panelId){
   const el = fp && fp.querySelector('input[type="date"][name="fecha"]');
   if(!el) return "";
   if(_fechaNoExiste(el)) return FECHA_NO_EXISTE;
-  return isValidDate(el.value) ? "" : "falta la fecha";
+  return isValidDate(el.value) ? _fechaPosterior(el.value) : "falta la fecha";
+}
+/* 2026-11-14 (punto 46; usuario: «Bloquear, como Laboratorio») · UNA FECHA POSTERIOR A HOY NO SE GUARDA NI SE ENVÍA. Ya lo hacían
+   Laboratorio (_labFechasError) y el reproductivo (_reproFechaFutura), desde septiembre; las demás fichas la aceptaban: un año mal
+   tecleado (2027) o un día de más dejaba los datos en una fecha que todavía no ha llegado. «Hoy» es el del dispositivo, como en
+   Laboratorio. Quedan fuera las fechas que son futuras POR NATURALEZA: las predicciones de 🌊 Mareas, las fechas de N2/N5 de Desoves
+   y la próxima parada de 🔧 Mantenimiento. Devuelve el motivo («la fecha … es posterior a hoy (…)»), o "" si no lo es. */
+function _fechaPosterior(fecha){
+  const f = String(fecha || ""), hoy = today();
+  if(!isValidDate(f) || f <= hoy) return "";
+  const dmy = function(x){ return String(x).split("-").reverse().join("/"); };
+  return "la fecha " + dmy(f) + " es posterior a hoy (" + dmy(hoy) + " en este dispositivo)";
+}
+/** Lo mismo para los formularios de Maduración: lo añade a los errores de su informe (fuera del validador: tiene su gemelo). */
+function _madFechaPosterior(res, fecha){
+  const m = _fechaPosterior(fecha);
+  if(m) res.errores.push(m.charAt(0).toUpperCase() + m.slice(1) + ": no se guarda ni se envía.");
+  return res;
 }
 function validateFicha(fid, data){
   if(data.fecha && !isValidDate(data.fecha)){
@@ -3963,6 +3980,7 @@ function addToAlgHist(){
   // R2: bloquea si hay valores fuera del rango declarado (ej. Lote 1–30, Día 0–5).
   if(_rangeGuard()) return;
   if(!validateFicha("algas", data)) return;
+  { const _fut = _fechaPosterior(data.fecha); if(_fut){ toast("⚠️ Algas: " + _fut + ". No se agregó: corrígela.", "warn", 7000); return; } }   // punto 46
   // Mínimo: requiere fecha o cel_ml
   const hasMin = ["fecha","cel_ml"].some(k => data[k] !== undefined && data[k] !== "");
   if(!hasMin){
@@ -9881,7 +9899,7 @@ async function madIngVerOcupacion(){
 }
 function madIngRevisar(){
   const model=madIngCollect();
-  const res=madIngValidar(model);
+  const res=_madFechaPosterior(madIngValidar(model), model.fecha);   // punto 46
   res.avisos=res.avisos.concat(madIngAvisosOcupacion(model));
   _madIngPinta(res, madIngBuildRows(model).length);
   return _madRevisarRemata("mi-report", res, MAD_ING_SHEET);
@@ -10354,7 +10372,7 @@ function _madIngNoEnviado(){
 function _madIngPreparar(conGuardados){
   _madIngAsegurarEnvio();   // pendiente 26 · el ID lleva la identidad del formulario
   const model=madIngCollect();
-  const res=madIngValidar(model);
+  const res=_madFechaPosterior(madIngValidar(model), model.fecha);   // punto 46
   res.avisos=res.avisos.concat(madIngAvisosOcupacion(model));
   const payload=buildMadIngresoPayload(model);
   // Con envíos guardados con 💾, una pantalla SIN filas no es un error: ☁️ envía lo guardado y lo de pantalla se queda.
@@ -11526,7 +11544,7 @@ function madMovAvisosOcupacion(model){
 function madMovRevisar(){
   _madMovAsegurarEnvio();   // los avisos de ocupación miran el ID: el mismo con el que se enviará
   const model=madMovCollect();
-  const res=madMovValidar(model);
+  const res=_madFechaPosterior(madMovValidar(model), model.fecha);   // punto 46
   res.avisos=res.avisos.concat(madMovAvisosOcupacion(model));
   _madMovPinta(res, madMovBuildRows(model).length);
   return _madRevisarRemata("mv-report", res, MAD_MOV_SHEET);
@@ -11627,7 +11645,7 @@ function _madMovAsegurarEnvio(){
 function _madMovPreparar(conGuardados){
   _madMovAsegurarEnvio();
   const model=madMovCollect();
-  const res=madMovValidar(model);
+  const res=_madFechaPosterior(madMovValidar(model), model.fecha);   // punto 46
   res.avisos=res.avisos.concat(madMovAvisosOcupacion(model));
   const payload=buildMadMovPayload(model);
   // Con envíos guardados con 💾, una pantalla SIN filas no es un error: ☁️ envía lo guardado y lo de pantalla se queda.
@@ -12458,7 +12476,7 @@ function _madDesPinta(res, filas){
 }
 function madDesRevisar(){
   const model=madDesCollect();
-  const res=madDesValidar(model);
+  const res=_madFechaPosterior(madDesValidar(model), model.fecha);   // punto 46 (la del desove; las de N2/N5 son futuras por naturaleza)
   _madDesPinta(res, madDesBuildRows(model).length);
   return _madRevisarRemata("md-report", res, MAD_DESOVE_SHEET);
 }
@@ -12536,7 +12554,7 @@ function madDesLogHTML(){
 /* PE1.4 · lo que 💾 y ☁️ comparten: recoger, revisar y construir. null si hay errores (ya los pintó y avisó). */
 function _madDesPreparar(conGuardados){
   const model=madDesCollect();
-  const res=madDesValidar(model);
+  const res=_madFechaPosterior(madDesValidar(model), model.fecha);   // punto 46 (la del desove; las de N2/N5 son futuras por naturaleza)
   const payload=buildMadDesovePayload(model);
   // Con envíos guardados con 💾, una pantalla SIN filas no es un error: ☁️ envía lo guardado y lo de pantalla se queda.
   if(conGuardados && !payload.rows.length) return { model:model, payload:payload };
@@ -13311,7 +13329,7 @@ function _madFinPinta(res, filas){
 }
 function madFinRevisar(){
   const model=madFinCollect();
-  const res=madFinValidar(model);
+  const res=_madFechaPosterior(madFinValidar(model), model.fecha);   // punto 46
   _madFinPinta(res, madFinBuildRows(model).length);
   return _madRevisarRemata("mf-report", res, MAD_FIN_SHEET);
 }
@@ -13420,7 +13438,7 @@ function _madFinNoEnviado(){
 function _madFinPreparar(conGuardados){
   _madFinAsegurarEnvio();   // pendiente 26 · el ID lleva la identidad del formulario
   const model=madFinCollect();
-  const res=madFinValidar(model);
+  const res=_madFechaPosterior(madFinValidar(model), model.fecha);   // punto 46
   const payload=buildMadFinPayload(model);
   // Con envíos guardados con 💾, una pantalla SIN filas no es un error: ☁️ envía lo guardado y lo de pantalla se queda.
   if(conGuardados && !payload.rows.length) return { model:model, payload:payload };
@@ -13719,7 +13737,7 @@ function _madTratPinta(res, filas){
 }
 function madTratRevisar(){
   const model=madTratCollect();
-  const res=madTratValidar(model);
+  const res=_madFechaPosterior(madTratValidar(model), model.fecha);   // punto 46
   _madTratPinta(res, madTratBuildRows(model).length);
   return _madRevisarRemata("mt-report", res, MAD_TRAT_SHEET);
 }
@@ -13820,7 +13838,7 @@ function _madTratNoEnviado(){
 function _madTratPreparar(conGuardados){
   _madTratAsegurarEnvio();   // pendiente 26 · el ID lleva la identidad del formulario
   const model=madTratCollect();
-  const res=madTratValidar(model);
+  const res=_madFechaPosterior(madTratValidar(model), model.fecha);   // punto 46
   const payload=buildMadTratPayload(model);
   // Con envíos guardados con 💾, una pantalla SIN filas no es un error: ☁️ envía lo guardado y lo de pantalla se queda.
   if(conGuardados && !payload.rows.length) return { model:model, payload:payload };
@@ -14232,7 +14250,7 @@ function _madMortPinta(res, filas){
 }
 function madMortRevisar(){
   const model=madMortCollect();
-  const res=madMortValidar(model);
+  const res=_madFechaPosterior(madMortValidar(model), model.fecha);   // punto 46
   _madMortPinta(res, madMortBuildRows(model).length);
   return _madRevisarRemata("mm-report", res, MAD_MORT_SHEET);
 }
@@ -14263,7 +14281,7 @@ function madMortLogHTML(){
 /* PE1.4 · lo que 💾 y ☁️ comparten: recoger, revisar y construir. null si hay errores (ya los pintó y avisó). */
 function _madMortPreparar(conGuardados){
   const model=madMortCollect();
-  const res=madMortValidar(model);
+  const res=_madFechaPosterior(madMortValidar(model), model.fecha);   // punto 46
   const payload=buildMadMortPayload(model);
   // Con envíos guardados con 💾, una pantalla SIN filas no es un error: ☁️ envía lo guardado y lo de pantalla se queda.
   if(conGuardados && !payload.rows.length) return { model:model, payload:payload };
@@ -14908,7 +14926,7 @@ function _madAlimPinta(res, filas){
   _madReporteVigila("fp-alimentacion", "ma-report");
 }
 function madAlimRevisar(){
-  const model=madAlimCollect(), res=madAlimValidar(model);
+  const model=madAlimCollect(), res=_madFechaPosterior(madAlimValidar(model), model.fecha);   // punto 46
   _madAlimPinta(res, madAlimBuildRows(model).length);
   return _madRevisarRemata("ma-report", res, MAD_ALIM_SHEET);
 }
@@ -14945,7 +14963,7 @@ function _madAlimAgendaEnviada(enviadas){
 }
 /* PE1.4 · lo que 💾 y ☁️ comparten: recoger, revisar y construir. null si hay errores (ya los pintó y avisó). */
 function _madAlimPreparar(conGuardados){
-  const model=madAlimCollect(), res=madAlimValidar(model), payload=buildMadAlimPayload(model);
+  const model=madAlimCollect(), res=_madFechaPosterior(madAlimValidar(model), model.fecha), payload=buildMadAlimPayload(model);   // punto 46
   // Con envíos guardados con 💾, una pantalla SIN filas no es un error: ☁️ envía lo guardado y lo de pantalla se queda.
   if(conGuardados && !payload.rows.length) return { model:model, payload:payload };
   _madAlimPinta(res, payload.rows.length);
@@ -18131,6 +18149,9 @@ function madTanquesFechaChange(){ _madGridFechaChange("tanques", renderMadTanque
 function _madGridFechaChange(ficha, pintar){
   // 2026-09-30 · una fecha ELEGIDA deja de ser la de la app (se respeta al día siguiente); elegir hoy la deja automática.
   const _el = document.getElementById("mad-" + ficha + "-fecha");
+  // 2026-11-14 (punto 46) · una fecha posterior a hoy no se elige: la grilla se queda en la suya y se dice (así nada se teclea bajo ella).
+  const _fut = _el ? _fechaPosterior(_el.value) : "";
+  if(_fut){ toast("⚠️ " + _fut.charAt(0).toUpperCase() + _fut.slice(1) + ": no se puede registrar.", "warn", 7000); _el.value = (_madRendered[ficha] && _madRendered[ficha].fecha) || today(); return; }
   const _autoAntes = _madGridFechaAuto[ficha];
   _madGridFechaAuto[ficha] = (_el && _el.value === today()) ? today() : null;
   const llevado = _madGridLlevar(ficha);
@@ -20231,6 +20252,9 @@ function bioVerSes(sid){
 // re-renderizar el día nuevo (antes el onchange llamaba a renderBiomol() directo
 // y descartaba lo tecleado/pegado sin guardar).
 function bioFechaChange(){
+  // 2026-11-14 (punto 46) · una fecha posterior a hoy no se elige (como en las grillas de Maduración).
+  const _el = document.getElementById("bio-grid-fecha"), _fut = _el ? _fechaPosterior(_el.value) : "";
+  if(_fut){ toast("⚠️ " + _fut.charAt(0).toUpperCase() + _fut.slice(1) + ": no se puede registrar.", "warn", 7000); _el.value = _bioRenderedFecha; return; }
   try{ saveBioGrid({ fecha:_bioRenderedFecha, sid:_bioSid, silent:true, noRender:true }); }catch(_){}
   _bioSid = null;                 // al cambiar de día se entra por su primer análisis
   renderBiomol();
@@ -21230,6 +21254,7 @@ let _astIdSinGuardar = null;
 function _persistAst(opts){
   const data = collectAst();
   if(!validateAst(data)) return null;
+  { const _fut = _fechaPosterior(data.fecha); if(_fut){ toast("⚠️ As Técnico: " + _fut + ". No se guardó ni se envió: corrígela.", "warn", 7000); return null; } }   // punto 46
   const editingId = _astEditing;
   const list = _astRaw();
 
@@ -22270,6 +22295,7 @@ function _scoreRegistrar(){
   const m = _scoreActual();
   const err = scoreValidar(m);
   if(err.length){ toast("⚠ " + err.join(" · "), "warn", 8000); return null; }
+  { const _fut = _fechaPosterior(m.fecha); if(_fut){ toast("⚠ " + _fut.charAt(0).toUpperCase() + _fut.slice(1) + ": no se guarda ni se envía.", "warn", 8000); return null; } }   // punto 46
   const id = _scoreEvalId(m);
   const raw0 = _scoreRaw();
   // A10 · La abierta (o ya guardada) cambió de fecha, módulo o corrida: ¿corrección u otra evaluación?
@@ -22911,6 +22937,8 @@ function _mntRegistrar(ronda){
   }
   const err = ronda ? mntValidarRonda(m) : mntValidarTrabajo(m);
   if(err.length){ toast("⚠ " + err.join(" · "), "warn", 8000); return null; }
+  // Punto 46 · aquí y no en mntValidar* (tienen su gemelo en el módulo). La PRÓXIMA parada es futura por naturaleza: no se mira.
+  { const _fut = _fechaPosterior(m.fecha); if(_fut){ toast("⚠ " + _fut.charAt(0).toUpperCase() + _fut.slice(1) + ": no se guarda ni se envía.", "warn", 8000); return null; } }
   const lista = mntHorometros(loadMntRondas(), loadMntTrabajos());
   const avisos = ronda ? mntAvisosRonda(lista, m) : mntAvisosTrabajo(lista, m);
   if(avisos.length && !confirm("El horómetro BAJA respecto a lo ya anotado en este dispositivo:\n\n" + avisos.join("\n")
@@ -23896,6 +23924,12 @@ function _audRegistrar(){
   const m = _audActual();
   const err = audValidar(m);
   if(err.length){ toast("⚠ " + err.join(" · "), "warn", 9000); return null; }
+  // Punto 46 · cada siembra, transferencia y cosecha es algo que YA pasó: con fecha posterior a hoy, no se guarda.
+  const _futAud = [];
+  [["siembras","Siembra"],["transferencias","Transferencia"],["cosechas","Cosecha"]].forEach(function(p){
+    (m[p[0]] || []).forEach(function(x, i){ const f = _fechaPosterior(x && x.fecha); if(f) _futAud.push(p[1] + " " + (i + 1) + ": " + f); });
+  });
+  if(_futAud.length){ toast("⚠ " + _futAud.join(" · ") + ": no se guarda ni se envía.", "warn", 9000); return null; }
   const id = _audEvalId(m);
   // A9 · Otra auditoría con esta llave: lo suyo no se pisa sin preguntar. Seguir con la misma no pregunta.
   const previa = _audOrigen === id ? null : _audRaw().find(function(r){ return r && r.id === id; });
@@ -26305,6 +26339,9 @@ function trasGuardarLocal(opts){
     if(!callado) toast("⚠ No se pudo guardar: "+errs[0]+".","warn",5000);
     return false;
   }
+  // Punto 46 · la fecha de entrega posterior a hoy no se guarda (ni se envía: ☁️ guarda antes). Se dice SIEMPRE, también desde quien llama
+  // en silencio (cambiar de viaje, abrir las fotos, ☁️): su aviso es genérico.
+  { const _fut = _fechaPosterior(data.fecha); if(_fut){ toast("⚠ No se pudo guardar: " + _fut.replace(/^la fecha/, "la fecha de entrega") + ".", "warn", 7000); return false; } }
   const list = _trasRaw();
   const id = _trasViajeActivo || trasNuevoViajeId();
   _trasUpsert(list, id, data);

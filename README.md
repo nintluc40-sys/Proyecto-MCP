@@ -1304,6 +1304,15 @@ sin avisar**:
   equivocada); si el borrador no se puede guardar, no crece. Lo que aun así no cabe —y en Biomol, Salas y Tanques, que no crecen
   solas: Biomol crece GUARDANDO— no se pega y un aviso dice cuántas filas o columnas quedaron fuera. Lo vigilan
   `pegar-grilla.test.js` y el banco `mutar-pegar-grilla`.
+- **Una fecha posterior a hoy no se guarda ni se envía** (2026-11-14). Sólo Laboratorio y el reproductivo la rechazaban; las
+  demás fichas la aceptaban, y un año mal tecleado dejaba los datos en un día que todavía no ha llegado. Ahora (usuario:
+  «Bloquear, como Laboratorio») la fecha principal de cada ficha —Larvicultura y 📝 Blanco, los siete formularios de
+  Maduración (también en «Revisar»), Algas, As Técnico, Score, Mantenimiento, Auditoría (cada siembra, transferencia y
+  cosecha) y Traslado— no puede ser posterior a hoy, el del dispositivo: no se guarda, no se envía y se dice por qué. En las
+  grillas de Salas, Tanques y Biomol no se puede elegir: la fecha vuelve a la que había. Quedan fuera las fechas futuras por
+  naturaleza (las predicciones de 🌊 Mareas, N2/N5 de Desoves, la próxima parada de Mantenimiento) y la corrección de un
+  desove ya enviado, cuya fecha no se edita. La regla es `_fechaPosterior`; la vigilan `fecha-futura.test.js` y el banco
+  `mutar-fecha-futura`.
 - **Larvicultura y Lab. Algas: lo de días anteriores.** Se guardan por día y la app lee los de hoy, así que lo no
   enviado dejaba de verse a medianoche y la limpieza lo borraba. Ahora la limpieza no lo toca y, al abrir el módulo,
   un aviso dice qué quedó y de qué día, con **«☁️ Enviarlas»** (cada ficha a su hoja con SU fecha: las de Datos de un
