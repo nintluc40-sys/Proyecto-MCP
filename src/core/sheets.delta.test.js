@@ -18,6 +18,7 @@ import { join } from 'node:path';
 import {
   XLSX_LECTURA, workbookToSheets, dataFingerprint, huellasPorHoja, huellaDe, planDelta, fundirDelta,
   descargarLibro, aplicarDescarga, setLectorLibro, lecturaEnSegundoPlano, getLastFingerprint, SIN_DATOS_DE_GOOGLE,
+  SIN_PERMISO_DE_GOOGLE,
 } from './sheets.js';
 import { atenderLectura, responder, atender, LATIDO_MS } from './sheets.worker.js';
 import { store } from './store.js';
@@ -205,10 +206,39 @@ describe('descargarLibro', () => {
     expect(pedidas).toEqual([]);
   });
 
-  it('A1: leyendo aquí (sin Worker), si no llega nada, el mismo aviso y no un libro vacío', async () => {
-    servir = null; // Google no contesta nada: ni el libro, ni las pestañas, ni las hojas
-    await expect(descargarLibro()).rejects.toThrow(SIN_DATOS_DE_GOOGLE);
+  /* Punto 22 (pauta del 12-11, usuario: «Distinguir: ¿responde Google?») · el navegador no deja ver un 401/403 de Google
+     (llega sin la cabecera CORS), así que «sin permiso» se veía como «¿sin conexión?». Cuando no llega NADA, una consulta
+     ligera (`no-cors`) dice si Google responde: si sí, el libro no se deja leer; si no, es la conexión. */
+  it('A1 + punto 22: leyendo aquí (sin Worker), si Google RESPONDE pero no da nada, «no deja leer el libro», no un libro vacío', async () => {
+    servir = null; // Google contesta 404 a todo: el libro, las pestañas, las hojas
+    await expect(descargarLibro()).rejects.toThrow(SIN_PERMISO_DE_GOOGLE);
     expect(pedidas.some((u) => /export\?format=xlsx/.test(u))).toBe(true);   // sí lo intentó aquí
+    expect(SIN_PERMISO_DE_GOOGLE).toBe('Google no deja leer el libro: ¿cambió quién puede verlo?');
+    expect(SIN_PERMISO_DE_GOOGLE.length, 'cabe entero en la píldora (recorta a 57)').toBeLessThanOrEqual(57);
+  });
+  it('🔴 punto 22: sin red de verdad (la petición falla), «¿sin conexión?»', async () => {
+    const antes = globalThis.fetch;
+    globalThis.fetch = async (url) => { pedidas.push(String(url)); throw new TypeError('Failed to fetch'); };
+    try { await expect(descargarLibro()).rejects.toThrow(SIN_DATOS_DE_GOOGLE); } finally { globalThis.fetch = antes; }
+  });
+  it('🔴 punto 22: con el equipo sin red (navigator.onLine), «¿sin conexión?» y ni se pregunta a Google', async () => {
+    servir = null;
+    const enLinea = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    try {
+      await expect(descargarLibro()).rejects.toThrow(SIN_DATOS_DE_GOOGLE);
+      expect(pedidas.some((u) => /favicon/.test(u)), 'sin red no hay consulta').toBe(false);
+    } finally { enLinea.mockRestore(); }
+  });
+  it('🔴 punto 22: si el Worker dice «sin-permiso», la página lo dice tal cual y NO repite nada', async () => {
+    try {
+      for (const conectado of [false, true]) {
+        store.connected = conectado;
+        pedidas.length = 0;
+        setLectorLibro(lector({ ok: false, motivo: 'sin-permiso' }));
+        await expect(descargarLibro()).rejects.toThrow(SIN_PERMISO_DE_GOOGLE);
+        expect(pedidas).toEqual([]);
+      }
+    } finally { setLectorLibro(null); }   // el bloque de abajo no lo suelta: sin esto, su lectura recibe «sin-permiso»
   });
 });
 
@@ -281,11 +311,16 @@ describe('Worker · atenderLectura', () => {
     expect(huellaDe(r.huellas, r.orden)).toBe(aqui.fp);
   });
 
-  it('sin SheetJS: «sin-xlsx»; si no llega nada por ningún camino: «sin-datos» (A1)', async () => {
+  it('sin SheetJS: «sin-xlsx»; si no llega nada por ningún camino: «sin-permiso» si Google responde, «sin-datos» si no (A1, punto 22)', async () => {
     const roto = { cargarXLSX: () => { throw new Error('404'); }, obtenerXLSX: () => null };
     expect(await atenderLectura({ id: 4, realId: 'X' }, roto)).toMatchObject({ id: 4, ok: false, motivo: 'sin-xlsx' });
     servir = null; // 404 → reintenta (pausas de 0,6 y 1,2 s), el respaldo tampoco trae nada, y se rinde
-    expect(await atenderLectura({ id: 5, realId: 'X' }, entorno())).toMatchObject({ id: 5, ok: false, motivo: 'sin-datos' });
+    expect(await atenderLectura({ id: 5, realId: 'X' }, entorno())).toMatchObject({ id: 5, ok: false, motivo: 'sin-permiso' });
+    const antes = globalThis.fetch;
+    globalThis.fetch = async () => { throw new TypeError('Failed to fetch'); };   // sin red de verdad
+    try {
+      expect(await atenderLectura({ id: 6, realId: 'X' }, entorno())).toMatchObject({ id: 6, ok: false, motivo: 'sin-datos' });
+    } finally { globalThis.fetch = antes; }
   });
 
   it('A1: mientras atiende, el Worker LATE cada LATIDO_MS; tras la respuesta, ya no', async () => {
@@ -306,7 +341,7 @@ describe('Worker · atenderLectura', () => {
       for (let i = 0; i < 60 && !fin; i++) await vi.advanceTimersByTimeAsync(1000);
       await hecho;
       const tras = enviados.length;
-      expect(enviados.at(-1)).toMatchObject({ id: 9, ok: false, motivo: 'sin-datos' });   // la respuesta final
+      expect(enviados.at(-1)).toMatchObject({ id: 9, ok: false, motivo: 'sin-permiso' });   // la respuesta final (403: responde, punto 22)
       await vi.advanceTimersByTimeAsync(LATIDO_MS * 3);
       expect(enviados.length).toBe(tras);                                                // y ningún latido después
     } finally { vi.useRealTimers(); globalThis.fetch = fetchAntes; }

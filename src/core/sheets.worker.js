@@ -27,7 +27,7 @@
      ← { id, ok: true, orden, huellas, completo, faltantes?, pestanas? }   al final; el lector junta las hojas en `cambiadas`
                                                         (`completo`: A4; `faltantes`, si no llegó completo: los nombres de las
                                                         que no llegaron, o null; `pestanas`, si leyó por CSV: para recordarlas)
-     ← { id, ok: false, motivo: 'sin-xlsx' | 'xlsx' | 'sin-datos', error }
+     ← { id, ok: false, motivo: 'sin-xlsx' | 'xlsx' | 'sin-datos' | 'sin-permiso', error }   (sin-permiso: punto 22)
 
    A1 (2026-10-07, usuario) · el lector ya no corta el Worker a los 165 s pase lo que pase, sino cuando lleva
    SILENCIO_MS sin oír nada de él: mientras atiende, el Worker late (`atender`), así que sólo calla si se queda trabado
@@ -42,7 +42,7 @@
    en uno solo eran ~600 ms seguidos en escritorio (×4 en un celular) sin que la pantalla respondiera, más lo que venía
    detrás en la misma tarea. Un mensaje por hoja reparte ese trabajo en tareas cortas (la mayor, la hoja más grande).
    ============================================================ */
-import { fetchXlsxSheets, respaldoPorHojas, hojasPorCsv, planDelta, huellaDe } from './sheets.js';
+import { fetchXlsxSheets, respaldoPorHojas, hojasPorCsv, planDelta, huellaDe, googleResponde, SIN_PERMISO_DE_GOOGLE } from './sheets.js';
 import { guardarLibro, almacenIDB } from './libroGuardado.js';
 
 /** Atiende una petición. `entorno` da cómo cargar SheetJS y cómo obtenerlo (en el Worker:
@@ -88,15 +88,21 @@ export async function atenderLectura(m, entorno) {
       const r = await respaldoPorHojas(ids, obtenerXLSX, avisar, recordadas, m.previas || {});
       if (Object.keys(r.sheets).length) {
         sheets = r.sheets;
-        guardable = !r.porCsv && !r.perdidas && !r.sinPestanas;
-        completo = !r.perdidas && !r.sinPestanas;
+        // punto 22: con la lista de pestañas RECORDADA (sin confirmar), ni completo ni se guarda
+        guardable = !r.porCsv && !r.perdidas && !r.sinPestanas && !r.listaSinConfirmar;
+        completo = !r.perdidas && !r.sinPestanas && !r.listaSinConfirmar;
         faltantes = r.sinPestanas ? null : r.faltantes;
       }
     }
     // 4.2-B: sin libro ni respaldo, lo que llegó por CSV (incompleto: isDegraded no lo deja pisar un set mayor)
     if (!sheets && porCsv && Object.keys(porCsv.sheets).length) { sheets = porCsv.sheets; guardable = false; completo = false; faltantes = porCsv.faltantes; }
-    // A1: ni el libro ni ninguna hoja del respaldo (red caída o sin acceso): repetirlo en la página no traería nada
-    if (!sheets) return { id, ok: false, motivo: 'sin-datos', error: 'No llegó ningún dato de Google.' };
+    // A1: ni el libro ni ninguna hoja del respaldo (red caída o sin acceso): repetirlo en la página no traería nada.
+    // Punto 22 (pauta del 12-11, usuario: «Distinguir: ¿responde Google?») · si Google responde, es que no deja leer el libro.
+    if (!sheets) {
+      return (await googleResponde())
+        ? { id, ok: false, motivo: 'sin-permiso', error: SIN_PERMISO_DE_GOOGLE }
+        : { id, ok: false, motivo: 'sin-datos', error: 'No llegó ningún dato de Google.' };
+    }
     const d = planDelta(m.previas || {}, sheets);
     if (entorno.guardar && guardable) {
       const libro = { sheets, huellas: d.huellas, orden: d.orden, fp: huellaDe(d.huellas, d.orden), t: Date.now() };

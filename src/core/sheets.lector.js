@@ -88,7 +88,7 @@ function vigilar(id, q) {
 }
 
 /** Lee el libro en el Worker. Nunca rechaza: resuelve { ok: true, orden, huellas, cambiadas, pestanas } o
- *  { ok: false, motivo: 'no-arranca' | 'sin-xlsx' | 'xlsx' | 'sin-datos' | 'caido' | 'tiempo' }. Con `alAvanzar` (la
+ *  { ok: false, motivo: 'no-arranca' | 'sin-xlsx' | 'xlsx' | 'sin-datos' | 'sin-permiso' | 'caido' | 'tiempo' }. Con `alAvanzar` (la
  *  primera carga, punto 7), el Worker avisa de cómo va la descarga y de cuándo empieza a leer. `pestanas` (carga lenta D,
  *  2026-10-19): la lista que recuerda la página, de ida; la que usó el Worker, de vuelta. */
 export function leerEnWorker({ realId, previas, alAvanzar, pestanas }) {

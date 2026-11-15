@@ -247,7 +247,9 @@ describe('hojasPorCsv · carga lenta D: la lista de pestañas recordada', () => 
     expect(await hojasPorCsv(ids, xlsx), 'control: sin lista').toBe(null);
     const r = await hojasPorCsv(ids, xlsx, null, {}, RECORDADAS);
     expect(Object.keys(r.sheets)).toEqual([H1, H2]);
-    expect(r.completo).toBe(true);
+    // Punto 22 (pauta del 12-11, usuario: «Comprobar con el libro entero») · antes `true`: la lista recordada no confirma
+    // que no haya otra pestaña; lo leído vale, pero quien llama baja el libro entero (ver «punto 22» abajo).
+    expect(r.completo).toBe(false);
   });
 
   it('🔴 un gid que /htmlview trae SIN nombre lo rescata la lista recordada (antes: null → el libro entero)', async () => {
@@ -359,6 +361,59 @@ describe('pauta 17 (2026-10-22) · SIN Worker, la página también lee PRIMERO p
       expect(d.faltantes, 'punto 3: el último recurso dice cuál no llegó por el CSV').toEqual([H2]);
       expect(libroPedido()).toBe(true);
     } finally { globalThis.fetch = base; }
+  });
+});
+
+/* Punto 22 (pauta del 12-11, usuario: «Comprobar con el libro entero») · con /htmlview (y /pub) caídos, la lectura iba con
+   la lista de pestañas RECORDADA y se daba por completa: una pestaña NUEVA del libro no se leía y, con `completo`, lo que no
+   viniera se aplicaba como «vacía o borrada». Ahora una lista sin confirmar no da la lectura por completa: se baja el libro
+   entero, que trae todas las pestañas. */
+describe('punto 22 · con /htmlview caído, la lista recordada no da la lectura por completa', () => {
+  const H3 = 'Hoja nueva';
+  const libroDe = (hojas) => {
+    const X = window.XLSX, wb = X.utils.book_new();
+    for (const [nombre, aoa] of hojas) X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(aoa), nombre);
+    return X.write(wb, { type: 'array', bookType: 'xlsx' });
+  };
+  const libroPedido = () => pedidas.some((u) => /export\?format=xlsx/.test(u) && !/gid=/.test(u));
+  const RECORDADAS = [{ gid: 1111, title: H1 }, { gid: 2222, title: H2 }];
+  const conLaNueva = () => libroDe([[H1, [['Fecha', 'Tanque'], ['01/09/2026', 'TQ 1']]], [H2, [['Fecha', 'OD'], ['01/09/2026', 5]]], [H3, [['Fecha', 'X'], ['01/09/2026', 1]]]]);
+
+  it('🔴 hojasPorCsv: con la lista recordada (sin confirmar), NO completo, aunque lleguen todas las que recuerda', async () => {
+    html = null;                                             // ni /htmlview ni /pub (404) dan la lista
+    const r = await hojasPorCsv(ids, xlsx, null, {}, RECORDADAS);
+    expect(Object.keys(r.sheets)).toEqual([H1, H2]);         // lee lo que recuerda…
+    expect(r.completo).toBe(false);                          // …pero no puede saber si hay otra
+    expect(r.faltantes, 'no falta ninguna de las que sabe').toEqual([]);
+  });
+  it('control: con /htmlview, la misma lectura SÍ es completa', async () => {
+    const r = await hojasPorCsv(ids, xlsx, null, {}, RECORDADAS);
+    expect(r.completo).toBe(true);
+  });
+  it('🔴 Worker: con /htmlview caído, baja el libro entero y la pestaña NUEVA aparece (completo)', async () => {
+    html = null;
+    libroEntero = conLaNueva();
+    const r = await atenderLectura({ id: 22, realId: 'X', previas: {}, pestanas: RECORDADAS }, { cargarXLSX: vi.fn(), obtenerXLSX: () => window.XLSX, guardar: vi.fn(async () => {}) });
+    expect(libroPedido()).toBe(true);
+    expect(r).toMatchObject({ id: 22, ok: true, completo: true });
+    expect(r.orden).toEqual([H1, H2, H3]);
+  });
+  it('🔴 la página (sin Worker): lo mismo, con la lista que recuerda', async () => {
+    html = null;
+    libroEntero = conLaNueva();
+    const { realId } = parseSheetsIds(SHEETS_URL);
+    localStorage.setItem('larv4_sheet_tabs', JSON.stringify({ [realId]: RECORDADAS }));
+    const d = await descargarLibro();
+    expect(libroPedido()).toBe(true);
+    expect(d.completo).toBe(true);
+    expect(Object.keys(d.sheets)).toEqual([H1, H2, H3]);
+  });
+  it('si el libro entero tampoco llega, se usa lo leído, pero INCOMPLETO (no autoriza a borrar nada)', async () => {
+    html = null;
+    xlsxPorGid = {};                                         // ni el libro ni el respaldo por XLSX
+    const r = await atenderLectura({ id: 23, realId: 'X', previas: {}, pestanas: RECORDADAS }, { cargarXLSX: vi.fn(), obtenerXLSX: () => window.XLSX, guardar: vi.fn(async () => {}) });
+    expect(r.ok).toBe(true);
+    expect(r.completo).toBe(false);
   });
 });
 

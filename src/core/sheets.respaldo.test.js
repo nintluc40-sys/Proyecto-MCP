@@ -20,7 +20,8 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fetchAllSheets, workbookToSheets, XLSX_LECTURA, textoProgreso, setLectorLibro, descargarLibro } from './sheets.js';
+import { fetchAllSheets, workbookToSheets, XLSX_LECTURA, textoProgreso, setLectorLibro, descargarLibro, parseSheetsIds } from './sheets.js';
+import { SHEETS_URL } from '../config.js';
 import { atenderLectura } from './sheets.worker.js';
 import { parseNum } from './fields.js';
 
@@ -228,16 +229,22 @@ describe('en el Worker: el respaldo se hace allí, no en la página', () => {
 
   it('carga lenta D (2026-10-19) · con /htmlview caído y la lista que recuerda la página, el respaldo lee TODAS sus pestañas', async () => {
     htmlCae = true;
-    const r = await atenderLectura({ id: 8, realId: 'X', previas: {}, pestanas: [{ gid: 1111, title: H1 }, { gid: 2222, title: H2 }] }, entorno());
-    expect(r).toMatchObject({ id: 8, ok: true, completo: true });
+    const e = entorno();
+    const r = await atenderLectura({ id: 8, realId: 'X', previas: {}, pestanas: [{ gid: 1111, title: H1 }, { gid: 2222, title: H2 }] }, e);
+    // Punto 22 (pauta del 12-11, usuario: «Comprobar con el libro entero») · antes `completo: true`: una lista RECORDADA no
+    // dice si hay una pestaña nueva, así que no autoriza a dar por vacía o borrada una hoja que no venga, ni a guardar el libro.
+    expect(r).toMatchObject({ id: 8, ok: true, completo: false });
     expect(r.orden).toEqual([H1, H2]);
     expect(r.cambiadas[H1]).toHaveLength(3);                 // por su XLSX, entera
+    expect(r.faltantes, 'de las que sabe, no falta ninguna').toEqual([]);
+    await tic();
+    expect(e.guardar).not.toHaveBeenCalled();
   });
 
-  it('si no llega ninguna hoja: «sin-datos» (A1, 2026-10-07: la página ya no lo repite)', async () => {
+  it('si no llega ninguna hoja: «sin-permiso» si Google contesta (aquí, 404 a todo), no «sin-datos» (A1; punto 22)', async () => {
     xlsxPorGid = { 1111: 404, 2222: 404 };
     gvizCae = true;
-    expect(await atenderLectura({ id: 4, realId: 'X', previas: {} }, entorno())).toMatchObject({ id: 4, ok: false, motivo: 'sin-datos' });
+    expect(await atenderLectura({ id: 4, realId: 'X', previas: {} }, entorno())).toMatchObject({ id: 4, ok: false, motivo: 'sin-permiso' });
   });
 
   it('A1: en la primera carga, el aviso del respaldo cuenta las hojas que terminan (también las que fallan)', async () => {
@@ -279,6 +286,20 @@ describe('B4 (2026-10-22) · el CSV del respaldo es el de EXPORTACIÓN, y gviz n
     expect(s[H1]).toEqual(libro[H1]);                        // 3 filas; «85,5» → '85.5', como el XLSX
     expect(s[H1][0].Supervivencia).toBe('85.5');
     expect(gvizDe(1111)).toEqual([]);
+  });
+
+  it('🔴 punto 22 · la página, con /htmlview caído y la lista que recuerda: lee todas, pero NO completo', async () => {
+    htmlCae = true;
+    const { realId } = parseSheetsIds(SHEETS_URL);
+    localStorage.setItem('larv4_sheet_tabs', JSON.stringify({ [realId]: [{ gid: 1111, title: H1 }, { gid: 2222, title: H2 }] }));
+    const s = await respaldoDeLaPagina();
+    expect(Object.keys(s)).toEqual([H1, H2]);
+    expect(ultima.completo, 'la lista recordada no confirma que no haya otra pestaña').toBe(false);
+    expect(ultima.faltantes).toEqual([]);
+    localStorage.clear();
+    htmlCae = false;
+    await respaldoDeLaPagina();
+    expect(ultima.completo, 'control: con /htmlview, completo').toBe(true);
   });
 
   it('si el CSV de exportación viene en otro formato regional (en-US), no se usa: la hoja falta', async () => {

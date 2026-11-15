@@ -524,7 +524,11 @@ export async function discoverGids(ids, recordadas = null) {
   // con cadenas vacías, y a partir de ahí ni la caché podía rescatarlas. La caché se
   // degradaba sola, y el único síntoma habría sido el tablero vacío.
   if (list.length) { if (docId) cacheTabs(docId, list); return list; }
-  return memoria;
+  /* Punto 22 (pauta del 12-11, usuario: «Comprobar con el libro entero») · ni /htmlview ni /pub dieron la lista: la
+     RECORDADA no sabe de una pestaña nueva, así que va marcada (`sinConfirmar`) y no puede dar una lectura por completa
+     (hojasPorCsv, respaldoPorHojas). Antes se daba por buena: la nueva no se leía y lo que no viniera se aplicaba como
+     «vacía o borrada». (Se marca la misma lista: la de cachedTabs es nueva en cada llamada y la del Worker, una copia.) */
+  return Object.defineProperty(memoria, 'sinConfirmar', { value: true });
 }
 
 /** 2026-10-01 (usuario) · EL RESPALDO LEE CADA HOJA POR SU XLSX, NO POR gviz. Con un FILTRO puesto en la hoja
@@ -614,7 +618,8 @@ export async function respaldoPorHojas(ids, obtenerXLSX = getXLSX, avisar = null
   });
   // Punto 3 · las que no llegaron, en el orden de las pestañas (sin pestañas conocidas, no se sabe: sinPestanas)
   const faltantes = targets.filter((t) => perdidaDe.has(t)).map((t) => perdidaDe.get(t));
-  return { sheets, porCsv, perdidas, sinPestanas: !discovered.length, faltantes };
+  // punto 22: con la lista RECORDADA (sin confirmar), aunque lleguen todas sus pestañas no se sabe si hay otra
+  return { sheets, porCsv, perdidas, sinPestanas: !discovered.length, listaSinConfirmar: !!discovered.sinConfirmar, faltantes };
 }
 
 /* ---------- B · cada hoja por su CSV de EXPORTACIÓN (2026-10-11, usuario, punto 4.2-B) ----------
@@ -747,15 +752,16 @@ export async function hojasPorCsv(ids, obtenerXLSX = getXLSX, avisar = null, pre
   // Punto 3 (pauta del 12-11, usuario: «Avisar hasta que llegue completo») · CUÁLES no llegaron, en el orden de las
   // pestañas, para que la píldora y el aviso las nombren. Una hoja vacía sí llegó (trae { filas: [] }): no está aquí.
   const faltantes = pestanas.filter((_, i) => !leidas[i]).map((p) => p.title);
-  return { sheets, completo: !perdidas, porXlsx, pestanas, faltantes };
+  // Punto 22 · con la lista recordada (sin confirmar) no es completa: quien llama baja el libro entero, que las trae todas
+  return { sheets, completo: !perdidas && !pestanas.sinConfirmar, porXlsx, pestanas, faltantes };
 }
 
 /** El respaldo leído aquí: { sheets, completo } (A4, 2026-10-11: `completo` = llegaron TODAS sus pestañas). B4: con las
  *  huellas aplicadas, para que una hoja recortada por gviz no pise la buena. */
 async function fetchViaCsv(ids, avisar = null) {
   const r = await respaldoPorHojas(ids, getXLSX, avisar, null, _huellasAplicadas);
-  // punto 3: las que no llegaron; null si no se sabe qué pestañas hay
-  return { sheets: r.sheets, completo: !r.perdidas && !r.sinPestanas, faltantes: r.sinPestanas ? null : r.faltantes };
+  // punto 3: las que no llegaron; null si no se sabe qué pestañas hay. Punto 22: con la lista sin confirmar, no completo.
+  return { sheets: r.sheets, completo: !r.perdidas && !r.sinPestanas && !r.listaSinConfirmar, faltantes: r.sinPestanas ? null : r.faltantes };
 }
 
 // ---------- pipeline público ----------
@@ -964,8 +970,20 @@ export function lecturaEnSegundoPlano() {
   return !!_lector && _lector.disponible();
 }
 
-/** A1: el aviso cuando no llegó NADA (ni el libro ni ninguna hoja): la culpa es de la conexión, no de las hojas. */
+/** A1: el aviso cuando no llegó NADA (ni el libro ni ninguna hoja) y Google no responde: la culpa es de la conexión. */
 export const SIN_DATOS_DE_GOOGLE = 'No llegó ningún dato de Google (¿sin conexión?).';
+/** Punto 22 (pauta del 12-11, usuario: «Distinguir: ¿responde Google?») · no llegó NADA pero Google responde: el libro no
+ *  se deja leer (lo normal: dejó de estar compartido por enlace). Antes se decía «¿sin conexión?» también en este caso.
+ *  Corto a propósito: la píldora recorta los errores a 57 caracteres y la pregunta, que dice qué revisar, va al final. */
+export const SIN_PERMISO_DE_GOOGLE = 'Google no deja leer el libro: ¿cambió quién puede verlo?';
+/** Punto 22 · ¿responde Google? Sólo se pregunta cuando no llegó nada. Un 401/403 de Google llega SIN la cabecera CORS y
+ *  el navegador lo esconde: se ve igual que la red caída. Una petición `no-cors` sí distingue: con red, se resuelve con lo
+ *  que conteste (aunque sea un error); sin red, falla. Sin red en el equipo (`navigator.onLine`), ni se pregunta. */
+export async function googleResponde() {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+  try { await fetchWithTimeout('https://docs.google.com/favicon.ico', { mode: 'no-cors', cache: 'no-store' }, 8000); return true; }
+  catch (_) { return false; }
+}
 
 /** Descarga el libro y devuelve { sheets, huellas, fp } con el set COMPLETO. Con el Worker, sólo
  *  viajan las hojas que cambiaron. Si el Worker no puede leer el XLSX, el CSV de siempre; si el
@@ -989,14 +1007,15 @@ export async function descargarLibro({ alAvanzar } = {}) {
        SILENCIO_MS (trabado), la página tampoco lo conseguiría y, en la primera carga, volvía a empezar toda la cadena
        (7–17 min con la red colgada). Sólo se lee aquí si el Worker no arrancó, o se cayó en la primera carga. */
     if (r.motivo === 'sin-datos') throw new Error(SIN_DATOS_DE_GOOGLE);
+    if (r.motivo === 'sin-permiso') throw new Error(SIN_PERMISO_DE_GOOGLE);   // punto 22: el Worker ya preguntó
     if (r.motivo === 'tiempo' || (r.motivo === 'caido' && store.connected)) {
       throw new Error('No se pudo leer el libro en segundo plano.');
     }
     if (r.motivo === 'xlsx') ({ sheets, completo, faltantes } = await fetchViaCsv(ids, alAvanzar));
   }
   if (!sheets) ({ sheets, completo, faltantes } = await leerTodoAqui(alAvanzar));
-  // Nada por ningún camino (sin Worker o tras su fallo): lo mismo que «sin-datos», no «Sin datos en las hojas.»
-  if (!Object.keys(sheets).length) throw new Error(SIN_DATOS_DE_GOOGLE);
+  // Nada por ningún camino (sin Worker o tras su fallo): lo mismo que «sin-datos» / «sin-permiso», no «Sin datos en las hojas.»
+  if (!Object.keys(sheets).length) throw new Error((await googleResponde()) ? SIN_PERMISO_DE_GOOGLE : SIN_DATOS_DE_GOOGLE);
   return descargaCompleta(sheets, completo, faltantes);
 }
 
