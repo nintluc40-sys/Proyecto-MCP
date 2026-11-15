@@ -142,8 +142,8 @@ let selMonthIdx = null; // ÍNDICE de mes seleccionado (valor real, persistente 
 // Contexto con la ventana de fecha neutralizada, memoizado por IDENTIDAD del ctx.
 // El memo de `modStats` (stats.js) se indexa por esa identidad, así que derivar un objeto
 // NUEVO en cada montaje estrenaba bucket y recalculaba las 12 tarjetas enteras cada vez
-// que se volvía de un módulo a la landing — medido, 195 ms con 16.272 filas (40 ms con
-// 3.600). `buildContext` ya devuelve el mismo ctx mientras no cambien datos, corrida ni
+// que se volvía de un módulo a la landing — medido, 195 ms con el libro de producción entero (40 ms con
+// uno pequeño). `buildContext` ya devuelve el mismo ctx mientras no cambien datos, corrida ni
 // filtro de fecha, de modo que la clave es segura y el WeakMap se recolecta solo.
 // Exportado solo para el test de regresión de la identidad (execPerf.test.js): su
 // consumidor real es `mountMonthPanel`, aquí mismo.

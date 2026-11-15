@@ -183,7 +183,7 @@ export const PATHOGEN_AGAR = {
 const colVariants = (base, suffix) => [`${base} ${suffix}`, `${base}${suffix}`, `${base} ${suffix}`.toLowerCase(), `${base}${suffix}`.toLowerCase()];
 const basesOf = (p) => [p.base, ...(p.altBases || [])];
 /* H-004 (auditoría 2026-09-25, aprobado 2026-10-03) · las listas de cabeceras de un patógeno son SIEMPRE las mismas, y
-   meltRow las fabricaba de nuevo por cada fila y patógeno (16 × 3 por fila): medido sobre la hoja real (6 850 filas),
+   meltRow las fabricaba de nuevo por cada fila y patógeno (todas las variantes de cada patógeno, en cada fila): medido sobre la hoja real entera,
    meltRow pasó de 829 a 113 ms. Se calculan una vez por patógeno; WeakMap, para que no crezca con otros objetos. */
 const porPatogeno = (f) => { const m = new WeakMap(); return (p) => { if (!m.has(p)) m.set(p, f(p)); return m.get(p); }; };
 const crudoCols = porPatogeno((p) => basesOf(p).flatMap((b) => colVariants(b, '(crudo)').concat(colVariants(b, ' (crudo)'))));
@@ -291,10 +291,10 @@ export function classifyFormato(raw) {
   // "Larvicultura · Despacho" — el gemelo de la línea de arriba, y por el mismo motivo:
   // sin esta regla caía en la genérica de "despacho" → 'hisopados-despacho' → umbrales
   // AMBIENTALES (los de un hisopado de superficie) sobre muestras de agua/animal.
-  // Medido sobre las 84 filas reales: el Nivel recalculado contradecía en un 65 % (285 de
-  // 441 registros) al que escribió la app de captura en la propia hoja, y siempre
-  // escalando (C. Verdes 40 UFC: hoja «Mínimo» → tablero «Moderado»). Con las áreas
-  // larvdes-* la coincidencia es 441/441. En los otros 12 formatos ya era 100 %.
+  // Medido sobre las filas reales: el Nivel recalculado contradecía en la mayoría de los
+  // registros al que escribió la app de captura en la propia hoja, y siempre
+  // escalando (un conteo bajo de C. Verdes: hoja «Mínimo» → tablero «Moderado»). Con las áreas
+  // larvdes-* coinciden todos. En los demás formatos ya coincidían todos.
   if (k.includes('larvicultura') && k.includes('despacho')) return 'larv-despacho';
   // «Maduración · Hisopado» ANTES de la regla genérica de "hisopado": sin ella acababa en
   // 'hisopados' (departamento «Otros», umbrales `ambiental`), cuando la ficha le da área
@@ -417,9 +417,9 @@ const MIC_DR_BASE = {
   },
   // Maduración · DESPACHO. Se llamaba 'mad-agua', y ese nombre era una trampa: el editor
   // ⚙️ Rangos lo ofrecía como «Maduración · Agua» cuando en realidad gobierna las muestras
-  // de Despacho (medido: 452 filas frente a 24 de Maduración · Agua, que iban por
+  // de Despacho (medido: la gran mayoría de las filas, frente a unas pocas de Maduración · Agua, que iban por
   // 'larv-agua'). Quien bajara un umbral en «Maduración · Agua» no tocaba ni una muestra de
-  // Maduración · Agua y retocaba las 452 de Despacho. En la ficha son `mad-despacho-agua` y
+  // Maduración · Agua y retocaba todas las de Despacho. En la ficha son `mad-despacho-agua` y
   // `mad-despacho-animal`, hoy idénticas entre sí, por eso aquí basta una.
   'mad-despacho': {
     vamar: { l: 100, m: 500, e: 1000 }, vverd: { l: 50, m: 100, e: 200 }, vtot: { l: 100, m: 500, e: 1000 },
@@ -608,9 +608,9 @@ function micLvlCode(ufc, r) {
 
 /* ── R7 (usuario, 2026-09-16) · EL ANALISTA, EN UNA SOLA GRAFÍA ──────────────────────
    El campo de captura es texto LIBRE (su datalist sólo sugiere), y la misma persona acabó escrita
-   de dos formas: medido en «Calidad de Agua», «Ramirez» 512 filas contra «Ramírez» 191, y
-   «Macias» 323 contra «Macías» 212. El 63 % usaba la grafía sin tilde. Así, cualquier recuento por
-   analista partía a la persona en dos y el PDF de la placa llegaba a firmar «Macías · Macias».
+   de dos formas: medido en «Calidad de Agua», dos apellidos repartidos entre la grafía con tilde y
+   la sin tilde, la mayoría sin ella. Así, cualquier recuento por analista partía a la persona en dos
+   y el PDF de la placa llegaba a firmar dos veces a la misma persona, con y sin tilde.
 
    🔑 DECISIÓN DEL USUARIO: la forma correcta es CON TILDE. Desde el 2026-09-16 la captura ya
    guarda así (`micAnalistaCanon` en el monolito), pero eso sólo alcanza a lo NUEVO: las filas que

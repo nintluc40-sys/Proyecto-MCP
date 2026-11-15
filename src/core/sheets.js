@@ -118,7 +118,7 @@ export function detectSheetName(rows, gid, rawTitle) {
   if (has((k) => k.includes('luminiscent')) || has((k) => k.includes('v.totales') || k.includes('v.amarillos'))) return 'Microbiología';
   // Registro reproductivo (MATRIZ / Bitácora / Transferencias). El «Trovan ID» es su
   // firma y NO aparece en ninguna otra hoja del documento (medido el 2026-08-31 sobre
-  // las cabeceras reales de las 35 pestañas: sólo lo llevan estas). Sin esta rama las
+  // las cabeceras reales de todas las pestañas: sólo lo llevan estas). Sin esta rama las
   // tres caían al final y salían como "Hoja<N>", con lo que MAD_MATRIZ_ORIGIN y sus
   // hermanas no casaban y la vista de Maduración se quedaba VACÍA — el mismo fallo
   // silencioso que tenía Patología, y por la misma razón: ninguna firma por columnas.
@@ -133,7 +133,7 @@ export function detectSheetName(rows, gid, rawTitle) {
   // ⚠ Son DOS `has` independientes a propósito. Hasta el 2026-09-01 esto pedía que UNA
   //   MISMA cabecera contuviera «sala» Y «machos|hembras|nauplio», y en las hojas reales
   //   son columnas SEPARADAS («Sala» por un lado, «Total de nauplios» por otro): la
-  //   condición no podía cumplirse NUNCA. Medido, casaba 0 de 35 pestañas, y Lotes y
+  //   condición no podía cumplirse NUNCA. Medido, no casaba ninguna pestaña, y Lotes y
   //   Tanques caían al final como "Hoja<N>". Corregida casa esas dos y sólo esas.
   /* ⚠⚠ «CÓDIGO GENÉTICO» ENTRA COMO SEGUNDA FIRMA · 2026-09-08, y no es un adorno.
      La hoja `Maduración Lotes` se rediseñó a evento de DESOVE (Fase 4A) y en el camino perdió
@@ -143,7 +143,7 @@ export function detectSheetName(rows, gid, rawTitle) {
      queda vacía y nadie ve un error.
      🔑 Se eligió «código genético» porque sólo lo llevan hojas de Maduración —`Lotes` e
      `Ingreso`—, así que ensancha lo justo. Que no se lleve por delante ninguna de las otras lo
-     comprueba la prueba de las 35 pestañas, que exige que el camino por COLUMNAS y el camino
+     comprueba la prueba de todas las pestañas reales, que exige que el camino por COLUMNAS y el camino
      por NOMBRE coincidan en todas.
      ⚠ Va con y sin tilde: las cabeceras se comparan en minúsculas pero nadie garantiza la
      acentuación de una pestaña tecleada a mano. */
@@ -158,7 +158,7 @@ export function detectSheetName(rows, gid, rawTitle) {
      NOMBRE «Maduracion». Entonces la hoja aún no existía en producción —nació con el
      re-despliegue del GAS— y se corrigió ANTES de que nadie pudiera verlo roto; hoy existe
      (medido el 2026-10-23) y es esta firma la que la reconoce.
-     🔑 «metabisulfito» es firma PROPIA: no aparece en ninguna cabecera de las 35 pestañas
+     🔑 «metabisulfito» es firma PROPIA: no aparece en ninguna cabecera de las demás pestañas
      vivas (medido sobre cabeceras-produccion.json), así que no le roba nada a nadie. */
   if (has((k) => k.includes('metabisulfito'))) return 'Maduracion';
   // «Maduración Tratamientos» (2026-09-15): «Productos RAS», por igualdad exacta, es firma propia.
@@ -171,8 +171,8 @@ export function detectSheetName(rows, gid, rawTitle) {
   if (has((k) => k === 'pl/g')) return 'Maduracion';
   // Maduración Sala es la hoja de AMBIENTE: no lleva machos ni hembras ni nauplios, así
   // que la regla de arriba no la alcanza. Su firma es la columna «RAS».
-  // ⚠⚠ POR IGUALDAD EXACTA, nunca por `includes`: como subcadena, «ras» casa 16 de las
-  //   35 pestañas —«% Atraso», «Muestras», «Levaduras», «Hembras muertas», «Retraso»…—
+  // ⚠⚠ POR IGUALDAD EXACTA, nunca por `includes`: como subcadena, «ras» casa una buena
+  //   parte de las pestañas —«% Atraso», «Muestras», «Levaduras», «Hembras muertas», «Retraso»…—
   //   y se las robaría todas. Medido el 2026-09-01 sobre las cabeceras reales.
   if (has((k) => k === 'ras') || has((k) => k.includes('temperatura 2:00'))) return 'Maduracion';
   // Registro_Supervisión comparte columnas (Intestino, Deformidad, Módulo) con
@@ -186,19 +186,19 @@ export function detectSheetName(rows, gid, rawTitle) {
   if (has((k) => k.includes('hepatop') || k.includes('branquias'))) return 'Patología en Fresco';
   /* ❌ NO devolver 'Morfologia' por `intestino|deformidad|lleno`. Esa regla vivió aquí
      hasta el 2026-09-01 y era un MISCLASIFICADOR puro: «Intestino» y «Deformidad» no
-     son firma de Morfología —los llevan también las ONCE hojas «Datos Larvicultura» y
-     Registro_Supervisión—, así que las once salían como 'Morfologia' cuando el gid
+     son firma de Morfología —los llevan también TODAS las hojas «Datos Larvicultura» y
+     Registro_Supervisión—, así que todas salían como 'Morfologia' cuando el gid
      llegaba sin título. Y como `isLarviculturaRow` (core/fields.js) compara la cadena
      EXACTA, TODA la producción de Larvicultura desaparecía del tablero sin un solo
      error visible.
-     No existe ninguna pestaña «Morfologia» en el documento (35 medidas el 2026-09-01)
+     No existe ninguna pestaña «Morfologia» en el documento (medidas todas el 2026-09-01)
      y NADIE consume ese origen. Si algún día la hubiera, `classifyOrigin` la reconoce
      por NOMBRE (/morfolog/i), que sí es una firma específica. Una regla cuya firma no
      distingue su objetivo de otras hojas es peor que no tener regla. */
   /* ── Hojas que caían en el cajón genérico por no tener firma propia ───────────────
      Las cuatro llevan Corrida y/o Módulo, así que sin firma propia caían en
      'Larvicultura' —la regla de abajo— y sus filas entraban en el tablero equivocado.
-     Cada token de aquí está MEDIDO como único entre las 35 pestañas reales
+     Cada token de aquí está MEDIDO como único entre las pestañas reales
      (2026-09-01); van antes de 'Larvicultura' justo porque ésa es quien las capturaba. */
   if (has((k) => k.includes('viaje')) && has((k) => k.includes('placa'))) return 'Registro_Traslado';
   if (has((k) => k.includes('alcalinidad') || k.includes('am.tóxico')
@@ -258,8 +258,8 @@ export const XLSX_LECTURA = { type: 'array', cellDates: true, dense: true };
 /** Cómo se convierte cada hoja en filas: la MISMA para el libro entero y para el respaldo por hojas. */
 const FILAS_LECTURA = { defval: '', raw: false, dateNF: 'dd/mm/yyyy' };
 /* B3 (2026-10-22, usuario) · LOS MILES DEL CAMINO DEL XLSX. Con `raw: false` cada número sale con el formato de su celda,
-   y SheetJS lo escribe SIEMPRE a la inglesa: «1,061», «7,400,000.0». `parseNum` los leía 1,061 y 7,4. Medido el 22-10 con
-   el libro real: 16 celdas, en Plg, Biomasa y Población de Larvicultura. Se quita la coma de miles en las celdas
+   y SheetJS lo escribe SIEMPRE a la inglesa (ejemplos inventados: «1,234», «1,234,567.0»), y `parseNum` los leía 1,234 y
+   1,2. Medido el 22-10 con el libro real: unas pocas celdas, en Plg, Biomasa y Población de Larvicultura. Se quita la coma de miles en las celdas
    NUMÉRICAS antes de sacar las filas: el texto formateado (`w`) es lo que da `sheet_to_json`, y en un número la coma sólo
    puede ser de miles. Los textos no se tocan («556,557» sigue igual). Se corrige en la lectura y no en `parseNum`: aquí se
    sabe qué es cada celda; allí «1,025» o «1.061» no se pueden leer sin adivinar. */
@@ -509,7 +509,7 @@ export async function discoverGids(ids, recordadas = null) {
   // ⚠ Un gid puede llegar SIN nombre: `extractSheetTabs` tiene un respaldo que recoge
   // gids sueltos del HTML sin título. Antes esos caían directos a `detectSheetName`, que
   // los adivina POR COLUMNAS — y adivina mal casi siempre: medido el 2026-08-31 sobre las
-  // cabeceras reales, las once hojas «Datos Larvicultura» salían como 'Morfologia', y
+  // cabeceras reales, todas las hojas «Datos Larvicultura» salían como 'Morfologia', y
   // `isLarviculturaRow` (core/fields.js) compara la cadena EXACTA, así que toda la
   // producción de Larvicultura habría desaparecido del tablero sin un solo error.
   // El sistema YA sabe cómo se llama esa pestaña —la cacheó en una carga anterior— y no
@@ -520,7 +520,7 @@ export async function discoverGids(ids, recordadas = null) {
     memoria,
   );
   // Al guardar se escribe la lista YA rellenada, no la cruda: antes un raspado incompleto
-  // (30 pestañas con nombre y 3 sin él) machacaba en la caché los nombres buenos de esas 3
+  // (casi todas las pestañas con nombre y unas pocas sin él) machacaba en la caché los nombres buenos de esas
   // con cadenas vacías, y a partir de ahí ni la caché podía rescatarlas. La caché se
   // degradaba sola, y el único síntoma habría sido el tablero vacío.
   if (list.length) { if (docId) cacheTabs(docId, list); return list; }
@@ -528,8 +528,8 @@ export async function discoverGids(ids, recordadas = null) {
 }
 
 /** 2026-10-01 (usuario) · EL RESPALDO LEE CADA HOJA POR SU XLSX, NO POR gviz. Con un FILTRO puesto en la hoja
- *  —el laboratorio los deja a menudo— gviz sólo da las filas VISIBLES (medido en producción: Datos M03, 20 de 1 579;
- *  Control_Tanque M10, 806 de 14 777; el CSV de EXPORTACIÓN, `export?format=csv`, NO recorta: medido el 09 y el 11-10, y
+ *  —el laboratorio los deja a menudo— gviz sólo da las filas VISIBLES (medido en producción: en hojas con un filtro
+ *  puesto, una pequeña parte de sus filas; el CSV de EXPORTACIÓN, `export?format=csv`, NO recorta: medido el 09 y el 11-10, y
  *  por eso lo usa hojasPorCsv; aquí antes decía que también), y ese set recortado pisaba en silencio el bueno
  *  (`isDegraded` sólo cuenta hojas). El XLSX de la hoja las da TODAS (lo mismo que hace Registros desde el 0v·2) y se
  *  lee con las mismas opciones que el libro entero: las filas salen iguales que por el camino principal.
@@ -562,10 +562,10 @@ async function filasPorXlsxDeHoja(ids, gid, obtenerXLSX = getXLSX) {
  *  CSV. Devuelve { sheets, porCsv, perdidas, sinPestanas }: las hojas leídas; cuántas llegaron por el CSV (pueden venir
  *  recortadas por un filtro); cuántas no llegaron por ningún camino; y si no se pudo saber qué pestañas hay (entonces
  *  sólo se intenta la primera). Lo usan la página (fetchViaCsv) y el Worker (sheets.worker.js), que así lo hace sin
- *  congelar la pantalla: leer una hoja grande por XLSX cuesta ~1,3 s en PC (Control_Tanque M08, 24 743 filas).
+ *  congelar la pantalla: leer una hoja grande por XLSX cuesta ~1,3 s en PC (una de las Control_Tanque más grandes).
  *  `recordadas`: la lista de pestañas que recuerda la página (ver discoverGids). `previas`: las huellas aplicadas.
  *  B4 (2026-10-22, usuario) · el CSV de una hoja es primero el de EXPORTACIÓN, que no recorta por filtros (el que lee
- *  hojasPorCsv), y gviz sólo si ése tampoco llega: gviz da sólo las filas VISIBLES (M08: 3 379 de 24 743) y esa hoja
+ *  hojasPorCsv), y gviz sólo si ése tampoco llega: gviz da sólo las filas VISIBLES (con un filtro, una pequeña parte) y esa hoja
  *  recortada entraba como buena y pisaba la aplicada sin avisar. Ahora, si gviz trae MENOS filas que lo aplicado, la
  *  hoja cuenta como perdida: el refresco no la aplica (isDegraded) y la píldora dice que faltó. */
 export async function respaldoPorHojas(ids, obtenerXLSX = getXLSX, avisar = null, recordadas = null, previas = {}) {
@@ -618,12 +618,12 @@ export async function respaldoPorHojas(ids, obtenerXLSX = getXLSX, avisar = null
 }
 
 /* ---------- B · cada hoja por su CSV de EXPORTACIÓN (2026-10-11, usuario, punto 4.2-B) ----------
-   El libro entero en XLSX pesaba 14,5 MB y leerlo costaba 12–16 s de CPU (el XML); en un celular, más de un minuto.
-   `export?format=csv&gid=` (no gviz: ése recorta por filtros) trae TODAS las filas de cada hoja, ~1,4 MB comprimidos las
-   44, y leerlas cuesta ~2 s. Medido con el libro real el 11-10: mismas filas y mismas columnas en las 44 hojas y el
-   99,998 % de las celdas idénticas al camino del XLSX; difieren 32 celdas con separador de miles que el XLSX deja como
-   «7,400,000.0» y la app leía 7,4 (ahora se leen bien, decidido por el usuario) y 24 redondeos en los que el CSV da lo que
-   se ve en Sheets (pH 8,475 → «8,48»; SheetJS daba 8.47). Se lee sin adivinar tipos y con las MISMAS opciones de filas
+   El libro entero en XLSX pesaba mucho y leerlo costaba 12–16 s de CPU (el XML); en un celular, más de un minuto.
+   `export?format=csv&gid=` (no gviz: ése recorta por filtros) trae TODAS las filas de cada hoja, en una fracción del peso
+   del XLSX, y leerlas cuesta ~2 s. Medido con el libro real el 11-10: mismas filas y mismas columnas en todas las hojas y
+   casi todas las celdas idénticas al camino del XLSX; difieren unas pocas con separador de miles, que el XLSX deja a la
+   inglesa y la app leía mal (ahora se leen bien, decidido por el usuario), y unos pocos redondeos en los que el CSV da lo
+   que se ve en Sheets (un pH con tres decimales sale con dos, como en la hoja; SheetJS redondeaba distinto). Se lee sin adivinar tipos y con las MISMAS opciones de filas
    que el XLSX, así que cabeceras, columnas sin nombre y filas en blanco salen igual: hasta el 19-10 con SheetJS (`raw`);
    desde entonces con el lector propio (csvLector.js, carga lenta C), que da lo mismo en menos de la mitad del tiempo. */
 // ⚠ Estas dos expresiones y las dos SENAL_ de abajo empiezan por «-» o una cifra: convertirNumeros salta sin probarlas
@@ -678,13 +678,13 @@ async function csvDeHoja(ids, gid) {
   return t;
 }
 // Hojas que se piden A LA VEZ (pauta 3.5, 2026-10-15; antes 6): manda la latencia de Google por petición, no el tamaño, y
-// con 10 las 44 hojas llegan en ~3,2 s frente a ~4,6 s, sin fallos (medido en el PC con el libro real).
+// con 10 peticiones a la vez todas las hojas llegan en ~3,2 s frente a ~4,6 s, sin fallos (medido en el PC con el libro real).
 // 2026-10-18 (usuario, opción A de «la carga es más lenta») · 16: Google ya no sirve la exportación «en caliente» y con 10
 // el Worker pasaba los primeros 3–4 s de la fase CSV ESPERANDO; medido desde Chrome y desde Node: 10 → 3,8–6,4 s, 15 → 3,5 s,
-// 22 → 2,5–3,1 s, sin errores; con 44 Google empieza a contestar 429 (7 de 44). 16 deja margen frente a ese freno.
+// 22 → 2,5–3,1 s, sin errores; con todas a la vez Google empieza a contestar 429 a algunas. 16 deja margen frente a ese freno.
 export const CSV_A_LA_VEZ = 16;
 // Si la PRIMERA TANDA entera (las CSV_A_LA_VEZ primeras hojas) falla a la primera sin que llegue NINGUNA hoja (sin red, o
-// el CSV bloqueado), se deja el camino del CSV: con la red colgada, cada intento espera su tiempo máximo y 44 hojas lo
+// el CSV bloqueado), se deja el camino del CSV: con la red colgada, cada intento espera su tiempo máximo y todas las hojas lo
 // multiplicarían (A1 del 07-10). R1 (auditoría del 1.1, 2026-10-18): se cuentan HOJAS de esa tanda, una vez cada una, no
 // intentos: antes 5 hojas que rechazaban rápido dos veces (o las de tandas siguientes) sumaban 10 y se abandonaba aunque el
 // resto de la primera tanda fuese a llegar; se descartaba lo que llegaba y se bajaba el libro de 14,5 MB.

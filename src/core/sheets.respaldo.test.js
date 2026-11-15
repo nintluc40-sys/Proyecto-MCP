@@ -4,7 +4,7 @@
 
    Cuando el XLSX del libro entero falla, el MCP baja las hojas una a una. Lo hacía por gviz
    (CSV), que sólo da las filas VISIBLES: con un FILTRO puesto en la hoja —el laboratorio los deja
-   a menudo— llegaban recortadas (medido en producción: Datos M03, 20 de 1 579 filas) y el set
+   a menudo— llegaban recortadas (medido en producción: una pequeña parte de sus filas) y el set
    recortado pisaba el bueno sin avisar (`isDegraded` sólo cuenta hojas). Aquí se fija:
    · cada hoja se pide por su XLSX (por gid), que las da TODAS, y no por gviz;
    · sus filas son las MISMAS que las del libro entero (mismas opciones de lectura);

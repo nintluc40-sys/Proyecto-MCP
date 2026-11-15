@@ -73,7 +73,7 @@ const getComV = (r) => getField(r, COM_V_KEYS);
 const hasCom = (r) => !!(getComM(r) || getComV(r));
 const SIE_KEYS = ['Siembra', 'siembra', 'SIEMBRA'];
 // La columna «Siembra» del Registro_Supervisión no guarda un número, sino el ordinal
-// ESCRITO: medido sobre las 716 filas de producción, sus únicos valores son "Primera",
+// ESCRITO: medido sobre las filas de producción, sus únicos valores son "Primera",
 // "Segunda" y "Tercera". Esta tabla existe para poder ORDENARLOS cronológicamente; sin
 // ella el orden es el alfabético, que hoy acierta de casualidad y dejaría una "Cuarta"
 // en primera posición. Devuelve Infinity para lo desconocido, que así cae al final en
@@ -103,7 +103,7 @@ const sameModule = (a, b) => {
 // Memo por IDENTIDAD de store.globalData para los conjuntos de datos por módulo+corrida.
 // `renderModule` hacía cinco recorridos COMPLETOS del store por render (Biomol, Micro,
 // Calidad de Agua, comentarios de supervisión y desinfección), sin caché: medido, 269 ms
-// y 10 accesos al store con 16.200 filas. `core/sheets.js` sustituye `store.globalData`
+// y 10 accesos al store con el libro de producción entero. `core/sheets.js` sustituye `store.globalData`
 // por un array NUEVO en cada refresco, así que comparar la referencia invalida sin riesgo
 // (misma estrategia que core/prodCalendar.js y que el memo de stats.js).
 //
@@ -542,7 +542,7 @@ function microPlacaHTML(rows, state) {
   // Carga total del día = Σ UFC de los patógenos ESPECÍFICOS con UFC. Se excluyen los
   // conteos AGREGADOS (`MIC_AGG` = C. Totales y Bact. Totales), que son sumas y volverían a
   // contar lo ya contado. Antes se excluía a mano solo «C. Totales», así que «Bact. Totales»
-  // —la mayor de las dos— entraba en el sumatorio: medido, 10.150 donde correspondía 150.
+  // —la mayor de las dos— entraba en el sumatorio: medido, decenas de veces lo que correspondía.
   // Se usa la MISMA constante que el KPI «Dominante» de más abajo, para que los dos no
   // puedan volver a discrepar sobre qué es un agregado. V. Luminiscentes no entra
   // (presencia/ausencia). "—" si ese día no hubo ningún patógeno específico con UFC.
@@ -1407,7 +1407,7 @@ export function renderModule(ctx, mod) {
     return true;
   });
   const supList = [...new Set(atRows.map((r) => getField(r, SUP_KEYS) || 'Supervisor'))].sort();
-  // La columna «Siembra» trae ORDINALES ESCRITOS, no números: medido sobre las 716 filas
+  // La columna «Siembra» trae ORDINALES ESCRITOS, no números: medido sobre las filas
   // de producción, sus únicos valores son "Primera", "Segunda" y "Tercera". Por eso se
   // ordena por el ordinal que representan y no alfabéticamente: hoy ambos criterios dan
   // el mismo resultado por casualidad, pero una "Cuarta" se colocaría la PRIMERA de la

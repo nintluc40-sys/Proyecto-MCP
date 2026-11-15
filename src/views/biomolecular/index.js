@@ -173,7 +173,7 @@ export function normalizeRows(rows) {
 }
 const filtered = () => RAW.filter((d) => activeLugares.has(d.lugar) && activeLotes.has(loteOf(d)) && activeFechas.has(d.f));
 // El "Registro Detallado" y su Excel salían en el orden de la HOJA, así que las fechas se
-// veían saltadas (medido: 20/06 · 02/06 · 11/06 · 05/06). Se ordenan por fecha DESCENDENTE
+// veían saltadas (medido: días del mismo mes sin ningún orden). Se ordenan por fecha DESCENDENTE
 // —lo último analizado primero—: `r.f` es ISO yyyy-mm-dd, así que comparar cadenas ya es
 // cronológico. Copia con `slice()` para no ordenar in situ el array de nadie, y el orden de
 // la hoja se conserva DENTRO de un mismo día porque Array.sort es estable.
@@ -1028,7 +1028,7 @@ function drawSwarm() {
   });
   const xBy = {};
   // El desplazamiento vertical NO es decorativo: cuando los puntos desbordan el ancho, la X
-  // se topa en `W - 12` y se apilan (medido: 24 de 40 en la misma columna), así que es lo
+  // se topa en `W - 12` y se apilan (medido: más de la mitad en la misma columna), así que es lo
   // único que los separa. Pero con `Math.random()` se recalculaba en CADA repintado —y
   // `drawSwarm` corre desde `render()`, o sea en cada filtro y en cada refresco silencioso—,
   // así que los puntos se movían solos hasta 24 px, un 40 % de la altura de su fila, mientras

@@ -29,9 +29,9 @@ const LV_VARS = [
   // Morfológicos
   //
   // ⚠ Estas cuatro estaban declaradas como `stage: 'larv'`, pero el laboratorio SÍ las
-  // registra en post-larva. Medido el 2026-08-15 sobre 550 filas reales en estadío PL
-  // (M01, M03, M06 y M08): No Viables trae dato en 365 (66 %), Retraso en 50, Hongos en 25
-  // y Deformidad en 3. Con la etiqueta anterior, el ICL las RESTABA —`iclSeries` no filtra
+  // registra en post-larva. Medido el 2026-08-15 sobre las filas reales en estadío PL de
+  // varios módulos: No Viables trae dato en la mayoría, y Retraso, Hongos y Deformidad en
+  // menos (la última, casi nunca). Con la etiqueta anterior, el ICL las RESTABA —`iclSeries` no filtra
   // por estadío, y no debe hacerlo: las bandas ICL_BANDS se calibraron así— mientras que
   // los tres sitios que sí miran `stage` las apartaban: no salían en las alertas, ni en el
   // heatmap morfológico, ni en el panel de parámetros. Es decir, bajaban el ICL de dos de
@@ -84,7 +84,7 @@ function evalRef(v, val) {
 /** Serie diaria (promedio por fecha) de cada variable + estadío por día. */
 // PURA y sin memo a propósito: un render de tanque la invoca cinco veces sobre los mismos
 // datos (iclSeries, paramAlerts, morphHeatmap y buildParamSection, más una sobre las filas
-// del módulo), pero `rows` son las filas de UN tanque —del orden de 45— y la medición dio
+// del módulo), pero `rows` son las filas de UN tanque —unas decenas— y la medición dio
 // 38 ms sin caché frente a 40 ms con ella: la redundancia no cuesta nada observable.
 // Si algún día se llamara con el dataset completo, reconsiderar entonces.
 function lvDaily(rows) {

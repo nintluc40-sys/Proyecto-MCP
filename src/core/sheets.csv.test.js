@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 /* ============================================================
    4.2-B (2026-10-11, usuario) · CADA HOJA POR SU CSV DE EXPORTACIÓN, en el Worker
-   El libro entero en XLSX eran 14,5 MB y 12–16 s de lectura; las hojas por `export?format=csv&gid=` son ~1,4 MB y ~2 s,
-   con las mismas filas (medido con el libro real el 11-10: 99,998 % de celdas idénticas). Aquí se fija:
+   El libro entero en XLSX pesaba mucho y eran 12–16 s de lectura; las hojas por `export?format=csv&gid=` son una fracción
+   y ~2 s, con las mismas filas (medido con el libro real el 11-10: casi todas las celdas idénticas). Aquí se fija:
    · valorDeCsv: el formato regional del CSV (coma decimal, punto de miles) pasa a la forma del XLSX; lo demás, intacto;
    · filasDeCsv: las MISMAS claves y filas que sheet_to_json del XLSX (columnas sin nombre, repetidas, filas en blanco,
      espacios, saltos de línea entre comillas);

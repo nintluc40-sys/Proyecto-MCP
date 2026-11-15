@@ -173,14 +173,14 @@ const fmtNum = (v) => (v === null || v === undefined || isNaN(v)) ? '—' : Math
 const PAT_LABEL = Object.fromEntries(PATHOGENS.map((p) => [p.key, p.label]));
 
 /* 2026-10-01 (usuario: «englobar todos los resultados de cada departamento»). La barra de mes de General, Bacteriología
-   y Calidad de Agua era obligatoria (medido: con el mes por defecto, 7 resultados de Larvicultura de 4 663) y la fila
-   SIN corrida —Maduración, Algas y Otras: 1 401 en Microbiología y 495 en Calidad de Agua— se colaba en TODOS los meses
+   y Calidad de Agua era obligatoria (medido: con el mes por defecto, una mínima parte de los resultados de Larvicultura) y la fila
+   SIN corrida —Maduración, Algas y Otras: muchas, en las dos hojas— se colaba en TODOS los meses
    (hallazgo H-001 de la auditoría de esta vista). Ahora: tras el último mes hay una parada más, «📅 Todo el registro»,
    y una fila sin corrida va al mes de su FECHA de muestreo (`monthIndexOfDate`; aproximado: el mes de producción
    arranca ~2 semanas antes que el de calendario). Por defecto se sigue abriendo en el último mes. */
 const TODO_REGISTRO = 'todo';
-// La corrida manda; si no da un mes del calendario (vacía, o un rango como «593-594», que se lee por su primer número:
-// 12 muestras de Maduración · Despacho no salían en NINGÚN mes), la fecha de muestreo.
+// La corrida manda; si no da un mes del calendario (vacía, o un rango de dos corridas, que se lee por su primer número:
+// unas muestras de Maduración · Despacho no salían en NINGÚN mes), la fecha de muestreo.
 const mesDeFila = (c) => {
   const n = parseInt(c.corrida, 10);
   const m = Number.isNaN(n) ? -1 : monthIndexOfCorrida(n);
@@ -519,8 +519,8 @@ function genKpiStripHTML(k) {
  *  Antes cada mitad de la MISMA fila usaba una regla: el agua ya pasaba por aquí, pero
  *  Bacteriología agrupaba por `deptoOfFormato(ctx.formatoKey)` a secas — el formato, no el
  *  departamento— mientras el filtro de la sub-vista y el export usan la columna real
- *  (`deptoOf`). Medido sobre la hoja de producción: 84 muestras de Larvicultura se
- *  reportaban en la fila «Otros» (Julio 32, con 32 alertas; Agosto 53, con 50) y 2 filas
+ *  (`deptoOf`). Medido sobre la hoja de producción: decenas de muestras de Larvicultura se
+ *  reportaban en la fila «Otros» (casi todas con alerta) y unas filas
  *  cuyo formato no está catalogado NO aparecían en ninguna fila del scorecard, pese a
  *  contarlas el KPI de arriba — el conteo del panorama no cuadraba con su propia tabla.
  *  Con la fila sin `Departamento` el resultado no cambia: sigue derivándose del Formato. */
@@ -2174,8 +2174,8 @@ function petriPlacaHTML(days, dayIdx, day) {
   // conteos AGREGADOS que declara la capa de datos (`AGGREGATE_KEYS` = C. Totales y Bact.
   // Totales), porque son sumas y volverían a contar lo ya contado. Antes se excluía a mano
   // solo «C. Totales», así que «Bact. Totales» —la mayor de las dos— entraba en el sumatorio:
-  // medido sobre la hoja, 56 de 64 días mal y ×5,14 de inflación global (el 20/06/2026
-  // mostraba 1.061.010 donde correspondía 10). Se usa la MISMA constante que el KPI
+  // medido sobre la hoja, casi todos los días mal y la carga total varias veces inflada (algún día, órdenes de
+  // magnitud por encima de la correcta). Se usa la MISMA constante que el KPI
   // «Dominante» de la línea de abajo, para que los dos no puedan volver a discrepar sobre qué
   // es un agregado. V. Luminiscentes no entra (presencia/ausencia). "—" si no hubo ningún
   // patógeno específico con UFC ese día.
@@ -2345,7 +2345,7 @@ function drawPetriTrendChart() {
   const datasets = [{ label: 'Σ UFC', data, borderColor: p.color, backgroundColor: p.color + '22', tension: 0.3, spanGaps: true, pointRadius: 3, pointHoverRadius: 5, borderWidth: 2, fill: true }];
   if (p.kin.mu != null && p.kin.a != null) {
     // El ajuste se dibuja SOLO sobre el tramo con datos. Extrapolarlo al resto del rango
-    // lo disparaba: medido, una serie cuyo máximo real era 100.000 UFC producía una curva
+    // lo disparaba: medido, una serie real de UFC corrientes producía una curva
     // que llegaba a 1e89, con lo que el eje Y se escalaba a esa magnitud y la serie real
     // quedaba aplastada contra el cero. Además, fuera del soporte el modelo no dice nada.
     const conUfc = t.gap.map((_, i) => ((p.has[i] && p.ufc[i] > 0) ? i : -1)).filter((i) => i >= 0);

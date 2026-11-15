@@ -61,7 +61,7 @@ const inGlobalDate = (r) => {
   // ⚠ El PDF hace lo CONTRARIO: `inRange` (views/supervisor/trazabilidad.js) descarta lo
   // no fechable, porque un documento que se archiva no debería llevar registros sin fecha
   // atribuible. Ante una fecha mal tecleada, papel y pantalla difieren. Medido el
-  // 2026-08-15 sobre 3.152 filas reales: cero casos, así que hoy no diverge nada.
+  // 2026-08-15 sobre las filas reales: ningún caso, así que hoy no diverge nada.
   if (!d || isNaN(d)) return true;
   if (dateFrom && d < dateFrom) return false;
   if (dateTo && d > dateTo) return false;
@@ -168,8 +168,8 @@ function survival(winRows, baseRows, tanks) {
       // `modCorStatsCompute` (core/prodCalendar.js), que ya lo declaraba así. Un 0 en la
       // primera lectura no es «se sembraron cero larvas»: es que aún no se había contado.
       // Aceptándolo, el tanque aportaba su `last` al numerador y 0 al denominador, así que
-      // la supervivencia del MÓDULO salía inflada (medido: 100 %, tope de un 150 %, donde
-      // correspondía 78,9 %) y discrepaba de la columna «Superv.» de Producción Omarsa para
+      // la supervivencia del MÓDULO salía inflada (medido: topada en el máximo, con tanques muy por encima,
+      // donde correspondía bastante menos) y discrepaba de la columna «Superv.» de Producción Omarsa para
       // el mismo módulo+corrida. La del propio tanque salía «—» pese a tener datos.
       // El `last` NO usa esta regla: ahí un 0 sí es real (tanque vaciado o agrupado).
       let first = null, firstT = null; for (let i = 0; i < base.length; i++) { const v = gPop(base[i]); if (v !== null && v > 0) { first = v; firstT = tFec(base[i]); break; } }
@@ -177,7 +177,7 @@ function survival(winRows, baseRows, tanks) {
       // al NUMERADOR. Antes se sumaba siempre, así que un tanque cuyas filas quedaban fuera
       // de la ventana de fecha (dejó de registrarse, se descartó pronto…) aportaba su
       // siembra y ninguna población: con un preset de 7/30 días la supervivencia del módulo
-      // se desplomaba —medido, 90 % → 45 % con dos tanques— contradiciendo al gráfico que
+      // se desplomaba —medido: a la mitad con dos tanques— contradiciendo al gráfico que
       // abre ese mismo KPI (moduleSvPopSeries deriva sus tanques de la ventana, así que lo
       // excluye de ambos lados) y a la rejilla, donde el tanque ni siquiera se muestra.
       // Sin filtro de fecha ventana y base coinciden, `last` existe siempre que exista
@@ -219,7 +219,7 @@ function lastAvgByTank(winRows, tanks, keys) {
 // identidad del ctx es una clave de invalidación segura (misma estrategia que el
 // memo de core/prodCalendar.js). Motivo: la Vista Ejecutiva llama a modStats una vez
 // por tarjeta y repetía el cálculo íntegro en cada navegación de mes — medido, 114 ms
-// por pasada con 12 módulos y 16.200 filas, idénticos a los de la pasada anterior.
+// por pasada con el libro de producción entero, idénticos a los de la pasada anterior.
 // WeakMap: al invalidarse el ctx, su bucket se recolecta solo.
 //
 // ⚠ El objeto devuelto se COMPARTE entre llamadas: tratarlo como INMUTABLE. Hoy ningún
