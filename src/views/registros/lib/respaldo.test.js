@@ -348,3 +348,45 @@ describe('A13 · la cola se junta', () => {
     expect(cola()).toHaveLength(H.SYNCQ_MAX);
   });
 });
+
+/* Punto 26 de la pauta del 12-11 (2026-11-14; usuario: «Preguntar si la copia está») · la app sólo PIDE la descarga de la copia:
+   el navegador puede bloquearla o cancelarse, y exportBackup decía «hecho» igual. Importar sobrescribía fiándose de eso. Ahora,
+   tras pedir la copia, se pregunta si está en Descargas, nombrando el archivo; sin un «sí» no se toca nada. */
+describe('Punto 26 · antes de sobrescribir, ¿está la copia?', () => {
+  /** Contesta «sí» a la primera pregunta (¿importar?) y `segunda` a la de la copia; guarda cuántas copias se habían pedido. */
+  const preguntar = (segunda) => {
+    const vistas = [];
+    let n = 0;
+    window.confirm = (m) => { n++; vistas.push({ m: String(m), copiasPedidas: copias.length }); return n === 1 ? true : segunda; };
+    return vistas;
+  };
+
+  it('🔴 «no, no está»: no se sobrescribe nada, y se dice por qué', () => {
+    mapa.set('larv4_a', 'antes');
+    const vistas = preguntar(false);
+    H.importBackup(respaldo({ larv4_a: 'nuevo' }));
+    expect(vistas, 'no se preguntó por la copia').toHaveLength(2);
+    expect(mapa.get('larv4_a'), 'se sobrescribió sin copia').toBe('antes');
+    expect(ultimo().tipo).toBe('warn');
+    expect(ultimo().msg).toContain('sin la copia de lo que hay ahora, no se sobrescribe');
+  });
+
+  it('🔴 se pregunta DESPUÉS de pedir la descarga, y nombra el archivo que hay que buscar', () => {
+    mapa.set('larv4_a', 'antes');
+    mapa.set('larv4_b', 'otro');
+    const vistas = preguntar(true);
+    H.importBackup(respaldo({ larv4_a: 'nuevo' }));
+    expect(vistas).toHaveLength(2);
+    expect(vistas[1].copiasPedidas, 'se preguntó antes de pedir la copia').toBe(1);
+    expect(vistas[1].m).toMatch(/¿Ya está en Descargas la copia de lo que hay ahora\?/);
+    expect(vistas[1].m).toMatch(/«fichas-larv-backup_\d{4}-\d{2}-\d{2}_2items\.json»/);
+    expect(mapa.get('larv4_a'), '«sí»: se importa (control)').toBe('nuevo');
+  });
+
+  it('🔴 exportar ya no dice «exportado»: dice qué archivo y que se revise en Descargas', () => {
+    mapa.set('larv4_a', 'uno');
+    expect(H.exportBackup()).toBe(true);
+    expect(ultimo().msg).toMatch(/Descargando la copia «fichas-larv-backup_\d{4}-\d{2}-\d{2}_1items\.json».*revisa que esté en Descargas/);
+    expect(ultimo().msg).not.toMatch(/exportado/i);
+  });
+});

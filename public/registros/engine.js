@@ -33939,6 +33939,12 @@ function _allAppStorageKeys(){
    nombres de TQ que sólo existen local) y se puede restaurar después.
 ══════════════════════════════════════════ */
 const BACKUP_VERSION = 1;
+/* 2026-11-14 (punto 26 de la pauta del 12-11; usuario: «Preguntar si la copia está») · LA APP NO SABE SI LA DESCARGA LLEGÓ. `a.click()`
+   sólo la PIDE: el navegador puede bloquearla (descargas automáticas, una tablet) o quien usa el equipo cancelarla, y exportBackup
+   devolvía «hecho» igual. Importar sobrescribía fiándose de eso: sin copia de verdad, lo sobrescrito se perdía. Ahora exportar dice
+   «revisa que esté en Descargas» (no «exportado») e importar, tras pedir la copia, pregunta si está antes de tocar nada. Éste es el
+   nombre del último archivo pedido, para decir cuál buscar. */
+let _respaldoNombre = "";
 
 function exportBackup(){
   try{
@@ -33963,12 +33969,12 @@ function exportBackup(){
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "fichas-larv-backup_" + today() + "_" + dump.count + "items.json";
+    a.download = _respaldoNombre = "fichas-larv-backup_" + today() + "_" + dump.count + "items.json";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     setTimeout(()=>URL.revokeObjectURL(url), 1500);
-    toast("📥 Backup exportado: "+dump.count+" elemento(s)","ok",4000);
+    toast("📥 Descargando la copia «"+_respaldoNombre+"» ("+dump.count+" elemento(s)): revisa que esté en Descargas","ok",7000);   // punto 26
     return true;
   }catch(err){
     console.error("[backup] export error:", err);
@@ -34053,6 +34059,12 @@ function importBackup(file){
     if(_flushingQueue){ toast("Hay un envío de la cola en curso: importa cuando termine.","warn",6000); return; }
     // A13 (usuario: «Copia automática antes») · Lo pendiente creado después del respaldo se sobrescribe: sin copia no se toca nada.
     if(!exportBackup()){ toast("No se importó nada: falta la copia de lo que hay ahora.","err",8000); return; }
+    // Punto 26 · pedirla no es tenerla: se pregunta, y sin un «sí» no se toca nada.
+    if(!confirm("¿Ya está en Descargas la copia de lo que hay ahora?\n\nBusca «" + _respaldoNombre + "».\n\n"
+      + "Aceptar: se importa el respaldo.\nCancelar: no se importa nada (si no apareció, el navegador pudo bloquearla: vuelve a intentarlo, o guárdala antes con 📥 Exportar todo).")){
+      toast("No se importó nada: sin la copia de lo que hay ahora, no se sobrescribe.","warn",8000);
+      return;
+    }
     const r = _aplicarRespaldo(dump.items, allowedKeys);
     if(!r){ toast("No se importó nada: no cabe en este navegador. Todo queda como estaba.","err",8000); return; }
     try{ _invalidateFotosCache(); }catch(_){}

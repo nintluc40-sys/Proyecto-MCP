@@ -1313,6 +1313,12 @@ sin avisar**:
   naturaleza (las predicciones de 🌊 Mareas, N2/N5 de Desoves, la próxima parada de Mantenimiento) y la corrección de un
   desove ya enviado, cuya fecha no se edita. La regla es `_fechaPosterior`; la vigilan `fecha-futura.test.js` y el banco
   `mutar-fecha-futura`.
+- **Importar un respaldo ya no sobrescribe sin la copia de antes** (2026-11-14). ⚙ Config → 📤 Importar descarga primero
+  una copia de lo que hay en el equipo, pero la app sólo PIDE esa descarga: el navegador puede bloquearla o cancelarse, y
+  aun así sobrescribía. Ahora (usuario: «Preguntar si la copia está») pregunta si la copia está en Descargas, nombrando el
+  archivo, y sin un «sí» no toca nada; 📥 Exportar todo dice qué archivo bajó y que se revise en Descargas, en vez de
+  «exportado». Medido en Chrome: con la pregunta abierta, la descarga empieza y termina. Lo vigilan `respaldo.test.js` y el
+  banco `mutar-respaldo-copia`.
 - **Larvicultura y Lab. Algas: lo de días anteriores.** Se guardan por día y la app lee los de hoy, así que lo no
   enviado dejaba de verse a medianoche y la limpieza lo borraba. Ahora la limpieza no lo toca y, al abrir el módulo,
   un aviso dice qué quedó y de qué día, con **«☁️ Enviarlas»** (cada ficha a su hoja con SU fecha: las de Datos de un
