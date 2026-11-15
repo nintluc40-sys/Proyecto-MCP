@@ -1,8 +1,22 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { store } from './store.js';
-import { monthIndexOfCorrida, monthLabelAt, modCorStats, modCorDispatched, modulesOfCorrida, corridasOfMonth, presentMonths, ventanaDeMaduracion } from './prodCalendar.js';
+import { monthIndexOfCorrida, monthLabelAt, modCorStats, modCorDispatched, modulesOfCorrida, corridasOfMonth, presentMonths, ventanaDeMaduracion, mesDeCorridaOFecha } from './prodCalendar.js';
 
 afterEach(() => { store.globalData = []; });
+
+/* Punto 11 (pauta del 12-11, usuario: «Al mes de su fecha») · la regla de Microbiología, ahora una para todos: la corrida
+   manda y, si no da mes (vacía o sin número), el mes de su FECHA. La usan Algas y Visitante. Cifras inventadas. */
+describe('punto 11 · mesDeCorridaOFecha', () => {
+  it('la corrida manda; sin ella (o ilegible), el mes de su fecha; sin ninguna de las dos, -1', () => {
+    store.globalData = [{ _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '573', Fecha: '01/06/2026' }];   // año base 2026
+    expect(mesDeCorridaOFecha('573', '10/08/2026'), 'la corrida, aunque la fecha diga otro mes').toBe(5);
+    expect(mesDeCorridaOFecha('', '10/07/2026')).toBe(6);
+    expect(mesDeCorridaOFecha('sin número', '10/07/2026')).toBe(6);
+    expect(mesDeCorridaOFecha(undefined, new Date(2026, 6, 10))).toBe(6);
+    expect(mesDeCorridaOFecha('', '')).toBe(-1);
+    expect(mesDeCorridaOFecha('', 'no es fecha')).toBe(-1);
+  });
+});
 
 // MESES_PROD definido: Enero(544) … Junio(573). Auto-extensión +6 desde Junio.
 describe('monthIndexOfCorrida (auto-extensión +6)', () => {

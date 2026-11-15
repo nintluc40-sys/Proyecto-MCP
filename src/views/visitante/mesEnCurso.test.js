@@ -41,6 +41,25 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); store.globalData = []; errSpy.mockRestore(); });
 
+/* Punto 11 (pauta del 12-11, usuario: «Sí, también Visitante») · una fila de algas SIN corrida no contaba en ningún mes:
+   ahora en el de su fecha, con la misma regla que la vista de Algas (prodCalendar · mesDeCorridaOFecha). */
+describe('punto 11 · Visitante: una fila de algas sin corrida cuenta en el mes de su fecha', () => {
+  const sinCorrida = { _SheetOrigin: 'Lab_Algas', Corrida_Larv: '', Modulo_Larv: 'M01', Sistema: 'M1', Fecha: '04/06/2026', Cel_ml: '20000', Protozoarios: '2', Descartado: 'No' };
+  it('🔴 junio sólo con una fila de algas SIN corrida: la sección de Microalgas tiene sus tarjetas', () => {
+    vi.setSystemTime(new Date(2026, 5, 15, 12));
+    pintar([...datos({ algas: false }), sinCorrida]);
+    const alg = microalgas(root);
+    expect(alg, 'la sección sale').toBeTruthy();
+    expect(alg.textContent).not.toContain('Sin registros de algas');
+    expect(alg.querySelector('[data-sum]'), 'con tarjetas').toBeTruthy();
+  });
+  it('control: fechada en otro mes, no cuenta en junio', () => {
+    vi.setSystemTime(new Date(2026, 5, 15, 12));
+    pintar([...datos({ algas: false }), { ...sinCorrida, Fecha: '04/08/2026' }]);
+    expect(microalgas(root).textContent).toContain('Sin registros de algas este mes todavía.');
+  });
+});
+
 describe('Visitante · C5 · el mes en curso se dice', () => {
   it('🔴 en curso, la calidad no se juzga y la supervivencia es parcial', () => {
     vi.setSystemTime(new Date(2026, 5, 15, 12));   // 15/06/2026: junio sigue en curso

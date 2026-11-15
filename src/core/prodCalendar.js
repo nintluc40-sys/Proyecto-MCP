@@ -208,6 +208,15 @@ export function monthIndexOfDate(d) {
   return i >= 0 ? i : -1;
 }
 
+/** Punto 11 (pauta del 12-11, usuario: «Al mes de su fecha») · el mes interno de una fila: el de su CORRIDA y, si la corrida
+ *  no da mes (vacía o sin número: la ficha de Algas deja guardar sin ella), el de su FECHA. Es la regla que ya seguía
+ *  Microbiología; aquí, una sola para Algas y Visitante (antes una fila sin corrida no salía en NINGÚN mes de las dos).
+ *  `fecha`: texto o Date (parseAnyDate acepta los dos). -1 si ninguna de las dos da mes. */
+export function mesDeCorridaOFecha(corrida, fecha) {
+  const m = monthIndexOfCorrida(corrida);
+  return m >= 0 ? m : monthIndexOfDate(parseAnyDate(fecha));
+}
+
 /** El mes de CALENDARIO de un mes interno, del día 1 al último, en `aaaa-mm-dd`: el inverso de `monthIndexOfDate`
  *  (2026-10-01, la producción de Maduración en Visitante, que va por la fecha del desove). null si el índice no vale
  *  o no hay año base. */

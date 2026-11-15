@@ -77,7 +77,8 @@ describe('growthByLote', () => {
       row({ Área_Algas: 'A1', Sistema: 'M1', Especie: 'IS', Fecha: '2026-06-01', Dia_Proceso: '1', Cel_ml: '3000' }), // otra especie
     ];
     const keys = growthByLote(rows).map((l) => l.key).sort();
-    expect(keys).toEqual(['A1 · M1 · IS', 'A1 · M1 · TW', 'A2 · M1 · TW']);
+    // punto 11 (pauta del 12-11): «IS» se lee como «Iso», la forma que guarda la ficha (la misma especie, Isochrysis)
+    expect(keys).toEqual(['A1 · M1 · Iso', 'A1 · M1 · TW', 'A2 · M1 · TW']);
   });
   it('ignora filas sin Cel/ml', () => {
     const rows = [row({ Sistema: 'M1', Fecha: '2026-06-01', Dia_Proceso: '1' })];

@@ -13,7 +13,7 @@ import { getField, parseNum, normalizeTecnico } from '../../core/fields.js';
 import { parseAnyDate, fmtShort } from '../../core/dates.js';
 import { esc } from '../../core/format.js';
 import { avg, natCmp } from '../../core/util.js';
-import { monthIndexOfCorrida, monthLabelAt, numeroDeCorrida } from '../../core/prodCalendar.js';
+import { monthIndexOfCorrida, monthLabelAt, numeroDeCorrida, mesDeCorridaOFecha } from '../../core/prodCalendar.js';
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import { toast } from '../../ui/toast.js';
 import { drawGrowth, drawGrowthBar, drawGrowthMini, drawTasa, drawProto, drawDaily, drawUsoSistema, drawModuloBiomasa, drawCellQuality, drawDispatchBars, drawSanitBars, drawDescClases, CAT_COLOR, algColor, fmtK } from './charts.js';
@@ -54,7 +54,13 @@ const AF = {
 };
 
 const isAlgaeRow = (r) => r && r._SheetOrigin === 'Lab_Algas';
-const g = (r, key) => getField(r, AF[key]);
+/* Punto 11 (pauta del 12-11, usuario: «"Iso" e "IS", la misma especie») · la ficha guarda «Iso» y aquí sólo se reconocía «IS»:
+   un registro «Iso» salía sin su nombre y, junto a uno «IS», como dos especies en el filtro y los conteos. Se leen como una. */
+const ESPECIE_IGUAL = { IS: 'Iso', ISO: 'Iso' };
+const g = (r, key) => {
+  const v = getField(r, AF[key]);
+  return key === 'especie' ? (ESPECIE_IGUAL[String(v || '').trim().toUpperCase()] || v) : v;
+};
 const num = (r, key) => parseNum(r, AF[key]);
 
 // Filas de Lab_Algas memoizadas por identidad de store.globalData (se recalculan
@@ -261,7 +267,7 @@ export function algCloroData(rows) {
 }
 
 // Nombre completo de especie (abreviaturas del laboratorio).
-const ESPECIE = { TW: 'Thalassiosira weissflogii', IS: 'Isochrysis', TT: 'Tetraselmis', CH: 'Chaetoceros' };
+const ESPECIE = { TW: 'Thalassiosira weissflogii', ISO: 'Isochrysis', TT: 'Tetraselmis', CH: 'Chaetoceros' };   // las claves de la ficha (punto 11)
 const especieLabel = (e) => { const k = String(e || '').trim().toUpperCase(); return ESPECIE[k] ? `${e} · ${ESPECIE[k]}` : (e || '—'); };
 
 const isDescartado = (r) => esDescartado(g(r, 'descartado'));
@@ -627,12 +633,13 @@ export function algasView(root) {
 
   // ── Barra de mes (corrida→mes, alineada con Supervisor/Larvicultura) ──
   //    A29 (2026-11-06) · `numeroDeCorrida`: «581-582» cuenta en el mes de la 581 (con `+c` no caía en ninguno).
+  //    Punto 11 (pauta del 12-11, usuario: «Al mes de su fecha») · una fila SIN corrida va al mes de su fecha (`mesDeFila`):
+  //    antes no salía en NINGÚN mes en cuanto hubiera alguna con corrida.
   const allCorridas = [...new Set(all.map((r) => g(r, 'corrida')).filter(Boolean))];
-  const months = [...new Set(allCorridas.map((c) => monthIndexOfCorrida(numeroDeCorrida(c))).filter((i) => i >= 0))].sort((a, b) => a - b);
+  const months = algMonthsList();
   if (vState.month == null || !months.includes(vState.month)) vState.month = months.length ? months[months.length - 1] : 0;
   const monthCorridas = allCorridas.filter((c) => monthIndexOfCorrida(numeroDeCorrida(c)) === vState.month).sort((a, b) => numeroDeCorrida(a) - numeroDeCorrida(b));
-  const monthSet = new Set(monthCorridas);
-  const inMonth = (r) => !monthSet.size || monthSet.has(g(r, 'corrida'));
+  const inMonth = (r) => !months.length || mesDeFila(r) === vState.month;
 
   // ── Filtros: Corrida + Módulo + Especie + Área (el SISTEMA es una subvista, no un filtro) ──
   const corridas = monthCorridas;
@@ -1187,13 +1194,14 @@ function daySummaryBody(days, idx) {
 
 /* ---- Indicadores del mes: helpers + modales ---- */
 /** Meses (índices) presentes en TODO el histórico de Lab_Algas (asc). */
+/** Punto 11 · el mes de una fila: el de su corrida y, sin ella, el de su fecha (prodCalendar · mesDeCorridaOFecha). */
+function mesDeFila(r) { return mesDeCorridaOFecha(g(r, 'corrida'), g(r, 'fecha')); }
 function algMonthsList() {
-  const cor = [...new Set(algaeRows().map((r) => g(r, 'corrida')).filter(Boolean))];
-  return [...new Set(cor.map((c) => monthIndexOfCorrida(numeroDeCorrida(c))).filter((i) => i >= 0))].sort((a, b) => a - b);
+  return [...new Set(algaeRows().map(mesDeFila).filter((i) => i >= 0))].sort((a, b) => a - b);
 }
-/** Filas de Lab_Algas cuyo mes (por corrida) es `monthIdx`. */
+/** Filas de Lab_Algas cuyo mes (por corrida; sin ella, por fecha) es `monthIdx`. */
 function algMonthRows(monthIdx) {
-  return algaeRows().filter((r) => { const c = g(r, 'corrida'); return c && monthIndexOfCorrida(numeroDeCorrida(c)) === monthIdx; });
+  return algaeRows().filter((r) => mesDeFila(r) === monthIdx);
 }
 // Rango de fechas [lo, hi] del mes de producción `monthIdx`, expandido a los límites de
 // los meses-calendario que toca. ⚠ Las muestras de Microbiología y Calidad de Agua de
@@ -1869,8 +1877,7 @@ function bind(root) {
     // Navegación de mes (resetea la selección dependiente)
     const nav = e.target.closest('[data-month-nav]');
     if (!nav || nav.disabled) return;
-    const allRows = algaeRows();
-    const ms = [...new Set(allRows.map((r) => g(r, 'corrida')).filter(Boolean).map((c) => monthIndexOfCorrida(numeroDeCorrida(c))).filter((i) => i >= 0))].sort((a, b) => a - b);
+    const ms = algMonthsList();   // punto 11: la MISMA lista que la barra (con los meses de las filas sin corrida)
     const ni = ms.indexOf(vState.month) + Number(nav.dataset.monthNav);
     if (ni >= 0 && ni < ms.length) {
       vState.month = ms[ni];

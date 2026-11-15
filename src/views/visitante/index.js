@@ -9,7 +9,7 @@ import { esc, fmtPop, wqiBand, wqiSpans } from '../../core/format.js';
 import { store } from '../../core/store.js';
 import { getField, parseNum, F, isLarviculturaRow, obsFindings } from '../../core/fields.js';
 import { fmtPct } from '../../core/util.js';
-import { presentMonths, corridasOfMonth, modulesOfCorrida, modCorStats, monthLabelAt, monthIndexOfCorrida, ventanaDeMaduracion, numeroDeCorrida, calendarRangeOfMonth } from '../../core/prodCalendar.js';
+import { presentMonths, corridasOfMonth, modulesOfCorrida, modCorStats, monthLabelAt, monthIndexOfCorrida, ventanaDeMaduracion, numeroDeCorrida, calendarRangeOfMonth, mesDeCorridaOFecha } from '../../core/prodCalendar.js';
 import { THRESHOLDS } from '../../config.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { SIN_RED } from '../../ui/vistaDiferida.js';
@@ -224,6 +224,7 @@ function semChip(tier, text) {
    para no inflar el bundle (mismo patrón que el lector Biomol).
    ============================================================ */
 const ALG_KEYS = {
+  fecha: ['Fecha', 'fecha'],
   corrida: ['Corrida_Larv', 'Corrida_larv', 'corrida_larv', 'Corrida', 'corrida'],
   modulo: ['Modulo_Larv', 'Módulo_Larv', 'modulo_larv', 'Modulo', 'Módulo'],
   sistema: ['Sistema', 'sistema'],
@@ -241,7 +242,8 @@ const ALG_KEYS = {
 export const ALG_SYS_CATS = ['Masivos', 'Premasivos', 'Fundas', 'Carboys', 'PBR', 'Otros'];
 export function algSysCat(s) { const u = String(s || '').trim().toUpperCase(); if (!u) return null; if (u.startsWith('PBR')) return 'PBR'; if (u.startsWith('PM')) return 'Premasivos'; if (/^F[MP]?\d*$/.test(u)) return 'Fundas'; if (/^C\d/.test(u)) return 'Carboys'; if (/^M\d/.test(u)) return 'Masivos'; return 'Otros'; }
 const algIsDesc = (r) => /^s[ií]$/i.test(String(getField(r, ALG_KEYS.descartado)).trim());
-function algMonthOf(r) { const n = numeroDeCorrida(getField(r, ALG_KEYS.corrida)); return Number.isNaN(n) ? -1 : monthIndexOfCorrida(n); }   // A29 · como `rowMonth`
+// Punto 11 (pauta del 12-11, usuario: «Sí, también Visitante») · sin corrida, el mes de su fecha: la regla de la vista de Algas
+function algMonthOf(r) { return mesDeCorridaOFecha(getField(r, ALG_KEYS.corrida), getField(r, ALG_KEYS.fecha)); }
 function algRowsOfMonth(mIdx) { return store.globalData.filter((r) => r._SheetOrigin === 'Lab_Algas' && algMonthOf(r) === mIdx); }
 
 /** Resumen de microalgas del mes (densidad, cultivos activos, descarte, protozoarios). */
