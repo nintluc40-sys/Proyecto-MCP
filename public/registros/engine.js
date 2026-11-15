@@ -22911,6 +22911,22 @@ function _mntTrabActual(){
 }
 function _mntGuardarRonda(){ _lsSet(MNT_RONDA_DRAFT_KEY, JSON.stringify(_mntRondaActual())); }
 function _mntGuardarTrab(){ _lsSet(MNT_TRAB_DRAFT_KEY, JSON.stringify(_mntTrabActual())); }
+/* 2026-11-15 (punto 23 de la pauta del 12-11; usuario: «Que siga al reloj») · LA FICHA SIGUIENTE NACÍA CON LA FECHA Y HORA DEL GUARDADO
+   ANTERIOR. Al guardar, _mntRegistrar deja ya preparada la siguiente con la fecha (y en la ronda, la hora) de ESE momento; la ronda
+   siguiente, hecha horas o días después, salía con ellas si nadie las cambiaba. Ahora, al pintarla, una ficha EN BLANCO toma las de
+   ahora, salvo que alguien las haya puesto a mano (`_aMano`, que no viaja: _mntRegistrar la quita) o sea una guardada abierta con ✏️. */
+function _mntAlReloj(ronda){
+  const m = ronda ? _mntRondaActual() : _mntTrabActual();
+  if(m._aMano) return;
+  if(_mntRaw(ronda ? MNT_RONDA_KEY : MNT_TRAB_KEY).some(function(r){ return r && r.id === m.id; })) return;   // una guardada: es la suya
+  const enBlanco = ronda ? MNT_EQUIPOS.every(function(q){ return mntLecturaVacia(m.equipos[q.codigo]); })
+    : !(m.equipo || m.tipo || m.actividad || String(m.horometro || "").trim() || String(m.descripcion || "").trim());
+  if(!enBlanco) return;
+  const f = today(), h = _mntHoraAhora();
+  if(m.fecha === f && (!ronda || m.hora === h)) return;
+  m.fecha = f;
+  if(ronda){ m.hora = h; _mntGuardarRonda(); } else _mntGuardarTrab();
+}
 // La lectura de horómetro más alta de un equipo en este dispositivo (la pista «últ.»), o null.
 function _mntUltimo(lista, codigo){
   let u = null;
@@ -22927,6 +22943,7 @@ function mntRondaCampo(el){
   const k = el && el.getAttribute("data-mk");
   if(!k) return;
   _mntRondaActual()[k] = el.value;
+  if(k === "fecha" || k === "hora") _mntRondaActual()._aMano = true;   // punto 23 · la puso alguien: ya no sigue al reloj
   _mntGuardarRonda();
 }
 function mntRondaCelda(el){
@@ -22942,6 +22959,7 @@ function mntTrabCampo(el){
   if(!k) return;
   const m = _mntTrabActual();
   m[k] = el.value;
+  if(k === "fecha") m._aMano = true;   // punto 23 · la puso alguien: ya no sigue al reloj
   _mntGuardarTrab();
   // La parada de inicio a fin se ve en su campo mientras no se escriba otra; la pista del horómetro, con su equipo.
   if(k === "horaInicio" || k === "horaFin"){
@@ -22978,7 +22996,7 @@ function _mntRegistrar(ronda){
     + "\n\nSi el tablero se cambió o se reinició, dilo en Observaciones.\n¿Guardar igualmente?")) return null;
   const key = ronda ? MNT_RONDA_KEY : MNT_TRAB_KEY;
   const list = _mntRaw(key).filter(function(r){ return r && r.id !== m.id; });
-  const rec = { id: m.id, ts: Date.now(), synced: false, data: JSON.parse(JSON.stringify(m)) };
+  const rec = { id: m.id, ts: Date.now(), synced: false, data: _mntSinMarcas(m) };   // punto 23 · `_aMano` no viaja
   list.push(rec);
   if(!_mntSave(key, list)) return null;
   _mntRecordarTecnico(m.tecnico);
@@ -23016,9 +23034,12 @@ async function mntTrabEnviar(){
   renderMntTrabajo(); updateDots();
   await syncAllPendingMnt();
 }
+// Una copia de lo de pantalla sin las marcas que no son datos (punto 23: `_aMano`).
+function _mntSinMarcas(m){ const d = JSON.parse(JSON.stringify(m)); delete d._aMano; return d; }
 // ¿Lo de la pantalla tiene algo que NO coincide con lo guardado con su mismo ID?
 function _mntSinGuardar(key, m){
-  return !_mntRaw(key).some(function(r){ return r && r.id === m.id && JSON.stringify(r.data) === JSON.stringify(m); });
+  const x = JSON.stringify(_mntSinMarcas(m));
+  return !_mntRaw(key).some(function(r){ return r && r.id === m.id && JSON.stringify(r.data) === x; });
 }
 // A9 · ¿Hay en pantalla algo anotado que no está guardado? «Nueva» y ✏️ Abrir lo miran con la misma vara.
 function _mntRondaPorGuardar(){
@@ -23150,6 +23171,7 @@ const _MNT_SUBT = 'font-size:11px;font-weight:700;color:#0f766e;text-transform:u
 function renderMntRonda(){
   const fp = document.getElementById("fp-mntronda");
   if(!fp) return;
+  _mntAlReloj(true);   // punto 23
   const m = _mntRondaActual();
   const v = function(x){ return escapeHtml(x == null ? "" : String(x)); };
   const lista = mntHorometros(loadMntRondas(), loadMntTrabajos());
@@ -23184,6 +23206,7 @@ function renderMntRonda(){
 function renderMntTrabajo(){
   const fp = document.getElementById("fp-mnttrabajo");
   if(!fp) return;
+  _mntAlReloj(false);   // punto 23
   const m = _mntTrabActual();
   const v = function(x){ return escapeHtml(x == null ? "" : String(x)); };
   const pc = mntParadaHoras(m.horaInicio, m.horaFin);

@@ -1333,6 +1333,12 @@ sin avisar**:
   pendientes, y quita el 🔍 viejo (usuario: «Quitarlo al abrir»). Y al cambiar de día, la fecha de SÓLO LECTURA de una
   corrección ya no toma la del día elegido: se habría guardado como fila nueva de otro día. Lo vigilan
   `mad-restaurar-panel.test.js` y el banco `mutar-mad-restaurar-panel`.
+- **🔧 Mantenimiento: la ficha siguiente sigue al reloj** (2026-11-15). Al guardar una ronda o un trabajo, el siguiente se
+  prepara en ese momento, y salía con la fecha (y en la ronda, la hora) del guardado anterior si se hacía horas o días
+  después. Ahora (usuario: «Que siga al reloj») una ficha EN BLANCO toma, al abrirla, la fecha y la hora de ahora; en
+  cuanto se anota algo, o se cambian la fecha o la hora a mano (la marca `_aMano`, que no viaja a la hoja), se respeta lo
+  puesto, y una guardada abierta con ✏️ conserva la suya. Lo vigilan `mnt-ficha-al-reloj.test.js` y el banco
+  `mutar-mnt-al-reloj`.
 - **Larvicultura y Lab. Algas: lo de días anteriores.** Se guardan por día y la app lee los de hoy, así que lo no
   enviado dejaba de verse a medianoche y la limpieza lo borraba. Ahora la limpieza no lo toca y, al abrir el módulo,
   un aviso dice qué quedó y de qué día, con **«☁️ Enviarlas»** (cada ficha a su hoja con SU fecha: las de Datos de un
