@@ -104,6 +104,13 @@ describe('isDegraded (guarda contra "se cargó 1 sola hoja")', () => {
     expect(isDegraded({ A: [{}], B: [{}], C: [{}] })).toBe(false);
   });
 
+  it('🔴 revisión 15-11 (B1.1) · es true si falta una de las aplicadas aunque llegue el MISMO número (una nueva y otra que no llegó)', () => {
+    store.connected = true;
+    store.sheetNames = ['A', 'B'];
+    expect(isDegraded({ A: [{}], C: [{}] })).toBe(true);
+    expect(isDegraded({ A: [{}], C: [{}] }, true)).toBe(false);   // completo: B se vació o se borró, se aplica (A4)
+  });
+
   it('es false si la descarga vino vacía (es otro fallo, no una degradación parcial)', () => {
     store.connected = true;
     store.sheetNames = ['A', 'B'];

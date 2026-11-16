@@ -1927,7 +1927,8 @@ export function renderModule(ctx, mod) {
         const k = moduleDayKpis(ctx, mod, corrida, dateSel.value, daySeries);
         const curIdx = daySeries.labels.indexOf(dateSel.value);
         const kPrev = curIdx > 0 ? moduleDayKpis(ctx, mod, corrida, daySeries.labels[curIdx - 1], daySeries) : null;
-        const bajas = (daySeries.base && k.pop != null) ? Math.max(0, daySeries.base - k.pop) : null;
+        const baseDia = daySeries.bases ? daySeries.bases[curIdx] : daySeries.base;   // B3.1: sólo los ya sembrados
+        const bajas = (baseDia && k.pop != null) ? Math.max(0, baseDia - k.pop) : null;
         kpisEl.innerHTML = [
           kpiDay('📈', 'Supervivencia', fmt1(k.sv, '%'), deltaSpan(k.sv, kPrev && kPrev.sv, (v) => v.toFixed(1) + ' p.p.', true)),
           kpiDay('📉', 'Mortalidad', fmt1(k.mort, '%')),

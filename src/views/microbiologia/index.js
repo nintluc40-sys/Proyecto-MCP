@@ -507,10 +507,10 @@ function genKpiStripHTML(k) {
 
   return `<div class="cal-inst-strip">
     ${inst('01', '', '🧪 Muestras micro', String(k.micCount), timeline, `${k.micDays.length} día(s) de muestreo`, kpiClick('muestras'))}
-    ${inst('02', k.alertCount > 0 ? alertSev : 'optimo', '⚠️ En alerta', String(k.alertCount), calSpark(k.alertSeries), k.micCount ? `${k.alertRatio}% de muestras` : 'sin muestras', kpiClick('alerta'))}
+    ${inst('02', k.alertCount > 0 ? alertSev : (k.micCount ? 'optimo' : ''), '⚠️ En alerta', String(k.alertCount), calSpark(k.alertSeries), k.micCount ? `${k.alertRatio}% de muestras` : 'sin muestras', kpiClick('alerta'))}
     ${inst('03', '', '🦠 Dominante', k.dom ? String(k.dom.alertas) : '0', bars(k.patTop.filter((t) => t.n)), k.dom ? esc(k.dom.label) : 'sin alertas', kpiClick('dominante'))}
     ${inst('04', k.wqi == null ? '' : k.wband.sev, '💧 WQI agua', k.wqi == null ? '—' : String(k.wqi), wsSeg, k.wqi == null ? 'sin datos' : esc(k.wband.label) + ' · sobre ' + parametrosConRango(loadCalRanges()).length + ' parámetros', kpiClick('wqi'))}
-    ${inst('05', k.outCount > 0 ? 'fuera' : 'optimo', '⚗️ Agua fuera', String(k.outCount), k.outCount ? bars(k.outTop) : '<span class="cal-inst-ok">✓ todo en rango</span>', k.outEvaluated ? `de ${k.outEvaluated} evaluados` : 'sin evaluar', kpiClick('fuera'))}
+    ${inst('05', k.outCount > 0 ? 'fuera' : (k.outEvaluated ? 'optimo' : ''), '⚗️ Agua fuera', k.outEvaluated ? String(k.outCount) : '—', k.outCount ? bars(k.outTop) : (k.outEvaluated ? '<span class="cal-inst-ok">✓ todo en rango</span>' : ''), k.outEvaluated ? `de ${k.outEvaluated} evaluados` : 'sin evaluar', kpiClick('fuera'))}
   </div>`;
 }
 
@@ -540,7 +540,8 @@ function genAreaStats(summaries, samples, ranges) {
     const bl = summaries.filter((s) => genAreaOf(s.ctx) === area);
     const dist = { 'Mínimo': 0, 'Leve': 0, 'Moderado': 0, 'Elevado': 0 };
     bl.forEach((s) => { if (s.worst && dist[s.worst] !== undefined) dist[s.worst]++; });
-    const worstSev = dist.Elevado > 0 ? 'critico' : dist.Moderado > 0 ? 'fuera' : (bl.length ? 'optimo' : 'sin-rango');
+    // B5.1 · verde sólo si alguna muestra tiene nivel calculado; sin ninguno, «sin-rango» (antes, verde con sólo haber filas)
+    const worstSev = dist.Elevado > 0 ? 'critico' : dist.Moderado > 0 ? 'fuera' : (bl.some((x) => x.worst && dist[x.worst] !== undefined) ? 'optimo' : 'sin-rango');
     const ws = samples.filter((s) => genAreaOf(s.ctx) === area);
     const meas = ws.flatMap((s) => s.meas);
     const w = calWQI(meas, ranges);
@@ -824,7 +825,7 @@ function calKpiStripHTML(samples, { outC, fullOk, pctOk, evaluated, evalCount, o
   const topMax = Math.max(1, ...tops.map((t) => t[1]));
   const topBars = tops.length
     ? `<div class="cal-inst-tops">${tops.map(([p, c]) => `<div class="cal-inst-top"><span class="cal-inst-top-l" title="${esc(p)}">${esc(p)}</span><span class="cal-inst-top-bar"><i style="width:${Math.round(c / topMax * 100)}%"></i></span><b>${c}</b></div>`).join('')}</div>`
-    : '<span class="cal-inst-ok">✓ Todo en rango</span>';
+    : (evaluated ? '<span class="cal-inst-ok">✓ Todo en rango</span>' : '');   // B5.1: sin nada evaluado no hay «en rango»
 
   const inst = (ix, sev, label, valueHtml, vizHtml, footHtml, attrs = '') => `
     <div class="cal-inst${sev ? ' cal-sev--' + sev : ''}"${attrs ? ' ' + attrs : ''}>
@@ -848,7 +849,7 @@ function calKpiStripHTML(samples, { outC, fullOk, pctOk, evaluated, evalCount, o
     ${inst('01', '', '💧 Muestras', String(samples.length), timeline, `${days.length} día(s) de muestreo`, kpiClick('muestras'))}
     ${inst('02', compSev, '✅ Cumplimiento', pctOk == null ? '—' : `${pctOk}<small>%</small>`, calSpark(compSeries), compFoot, kpiClick('cumplimiento'))}
     ${inst('03', sevProfileSev, '🧭 Perfil de severidad', pctOpt == null ? '—' : `${pctOpt}<small>% óptimo</small>`, `<div class="cal-inst-segwrap">${segBar}${segLegend}</div>`, pctOpt == null ? 'sin parámetros con rango' : '', kpiClick('perfil'))}
-    ${inst('04', outC > 0 ? 'fuera' : 'optimo', '⚠️ Fuera de rango', String(outC), topBars, evaluated ? `${(outC / evaluated * 100).toFixed(0)}% de evaluados` : 'sin evaluar', alertAttrs)}
+    ${inst('04', outC > 0 ? 'fuera' : (evaluated ? 'optimo' : ''), '⚠️ Fuera de rango', evaluated ? String(outC) : '—', topBars, evaluated ? `${(outC / evaluated * 100).toFixed(0)}% de evaluados` : 'sin evaluar', alertAttrs)}
   </div>`;
 }
 

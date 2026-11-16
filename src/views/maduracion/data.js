@@ -392,6 +392,9 @@ function ventana(model, f) {
   if (!evs.length) return null;
   let min = evs[0].date, max = evs[0].date;
   evs.forEach((e) => { if (e.date < min) min = e.date; if (e.date > max) max = e.date; });
+  // Revisión 15-11 (B2.1) · el final no pasa de HOY (`dataMaxDate`, ya acotada): una fecha futura mal tecleada estiraba la
+  // ventana años y cada hembra viva sumaba noches que no pasaron; la tasa de desove caía casi a 0 en toda la vista.
+  if (model.dataMaxDate && max > model.dataMaxDate) max = model.dataMaxDate;
   const a = f.from || min;
   const b = f.to && f.to < max ? f.to : max;
   return b >= a ? { a, b } : null;
@@ -1047,6 +1050,7 @@ export function trends(model, f, granularity = 'month') {
   if (!evs.length) return { buckets: [], labels: [], desoves: [], mortalidad: [], fertilidad: [] };
   let minD = evs[0].date, maxD = evs[0].date;
   evs.forEach((e) => { if (e.date < minD) minD = e.date; if (e.date > maxD) maxD = e.date; });
+  if (model.dataMaxDate && maxD > model.dataMaxDate) maxD = model.dataMaxDate;   // B2.1: sin meses vacíos hasta un año mal tecleado
   const buckets = [];
   if (granularity === 'day') {
     const d = new Date(minD.getFullYear(), minD.getMonth(), minD.getDate());

@@ -54,12 +54,13 @@ export function moduleSvPopSeries(ctx, mod, corrida) {
     siembraDe[tq] = first ? { p: first, t: firstT } : null;
   });
   const totalFirst = tanks.reduce((acc, tq) => acc + (siembraDe[tq] ? siembraDe[tq].p : 0), 0);
-  const labels = [], sv = [], pop = [];
+  const labels = [], sv = [], pop = [], bases = [];
   dates.forEach((d) => {
     const dt = parseAnyDate(d);
-    let total = 0, any = false, num = 0, den = 0;
+    let total = 0, any = false, num = 0, den = 0, baseDia = 0;
     tanks.forEach((tq) => {
       const seq = perTank[tq];
+      if (siembraDe[tq] && siembraDe[tq].t <= dt) baseDia += siembraDe[tq].p;   // revisión 15-11 (B3.1): sólo los ya sembrados
       for (let i = seq.length - 1; i >= 0; i--) {
         if (seq[i].t > dt) continue;
         total += seq[i].p; any = true;
@@ -71,11 +72,13 @@ export function moduleSvPopSeries(ctx, mod, corrida) {
     });
     labels.push(d);
     pop.push(any ? total : null);
+    bases.push(baseDia || null);
     sv.push(den > 0 ? Math.min((num / den) * 100, 100) : null);
   });
-  // `base` = siembra total del módulo (Σ primera pob. por tanque); permite derivar las
-  // bajas acumuladas (base − pob. del día) en el "Resumen del día" sin recalcular.
-  return { labels, sv, pop, base: totalFirst };
+  // `base` = siembra total del módulo (Σ primera pob. por tanque). Revisión 15-11 (B3.1) · las bajas acumuladas del
+  // "Resumen del día" van contra `bases[i]`, la siembra de los tanques YA sembrados ese día: con `base`, un día anterior a
+  // la última siembra contaba como bajas las larvas que aún no estaban en el agua.
+  return { labels, sv, pop, base: totalFirst, bases };
 }
 
 /** Tendencia de PL/g (LARVIA) del módulo: por fecha, el promedio ENTRE TANQUES del PL/g

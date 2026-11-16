@@ -169,7 +169,7 @@ function formatTable(fmtKey, area, items, titleSuffix, unidad) {
   }));
   // Sin NINGÚN parámetro medido no hay tabla que imprimir: la hoja es de resultados, y una
   // rejilla de puro contexto sale como un título con una fila de metadatos y nada debajo
-  // (medido: 2 grupos de 219, ambos «Larvicultura · EM»). Se condiciona SOLO a `patCols`:
+  // (medido: 2 grupos del mismo tamaño, ambos «Larvicultura · EM»). Se condiciona SOLO a `patCols`:
   // exigir además contexto perdería las tablas que sí traen resultados pero llegan sin
   // Módulo/Corrida/Estadío/Tipo/Ubicación, que son perfectamente imprimibles.
   if (!patCols.length) return '';
@@ -239,7 +239,7 @@ function pageHead(dayKey, metas) {
 }
 
 /* H-006 (auditoría 2026-09-25, aprobado 2026-10-03) · UNA línea de firma por analista del día (`resps`, sin repetir), una
-   al lado de otra. Antes firmaba sólo el primero aunque la cabecera los listara a todos (58 de 102 días tenían varios). */
+   al lado de otra. Antes firmaba sólo el primero aunque la cabecera los listara a todos (más de la mitad de los días tenían varios). */
 function pageFoot(codigo, tsStr, resps) {
   const firmas = (resps && resps.length ? resps : ['Responsable']).map((r) => `<div style="text-align:center;min-width:120px">
         <div style="border-top:1.5px solid #0f172a;padding-top:3px;margin-top:12px;font-size:6.5pt;font-weight:700;color:#0f172a">${esc(r)}</div>

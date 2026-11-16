@@ -87,6 +87,18 @@ describe('maduracion.data · KPIs', () => {
   });
 });
 
+describe('revisión 15-11 (B2.1) · una fecha FUTURA mal tecleada no estira la ventana', () => {
+  it('la tasa de desove y las tendencias no cuentan noches ni meses que no han pasado (fechas inventadas)', () => {
+    const conFutura = buildReproModel(matriz, bitacora.concat([{ 'Trovan ID': 'A2', Fecha: '2062-11-16', Tipo: 'Mortalidad' }]), transfer);
+    const k0 = kpis(model, all), k1 = kpis(conFutura, all);
+    expect(k0.hembrasNoche).toBeGreaterThan(0);
+    expect(k1.hembrasNoche).toBeLessThan(k0.hembrasNoche * 200);   // sin el tope: decenas de miles de noches por hembra
+    const fin = trends(conFutura, all, 'month').buckets.at(-1).start;
+    expect(fin.getTime()).toBeLessThanOrEqual(Date.now());
+    expect(trends(model, all, 'month').buckets.length).toBeGreaterThan(0);
+  });
+});
+
 describe('maduracion.data · producción por ubicación', () => {
   it('agrupa por tanque con fertilidad y eficiencia', () => {
     const stats = locationStats(model, all, 'tanque');

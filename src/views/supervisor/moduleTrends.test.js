@@ -42,6 +42,22 @@ describe('moduleSvPopSeries', () => {
     expect(r.sv).toEqual([null, 100, 100, 100]);
   });
 
+  it('🔴 revisión 15-11 (B3.1) · las bajas del día van contra la siembra de los tanques YA sembrados (cifras inventadas)', () => {
+    const ctx = {
+      larvWin: [
+        lv({ Tanque: 'TQ1', 'Población': '1000', Fecha: '01/06/2026' }),
+        lv({ Tanque: 'TQ1', 'Población': '950', Fecha: '03/06/2026' }),
+        lv({ Tanque: 'TQ2', 'Población': '1000', Fecha: '05/06/2026' }),
+      ],
+      tanqWin: [],
+    };
+    const r = moduleSvPopSeries(ctx, 'M01', '580');
+    expect(r.labels).toEqual(['01/06/2026', '03/06/2026', '05/06/2026']);
+    expect(r.bases).toEqual([1000, 1000, 2000]);   // el 03/06, TQ2 aún no estaba sembrado: bajas = 1000 − 950, no 2000 − 950
+    expect(r.bases[1] - r.pop[1]).toBe(50);
+    expect(r.base).toBe(2000);
+  });
+
   it('🔴 A22 · un tanque vaciado (0) cuenta como 0, en la curva y en la población', () => {
     const ctx = {
       larvWin: [

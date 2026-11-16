@@ -1114,7 +1114,10 @@ async function leerTodoAqui(avisar = null) {
  *  hasta recargar. Lo que se descarta, y lo que se aplica con hojas de menos, lo dice la píldora (textoFaltan). */
 export function isDegraded(sheets, completo = false) {
   const incoming = Object.keys(sheets || {}).length;
-  return store.connected && incoming > 0 && incoming < store.sheetNames.length && !completo;
+  /* Revisión 15-11 (B1.1) · también si falta alguna de las aplicadas aunque el NÚMERO cuadre: con una pestaña nueva y otra que
+     no llegó en el mismo ciclo, la cuenta coincidía y la que no llegó desaparecía del tablero hasta el siguiente refresco. */
+  return store.connected && incoming > 0 && !completo
+    && (incoming < store.sheetNames.length || hojasQueFaltan(sheets).length > 0);
 }
 
 /** A4: las hojas aplicadas que no trae `sheets`. */

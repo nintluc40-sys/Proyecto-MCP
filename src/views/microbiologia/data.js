@@ -503,7 +503,7 @@ const MIC_MIGRATIONS = [
      ha sido «Maduración · Agua» de verdad —tiene un formato que resuelve a ella y sus
      áreas de Despacho son otras dos, 'mad-despacho-agua' y 'mad-despacho-animal'—.
      Aplicar aquí un renombrado NUESTRO sobre un almacén COMPARTIDO reasignaba a Despacho
-     (464 filas) unos factores que el técnico había fijado para Agua (24 filas), y de paso
+     (muchas filas) unos factores que el técnico había fijado para Agua (unas pocas), y de paso
      los hacía desaparecer para la app de captura, que no conoce 'mad-despacho'.
 
      Decisión del usuario: retirarla. Hoy las dos apps coinciden en que 'mad-agua' es
