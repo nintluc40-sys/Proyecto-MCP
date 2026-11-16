@@ -106,9 +106,11 @@ const int = (v) => {
 /* A16 (2026-11-04, usuario: «Rechazarlo y pedir miles enteros») · `int` lee «6.5» como 6 y «-3» como vacío, y el dato se perdía sin aviso.
    Lo que se valida es lo TECLEADO: vacío sigue siendo «sin cifra». «4.0» vale (es 4); «1e3», no (parseInt daría 1). Lo usan las cinco fichas
    de Maduración que cuentan animales. Gemelo: `madCifraMala` y `madCifraMalaTexto`, en el motor. */
+/* 2026-11-16 (revisión 15-11, T4.2) · «6.000» (punto de miles, como se escribe en Ecuador) pasaba por «6.0» y se leía 6: un punto con TRES
+   ceros o más no vale (se pide sin separadores). «4.0» y «4.00» siguen valiendo. */
 export function cifraMala(v) {
   const s = String(v === null || v === undefined ? '' : v).trim();
-  return s !== '' && !/^\d+(\.0*)?$/.test(s);
+  return s !== '' && !/^\d+(\.0{0,2})?$/.test(s);
 }
 export const cifraMalaTexto = (donde, que, v, enMiles) => 'En ' + donde + ', «' + String(v).trim() + '» no vale para ' + que + ': se escribe' + (enMiles ? ' en miles,' : '') + ' con un número entero, sin decimales ni signo.';
 /* ── Las fechas de N2 y N5 salen AUTOMÁTICAS, pero se pueden editar (2026-09-16 / 2026-09-17, usuario) ──

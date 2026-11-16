@@ -644,7 +644,8 @@ function _purgeOldestRecovery(){
     if(!k || !k.startsWith(RPRE)) continue;
     try{
       const e = JSON.parse(localStorage.getItem(k)||"{}");
-      if(e && typeof e.ts === "number" && e.ts < oldestTs){
+      // Revisión 15-11 (T1.2) · sólo una copia YA CADUCADA: una reciente puede ser lo único que queda de lo tecleado (salida del módulo).
+      if(e && typeof e.ts === "number" && (Date.now() - e.ts) > RTTL && e.ts < oldestTs){
         oldestTs = e.ts; oldestKey = k;
       }
     }catch(_){}
@@ -828,6 +829,7 @@ const ev=(d,k,def="")=>escapeHtml(d[k]!==undefined&&d[k]!==""?d[k]:def);
 const vl=(d,k)=>{const v=d[k];return(v!==undefined&&v!==null&&v!=="")?escapeHtml(v):"";}
 // Zero-safe value for payloads (preserves 0 as number)
 const pv=(o,k)=>{const v=o[k];return(v!==undefined&&v!==null&&v!=="")?v:"";}
+const _v0=(v)=>(v!==undefined&&v!==null&&v!=="")?v:"";   // revisión 15-11 (T1.7) · como pv, para un valor suelto: el 0 se conserva
 // Coalescencia que PRESERVA el 0: devuelve el primer valor "presente"
 // (no undefined/null/"") de la lista. A diferencia de `a || b`, un 0
 // numérico legítimo (p. ej. 0 % de supervivencia o población 0) NO se
@@ -1111,8 +1113,9 @@ function saveRecovery(m, fid, data){
   if(!isValidMod(m)) return;
   if(!ALL_FICHAS.includes(fid)) return;
   const entry = { mod:m, ficha:fid, ts:Date.now(), data };
-  try{ localStorage.setItem(rkeyR(m,fid), JSON.stringify(entry)); }
-  catch(x){} // silent — recovery is best-effort
+  // Revisión 15-11 (T1.1) · hace sitio y DICE si cupo: a la salida del módulo es la única copia de lo tecleado.
+  try{ return _lsSet(rkeyR(m,fid), JSON.stringify(entry)) !== false; }
+  catch(x){ return false; }
 }
 
 function loadRecovery(m, fid){
@@ -1301,14 +1304,16 @@ function _fichaGuardada(fid){
   try{ clearRecovery(curMod, fid); }catch(_){}
 }
 function _respaldarFichasStd(){
+  let ok = true;   // T1.1 · false si alguna copia no cupo
   ALL_FICHAS.forEach(fid => {
     const fp = document.getElementById("fp-"+fid);
     if(!fp) return;
     if(fid === "algas" ? !_algSinAgregar() : !_fichasTecleadas.has(fid)) return;   // punto 13 · sólo lo tecleado
     const data = collect(fid, {quiet:true});   // #17: sin tocar _collectIssues ni .inp-bad
     const hasData = Object.values(data).some(v=>v!==null&&v!==undefined&&v!=="");
-    if(hasData) saveRecovery(curMod, fid, data);
+    if(hasData && !saveRecovery(curMod, fid, data)) ok = false;
   });
+  return ok;
 }
 
 /* 2026-11-13 (punto 13) · el aviso de ↩ Recuperar sin espacio, uno para todas (el de Maduración, del 05-11): no se ha recuperado
@@ -1613,7 +1618,7 @@ function buildDatosPayload(m, includeFichas, opts){
       pv(cal,"es_"+i), pv(pob,"sal_"+i), tec,                            // 26-28 Estrés/Salinidad/Técnico
       ...OTRO_SISTEMA_PAD,                                                // 29-36 (otro sistema, 8 cols vacías)
       pv(desp,"dc_"+i), pv(desp,"bm_"+i),                                // 37-38 Densidad cosechada / Biomasa
-      pv(desp,"cj_"+i) || "",                                            // 39 Cajas/Tinas (manual)
+      pv(desp,"cj_"+i),                                                  // 39 Cajas/Tinas (manual; T1.7: el 0 viaja)
       sanitizeStr(desp["de_"+i] || ""),                                  // 40 Destino
       sanitizeStr(desp["ps_"+i] || ""),                                  // 41 Piscina
       celMlOut(agua["cm_"+i]), pv(agua,"tr_"+i), pv(agua,"ep_"+i),       // 42-44 Cel/ml (×2500) / % Transp / % Espuma
@@ -1646,13 +1651,13 @@ function buildControlPayload(m, dato){
 
   for(let i=0;i<TQS;i++){
     const tankHasData = PTIMES.some(t =>
-      (par["od_"+i+"_"+t]||"") !== "" || (par["tc_"+i+"_"+t]||"") !== ""
+      _v0(par["od_"+i+"_"+t]) !== "" || _v0(par["tc_"+i+"_"+t]) !== ""
     );
     if(!tankHasData) continue;
     for(let ti=0;ti<PTIMES.length;ti++){
       const t   = PTIMES[ti];
-      const od  = par["od_"+i+"_"+t] || "";
-      const tmp = par["tc_"+i+"_"+t] || "";
+      const od  = _v0(par["od_"+i+"_"+t]);   // revisión 15-11 (T1.7) · un OD de 0 (caída de aireación) es un dato, no un vacío
+      const tmp = _v0(par["tc_"+i+"_"+t]);
       if(od===""&&tmp==="") continue;
       rows.push([
         fechaStr, t, corrida, mLabel(m), _tqLbl(i),
@@ -2167,7 +2172,12 @@ function _reconcileAlgas(mark){
   if(!algo) return false;                    // otra sesión, u otro dispositivo: no hay nada que casar
   if(mark.mod){
     const e = loadE(mark.mod, "algas");
-    if(e) saveE(mark.mod, "algas", e.data, true);
+    // 2026-11-16 (revisión 15-11, T2.1) · un registro tecleado y NO agregado al historial no viajó: la ficha no se da por enviada (sólo la
+    // cabecera que deja «📋 Agregar» —fecha, corrida, módulo, técnico— cuenta como nada pendiente).
+    const _cab = ["fecha","corrida_larv","modulo_larv","tec"];
+    const _sinAgregar = !!(e && e.data && Object.keys(e.data).some(function(k){ return _cab.indexOf(k) === -1 && e.data[k] !== "" && e.data[k] != null; }));
+    if(e && !_sinAgregar) saveE(mark.mod, "algas", e.data, true);
+    else if(_sinAgregar){ try{ toast("ℹ️ Lab. Algas: en la ficha queda un registro sin «📋 Agregar al historial»: ése NO se envió.","warn",7000); }catch(_){} }
   }
   return true;
 }
@@ -3327,8 +3337,11 @@ function goBack(){
      autoguardado (cada minuto) se perdía. Sólo si hay algo sin guardar, para no sembrar «↩ Recuperar» de lo que ya está guardado.
      🆕 13-11 (punto 13) · lo decide cada ficha (`_fichasTecleadas`): `_formDirty` es de todo el módulo y se apaga al guardar
      CUALQUIER ficha, y entonces lo tecleado en otra salía sin copia. */
-  try{ if(isStdMod(curMod)) _respaldarFichasStd(); }catch(_){}
-  try{ if(isLabMod(curMod) && _algSinAgregar()) saveRecovery(curMod, "algas", collect("algas", {quiet:true})); }catch(_){}
+  // Revisión 15-11 (T1.1) · sin sitio para su copia, lo tecleado se perdía en silencio: se pregunta, como en Maduración (A7).
+  let _copiaStd = true;
+  try{ if(isStdMod(curMod)) _copiaStd = _respaldarFichasStd(); }catch(_){}
+  try{ if(isLabMod(curMod) && _algSinAgregar()) _copiaStd = saveRecovery(curMod, "algas", collect("algas", {quiet:true})) && _copiaStd; }catch(_){}
+  if(!_copiaStd && !confirm("No hay espacio en este equipo para dejar copia de lo tecleado sin guardar: si sales, SE PIERDE.\n\nAceptar: salir igualmente.\nCancelar: quedarse (guárdalo con 💾 o envíalo con ☁️, o libera espacio).")) return;
   // Lo de pantalla del AsT y de Traslado ya tiene su copia (arriba): no se pinta al volver al módulo, que abre con lo guardado.
   _astAlVolver = null; _trasAlVolver = null;
   _astFormDirty = false;
@@ -3483,6 +3496,8 @@ function selTab(t){
   if(isMadMod(curMod) && MAD_BORR_FICHAS[curTab]){ try{ madBorrGuardarYa(curTab); }catch(_){} }
   // Grilla de Mareas: vuelca lo tecleado/pegado antes de cambiar de pestaña.
   if(curTab === "marea"){ try{ clearTimeout(_mareaDirtyTm); saveMareaDraftObj({ rows:_collectMareaGrid() }); }catch(_){} }
+  // Revisión 15-11 (T6.1) · Biomol: lo pegado sin guardar se guarda al dejar la pestaña (o al volver a pulsarla): se repinta desde lo guardado.
+  if(curTab === "biomol" && isBioMod(curMod)){ try{ if(_bioGridDirty) saveBioGrid({ silent:true, noRender:true }); }catch(_){} }
   // 2026-11-12 (punto 1) · As Técnico y Traslado: lo que hay en pantalla, para pintarlo al volver (no guarda ni envía nada).
   if(isAstMod(curMod)) _astTrasAlSalir();
   curTab = t;
@@ -3507,6 +3522,7 @@ function selTab(t){
   if(t==="alimentacion") renderMadAlimentacion();
   // R1 (2026-09-24) · si la ficha se acaba de MONTAR (al entrar o tras recargar la app), trae el borrador de su día.
   if(MAD_BORR_FICHAS[t] && _madBorrMontajes !== _montajes){ try{ madBorrTraerDelDia(t); }catch(_){} }
+  else if(MAD_BORR_FICHAS[t]){ try{ _madFormAlDia(t); }catch(_){} }   // T3.3 · ya montada (quizá ayer)
   if(t==="broodstock") renderMadBroodstock();
   if(t==="reproductivo") renderMadReproductivo();
   if(t==="biomol") renderBiomol();
@@ -4756,7 +4772,7 @@ function saveCSData(){
   saveCS(curMod, data);
   toast("Cantidad sembrada guardada","ok",2200);
   // Re-renderiza la ficha de Población para reflejar el auto-cálculo
-  if(curTab === "poblacion") renderPoblacion();
+  if(curTab === "poblacion") rcPob();   // revisión 15-11 (T2.2) · recalcular EN SU SITIO: repintar desde lo guardado borraba lo tecleado
   // Si la CS cambió y hay días ya registrados de la corrida en curso, ofrecer el
   // recálculo retroactivo de supervivencia (deja el modal abierto con el panel).
   const scan = _recalcScan();
@@ -4776,7 +4792,7 @@ function clearCSData(){
   clearCS(curMod);
   toast("Cantidad sembrada borrada","ok",2200);
   closeCS();
-  if(curTab === "poblacion") renderPoblacion();
+  if(curTab === "poblacion") rcPob();   // revisión 15-11 (T2.2) · recalcular EN SU SITIO: repintar desde lo guardado borraba lo tecleado
 }
 
 /* ══════════════════════════════════════════
@@ -5024,7 +5040,7 @@ function saveTONData(){
   toast("Toneladas guardadas","ok",2200);
   closeTON();
   // Re-renderiza Despacho para reflejar el auto-cálculo de Densidad cosechada
-  if(curTab === "despacho") renderDespacho();
+  if(curTab === "despacho"){ rcDespBiomasa(); rcDespDensidad(); }   // revisión 15-11 (T2.2) · en su sitio, sin borrar lo tecleado
 }
 function clearTONData(){
   const ton = loadTON(curMod);
@@ -5034,7 +5050,7 @@ function clearTONData(){
   clearTON(curMod);
   toast("Toneladas borradas","ok",2200);
   closeTON();
-  if(curTab === "despacho") renderDespacho();
+  if(curTab === "despacho"){ rcDespBiomasa(); rcDespDensidad(); }   // revisión 15-11 (T2.2) · en su sitio, sin borrar lo tecleado
 }
 
 
@@ -9262,7 +9278,8 @@ function madIngNum(v){ if(v===""||v==null) return ""; const n=Number(v); return 
 function madIngInt(v){ if(v===""||v==null) return ""; const n=parseInt(v,10); return (isFinite(n)&&n>=0)?n:""; }
 /* A16 (2026-11-04, usuario: «Rechazarlo y pedir miles enteros») · `madIngInt` lee «6.5» como 6 y «-3» como vacío, y el dato se perdía sin aviso.
    Lo que se valida es lo TECLEADO: vacío sigue siendo «sin cifra». «4.0» vale (es 4); «1e3», no (parseInt daría 1). Gemelo: `cifraMala`, en el esquema de Desoves. */
-function madCifraMala(v){ const s=String(v==null?"":v).trim(); return s!=="" && !/^\d+(\.0*)?$/.test(s); }
+// 2026-11-16 (revisión 15-11, T4.2) · «6.000» (punto de miles) se leía 6: un punto con tres ceros o más ya no vale. Gemelo: `cifraMala`.
+function madCifraMala(v){ const s=String(v==null?"":v).trim(); return s!=="" && !/^\d+(\.0{0,2})?$/.test(s); }
 function madCifraMalaTexto(donde, que, v, enMiles){ return "En "+donde+", «"+String(v).trim()+"» no vale para "+que+": se escribe"+(enMiles?" en miles,":"")+" con un número entero, sin decimales ni signo."; }
 function madIngSumaReparto(rep, campo){
   return (rep||[]).reduce(function(a,r){ const n=parseInt(r&&r[campo],10); return a+((isFinite(n)&&n>0)?n:0); },0);
@@ -11230,6 +11247,7 @@ function madBorrFechaChange(ficha){
   if(!f) return;
   const nueva = f.value;
   const previa = _madBorrFecha[ficha];
+  if(isValidDate(nueva) && previa !== nueva) _madBorrAuto[ficha] = (nueva === today()) ? nueva : null;   // T3.3 · elegida a mano: ya no es «de la app»
   /* Una fecha A MEDIO TECLEAR llega aquí vacía. Ni se guarda ni se trae, y sobre todo NO se
      toca `_madBorrFecha`: perder el último día válido haría que la siguiente fecha entera ya no
      supiera bajo qué día guardar lo que hay en pantalla, y se perdería el día en curso. */
@@ -11277,12 +11295,26 @@ function madBorrFechaChange(ficha){
 function madBorrMontada(ficha){
   if(!MAD_BORR_FICHAS[ficha]) return;
   _madBorrFecha[ficha] = today();
+  _madBorrAuto[ficha] = today();
   _madBorrTocado[ficha] = false;
   _madBorrOrigen[ficha] = "limpio";
   clearTimeout(_madBorrTm[ficha]); _madBorrTm[ficha] = null;
   _madBorrMontajes++;
   _madBorrEscuchar(ficha);
 }
+/* 2026-11-16 (revisión 15-11, T3.3) · LA FECHA DE UN FORMULARIO MONTADO AYER. Los siete se montan una vez con la fecha de ese día y no se
+   repintan: con la app abierta de un día para otro, lo de hoy salía con la fecha de ayer (el arreglo del 30-09 sólo llegó a las grillas).
+   Como en las grillas: si la fecha la puso la app (`_madBorrAuto`) y no es hoy, sin nada tecleado pasa a hoy; con algo tecleado, se avisa. */
+let _madBorrAuto = {};
+function _madFormAlDia(ficha){
+  const cfg = MAD_BORR_FICHAS[ficha], f = cfg ? document.getElementById(cfg.fecha) : null;
+  const hoy = today(), auto = _madBorrAuto[ficha];
+  if(!f || f.hasAttribute("readonly") || !auto || auto === hoy || f.value !== auto) return;
+  if(_madBorrTocado[ficha]){ toast("⚠️ Esta ficha tiene la fecha " + auto.split("-").reverse().join("/") + ", no la de hoy: cámbiala si lo tecleado es de hoy.", "warn", 9000); return; }
+  f.value = hoy;
+  madBorrFechaChange(ficha);
+}
+try{ document.addEventListener("visibilitychange", function(){ if(document.visibilityState === "visible" && isMadMod(curMod) && MAD_BORR_FICHAS[curTab]) _madFormAlDia(curTab); }); }catch(_){}
 
 function renderMadIngreso(){
   const fp=document.getElementById("fp-ingreso"); if(!fp) return;
@@ -12976,7 +13008,7 @@ function _madDesCorregirEnCola(id, k, desove, fecha, campos){
   const nuevo=Object.assign({}, p, { rows:filas });
   // 2026-11-05 (auditoría de la A, usuario: «Igual que el resto») · con el reqId de A5: volver a un contenido ya escrito, tras otro, se escribe.
   q[i]=Object.assign({}, it, { payload:nuevo, reqId:_reqIdDeEnvio(nuevo.sheetName || "_default", _payloadFingerprint(nuevo)) || "" });
-  _saveSyncQueue(q);
+  if(!_saveSyncQueue(q)) return "sinEspacio";   // revisión 15-11 (T4.1) · sin reescribir la cola, la corrección NO está hecha
   return "hecho";
 }
 /* La fila del historial pasa a decir lo que se ENVIÓ (`campos`; en la cola, también los vaciados); lo demás se queda como
@@ -13034,7 +13066,8 @@ async function _madDesCorregirGuardar(){
     const r=_madDesCorregirEnCola(id, k, desove, model.fecha, enCola);
     if(r!=="hecho"){
       toast(r==="desfase" ? "El envío pendiente se hizo con otra versión de la app: espera a que se entregue y corrígelo entonces."
-        : "El envío ya no está en la cola: vuelve a pulsar ☁️ Guardar corrección.","err",8000);
+        : r==="sinEspacio" ? "❌ No se pudo corregir: no hay espacio en este equipo para reescribir el envío que espera en la cola. Libera espacio y vuelve a pulsar ☁️ Guardar corrección (lo tecleado sigue aquí)."
+        : "El envío ya no está en la cola: vuelve a pulsar ☁️ Guardar corrección.","err",9000);
       return;
     }
     _madDesCorreccionAnota(id, k, desove, enCola, "cola");
@@ -14432,7 +14465,8 @@ function _madAlimR2(n){ return Math.round(n*100)/100; }
 function _madAlimR3(n){ return Math.round(n*1000)/1000; }
 function _madAlimF10(v){ return _madAlimTxt(v).slice(0,10); }
 function _madAlimEsFecha(v){ return /^\d{4}-\d{2}-\d{2}$/.test(v); }
-function _madAlimEntero(v){ if(_madAlimTxt(v)==="") return ""; const n=parseInt(v,10); return (Number.isFinite(n) && n>=0) ? n : ""; }
+// T4.2 · «12.7» o «6.000» ya no se truncan en silencio: dan vacío y madAlimValidar lo rechaza.
+function _madAlimEntero(v){ if(_madAlimTxt(v)==="") return ""; if(!/^\d+(\.0{0,2})?$/.test(_madAlimTxt(v))) return ""; const n=parseInt(v,10); return (Number.isFinite(n) && n>=0) ? n : ""; }
 function madAlimNum(v){ const t=_madAlimTxt(v).replace(",","."); if(t==="") return ""; const n=Number(t); return (Number.isFinite(n) && n>=0) ? n : ""; }
 function madAlimHora(v){
   const m=/^(\d{1,2}):(\d{2})$/.exec(_madAlimTxt(v));
@@ -15636,6 +15670,7 @@ function _reproNavBtn(id, label){
   return '<button type="button" onclick="madReproSub(\''+id+'\')" style="padding:6px 12px;font-size:12px;font-weight:600;border:1px solid;border-radius:6px;cursor:pointer;'+st+'">'+label+'</button>';
 }
 function madReproSub(s){ _reproSub = s; renderMadReproductivo(); }
+const _reproPanel = {};   // T5.1 · lo de cada sub-sección del reproductivo, mientras dure la sesión de la app
 function renderMadReproductivo(){
   const fp = document.getElementById("fp-reproductivo");
   if(!fp) return;
@@ -15650,6 +15685,17 @@ function renderMadReproductivo(){
     + _reproNavBtn("transferencias","🔄 Transferencias")
     + _reproNavBtn("consulta","📊 Consulta")
     + '</div>';
+  /* Revisión 15-11 (T5.1) · cambiar de pestaña o de sub-sección repintaba en blanco: los Trovan pegados, la grilla de Alta o los destinos se
+     perdían. Lo de cada sub-sección (salvo Consulta) se conserva en memoria y vuelve al volver a ella. */
+  const _antes = fp.getAttribute("data-repro-sub");
+  if(_antes && _antes !== "consulta" && fp.firstChild){ try{ _madBorrFijarValores(fp); _reproPanel[_antes] = fp.innerHTML; }catch(_){} }
+  fp.setAttribute("data-repro-sub", _reproSub);
+  if(_reproSub !== "consulta" && _reproPanel[_reproSub]){
+    fp.innerHTML = _reproPanel[_reproSub];
+    try{ _reproPaintMatrixBanner(); }catch(_){}
+    fixupLabels(fp);
+    return;
+  }
   const body = (_reproSub==="alta") ? _reproAltaHTML()
     : (_reproSub==="transferencias") ? _reproTransferHTML()
     : (_reproSub==="consulta") ? _reproConsultaHTML()
@@ -17305,15 +17351,28 @@ async function _syncMadSalasGrid(){
   updateDots(); updateSyncUI();
 }
 
+/** Revisión 15-11 (T5.2) · los ids de registros de una grilla de Maduración que esperan en la cola (marca F3 `kind`, `keys` = ids). */
+function _madIdsEnColaDe(kind){
+  const s = new Set();
+  _loadSyncQueue().forEach(function(it){ const m = it && it.mark; if(m && m.kind === kind && Array.isArray(m.keys)) m.keys.forEach(function(k){ s.add(k); }); });
+  return s;
+}
 function clearMadSalasGrid(){
   const fechaEl = document.getElementById("mad-salas-fecha");
   const fecha = (fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today();
   const list = loadMad("salas");
-  const matching = list.filter(r => r && r.data && r.data.fecha === fecha);
+  // Revisión 15-11 (T5.2) · lo que espera en la cola NO se quita (llegaría igual y escribiría encima de lo re-tecleado).
+  const enCola = _madIdsEnColaDe("mad:salas"), zEnCola = _madIdsEnColaDe("mad:zonas");
+  const delDia = list.filter(r => r && r.data && r.data.fecha === fecha);
+  const matching = delDia.filter(r => !enCola.has(r.id));
   // 2026-10-27 · el día de la grilla son también sus zonas
   const zl = loadMad("zonas");
-  const zMatching = zl.filter(r => r && r.data && r.data.fecha === fecha);
+  const zDelDia = zl.filter(r => r && r.data && r.data.fecha === fecha);
+  const zMatching = zDelDia.filter(r => !zEnCola.has(r.id));
+  const esperan = (delDia.length - matching.length) + (zDelDia.length - zMatching.length);
+  if(esperan) toast("⏳ " + esperan + " registro(s) de Salas " + QUITAR_EN_COLA, "warn", 9000);
   if(matching.length === 0 && zMatching.length === 0){
+    if(esperan) return;
     toast("No hay registros de Salas para "+fecha,"info",2500);
     return;
   }
@@ -18877,10 +18936,15 @@ function clearMadTanquesGrid(){
   const list = loadMad("tanques");
   const delDia = list.filter(r => r && r.data && r.data.fecha===fecha && r.data.sala===sala);
   const enviado = (r) => !!(r.synced || r.syncedAt);
-  const matching = delDia.filter(r => !enviado(r));
+  // Revisión 15-11 (T5.2) · lo que espera en la cola NO se quita: llegaría igual, y re-tecleado daría OTRA fila de la misma ronda.
+  const enCola = _madIdsEnColaDe("mad:tanques");
+  const esperan = delDia.filter(r => !enviado(r) && enCola.has(r.id)).length;
+  const matching = delDia.filter(r => !enviado(r) && !enCola.has(r.id));
   const abiertosEnviados = delDia.filter(r => enviado(r) && !r.data.cerrado);
   const conservados = delDia.length - matching.length;
+  if(esperan) toast("⏳ " + esperan + " registro(s) de Tanques " + QUITAR_EN_COLA, "warn", 9000);
   if(matching.length === 0 && abiertosEnviados.length === 0){
+    if(esperan) return;
     if(!delDia.length){ toast("No hay registros de Tanques para "+sala+" ("+fecha+")","info",2500); return; }
     toast("Lo de Tanques de "+sala+" ("+fecha+") ya se envió y se conserva. Para corregir un parte: «✏️ Reabrir el parte».","info",5000);
     return;
@@ -22919,8 +22983,14 @@ function _mntAlReloj(ronda){
   const m = ronda ? _mntRondaActual() : _mntTrabActual();
   if(m._aMano) return;
   if(_mntRaw(ronda ? MNT_RONDA_KEY : MNT_TRAB_KEY).some(function(r){ return r && r.id === m.id; })) return;   // una guardada: es la suya
-  const enBlanco = ronda ? MNT_EQUIPOS.every(function(q){ return mntLecturaVacia(m.equipos[q.codigo]); })
-    : !(m.equipo || m.tipo || m.actividad || String(m.horometro || "").trim() || String(m.descripcion || "").trim());
+  /* Revisión 15-11 (R2-23) · «en blanco» = igual que una recién nacida salvo id, fecha y hora: la hora de inicio, los repuestos, las
+     observaciones, el estado o el técnico también cuentan como «algo anotado». */
+  const nueva = ronda ? _mntRondaNueva() : _mntTrabNuevo(), txt = function(v){ return String(v == null ? "" : v).trim(); };
+  const enBlanco = Object.keys(Object.assign({}, nueva, m)).every(function(k){
+    if(k === "id" || k === "fecha" || k === "hora" || k === "_aMano") return true;
+    if(k === "equipos") return MNT_EQUIPOS.every(function(q){ return mntLecturaVacia((m.equipos || {})[q.codigo]); });
+    return txt(m[k]) === txt(nueva[k]);
+  });
   if(!enBlanco) return;
   const f = today(), h = _mntHoraAhora();
   if(m.fecha === f && (!ronda || m.hora === h)) return;
@@ -27271,6 +27341,7 @@ function micSessionKey(d){
 const LAB_ANULAR_KEY = PRE + "lab_anular_v1";
 const LAB_ANULAR_KEY_VIEJA = "lab_anular_v1";
 const LAB_MARCA_ANULADA = "⛔ ANULADA";
+const LAB_SELLO_ANULADA = "⛔anulada";   // R2-5 · sello de una clave anulada en la marca de la cola (ninguna huella real lo es)
 function _labAnulacionesTodas(){
   _lsMudarClave(LAB_ANULAR_KEY_VIEJA, LAB_ANULAR_KEY);
   try{ const o = JSON.parse(localStorage.getItem(LAB_ANULAR_KEY) || localStorage.getItem(LAB_ANULAR_KEY_VIEJA) || "{}"); return (o && typeof o === "object" && !Array.isArray(o)) ? o : {}; }
@@ -27365,7 +27436,10 @@ function _labClavesEnCola(tipo){
   const s = new Set();
   _loadSyncQueue().forEach(function(it){
     const m = it && it.mark;
-    if(m && m.kind === tipo && Array.isArray(m.keys)) m.keys.forEach(function(k){ s.add(String(k)); });
+    if(m && m.kind === tipo && Array.isArray(m.keys)) m.keys.forEach(function(k){
+      if(m.sellos && m.sellos[String(k)] === LAB_SELLO_ANULADA) return;   // R2-5 · una clave anulada no «llegó»
+      s.add(String(k));
+    });
   });
   return s;
 }
@@ -27406,6 +27480,8 @@ function _labAvisoBorrado(fuera){
    enviado y se dice cuántas sesiones quedan. `LAB_MAX_FILAS` es el `maxRows` de micro, cal y pat en el GAS: lo vigila una prueba que lee
    GAS/Code.gs. */
 const LAB_MAX_FILAS = 300;
+// Revisión 15-11 (T7.4) · pegar más filas de las que tiene la grilla las perdía sin aviso (el punto 10 sólo llegó a Maduración y Mareas).
+function _labAvisoNoCabe(n){ if(n > 0) toast("📋 Lo pegado no cabía en la grilla: " + n + " fila(s) quedaron fuera. Añade filas y vuelve a pegar ésas.", "warn", 9000); }
 function _labLotes(registros, clave, construir, tope){
   const orden = [], por = {};
   (registros || []).forEach(function(r){ const k = clave(r.data); if(!por[k]){ por[k] = []; orden.push(k); } por[k].push(r); });
@@ -27446,7 +27522,11 @@ async function _labEnviarPendiente(c){
     setSyncUI("pend", "Enviando " + n + " muestra(s)" + (lotes.length > 1 ? " · envío " + (i+1) + " de " + lotes.length : "") + "…");
     /* F3: reconciliación al entregar desde cola. Punto 5 · el envío que lleva las anulaciones lleva también SUS claves: si la sesión
        vieja aún espera en la cola, _colaSolapa lo pone detrás —anulada antes de llegar, al llegar después volvería a la hoja—. */
-    const opts = { mark:{ kind:c.tipo, keys: L.anul ? L.claves.concat(anul.lista.map(function(a){ return c.clave(a.data); })) : L.claves } };
+    const _anulK = L.anul ? anul.lista.map(function(a){ return String(c.clave(a.data)); }) : [];
+    const opts = { mark:{ kind:c.tipo, keys: L.claves.concat(_anulK) } };
+    /* Revisión 15-11 (R2-5) · las claves ANULADAS van sólo para el orden de la cola: con un sello que ningún registro tiene, al entregarse
+       no se da por enviado lo que se vuelva a guardar con esa clave (_reconcileMark) ni cuenta como «llegó» (_labClavesEnCola). */
+    if(_anulK.length){ _marcaSellar(opts.mark); opts.mark.sellos = opts.mark.sellos || {}; _anulK.forEach(function(k){ opts.mark.sellos[k] = LAB_SELLO_ANULADA; }); }
     const sent = await postPayload(payload, c.url, opts);
     if((sent || opts.outcome === "queued") && L.anul){ _labAnulacionesSalieron(c.tipo, anul.lista, c.clave); anulSalio = true; }
     if(sent){ _marcarEnviado(opts); muestras += n; sesiones += L.claves.length; continue; }
@@ -27633,6 +27713,7 @@ function micGridPaste(ev, fmtKey){
   const trs = Array.from(tbody.querySelectorAll("tr"));
   const startTr = t.closest("tr"); const r0 = trs.indexOf(startTr); if(r0 < 0) return;
   const c0 = _micVisRow(startTr).indexOf(t); if(c0 < 0) return;
+  _labAvisoNoCabe(r0 + matrix.length - trs.length);   // revisión 15-11 (T7.4)
   matrix.forEach((cells, dr)=>{
     const tr = trs[r0+dr]; if(!tr) return;
     const vis = _micVisRow(tr);
@@ -28837,6 +28918,7 @@ function calGridPaste(ev, fmtKey){
   const trs=Array.from(tbody.querySelectorAll("tr"));
   const startTr=t.closest("tr"); const r0=trs.indexOf(startTr); if(r0<0) return;
   const c0=_calVisRow(startTr).indexOf(t); if(c0<0) return;
+  _labAvisoNoCabe(r0 + matrix.length - trs.length);   // T7.4
   matrix.forEach((cells,dr)=>{
     const tr=trs[r0+dr]; if(!tr) return;
     const vis=_calVisRow(tr);
@@ -29938,6 +30020,7 @@ function patGridPaste(ev){
   const startTr=t.closest("tr"); const r0=trs.indexOf(startTr); if(r0<0) return;
   const visRow=(tr)=> Array.from(tr.querySelectorAll("input.mic-in, select.mic-in"));
   const c0=visRow(startTr).indexOf(t); if(c0<0) return;
+  _labAvisoNoCabe(r0 + matrix.length - trs.length);   // T7.4
   matrix.forEach((cells,dr)=>{
     const tr=trs[r0+dr]; if(!tr) return; const vis=visRow(tr);
     cells.forEach((raw,dc)=>{
@@ -33523,6 +33606,9 @@ function renderBlanco(){
   }
   renderFn(fp, data, _tqn, tec, _corrida, fecha, lbl);
   fixupLabels(fp);
+  // Revisión 15-11 (T8.1) · la fecha es la LLAVE de la fila que se corrige: cambiarla mandaba la corrección a otra fila y dejaba la vieja.
+  const _bf = fp.querySelector('input[type="date"][name="fecha"]');
+  if(_bf && data.fecha){ _bf.readOnly = true; _bf.setAttribute("readonly", ""); _bf.title = "Es la fecha del registro que se corrige: no se cambia aquí"; }
 }
 
 function _renderBlancoCalidad(fp, d, _tqn, tec, _corrida, fecha, lbl){

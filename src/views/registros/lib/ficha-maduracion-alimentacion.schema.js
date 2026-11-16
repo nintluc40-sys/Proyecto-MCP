@@ -60,6 +60,7 @@ const fecha10 = (v) => txt(v).slice(0, 10);
 const esFecha = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v);
 const entero = (v) => {
   if (txt(v) === '') return '';
+  if (!/^\d+(\.0{0,2})?$/.test(txt(v))) return '';   // revisión 15-11 (T4.2) · «12.7» o «6.000» no se truncan: vacío y se rechaza
   const n = parseInt(v, 10);
   return Number.isFinite(n) && n >= 0 ? n : '';
 };
