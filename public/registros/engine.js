@@ -179,8 +179,8 @@ const MAD_ZONAS_FILAS = MAD_ZONAS.reduce(function(out, z){
 }, []);
 
 // ── Biomol: constantes globales ──
-// Muestras locales de Biomol (grilla del día). Cada fila expira a las BIO_TTL
-// ms (48 h) y se purga automáticamente vía pruneBio() al leer o al iniciar.
+// Muestras locales de Biomol (grilla del día). pruneBio() (al leer o al iniciar) retira sólo lo YA enviado, a las BIO_TTL
+// ms (48 h) contadas desde su envío; lo no enviado se conserva hasta enviarlo o borrarlo a mano.
 const BIO_REC_KEY   = "larv4_biomol_records";
 const BIO_TTL       = 48 * 60 * 60 * 1000;
 const BIO_SHEET     = "BIOMOL";
@@ -1011,14 +1011,14 @@ function cleanup(){
   // prefix check captures every key this app owns.
   // Prune Bitácora (72 h) — clave única ALGLOG_KEY
   try{ pruneAlgLog(); }catch(_){}
-  // Prune Biomol (48 h = BIO_TTL) — clave única BIO_REC_KEY
+  // Prune Biomol (lo ENVIADO hace 48 h = BIO_TTL; lo no enviado se queda) — clave única BIO_REC_KEY
   try{ if(typeof pruneBio === "function") pruneBio(); }catch(_){}
   // Prune Microbiología — Bacteriología/Calidad de Agua/Patología (7 d = MIC_TTL,
   // solo sesiones sincronizadas) — MIC_REC_KEY / CAL_REC_KEY / PAT_REC_KEY
   try{ if(typeof pruneMic === "function") pruneMic(); }catch(_){}
   try{ if(typeof pruneCal === "function") pruneCal(); }catch(_){}
   try{ if(typeof prunePat === "function") prunePat(); }catch(_){}
-  // Prune As Técnico (48 h) — clave única AST_REC_KEY
+  // Prune As Técnico (lo ENVIADO hace 48 h = AST_TTL; lo no enviado se queda) — clave única AST_REC_KEY
   try{ if(typeof pruneAst === "function") pruneAst(); }catch(_){}
   // Prune Historial general (60 d / máx 200) — HIST_PRE+mod por módulo.
   // Hace efectiva la limpieza que loadHist() sólo aplica en memoria,
@@ -4773,6 +4773,7 @@ function saveCSData(){
   toast("Cantidad sembrada guardada","ok",2200);
   // Re-renderiza la ficha de Población para reflejar el auto-cálculo
   if(curTab === "poblacion") rcPob();   // revisión 15-11 (T2.2) · recalcular EN SU SITIO: repintar desde lo guardado borraba lo tecleado
+  if(curTab === "despacho") rcDespSv();   // punto 5 (pauta 24-11) · el % de Supervivencia de Despacho también, en su sitio
   // Si la CS cambió y hay días ya registrados de la corrida en curso, ofrecer el
   // recálculo retroactivo de supervivencia (deja el modal abierto con el panel).
   const scan = _recalcScan();
@@ -4793,6 +4794,7 @@ function clearCSData(){
   toast("Cantidad sembrada borrada","ok",2200);
   closeCS();
   if(curTab === "poblacion") rcPob();   // revisión 15-11 (T2.2) · recalcular EN SU SITIO: repintar desde lo guardado borraba lo tecleado
+  if(curTab === "despacho") rcDespSv();   // punto 5 (pauta 24-11) · el % de Supervivencia de Despacho también, en su sitio
 }
 
 /* ══════════════════════════════════════════
@@ -8195,7 +8197,7 @@ async function madSaldoCargar(force){
      mismo: aquélla no se pudo leer, ésta se leyó A MEDIAS. Las dos hacen lo mismo con el
      saldo —lo dejan incompleto sin un solo síntoma—, así que las dos tienen que callar el
      ✅. El tope del servidor (40000 desde el 2026-10-23; 20000 desde el 2026-09-13; antes 5000) no es teórico:
-     medido el 2026-10-23, «Maduración Tanques» crece de 38 a 60 filas al día y lo alcanzaría hacia mediados de 2028. */
+     medido el 2026-10-23, «Maduración Tanques» crece cada día y lo alcanzaría en un par de años. */
   const recortadas = [];
   [MAD_LIBRO_SHEETS.ingreso, MAD_LIBRO_SHEETS.movimientos, MAD_LIBRO_SHEETS.tanques, MAD_LIBRO_SHEETS.cierres, MAD_LIBRO_SHEETS.mortDesove]
     .forEach(function(h){ if(_reproTrunc && _reproTrunc[h]) recortadas.push(h); });
@@ -8619,6 +8621,7 @@ function madResumenPdf(alcance){
   const page='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>'+escapeHtml(titulo)+'</title>'
     + '<style>body{font-family:Arial,Helvetica,sans-serif;margin:18px;color:#0f172a}h1{font-size:16px;margin:0 0 4px}.ms-card{page-break-inside:avoid}</style></head><body>'
     + '<h1>'+escapeHtml(titulo)+'</h1><div style="font-size:11px;color:#64748b;margin-bottom:8px">Deducido de las hojas el '+escapeHtml(_madResumen.hoy)+'. Si se corrigen registros pasados, este informe puede no cuadrar con uno posterior.</div>'
+    + _madResAvisoIncompleto(_madResumen)
     + _madResCuerpoHTML(_madResumen, madResVarsLeer(), false, filtro)
     + '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},300);});<\/script></body></html>';
   const w=window.open("","_blank","width=1000,height=720");
@@ -8954,6 +8957,12 @@ function _madResTabHTML(R, sel, filtro){
   }
   return h || '<p class="sd">Nada que mostrar con las variables elegidas.</p>';
 }
+/* Punto 3 de la pauta del 24-11 (6 de la del 12-11) · el PDF estándar y el tabulado dicen también que el libro llegó
+   INCOMPLETO, como la pantalla (madResPintar) y el administrativo. */
+function _madResAvisoIncompleto(R){
+  const mal=(R && R.libro) ? madLibroIncompleto(R.libro) : "";
+  return mal ? '<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#991b1b"><b>Resumen INCOMPLETO:</b> '+escapeHtml(mal)+'. Las cifras del libro pueden quedarse cortas.</div>' : "";
+}
 function _madResTabDoc(R, sel, filtro, titulo){
   return '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>'+escapeHtml(titulo)+'</title>'
     + '<style>@page{size:A4 landscape;margin:10mm}body{font-family:Arial,Helvetica,sans-serif;margin:16px;color:#0f172a}h1{font-size:16px;margin:0 0 4px}h2{font-size:13px;margin:14px 0 4px}'
@@ -8961,6 +8970,7 @@ function _madResTabDoc(R, sel, filtro, titulo){
     + 'td.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}.f{font-size:9px;color:#64748b}tr.tot td{font-weight:700;background:#f8fafc}table.fr td{text-align:center}table.gr{width:auto}'
     + '.blk{break-inside:avoid;page-break-inside:avoid}.sub{font-size:11px;font-weight:700;margin:4px 0 2px}.sd{color:#94a3b8;font-style:italic;font-size:11px;margin:2px 0 6px}</style></head><body>'
     + '<h1>'+escapeHtml(titulo)+'</h1><div style="font-size:11px;color:#64748b;margin-bottom:6px">Deducido de las hojas el '+escapeHtml(R.hoy)+'. Presentación tabulada: los totales suman sólo cifras (animales, desoves, N5, muertas); los % no se promedian («—»). Si se corrigen registros pasados, este informe puede no cuadrar con uno posterior.</div>'
+    + _madResAvisoIncompleto(R)
     + _madResTabHTML(R, sel, filtro)
     + '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},300);});<\/script></body></html>';
 }
@@ -14375,6 +14385,7 @@ async function madMortGuardar(){ return _madGridBloqueada("fp-mortdes", async fu
   if(_loc && (await _madLocEnviar("mortdes", _gas)).fallo) return;
   if(!payload.rows.length) return;
   if(!_madHistCorrConfirma("mortdes", payload)) return;   // 📜 corrección: ¿cambió la llave? (2026-10-04)
+  if(!(await _madMortConfirmarSustituye(payload))) return;   // T4.4 (pauta 24-11): ya hay un informe de ese día → se sustituye
   toast("Enviando "+payload.rows.length+" fila(s)…","info",2200);
   const _envio=_madLogEnvioId(), _t={ mark:_madLogMarca("mortdes", _envio) };
   const ok=await _madPostConSello(payload, _gas, _t);
@@ -14395,6 +14406,41 @@ async function madMortGuardar(){ return _madGridBloqueada("fp-mortdes", async fu
   }
   _syncNotOkUI(_t.outcome, "No se pudo registrar el Inf. Supervisor", null, _t.gasMessage);
   });
+}
+/* T4.4 de la revisión del 15-11 (pauta del 24-11; usuario: «Uno al día: sustituir está bien») · la llave de las muertas
+   es Fecha + Lote + Código + Tipo de tanque: un segundo Inf. Supervisor del mismo día CAE en la fila del primero y la
+   sustituye (no se suman). Se avisa antes de enviar si esa llave ya está en la hoja o en lo enviado desde este equipo.
+   En una ✏️ corrección del 📜 sustituir es justo lo que se quiere: no se pregunta. */
+function madMortYaEnviados(filas, hoja, historial){
+  const iId=MAD_MORT_HEADERS.indexOf("ID"), iF=MAD_MORT_HEADERS.indexOf("Fecha"), iL=MAD_MORT_HEADERS.indexOf("Lote"),
+        iC=MAD_MORT_HEADERS.indexOf("Código genético"), iT=MAD_MORT_HEADERS.indexOf("Tipo de tanque"), iM=MAD_MORT_HEADERS.indexOf("Hembras muertas");
+  const cab=JSON.stringify(MAD_MORT_HEADERS), donde={};
+  (hoja||[]).forEach(function(r){ if(r && r.ID && !donde[String(r.ID)]) donde[String(r.ID)]="la hoja"; });
+  (historial||[]).forEach(function(e){
+    const p=e && e.payload;
+    if(!e || e.ficha!=="mortdes" || !p || !Array.isArray(p.rows) || JSON.stringify(p.headers)!==cab) return;
+    p.rows.forEach(function(r){ const id=String((r||[])[iId]||""); if(id && !donde[id]) donde[id]="este equipo"; });
+  });
+  const salida=[], vistos={};
+  (filas||[]).forEach(function(r){
+    const id=String((r||[])[iId]||"");
+    if(!id || vistos[id] || !donde[id] || String(r[iM]==null ? "" : r[iM]).trim()==="") return;
+    vistos[id]=1;
+    salida.push({ fecha:r[iF], lote:r[iL], codigo:r[iC], tipo:r[iT], donde:donde[id] });
+  });
+  return salida;
+}
+async function _madMortConfirmarSustituye(payload){
+  if(_madHistCorrActiva("mortdes")) return true;
+  const filas=(payload && payload.rows) || [];
+  if(!filas.length) return true;
+  const hoja=await _madHojaFresca(MAD_MORT_SHEET);
+  const rep=madMortYaEnviados(filas, hoja, madHistLeer());
+  if(!rep.length) return true;
+  const lineas=rep.map(function(x){ return "· Lote "+x.lote+" ("+x.codigo+") · "+x.tipo+" · "+x.fecha+" — ya está en "+x.donde; });
+  return confirm("ℹ Ya hay un Inf. Supervisor de ese día para:\n"+lineas.join("\n")
+    +"\n\nEs uno al día: este envío lo SUSTITUYE (las muertas quedan con las cifras de ahora, NO se suman a las de antes)."
+    +"\n\nAceptar = sustituir. Cancelar = no enviar; lo tecleado sigue aquí.");
 }
 function madMortReiniciar(){
   const fp=document.getElementById("fp-mortdes");
@@ -14961,9 +15007,9 @@ async function madAlimLeer(){
       cargadas++;
     });
     madAlimCfgGuardar(cfg);
-    _madAlim={ tanques:madAlimTanquesDelLibro(libro), pesos:madAlimPesosDeReferencia(f, libro), poblacion:madAlimPoblacion(libro), ts:Date.now() };
-    madAlimPintarSalas();
     const mal=madLibroIncompleto(libro);
+    _madAlim={ tanques:madAlimTanquesDelLibro(libro), pesos:madAlimPesosDeReferencia(f, libro), poblacion:madAlimPoblacion(libro), ts:Date.now(), incompleto:mal||"" };   // punto 4 (pauta 24-11)
+    madAlimPintarSalas();
     if(nota) nota.innerHTML = (mal ? '<span style="color:#991b1b">⚠ '+escapeHtml(mal)+': los animales pueden quedarse cortos.</span> ' : '<span style="color:#166534">Saldo y pesos leídos. Se relee al pulsar de nuevo.</span> ')
       + (agendas ? '<span style="color:#475569">'+(cargadas ? cargadas+' agenda(s) guardada(s) traída(s) de la hoja.' : 'La hoja no tiene agendas guardadas.')+'</span>'
                  : '<span style="color:#92400e">No se pudo leer la agenda guardada en la hoja ('+escapeHtml(fallo)+'): se usa la de este dispositivo, y los pesos sin los tecleados antes en Alimentación.</span>');
@@ -15027,6 +15073,9 @@ function _madAlimPreparar(conGuardados){
   const model=madAlimCollect(), res=_madFechaPosterior(madAlimValidar(model), model.fecha), payload=buildMadAlimPayload(model);   // punto 46
   // Con envíos guardados con 💾, una pantalla SIN filas no es un error: ☁️ envía lo guardado y lo de pantalla se queda.
   if(conGuardados && !payload.rows.length) return { model:model, payload:payload };
+  /* Punto 4 de la pauta del 24-11 (usuario: «No dejar enviar», como Laboratorio) · con el libro leído INCOMPLETO los animales
+     pueden quedarse cortos: ni se guarda ni se envía lo de pantalla hasta releer con 🔄 Leer y que llegue entero. */
+  if(payload.rows.length && _madAlim && _madAlim.incompleto){ res.errores.push("El libro llegó INCOMPLETO ("+_madAlim.incompleto+"): los animales pueden quedarse cortos. Vuelve a leer las hojas y, cuando llegue entero, guarda."); }
   _madAlimPinta(res, payload.rows.length);
   if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return null; }
   return { model:model, payload:payload };
@@ -15981,8 +16030,8 @@ function _reproPorQue(){ return _reproFalloSinRed() ? _REPRO_SIN_RED : "Google n
 function _reproCuando(){ return _reproFalloSinRed() ? "cuando vuelva la conexión" : "cuando Google responda"; }
 
 /* ── D (2026-09-24, usuario) · SE LEE POR LA EXPORTACIÓN DE GOOGLE, Y EL GAS QUEDA DE RESPALDO ─────────────────────────
-   Medido ese día contra producción (sólo lectura): el GAS tardaba de 17 a 140 s por hoja y fallaba la mitad de las veces;
-   la exportación directa del libro, de 0,4 a 5 s. Pero gviz SOLO pierde datos en silencio: en una columna que mezcla
+   Medido ese día contra producción (sólo lectura): el GAS tardaba hasta minutos por hoja y fallaba a menudo;
+   la exportación directa del libro, segundos. Pero gviz SOLO pierde datos en silencio: en una columna que mezcla
    números y texto devuelve VACÍAS las celdas del tipo minoritario —17 de las 50 «Piscina Broodstock» de Maduración Lotes,
    las «NNN/NNN»; en la MATRIZ la Piscina es numérica, y una con texto rompería la cuaterna—, y con una hoja que no existe
    devuelve OTRA sin avisar. Decisión del usuario: las DOS exportaciones combinadas. gviz da cada valor con su tipo (fechas
@@ -15995,7 +16044,7 @@ function _reproCuando(){ return _reproFalloSinRed() ? "cuando vuelva la conexió
    deja: MATRIZ, Bitácora y Tanques ese día) gviz sólo da las filas VISIBLES —por nombre, por gid, con `range` o con
    `select *`, medido— y el emparejamiento con el CSV se descuadraba: todo iba al GAS. La exportación XLSX de UNA hoja
    (`export?format=xlsx&gid=`) trae todas sus filas con el tipo de cada celda (tampoco pierde el tipo minoritario), en una
-   sola petición: medido ese día, 11 hojas y 7 336 filas IDÉNTICAS al GAS celda a celda, en 0,5–1,8 s. La lee el SheetJS
+   sola petición: medido ese día, todas las hojas probadas salieron IDÉNTICAS al GAS celda a celda, en segundos. La lee el SheetJS
    de la página (`window.XLSX`, el del lector de Broodstock). Lo que no se sabe imitar —una hora sola, una fecha anterior
    al 1-3-1900, un error (#N/A), una cabecera que es fecha—, otra hoja o una página sin SheetJS, al GAS. gviz queda sólo
    para saber si una hoja que no está en la lista existe.
@@ -16461,7 +16510,7 @@ function _reproTraceRecicladoHTML(t){
    igual que la fecha que el formulario propone. Devuelve el mensaje, o "" si la fecha vale. */
 /* 📅 2026-09-26 · Punto 9 del plan (usuario) · la MISMA regla en las tres fichas de laboratorio —Bacteriología, Calidad
    de Agua y Patología—: una fecha de muestreo o de resultados POSTERIOR a hoy no se guarda, y los resultados no pueden
-   ser ANTERIORES al muestreo (medido ese día en producción: 40 filas de Microbiología y 6 de Calidad de Agua lo eran).
+   ser ANTERIORES al muestreo (medido ese día en producción: había filas así en Microbiología y en Calidad de Agua).
    El `max`/`min` de los calendarios guían; lo que manda es esto, al guardar. «Hoy» es el del dispositivo. Devuelve el
    mensaje, o "" si las fechas valen. */
 function _labFechasError(fm, fr){
@@ -16613,12 +16662,14 @@ async function _madReproAltaBatch(){
   const fEl=document.getElementById("repro-a-fecha"); const fecha=fEl?fEl.value:"";
   if(!isValidDate(fecha)){ toast("Fecha de ingreso inválida.","err",3500); return; }
   const _fut=_reproFechaFutura(fecha); if(_fut){ toast(_fut,"err",7000); return; }
-  // Mejor esfuerzo: la MATRIZ aquí avisa de altas YA existentes (la misma cuaterna) y de un chip que ya
-  // lleva una hembra VIVA; si no se puede leer NO se bloquea el alta (buildAltaBatch acepta índice
-  // nulo) y quien decide es el GAS al escribir. (Un chip reutilizado con otra cuaterna es lo normal: no se avisa.)
+  // La MATRIZ avisa de altas YA existentes (la misma cuaterna) y de un chip que ya lleva una hembra VIVA. (Un chip
+  // reutilizado con otra cuaterna es lo normal: no se avisa.) Punto 23 de la pauta del 24-11 (usuario: «Bloquear el alta»):
+  // si NO se puede leer, no se da de alta —antes seguía y el GAS podía poner «Vivo» encima de un «Muerto»—, como ya
+  // hacen el traslado y la mortalidad; lo tecleado sigue aquí.
   if(!_reproMatrixIndex()){ _reproPaso("repro-a-paso", "Leyendo la MATRIZ…"); await _reproEnsureMatrix(); }
   _reproPaintMatrixBanner();
   const forms=_reproAltaCollect(fecha), mIdx=_reproMatrixIndex();
+  if(!mIdx){ _reproNada("repro-a-paso", "No se dio de alta: no se pudo leer la MATRIZ ("+(_reproSheetsErr||"error")+"), y sin ella no se sabe si esas hembras ya están o si el chip lleva una VIVA. Vuelve a intentarlo con 🔄; lo tecleado sigue aquí.", 8000); return; }
   const res=window.__rgLib.buildAltaBatch(forms, mIdx);
   if(!res.payload){
     _madReproShowAltaReport(res.report, false);
@@ -19201,8 +19252,8 @@ function buildMadPayload(ficha, records){
          columnas en la hoja de producción. Si no coinciden, el GAS rechaza el envío y NO escribe
          nada —falla cerrado, y lo tecleado se queda en el dispositivo—: molesto, pero no destruye.
          Lo que destruiría es una llave apuntando a otra columna, y eso es lo que esto evita.
-         🔑 Medido antes de tocarlo: la hoja tenía 30 filas y las tres columnas estaban VACÍAS en
-         las 30, así que el recorte no pierde un solo dato.
+         🔑 Medido antes de tocarlo: las tres columnas estaban VACÍAS en todas las filas de la hoja,
+         así que el recorte no pierde un solo dato.
          ⚠ «Relación H:M» se fue antes, el 2026-09-08 (el usuario: esa relación se CALCULA), y
          entonces salió gratis porque vivía en el índice 4 —DETRÁS de la llave— y la hoja estaba a
          cero filas. Esta vez no lo estaba: por eso hubo que coordinar los cuatro pasos. */
@@ -23771,7 +23822,7 @@ function _audFilaVacia(sec){
      «Fecha ingreso» y «Guías ingreso»; «Primera/Segunda/Tercera siembra» pone 1ª/2ª/3ª donde su celda esté vacía;
    · en la Transferencia, el «Mod»/«# Tq» de la sección de transferencia es el DESTINO y el de la siembra, el ORIGEN;
    · en la Cosecha manda lo de su sección («Estadío», «Pl/g»…), y su tanque se decide FILA A FILA (ajuste del 2026-10-05,
-     usuario, medido en las hojas 553 y 545): el destino de la transferencia de esa fila; si no, el tanque sembrado; si la
+     usuario, comprobado en planillas reales): el destino de la transferencia de esa fila; si no, el tanque sembrado; si la
      fila no trae ninguno (la 2.ª partida va en su propia fila), el de la cosecha de arriba. Las «TQ»/«Md» del final NO: son
      otra lista, en filas intermedias y desfasada (la fila del tanque 1 las trae vacías y la siguiente, «TQ 2»).
    · «Subtotal» no se pega; en el «TOTAL» se para (debajo van el despacho por guías y el resumen, con otra forma); una fila
@@ -23911,7 +23962,7 @@ function audPegar(ev){
     // no entra.
     if(plan && !f.some(function(x){ return x.propia && x.col[2] !== "calc" && String(x.raw).trim() !== ""; })) continue;
     // La Cosecha de la planilla: una fila que sólo trae «# Piscina» es otra piscina de la cosecha de ARRIBA (como las une el
-    // importador F3: «, »), no una cosecha nueva (medido en las hojas 553 y 545).
+    // importador F3: «, »), no una cosecha nueva (comprobado en planillas reales).
     if(plan && plan.tanqueDe && plan.tanqueDe.length && f.every(function(x){ return !x.propia || String(x.raw).trim() === "" || x.col[0] === "piscinas"; })){
       const arriba = filas[filas.length - 1], pis = f.filter(function(x){ return x.col[0] === "piscinas"; })[0];
       if(arriba && pis){
@@ -29580,8 +29631,8 @@ const CAL_SHEET_HEADERS = (function(){
   CAL_PARAM_ORDER.forEach(pk=> h.push(CAL_PARAMS[pk].l));
   h.push("Sesión");   // id único por análisis (clave de upsert; vacío en filas heredadas)
   h.push("Lote");     // añadida al FINAL (el GAS escribe por posición; no desalinea lo existente)
-  h.push("Sulfato");  // 2026-09-13 · col. 48, también al FINAL por lo mismo: la hoja tenía 47 (medido)
-  h.push("Sulfuros"); // 2026-10-01 · col. 49, AL FINAL igual: la hoja tenía 48 (medido); el GAS añade la cabecera solo
+  h.push("Sulfato");  // 2026-09-13 · también al FINAL por lo mismo: detrás de la última columna que ya tenía la hoja
+  h.push("Sulfuros"); // 2026-10-01 · AL FINAL igual, detrás de Sulfato; el GAS añade la cabecera solo
   return h;
 })();
 const CAL_SID_COL = CAL_SHEET_HEADERS.indexOf("Sesión");
