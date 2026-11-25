@@ -30,7 +30,7 @@ import {
   isMicroRow, isPatRow, patFecha, pathogenRecords, rowContext, meltRow, PATHOGENS, PATHOGEN_COLOR,
   NIVELES, NIVEL_COLOR, NIVEL_RANK, isAlerta, FORMATO_LABEL, AGGREGATE_KEYS,
   DEPARTAMENTOS, deptoOfFormato, classifyFormato, PATHOGEN_AGAR,
-  loadMicThresholds, MIC_FACTORS_KEY, MIC_AREAS, filterKey, groupValues, modLabel, cmpMod, umbralesModificados,
+  loadMicThresholds, MIC_FACTORS_KEY, MIC_AREAS, filterKey, groupValues, modLabel, cmpMod, umbralesModificados, ufcPorUnidad,
 } from './data.js';
 import { petriSVG } from './petri.js';
 import { buildPetriPdfDoc, dayKeyOf } from './petriPdf.js';
@@ -1997,7 +1997,9 @@ function renderBacteriologia() {
   // amarillas + verdes, y Bact. Totales) y V. Luminiscentes (presencia/ausencia, no está en PATHOGENS).
   // H-002 (auditoría 2026-09-25, aprobado 2026-10-03): aquí Bact. Totales SÍ sumaba e inflaba el KPI ×2,5–3,9; la
   // Placa y «Carga total por patógeno» ya los excluían con la MISMA constante.
-  const kTotUfc = _scope.records.reduce((a, r) => a + ((!AGGREGATE_KEYS.has(r.key) && r.ufc > 0) ? r.ufc : 0), 0);
+  // Punto 29 (pauta 24-11; usuario: «Un total por unidad») · UNA suma por unidad (UFC/mL, UFC/g, UFC/placa), no una sola cifra
+  // que mezclaba las tres; sólo las unidades con datos.
+  const kTotUfc = ufcPorUnidad(_scope.records, AGGREGATE_KEYS);
   const dom = dominantPathogen(rows, _scope.records);
 
   // ── HTML: filtros + KPIs + apartados ──
@@ -2013,7 +2015,7 @@ function renderBacteriologia() {
       ${kpi('⚠️', 'Mod./Elevado', `${kAlerta}`, kAlerta > 0, rows.length ? (kAlerta / rows.length * 100).toFixed(0) + '% de muestras' : '', 'data-mic-alerts role="button" tabindex="0" title="Ver listado de alertas (por fecha)"')}
       ${kpi('✨', 'V. Luminiscentes', kLumin > 0 ? `${kLumin}` : '0', kLumin > 0, kLumin > 0 ? 'con presencia' : 'sin presencia')}
       ${kpi('🦠', 'Patógeno dominante', dom ? dom.label : '—', false, dom ? `${dom.alertas} alerta(s)` : '')}
-      ${kpi('🧫', 'Σ UFC total', fmtNum(kTotUfc))}
+      ${kpiUfcPorUnidad(kTotUfc)}
     </div>`;
 
   h += `<div class="mic-apartados">
@@ -2183,8 +2185,8 @@ function petriPlacaHTML(days, dayIdx, day) {
   // «Dominante» de la línea de abajo, para que los dos no puedan volver a discrepar sobre qué
   // es un agregado. V. Luminiscentes no entra (presencia/ausencia). "—" si no hubo ningún
   // patógeno específico con UFC ese día.
-  const nonTotColonies = colonies.filter((c) => !AGGREGATE_KEYS.has(c.key));
-  const totUfc = nonTotColonies.length ? nonTotColonies.reduce((a, c) => a + c.ufc, 0) : null;
+  // Punto 29 (pauta 24-11) · y por UNIDAD, como el KPI: las colonias juntan muestras de agua, animal y superficie.
+  const totUfc = day ? ufcPorUnidad(pathogenRecords(day.rows), AGGREGATE_KEYS) : [];
   const maxC = dominantColony(colonies);
   const nav = `<div class="mic-day-nav">
       <button class="mic-month-nav" data-mic-day="-1" ${dayIdx <= 0 ? 'disabled' : ''} aria-label="Día anterior">◀</button>
@@ -2214,7 +2216,7 @@ function petriPlacaHTML(days, dayIdx, day) {
       <div class="card mic-petri-side">
         <div class="mic-chart-title">Resumen del día</div>
         <div class="mic-pe-sum">
-          <div class="mic-pe-st"><div class="mic-pe-st-v">${fmtNum(totUfc)}</div><div class="mic-pe-st-l">Σ UFC total</div></div>
+          <div class="mic-pe-st"><div class="mic-pe-st-v">${ufcPorUnidadHTML(totUfc)}</div><div class="mic-pe-st-l">Σ UFC por unidad</div></div>
           <div class="mic-pe-st"><div class="mic-pe-st-v">${maxC ? fmtNum(maxC.ufc) : '—'}</div><div class="mic-pe-st-l">UFC máx</div></div>
           <div class="mic-pe-st"><div class="mic-pe-st-v">${colonies.length}</div><div class="mic-pe-st-l">Patógenos</div></div>
           <div class="mic-pe-st"><div class="mic-pe-st-v" style="font-size:13px">${maxC ? esc(maxC.label) : '—'}</div><div class="mic-pe-st-l">Dominante</div></div>
@@ -2838,6 +2840,17 @@ function runPdfExport(root) {
    ============================================================ */
 function band(icon, label, color) {
   return `<div class="mic-band" style="border-top-color:${color}"><span class="mic-band-title">${icon} ${esc(label)}</span></div>`;
+}
+/* Punto 29 · las sumas de UFC, una línea por unidad («—» si no hay ninguna). */
+function ufcPorUnidadHTML(totales) {
+  if (!totales || !totales.length) return '—';
+  return totales.map((t) => `<span class="mic-ufc-u">${esc(fmtNum(t.ufc))} <small>${esc(t.unidad)}</small></span>`).join('');
+}
+function kpiUfcPorUnidad(totales) {
+  return `<div class="mic-kpi">
+      <div class="mic-kpi-label">🧫 ${esc('Σ UFC por unidad')}</div>
+      <div class="mic-kpi-value">${ufcPorUnidadHTML(totales)}</div>
+    </div>`;
 }
 function kpi(icon, label, value, alert = false, sub = '', attrs = '') {
   return `<div class="mic-kpi${alert ? ' is-alert' : ''}${attrs ? ' mic-kpi-click' : ''}" ${attrs}>

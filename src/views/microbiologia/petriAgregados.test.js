@@ -86,9 +86,9 @@ describe('Placa · Σ UFC total no suma los conteos AGREGADOS', () => {
 
   it('«Bact. Totales» queda fuera del total, igual que «C. Totales»', () => {
     placa(DIA);
-    expect(kpi('Σ UFC total')).toBe(es(ESPECIFICOS));
+    expect(kpi('Σ UFC por unidad')).toBe(es(ESPECIFICOS) + ' UFC/g');
     // El valor inflado que daba antes (100 + 50 + 10.000) no debe aparecer.
-    expect(kpi('Σ UFC total')).not.toBe(es(ESPECIFICOS + BACT_TOTALES));
+    expect(kpi('Σ UFC por unidad')).not.toBe(es(ESPECIFICOS + BACT_TOTALES) + ' UFC/g');
   });
 
   it('coincide con su panel GEMELO del Supervisor, que ya excluía los dos', () => {
@@ -97,7 +97,7 @@ describe('Placa · Σ UFC total no suma los conteos AGREGADOS', () => {
     const esperado = [...new Set(['amarillos', 'verdes', 'totales', 'bactTot'])]
       .filter((k) => !AGGREGATE_KEYS.has(k)).length;
     expect(esperado).toBe(2);                 // solo los dos específicos entran
-    expect(kpi('Σ UFC total')).toBe(es(ESPECIFICOS));
+    expect(kpi('Σ UFC por unidad')).toBe(es(ESPECIFICOS) + ' UFC/g');
   });
 
   it('los agregados SIGUEN mostrándose como colonias y en la leyenda', () => {
@@ -116,7 +116,7 @@ describe('Placa · Σ UFC total no suma los conteos AGREGADOS', () => {
 
   it('sin ningún patógeno específico con UFC el total es «—», no el agregado', () => {
     placa([M({ 'Fecha muestreo': '05/06/2026', 'Bact.Totales UFC': String(BACT_TOTALES) })]);
-    expect(kpi('Σ UFC total')).toBe('—');
+    expect(kpi('Σ UFC por unidad')).toBe('—');
     expect(kpi('Patógenos')).toBe('1'); // la colonia sigue dibujándose
   });
 });

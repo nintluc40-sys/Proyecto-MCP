@@ -344,6 +344,22 @@ export function unidadUFC(fmtKey, tipoMuestra) {
   return u ? 'UFC/' + u : 'UFC';
 }
 
+/* Punto 29 (pauta 24-11; B5.2 de la revisión del 15-11; usuario 25-11: «Un total por unidad») · «Σ UFC total» sumaba UFC/mL,
+   UFC/g y UFC/placa en una sola cifra, que no es ninguna de las tres. Se suma POR UNIDAD (la de `unidadUFC`), sólo los
+   patógenos específicos con UFC (fuera los agregados, como antes) y sólo las unidades con datos, en este orden.
+   `records` = los de `pathogenRecords` (llevan `formatoKey` y `tipoMuestra`). Devuelve [{ unidad, ufc }]. */
+const ORDEN_UNIDAD = ['UFC/mL', 'UFC/g', 'UFC/placa', 'UFC'];
+export function ufcPorUnidad(records, agregados) {
+  const tot = new Map();
+  (records || []).forEach((r) => {
+    if (!r || !(r.ufc > 0) || (agregados && agregados.has(r.key))) return;
+    const u = unidadUFC(r.formatoKey, r.tipoMuestra);
+    tot.set(u, (tot.get(u) || 0) + r.ufc);
+  });
+  return [...tot].map(([unidad, ufc]) => ({ unidad, ufc }))
+    .sort((a, b) => ORDEN_UNIDAD.indexOf(a.unidad) - ORDEN_UNIDAD.indexOf(b.unidad));
+}
+
 /* ── Umbrales por ÁREA × parámetro (UFC/mL) — portados de MIC_DR_BASE de las fichas.
    l/m/e = límites inferiores de Leve/Moderado/Elevado; el factor `f` ya viene
    aplicado en la columna UFC de la hoja, así que aquí solo se usan l/m/e. ── */

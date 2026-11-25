@@ -67,16 +67,16 @@ describe('H-002 · Bacteriología · «Σ UFC total» no suma los conteos AGREGA
 
   it('«Bact. Totales» queda fuera, igual que «C. Totales»', () => {
     bacteriologia(DIA);
-    expect(kpi('Σ UFC total')).toBe(es(150));
-    expect(kpi('Σ UFC total'), 'el valor inflado de antes (con Bact. Totales)').not.toBe(es(10150));
+    expect(kpi('Σ UFC por unidad')).toBe(es(150) + ' UFC/g');
+    expect(kpi('Σ UFC por unidad'), 'el valor inflado de antes (con Bact. Totales)').not.toBe(es(10150) + ' UFC/g');
   });
 
   it('dice lo mismo que la Placa del mismo día (la misma constante)', () => {
     bacteriologia(DIA);
-    const kpiBact = kpi('Σ UFC total');
+    const kpiBact = kpi('Σ UFC por unidad');
     root.querySelector('[data-mic-ap="petri"]').click();
     root.querySelector('[data-mic-petab="placa"]').click();
-    const st = [...root.querySelectorAll('.mic-pe-st')].find((n) => n.textContent.includes('Σ UFC total'));
+    const st = [...root.querySelectorAll('.mic-pe-st')].find((n) => n.textContent.includes('Σ UFC por unidad'));
     expect(st.querySelector('.mic-pe-st-v').textContent.trim()).toBe(kpiBact);
   });
 });

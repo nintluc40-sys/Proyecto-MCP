@@ -112,7 +112,7 @@ describe('Microbiología · harness de navegación integral', () => {
     // El KPI de carga suma TODOS los patógenos (excepto el agregado C. Totales), ya no solo
     // C. Totales → etiqueta "Σ UFC total" (no "Σ UFC C. Totales").
     const kpisTxt = root.querySelector('.mic-kpis').textContent;
-    expect(kpisTxt).toContain('Σ UFC total');
+    expect(kpisTxt).toContain('Σ UFC por unidad');
     expect(kpisTxt).not.toContain('C. Totales');
     expect(errSpy).not.toHaveBeenCalled();
   });

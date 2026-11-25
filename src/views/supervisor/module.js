@@ -52,7 +52,7 @@ import {
   isMicroRow, rowContext as microCtx, meltRow as microMelt, pathogenRecords as microRecords,
   PATHOGENS as MIC_PATHOGENS, PATHOGEN_COLOR as MIC_COLOR, NIVEL_COLOR as MIC_NIVEL_COLOR,
   NIVEL_RANK as MIC_NIVEL_RANK, AGGREGATE_KEYS as MIC_AGG, FORMATO_LABEL as MIC_FMT_LABEL, PATHOGEN_AGAR,
-  emDeFila,
+  emDeFila, ufcPorUnidad,
 } from '../microbiologia/data.js';
 import { petriSVG } from '../microbiologia/petri.js';
 import { mareasModalHTML, cablearMareas } from './mareas.js';
@@ -546,8 +546,10 @@ function microPlacaHTML(rows, state) {
   // Se usa la MISMA constante que el KPI «Dominante» de más abajo, para que los dos no
   // puedan volver a discrepar sobre qué es un agregado. V. Luminiscentes no entra
   // (presencia/ausencia). "—" si ese día no hubo ningún patógeno específico con UFC.
-  const nonTotColonies = colonies.filter((c) => !MIC_AGG.has(c.key));
-  const totUfc = nonTotColonies.length ? nonTotColonies.reduce((a, c) => a + c.ufc, 0) : null;
+  // Punto 29 (pauta 24-11; usuario 25-11: «Un total por unidad», «también en Supervisor») · y POR UNIDAD, como en
+  // Microbiología: un tanque junta muestras de agua (UFC/mL) y de animal (UFC/g).
+  const totUfc = ufcPorUnidad(microRecords(day.rows), MIC_AGG);
+  const totUfcHTML = totUfc.length ? totUfc.map((t) => `<span class="mic-ufc-u">${esc(micFmtNum(t.ufc))} <small>${esc(t.unidad)}</small></span>`).join('') : '—';
   // V. Luminiscentes del día (presencia/ausencia, no UFC): presencia si alguna muestra la
   // reporta presente; ausencia si al menos una la reporta ausente y ninguna presente.
   const dayLumin = day.rows.some((r) => microCtx(r).lumin === true) ? true
@@ -580,7 +582,7 @@ function microPlacaHTML(rows, state) {
         <div class="mic-chart-title">Resumen del día</div>
         <div class="sv-micro-meta"><b>${esc(tankShown)}</b> · 📅 ${esc(day.label)}${dayEstadios.length ? ' · 🦐 ' + esc(dayEstadios.join(', ')) : ''}</div>
         <div class="mic-pe-sum">
-          <div class="mic-pe-st"><div class="mic-pe-st-v">${micFmtNum(totUfc)}</div><div class="mic-pe-st-l">Σ UFC total</div></div>
+          <div class="mic-pe-st"><div class="mic-pe-st-v">${totUfcHTML}</div><div class="mic-pe-st-l">Σ UFC por unidad</div></div>
           <div class="mic-pe-st"><div class="mic-pe-st-v">${maxC ? micFmtNum(maxC.ufc) : '—'}</div><div class="mic-pe-st-l">UFC máx</div></div>
           <div class="mic-pe-st"><div class="mic-pe-st-v">${colonies.length}</div><div class="mic-pe-st-l">Patógenos</div></div>
           <div class="mic-pe-st"><div class="mic-pe-st-v" style="font-size:13px">${maxC ? esc(maxC.label) : '—'}</div><div class="mic-pe-st-l">Dominante</div></div>

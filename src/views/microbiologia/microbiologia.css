@@ -655,3 +655,7 @@
 .cal-ft-table thead th { color: var(--c-text-muted); font-weight: 700; }
 .cal-ft-table th:first-child, .cal-ft-table .cal-ft-th { text-align: left; color: var(--c-text-soft); font-weight: 700; }
 .cal-ft-table td.cal-sev--optimo, .cal-ft-table td.cal-sev--vigilancia, .cal-ft-table td.cal-sev--fuera, .cal-ft-table td.cal-sev--critico { color: var(--sev); font-weight: 700; }
+
+/* Punto 29 (pauta 24-11) · «Σ UFC por unidad»: una línea por unidad, con la unidad en pequeño. */
+.mic-ufc-u { display: block; white-space: nowrap; }
+.mic-ufc-u small { font-size: .62em; font-weight: 600; color: var(--c-text-muted); }

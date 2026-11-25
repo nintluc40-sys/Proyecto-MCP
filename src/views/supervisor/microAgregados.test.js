@@ -66,16 +66,16 @@ function kpi(root, label) {
   return st ? st.querySelector('.mic-pe-st-v').textContent.trim() : null;
 }
 
-describe('Σ UFC total · los conteos AGREGADOS no se suman a los específicos', () => {
+describe('Σ UFC por unidad · los conteos AGREGADOS no se suman a los específicos', () => {
   it('control: la capa de datos declara dos agregados, no uno', () => {
     expect([...AGGREGATE_KEYS].sort()).toEqual(['bactTot', 'totales']);
   });
 
   it('«Bact. Totales» queda fuera del total, igual que «C. Totales»', () => {
     const root = abrirMicro();
-    expect(kpi(root, 'Σ UFC total')).toBe(String(ESPECIFICOS));
+    expect(kpi(root, 'Σ UFC por unidad')).toBe(String(ESPECIFICOS) + ' UFC');   // sin Formato: «UFC» a secas
     // El valor inflado que daba antes (100 + 50 + 10.000) no debe aparecer.
-    expect(kpi(root, 'Σ UFC total')).not.toBe(String(ESPECIFICOS + BACT_TOTALES));
+    expect(kpi(root, 'Σ UFC por unidad')).not.toBe(String(ESPECIFICOS + BACT_TOTALES) + ' UFC');
   });
 
   it('los agregados SIGUEN mostrándose como colonias y en la leyenda', () => {
@@ -90,5 +90,21 @@ describe('Σ UFC total · los conteos AGREGADOS no se suman a los específicos',
   it('el «Dominante» tampoco es un agregado (no se rompe lo que ya estaba bien)', () => {
     const root = abrirMicro();
     expect(kpi(root, 'Dominante')).toBe('C. Amarillas'); // el mayor de los ESPECÍFICOS
+  });
+});
+
+/* Punto 29 (pauta 24-11; usuario 25-11: «Un total por unidad», «también en Supervisor») · el mismo tanque con una muestra de
+   AGUA y otra de ANIMAL: una suma por unidad, no 100 + 20 mezclados. Cifras INVENTADAS. */
+describe('punto 29 · Placa del tanque · Σ UFC por unidad', () => {
+  it('🔴 agua (UFC/mL) y animal (UFC/g) del mismo día salen en líneas separadas', () => {
+    const base = synth().slice(0, 2);
+    const mic = (tipo, ufc) => ({ _SheetOrigin: 'Microbiología', 'Módulo': 'M01', Corrida: '573', 'Fecha muestreo': '05/06/2026',
+      Formato: 'Larvicultura · Muestra', 'Tipo de muestra': tipo, 'V.Amarillos UFC': String(ufc) });
+    store.globalData = [...base, mic('Agua', 100), mic('Animal', 20)];
+    const root = abrirMicro();
+    const st = [...root.querySelectorAll('.mic-pe-st')].find((n) => n.textContent.includes('Σ UFC por unidad'));
+    expect(st).toBeTruthy();
+    expect([...st.querySelectorAll('.mic-ufc-u')].map((n) => n.textContent.trim())).toEqual(['100 UFC/mL', '20 UFC/g']);
+    expect(st.textContent).not.toContain('120');
   });
 });
