@@ -14407,7 +14407,7 @@ async function madMortGuardar(){ return _madGridBloqueada("fp-mortdes", async fu
   }
   /* T4.4 (pauta 24-11) · ¿ya hay un informe de ese día? Se pregunta UNA vez por TODO lo que va a salir: lo guardado con 💾 también
      (auditoría de B, 25-11: salía antes del aviso y sustituía sin preguntar). La 📜 corrección se mira antes, como siempre. */
-  if(payload.rows.length && !_madHistCorrConfirma("mortdes", payload)) return;   // 📜 corrección: ¿cambió la llave? (2026-10-04)
+  if(payload.rows.length){ if(!_madHistCorrConfirma("mortdes", payload)) return; }   // 📜 corrección: ¿cambió la llave? (2026-10-04); sin filas en pantalla no hay nada que corregir
   const _todo={ rows: madLocLeer("mortdes").reduce(function(a, e){ return a.concat(e.payload.rows); }, []).concat(payload.rows) };
   if(!(await _madMortConfirmarSustituye(_todo))) return;
   // PE1.4 · primero lo guardado con 💾 (lo más viejo antes); si algo falla, lo de pantalla tampoco sale.
