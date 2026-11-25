@@ -4012,10 +4012,10 @@ function addToAlgHist(){
   if(_rangeGuard()) return;
   if(!validateFicha("algas", data)) return;
   { const _fut = _fechaPosterior(data.fecha); if(_fut){ toast("⚠️ Algas: " + _fut + ". No se agregó: corrígela.", "warn", 7000); return; } }   // punto 46
-  // Mínimo: requiere fecha o cel_ml
-  const hasMin = ["fecha","cel_ml"].some(k => data[k] !== undefined && data[k] !== "");
-  if(!hasMin){
-    toast("Ingresa al menos la Fecha o las Cel/mL antes de agregar al historial.","warn",4000);
+  /* Punto 6 (pauta del 24-11, usuario: «Exigir la fecha») · sin una fecha que exista no se agrega: antes bastaban las Cel/mL y el
+     registro caía en «sin fecha» de la Bitácora (y en ningún mes). */
+  if(!isValidDate(data.fecha || "")){
+    toast("Algas: falta la Fecha, o no existe (revisa el día y el mes). No se agregó al historial.","warn",6000);
     return;
   }
   // Id de sesión: se genera una sola vez por registro y se preserva al editar (viaja por
@@ -30501,7 +30501,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "a1873bf5f9c9";
+const GAS_VERSION = "27ed035437ba";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -30882,8 +30882,8 @@ function doPost(e) {
     // B5 (2026-10-19, usuario) · LA MARCA DEL reqId SE VUELVE A MIRAR CON EL LOCK TOMADO. La de arriba se mira
     // ANTES de esperarlo, y un reintento del MISMO envío (el cliente corta a los 40 s y reintenta con el mismo
     // reqId) llegaba mientras el primero seguía escribiendo: pasaba esa comprobación, esperaba aquí, y al entrar
-    // escribía otra vez. Medido el 19-10 en Control_Tanque: 945 parejas de filas repetidas, 926 a menos de 200
-    // filas de su gemela (el mismo bloque añadido otra vez) y todas con una llave que casa. Con el lock tomado, la
+    // escribía otra vez. Medido el 19-10 en Control_Tanque: cientos de parejas de filas repetidas, casi todas muy cerca
+    // de su gemela (el mismo bloque añadido otra vez) y todas con una llave que casa. Con el lock tomado, la
     // marca del primero ya está (se pone antes de soltarlo) y el reintento responde «ok» sin escribir.
     if (reqId) {
       try {
@@ -31941,7 +31941,7 @@ function upsertAstRows(ws, newRows, merge) {
 // Clave = columna "Sesión" (ÚLTIMA columna del payload; id estable por registro,
 // generado en el cliente). Al editar un registro —aunque cambien Corrida/Módulo/
 // Sistema/Área/Lote/Día— y re-sincronizar, se ACTUALIZA la misma fila en vez de
-// duplicarla. Merge: las columnas de datos toman el nuevo valor (si no viene vacío);
+// duplicarla. Las columnas de datos toman el nuevo valor, también VACÍO (punto 6, pauta del 24-11);
 // la columna Sesión se preserva. Filas heredadas sin Sesión no se emparejan (se
 // conservan). Sustituye la clave compuesta anterior (Fecha|Corrida|Módulo|Área|
 // Sistema|Lote|Día), que hacía que editar cualquiera de esos campos creara fila nueva.
@@ -31970,14 +31970,18 @@ function upsertAlgasRows(ws, newRows) {
     var entry = sid ? map[sid] : null;
 
     if (entry && entry.row > 0) {
-      // Misma Sesión → merge: datos toman el nuevo valor no vacío; Sesión se preserva.
+      // Misma Sesión → los datos toman el nuevo valor (también vacío: punto 6); Sesión se preserva.
       var ex = data[entry.idx], nc = Math.max(ex.length, nr.length), merged = [];
       for (var c = 0; c < nc; c++) {
         var e = c < ex.length ? ex[c] : "";
         var n = c < nr.length ? nr[c] : "";
         var nEmpty = (n === "" || n === null || n === undefined);
-        if (c === sidCol) merged.push((e === "" || e === null || e === undefined) ? n : e);
-        else              merged.push(nEmpty ? e : n);
+        if (c === sidCol)      merged.push((e === "" || e === null || e === undefined) ? n : e);
+        // Punto 6 (pauta del 24-11, usuario: «Que lo vacío se vacíe en la hoja») · la fila es el registro ENTERO de una sola
+        // ficha: una celda que llega VACÍA la vacía (antes conservaba lo viejo y la app decía «actualizado»). Lo que queda
+        // a la derecha de lo que manda el cliente (columnas añadidas a mano en la hoja) no se toca.
+        else if (c < widest)   merged.push(nEmpty ? "" : n);
+        else                   merged.push(e);
       }
       porEscribir.push({ fila: entry.row, datos: merged });   // B1: en bloque al final
       updated++;
@@ -32221,8 +32225,8 @@ function verifyReq(reqId, t) {
 // doPost). Fechas → yyyy-MM-dd. Tope 40000 filas, las MÁS RECIENTES (ver TOPE_FILAS).
 //
 // El parámetro "cols" (opcional, ?cols=A,B,C) PROYECTA: devuelve sólo esas columnas.
-// Medido el 2026-08-12 contra el despliegue real: "Maduración MATRIZ" son 1508 filas
-// por 12 columnas = 392 KB, de las que el cliente sólo usa 4 (65 KB). El tamaño de la
+// Medido el 2026-08-12 contra el despliegue real: la respuesta de "Maduración MATRIZ" con todas sus
+// columnas pesaba varias veces lo que el cliente usa (sólo unas pocas columnas). El tamaño de la
 // respuesta es lo que dispara los timeouts del lector, así que recortarla ataca la
 // causa. Sin el parámetro se devuelven TODAS las columnas: compatible con los
 // clientes viejos y con cualquier despliegue anterior a este cambio.
@@ -32263,7 +32267,7 @@ function sheetRows(name, t, cols) {
     // 🔑 D11 (2026-09-13): el tope pasa de 5000 a 20000. El precio es el tamaño: 20000 filas
     // de Bitácora rondan 2,4 MB.
     // 🔑 2026-10-23 (usuario): pasa de 20000 a 40000. Lo que cuesta es el TIEMPO de este script,
-    // que crece con las celdas devueltas (medido: 20000 filas de 8 columnas, 5–6 s), no la red:
+    // que crece con las celdas devueltas (medido en el tope anterior: unos segundos), no la red:
     // la respuesta viaja comprimida (esas 20000, 105 KB de 2,6 MB). Con 40000 la Bitácora llena
     // tardaría unos 7,5 s, lejos de los 30 s por intento del cliente, y llegaría al tope entre
     // junio y octubre de 2027 (Tanques, hacia mediados de 2028). Sólo cambia la respuesta de una
@@ -32475,150 +32479,6 @@ function evPortalPage(t, m) {
   return HtmlService.createHtmlOutput(h)
     .setTitle("Evidencias Larvicultura")
     .addMetaTag("viewport", "width=device-width,initial-scale=1");
-}
-
-// ── Mantenimiento · saneamiento del As Técnico (Registro_Supervisión) ─────
-// NO se expone por doGet/doPost: se ejecuta A MANO desde el editor de Apps
-// Script. Es deliberado — doPost ya escribe sin autenticación (SHARED_TOKEN
-// vacío), y una utilidad que reescribe IDs y borra filas no debe además
-// alcanzarse desde la URL pública.
-//
-// Repara el daño del despliegue anterior, que recortaba cada fila del AsT a 25
-// columnas y perdía el ID por el camino. Hace DOS cosas y nada más:
-//
-//   1. Rellena la columna "ID" de las filas que la tienen vacía. Sin ID la fila
-//      es inalcanzable para upsertAstRows: re-sincronizar ese registro no la
-//      actualiza, la DUPLICA.
-//   2. Borra las filas exactamente duplicadas — mismo ID y mismo contenido en
-//      todas las columnas. Sólo esas: si dos filas comparten ID pero difieren
-//      en algo, se dejan quietas y se informan, porque elegir cuál sobra no es
-//      decisión de un script.
-//
-// No toca ninguna otra columna, no reordena filas y no cambia formatos. Ninguna
-// vista del tablero lee la columna ID, así que la visualización no se entera.
-// Es IDEMPOTENTE — la segunda ejecución no encuentra nada que hacer.
-//
-// Uso desde el editor de Apps Script:
-//   sanearAstIds()      → SIMULACRO: informa en el registro y NO escribe nada.
-//   sanearAstIds(true)  → aplica los cambios.
-function sanearAstIds(aplicar) {
-  var APLICAR = (aplicar === true);
-  var NOMBRE  = "Registro_Supervisión";
-  var ss = SpreadsheetApp.openById(SS_ID);
-  var ws = ss.getSheetByName(NOMBRE);
-  if (!ws) { Logger.log("ABORTADO: no existe la hoja " + NOMBRE); return null; }
-
-  // El mismo lock que usa doPost: si alguien está sincronizando, se espera.
-  var lock = LockService.getScriptLock();
-  try { lock.waitLock(25000); }
-  catch (eLock) { Logger.log("ABORTADO: la hoja está ocupada, reintenta en un momento."); return null; }
-
-  try {
-    var data = ws.getDataRange().getValues();
-    if (data.length < 2) { Logger.log("La hoja no tiene filas de datos."); return null; }
-
-    var hdr = data[0], idCol = -1;
-    for (var h = 0; h < hdr.length; h++) {
-      if (String(hdr[h] == null ? "" : hdr[h]).trim() === "ID") { idCol = h; break; }
-    }
-    if (idCol < 0) { Logger.log("ABORTADO: la hoja no tiene columna ID."); return null; }
-
-    // ── Inventario: qué IDs están en uso, qué filas no tienen ninguno ──
-    var usados = {}, porId = {}, vacias = [];
-    for (var i = 1; i < data.length; i++) {
-      var id = String(data[i][idCol] == null ? "" : data[i][idCol]).trim();
-      if (!id) { vacias.push(i); continue; }
-      usados[id] = true;
-      if (!porId[id]) porId[id] = [];
-      porId[id].push(i);
-    }
-
-    // ── Duplicados: exactos a borrar, ambiguos sólo a informar ──
-    var aBorrar = [], dudosos = [];
-    for (var did in porId) {
-      var filas = porId[did];
-      if (filas.length < 2) continue;
-      var base = data[filas[0]];          // la primera se conserva siempre
-      for (var k = 1; k < filas.length; k++) {
-        if (_astFilasIguales(base, data[filas[k]])) aBorrar.push(filas[k]);
-        else dudosos.push(did + " (filas " + (filas[0] + 1) + " y " + (filas[k] + 1) + ")");
-      }
-    }
-
-    // ── IDs nuevos para las filas huérfanas ──
-    var nuevos = [];
-    for (var v = 0; v < vacias.length; v++) {
-      var nid = _astNuevoId(usados);
-      usados[nid] = true;
-      nuevos.push({ fila: vacias[v] + 1, id: nid });   // fila de HOJA (1-indexed)
-    }
-
-    // ── Informe ──
-    Logger.log((APLICAR ? "APLICANDO" : "SIMULACRO (no se escribe nada)") + " · hoja " + NOMBRE);
-    Logger.log("Filas de datos: " + (data.length - 1) + " · columna ID: " + (idCol + 1));
-    Logger.log("Filas sin ID: " + nuevos.length);
-    for (var n = 0; n < nuevos.length; n++) Logger.log("   fila " + nuevos[n].fila + " -> " + nuevos[n].id);
-    Logger.log("Filas duplicadas exactas a borrar: " + aBorrar.length);
-    for (var b = 0; b < aBorrar.length; b++) Logger.log("   fila " + (aBorrar[b] + 1) + " (ID " + _astCelda(data[aBorrar[b]][idCol]) + ")");
-    if (dudosos.length) {
-      Logger.log("ATENCIÓN · mismo ID con contenido distinto (NO se tocan, revísalas a mano): " + dudosos.length);
-      for (var d = 0; d < dudosos.length; d++) Logger.log("   " + dudosos[d]);
-    }
-    if (!APLICAR) {
-      Logger.log("Nada escrito. Ejecuta sanearAstIds(true) para aplicarlo.");
-      return { simulacro: true, sinId: nuevos.length, duplicadas: aBorrar.length, dudosas: dudosos.length };
-    }
-
-    // ── Aplicar: PRIMERO los IDs (los números de fila aún son válidos) y
-    // DESPUÉS los borrados de abajo arriba, que así no desplazan lo ya escrito.
-    for (var w = 0; w < nuevos.length; w++) {
-      ws.getRange(nuevos[w].fila, idCol + 1).setValue(nuevos[w].id);
-    }
-    aBorrar.sort(function(a, b) { return b - a; });
-    for (var x = 0; x < aBorrar.length; x++) ws.deleteRow(aBorrar[x] + 1);
-    SpreadsheetApp.flush();
-
-    Logger.log("LISTO · " + nuevos.length + " ID escritos · " + aBorrar.length + " fila(s) duplicada(s) borrada(s).");
-    return { simulacro: false, sinId: nuevos.length, duplicadas: aBorrar.length, dudosas: dudosos.length };
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-// ¿Dos filas de la hoja son la MISMA fila? Compara celda a celda, tolerando que
-// una traiga menos columnas que la otra (las que falten cuentan como vacías).
-function _astFilasIguales(a, b) {
-  var n = Math.max(a.length, b.length);
-  for (var i = 0; i < n; i++) {
-    if (_astCelda(i < a.length ? a[i] : "") !== _astCelda(i < b.length ? b[i] : "")) return false;
-  }
-  return true;
-}
-// Normaliza una celda a texto comparable. Date -> yyyy-MM-dd, que es como las
-// devuelve getValues() y como las escribe el cliente.
-function _astCelda(v) {
-  if (v instanceof Date) return formatoCelda_(v, "yyyy-MM-dd");
-  return String(v == null ? "" : v).trim();
-}
-
-// ID con el MISMO formato que genera la app (base36 del reloj + 4 al azar), para
-// que una fila saneada no se distinga de una nacida en el cliente. Se exige al
-// menos una letra: un ID de puros dígitos lo guardaría la hoja como NÚMERO y
-// dejaría de casar con el texto que envía el cliente en el upsert.
-function _astNuevoId(usados) {
-  for (var intento = 0; intento < 200; intento++) {
-    var suf = "";
-    while (suf.length < 4) suf += Math.random().toString(36).slice(2);
-    var id = Date.now().toString(36) + suf.slice(0, 4);
-    if (_astTieneLetra(id) && !usados[id]) return id;
-  }
-  var n = 0;                                  // salida de emergencia, sigue siendo único
-  while (usados["ast" + n]) n++;
-  return "ast" + n;
-}
-function _astTieneLetra(s) {
-  for (var i = 0; i < s.length; i++) { var c = s.charAt(i); if (c >= "a" && c <= "z") return true; }
-  return false;
 }
 
 // ── Respuesta JSON ────────────────────────────────────────

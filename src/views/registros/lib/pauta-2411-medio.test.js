@@ -11,7 +11,7 @@ import { join } from 'node:path';
 
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
-const EXPORTAR = ['syncAllPendingTras', 'renderMicNuevo', '_madRecTanques', 'postPayload', 'saveCfg', 'gcfg', 'today'];
+const EXPORTAR = ['syncAllPendingTras', 'renderMicNuevo', '_madRecTanques', 'postPayload', 'saveCfg', 'gcfg', 'addToAlgHist', 'today'];
 const H = {};
 const avisos = [];
 
@@ -119,4 +119,23 @@ describe('25 · ⚙ Config no guarda la dirección POR DEFECTO como propia', () 
     expect(guardar(H.leer('DEFAULT_GAS_URL'))).toBe('');
     expect(guardar('https://script.google.com/macros/s/OTRA-FICTICIA/exec')).toBe('https://script.google.com/macros/s/OTRA-FICTICIA/exec');
   });
+});
+
+describe('6 · Algas no agrega un registro sin una fecha que exista', () => {
+  const agregar = (data) => {
+    let guardado = 0;
+    H.poner('curMod', H.leer('LAB_MOD'));
+    H.poner('collect', () => data);
+    H.poner('_rangeGuard', () => false);
+    H.poner('validateFicha', () => true);
+    H.poner('saveAlgHist', () => { guardado++; return true; });
+    H.poner('loadAlgHist', () => []);
+    try { H.addToAlgHist(); } catch (_) { /* lo de después de guardar (repintar) no importa aquí */ }
+    return guardado;
+  };
+  it('🔴 con las Cel/mL y SIN fecha: no se agrega, y se dice', () => {
+    expect(agregar({ cel_ml: '5' })).toBe(0);
+    expect(avisos.join(' ')).toMatch(/falta la Fecha, o no existe/);
+  });
+  it('con una fecha que existe, sí', () => { expect(agregar({ fecha: '2026-11-20', cel_ml: '5' })).toBe(1); });
 });
