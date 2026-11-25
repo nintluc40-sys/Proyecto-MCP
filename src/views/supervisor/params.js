@@ -339,24 +339,6 @@ export function morphHeatmap(rows, stageClass) {
   return { days, rows: out };
 }
 
-/** Regresión lineal simple sobre una serie (ignora huecos). Devuelve {slope, intercept, future[]}. */
-export function linForecast(values, horizon = 7) {
-  const pts = [];
-  values.forEach((y, x) => { if (y !== null && y !== undefined && !isNaN(y)) pts.push([x, y]); });
-  if (pts.length < 2) return null;
-  const n = pts.length;
-  let sx = 0, sy = 0, sxx = 0, sxy = 0;
-  pts.forEach(([x, y]) => { sx += x; sy += y; sxx += x * x; sxy += x * y; });
-  const denom = n * sxx - sx * sx;
-  if (denom === 0) return null;
-  const slope = (n * sxy - sx * sy) / denom;
-  const intercept = (sy - slope * sx) / n;
-  const lastX = values.length - 1;
-  const future = [];
-  for (let k = 1; k <= horizon; k++) { const x = lastX + k; future.push(slope * x + intercept); }
-  return { slope, intercept, future, predict: (x) => slope * x + intercept };
-}
-
 export function buildParamSection(rows, stageClass, modRows, waterColor) {
   const { days, stages, series } = lvDaily(rows);
 

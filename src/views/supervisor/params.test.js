@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { waterSemaforo, linForecast, iclSeries, buildParamSection } from './params.js';
+import { waterSemaforo, iclSeries, buildParamSection } from './params.js';
 
 /* Punto 8 · en el panel «Diagnóstico por parámetros» del tanque: Manejo de agua con sólo el recambio (que no se juzga) era
    «✅ Normal». Cifras INVENTADAS. */
@@ -158,36 +158,5 @@ describe('iclSeries · el Estrés se escala a 0–100 antes de restar', () => {
     const base = iclSeries([row({})]).values[0];
     const conDef = iclSeries([row({ 'Deformidad': '12' })]).values[0];
     expect(base - conDef).toBeCloseTo(12, 6);
-  });
-});
-
-describe('linForecast', () => {
-  it('tendencia lineal perfecta se proyecta exacta', () => {
-    const r = linForecast([0, 2, 4, 6, 8], 3);
-    expect(r.slope).toBeCloseTo(2, 6);
-    expect(r.future).toEqual([10, 12, 14]);
-  });
-
-  it('ignora huecos (null) en la serie', () => {
-    const r = linForecast([0, null, 4, null, 8], 2);
-    expect(r.slope).toBeCloseTo(2, 6);
-    expect(r.future[0]).toBeCloseTo(10, 6);
-  });
-
-  it('pendiente negativa proyecta a la baja', () => {
-    const r = linForecast([100, 90, 80, 70], 1);
-    expect(r.slope).toBeLessThan(0);
-    expect(r.future[0]).toBeCloseTo(60, 6);
-  });
-
-  it('serie insuficiente → null', () => {
-    expect(linForecast([5], 7)).toBeNull();
-    expect(linForecast([null, null], 7)).toBeNull();
-  });
-
-  it('predict(x) coincide con la recta', () => {
-    const r = linForecast([1, 3, 5], 1);
-    expect(r.predict(0)).toBeCloseTo(1, 6);
-    expect(r.predict(2)).toBeCloseTo(5, 6);
   });
 });
