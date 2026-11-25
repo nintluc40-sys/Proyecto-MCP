@@ -88,6 +88,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  respuestaConfirm = true;   // T3.9 · salir pregunta con la grilla tecleada: la del test anterior no debe dejarnos dentro
   H.goBack();
   globalThis.localStorage.clear();
   enviados.length = 0;

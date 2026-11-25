@@ -536,34 +536,50 @@ describe('🔴 dejar una grilla con lo tecleado sin poder guardarse', () => {
     });
   });
 
+  /* T3.9 (pauta del 24-11, usuario: «Preguntar antes de salir») · con la grilla tecleada, salir SIEMPRE pregunta: 1.ª pregunta
+     «¿guardarlo y salir?»; con Cancelar, la 2.ª «¿salir sin guardar?». Sin sitio, guardar falla y se pregunta como antes (A7). */
   describe('⬅️ salir del módulo', () => {
+    const contestar = (...r) => { globalThis.confirm = (t) => { preguntas.push(String(t)); return r.length ? r.shift() : false; }; };
     it('🔴 quedarse: sigue en la grilla, con lo tecleado', () => {
       irASala('Sala 2');
       lleno();
       teclear(celda(), '7');
-      H.goBack();
-      expect(preguntas).toHaveLength(1);
+      H.goBack();   // no guardar · no salir sin guardar
+      expect(preguntas).toHaveLength(2);
+      expect(preguntas[0]).toMatch(/SIN GUARDAR[\s\S]*GUARDARLO en este equipo/);
+      expect(preguntas[1]).toMatch(/¿Salir SIN GUARDAR/);
       expect(H.vista()).toEqual({ mod: H.MAD_MOD, tab: 'tanques' });
       expect(celda().value).toBe('7');
     });
 
-    it('🔴 seguir: sale, y al volver no pregunta otra vez por lo que ya se dio por perdido', () => {
+    it('🔴 guardar sin sitio: lo dice, y seguir sale; al volver no pregunta otra vez por lo que ya se dio por perdido', () => {
       irASala('Sala 2');
       lleno();
       teclear(celda(), '7');
       respuesta = true;
       H.goBack();
-      expect(preguntas).toHaveLength(1);
+      expect(preguntas).toHaveLength(2);
+      expect(preguntas[1]).toMatch(/No hay espacio/);
       H.setVista(H.MAD_MOD, 'tanques');
       H.selTab('salas');
-      expect(preguntas).toHaveLength(1);
+      expect(preguntas).toHaveLength(2);
     });
 
-    it('🔵 con sitio para la copia de recuperación no pregunta, y queda recuperable', () => {
+    it('🔴 con sitio: «guardar y salir» lo GUARDA en el equipo', () => {
       irASala('Sala 2');
       teclear(celda(), '7');
+      contestar(true);
       H.goBack();
-      expect(preguntas).toEqual([]);
+      expect(preguntas).toHaveLength(1);
+      expect(H.loadMad('tanques').some((r) => String(r.data.hembras_muertas) === '7')).toBe(true);
+    });
+
+    it('🔵 con sitio: «salir sin guardar» sale y deja la copia ↩ Recuperar', () => {
+      irASala('Sala 2');
+      teclear(celda(), '7');
+      contestar(false, true);
+      H.goBack();
+      expect(preguntas).toHaveLength(2);
       expect(H.loadMadRecovery()).toBeTruthy();
     });
   });

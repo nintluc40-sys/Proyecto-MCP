@@ -1,0 +1,100 @@
+// @vitest-environment happy-dom
+/* ============================================================
+   PAUTA DEL 24-11 · ronda 🕐 de la Sesión A (engine.js), comprobada de forma directa.
+   T7.1 el envío de Traslado no borra lo tecleado mientras espera · T7.6 una fecha vacía no pasa a ser HOY al repintar ·
+   T3.4 ↩ Recuperar de Tanques no descarta la ronda en curso por parecerse a otra ya cerrada.
+   Motor REAL; las piezas de alrededor se sustituyen con `poner`. Datos FICTICIOS.
+   ============================================================ */
+import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const ENGINE = join(process.cwd(), 'public/registros/engine.js');
+const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
+const EXPORTAR = ['syncAllPendingTras', 'renderMicNuevo', '_madRecTanques', 'today'];
+const H = {};
+const avisos = [];
+
+beforeAll(async () => {
+  if (typeof globalThis.localStorage === 'undefined') {
+    const m = new Map();
+    globalThis.localStorage = {
+      getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)),
+      removeItem: (k) => m.delete(k), clear: () => m.clear(),
+      key: (i) => Array.from(m.keys())[i] ?? null, get length() { return m.size; },
+    };
+  }
+  window.__rgLib = { ...(await import('./security.js')), ...(await import('./modules.js')), ...(await import('./reproductivo.data.js')) };
+  const host = document.createElement('div');
+  host.className = 'registros-app';
+  host.innerHTML = readFileSync(SHELL, 'utf8');
+  document.body.appendChild(host);
+  const epilogo = '\n;(function(){ var H = globalThis.__ENG;\n'
+    + EXPORTAR.map((n) => `try{ H[${JSON.stringify(n)}] = ${n}; }catch(_){}`).join('\n')
+    + '\ntry{ H.setToast=function(f){toast=f;}; }catch(_){}'
+    + '\nH.poner=function(n,v){ eval(n+"=v"); };'
+    + '\nH.leer=function(n){ return eval(n); };\n})();';
+  globalThis.__ENG = H;
+  new Function('window', 'document', 'localStorage', 'globalThis', readFileSync(ENGINE, 'utf8') + epilogo)(
+    window, document, globalThis.localStorage, globalThis);
+  H.setToast((m) => { avisos.push(String(m)); });
+});
+beforeEach(() => { globalThis.localStorage.clear(); avisos.length = 0; });
+
+describe('T7.1 · al terminar el envío de Traslado, lo tecleado en la espera se queda', () => {
+  const enviar = async (sucio) => {
+    let pintada = null;
+    H.poner('gasUrl', () => 'https://script.google.com/macros/s/PRUEBA/exec');
+    H.poner('isValidGasUrl', () => true);
+    H.poner('syncRateOk', () => true);
+    H.poner('loadTras', () => [{ id: 't1', synced: false }]);
+    H.poner('buildTrasPayload', () => ({ rows: [['x']] }));
+    H.poner('_trasLotes', (p) => [p]);
+    H.poner('postPayload', async () => true);
+    H.poner('_marcaSellar', () => {});
+    H.poner('_marcarEnviado', () => {});
+    H.poner('setSyncUI', () => {});
+    H.poner('updateDots', () => {});
+    H.poner('updateSyncUI', () => {});
+    H.poner('collectTraslado', () => ({ o2: '5,5' }));
+    H.poner('renderTraslado', () => { pintada = H.leer('_trasRecovered'); });
+    H.poner('curTab', 'traslado');
+    H.poner('_trasFormDirty', sucio);
+    await H.syncAllPendingTras();
+    return { pintada, sucio: H.leer('_trasFormDirty') };
+  };
+  it('🔴 con algo tecleado: se repinta con lo de pantalla, y sigue «sin guardar»', async () => {
+    const r = await enviar(true);
+    expect(r.pintada).toEqual({ o2: '5,5' });
+    expect(r.sucio).toBe(true);
+  });
+  it('sin nada tecleado: se repinta con lo guardado, como antes', async () => {
+    expect((await enviar(false)).pintada).toBeNull();
+  });
+});
+
+describe('T7.6 · Laboratorio: una fecha de muestreo vacía no pasa a ser HOY al repintar', () => {
+  it('🔴 vacía se queda vacía (así el aviso «falta la fecha» sigue saltando); sin borrador, hoy', () => {
+    const fm = () => document.getElementById('mic-fm');
+    H.poner('loadMicDraft', () => ({ meta: { fechaMuestreo: '', fechaResultados: '', corrida: '', responsable: '' }, sections: {} }));
+    H.renderMicNuevo();
+    expect(fm().value).toBe('');
+    H.poner('loadMicDraft', () => ({ meta: { fechaResultados: '', corrida: '', responsable: '' }, sections: {} }));
+    H.renderMicNuevo();
+    expect(fm().value).toBe(H.today());
+  });
+});
+
+describe('T3.4 · ↩ Recuperar de Tanques no descarta la ronda en curso', () => {
+  const F = '2026-11-20', S = 'Sala 5';
+  const p1 = (ts) => [{ id: 'p1', ts, data: { fecha: F, sala: S, tanque: '7', parte: 1, cerrado: true, hembras_muertas: 1 } }];
+  const copia = { ts: 2000, rows: [{ fecha: F, sala: S, tanque: '7', hembras_muertas: 1 }, { fecha: F, sala: S, tanque: '8', machos_muertos: 2 }] };
+  it('🔴 la ronda 2 igual que la 1 (cerrada ANTES de la copia) entra: no es «lo ya guardado»', () => {
+    const list = p1(1000);
+    expect(H._madRecTanques(list, copia)).toBe(2);
+    expect(list.filter((r) => r.data.tanque === '7')).toHaveLength(2);
+  });
+  it('la copia vieja de algo guardado DESPUÉS sigue sin volver a entrar', () => {
+    expect(H._madRecTanques(p1(3000), copia)).toBe(1);
+  });
+});

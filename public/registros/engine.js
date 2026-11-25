@@ -3318,6 +3318,14 @@ function enter(){
 function goBack(){
   /* 2026-11-05 (pauta A7, usuario: «Preguntar») · Salir no guarda la grilla: deja su copia de recuperación. Sin sitio tampoco para ella,
      lo tecleado se perdería: se pregunta. Quien sigue ya lo da por perdido: no se le vuelve a preguntar al volver. */
+  /* T3.9 (revisión del 15-11; pauta del 24-11, usuario: «Preguntar antes de salir») · con la grilla tecleada sin guardar, la copia ↩ caduca
+     a la hora: antes se salía sin decir nada. Ahora se pregunta: guardar (💾, en el equipo) y salir · salir sin guardar · quedarse. */
+  if(isMadMod(curMod) && MAD_FICHAS.includes(curTab) && _madGridDirty){
+    if(confirm(MAD_SALIR_GRID)){
+      if(!_madGridSePuedeDejar()) return;
+      _madGridDirty = false;
+    } else if(!confirm(MAD_SALIR_SIN_GUARDAR)) return;
+  }
   if(isMadMod(curMod) && MAD_FICHAS.includes(curTab) && _madGridDirty){
     let _copia = true;
     try{ _copia = saveMadRecovery() !== false; }catch(_){}
@@ -7036,6 +7044,10 @@ const MAD_GRID_SIN_ESPACIO = "⚠ No hay espacio en este equipo para guardar lo 
 // 2026-11-12 (punto 1) · lo mismo cuando guardar falló por un error inesperado (no por espacio): no se le dice que es el espacio.
 const MAD_GRID_ERROR = "⚠ No se pudo guardar lo tecleado en esta grilla (error inesperado).\n\nAceptar = seguir y PERDERLO."
   + "\nCancelar = quedarte aquí, con lo tecleado, y volver a probar con 💾.";
+const MAD_SALIR_GRID = "Tienes lo tecleado en esta grilla SIN GUARDAR.\n\nAceptar = GUARDARLO en este equipo (💾) y salir del módulo."
+  + "\nCancelar = elegir entre salir sin guardar o quedarte.";   // T3.9 (pauta 24-11)
+const MAD_SALIR_SIN_GUARDAR = "¿Salir SIN GUARDAR lo tecleado en la grilla?\nQueda una copia en ↩ Recuperar, pero caduca a la hora.\n\nAceptar = salir sin guardar."
+  + "\nCancelar = quedarte aquí, con lo tecleado.";
 function _madGridSePuedeDejar(){
   const tecleado = _madGridDirty;
   if(_madCommitActive() || !tecleado) return true;
@@ -7085,10 +7097,15 @@ function _madRecTanques(list, rec){
   const yaEsta = function(d, x){
     return Object.keys(d).every(function(k){ return d[k] === "" || d[k] == null || String(d[k]) === String(x[k] == null ? "" : x[k]); });
   };
+  /* T3.4 (revisión del 15-11; pauta del 24-11) · «ya guardado» es lo que se guardó DESPUÉS de la copia (la copia vieja de algo ya
+     guardado), o lo de la ronda abierta. Antes valía CUALQUIER parte del tanque ese día: con la ronda 2 igual que la 1 (1 ♀ muerta
+     en las dos), la recuperación descartaba en silencio la de la ronda 2 y el libro contaba un animal vivo de más. */
+  const _abierta = _madParteAbierto(list, (rec.rows[0]||{}).fecha, (rec.rows[0]||{}).sala);
   const nuevas = rec.rows.filter(function(d){
     return d && isValidDate(d.fecha) && !list.some(function(r){
       const x = r && r.data;
-      return !!x && x.fecha === d.fecha && x.sala === d.sala && String(x.tanque) === String(d.tanque) && yaEsta(d, x);
+      return !!x && x.fecha === d.fecha && x.sala === d.sala && String(x.tanque) === String(d.tanque)
+        && ((Number(r.ts)||0) >= (Number(rec.ts)||0) || (_abierta && String(x.parte) === String(_abierta))) && yaEsta(d, x);
     });
   });
   if(!nuevas.length) return 0;
@@ -25619,7 +25636,7 @@ function renderTraslado(){
 
   const formHtml = '<div class="mad-form">'
     + '<div class="meta">'
-      + '<div class="mf"><label>Fecha de entrega *</label><input type="date" data-k="fecha" value="'+escapeHtml(d.fecha||today())+'"></div>'
+      + '<div class="mf"><label>Fecha de entrega *</label><input type="date" data-k="fecha" value="'+escapeHtml(d.fecha==null ? today() : d.fecha)+'"></div>'   /* T7.6 · vacía o imposible se queda vacía: no pasa a ser hoy */
       + '<div class="mf"><label>Corrida</label><input type="number" step="1" inputmode="numeric" data-k="corrida" placeholder="Ej. 555" value="'+escapeHtml(d.corrida==null?"":String(d.corrida))+'"></div>'
       + '<div class="mf"><label>Módulo</label><select data-k="modulo"><option value="">— Selecciona —</option>'+trasOpts(TRAS_MODULO_OPTS, d.modulo||"")+'</select></div>'
       + '<div class="mf"><label>Camaronera *</label><select data-k="camaronera"><option value="">— Selecciona —</option>'+trasOpts(DESTINO_OPTS, d.camaronera||"")+'</select></div>'
@@ -26631,7 +26648,13 @@ async function syncAllPendingTras(){
   } else {
     _syncNotOkUI(fallo.outcome, "No fue posible sincronizar el traslado", null, fallo.gasMessage);
   }
-  if(curTab === "traslado") renderTraslado();
+  /* T7.1 (revisión del 15-11; pauta del 24-11) · el envío puede tardar más de un minuto en ruta, y el chequeador sigue anotando:
+     repintar desde lo guardado borraba lo tecleado en la espera. Si hay algo tecleado, la ficha vuelve con lo de pantalla
+     (como al cambiar de pestaña, punto 1: _trasPintarAlVolver), y sigue marcada como sin guardar. */
+  if(curTab === "traslado"){
+    if(_trasFormDirty){ try{ _trasAlVolver = { data: collectTraslado(), sucio: true }; }catch(_){ _trasAlVolver = null; } }
+    _trasPintarAlVolver();
+  }
   updateDots(); updateSyncUI();
 }
 
@@ -27926,7 +27949,7 @@ function renderMicNuevo(){
       <span class="ssp ssp-mt">${escapeHtml(meta.fechaMuestreo||today())}</span></div>
     <div class="fc-b">
       <div class="meta">
-        <div class="mf"><label>Fecha muestreo</label><input type="date" id="mic-fm" value="${escapeHtml(meta.fechaMuestreo||today())}" max="${today()}" onfocus="this.max=today()" oninput="micDraftTouch()"></div>
+        <div class="mf"><label>Fecha muestreo</label><input type="date" id="mic-fm" value="${escapeHtml(meta.fechaMuestreo==null ? today() : meta.fechaMuestreo)}" max="${today()}" onfocus="this.max=today()" oninput="micDraftTouch()"></div>
         <div class="mf"><label>Fecha resultados</label><input type="date" id="mic-fr" value="${escapeHtml(meta.fechaResultados||"")}" max="${today()}" onfocus="this.max=today();this.min=(document.getElementById('mic-fm')||{}).value||''" oninput="micDraftTouch()"></div>
         <div class="mf"><label>N° Corrida</label><input id="mic-corr" value="${escapeHtml(meta.corrida||"")}" placeholder="Ej. 562" oninput="micDraftTouch()" onchange="micCorridaChange()"></div>
         <div class="mf"><label>Responsable <span style="color:#dc2626" title="Analista obligatorio para guardar y sincronizar">*</span></label><input id="mic-resp" list="mic-analistas" value="${escapeHtml(meta.responsable||"")}" placeholder="Analista" oninput="micDraftTouch()">${_analistaDL("mic-analistas")}</div>
@@ -29482,7 +29505,7 @@ function renderCalNuevo(){
       <span class="ssp ssp-mt">${escapeHtml(meta.fechaMuestreo||today())}</span></div>
     <div class="fc-b">
       <div class="meta">
-        <div class="mf"><label>Fecha muestreo</label><input type="date" id="cal-fm" value="${escapeHtml(meta.fechaMuestreo||today())}" max="${today()}" onfocus="this.max=today()" oninput="calDraftTouch()"></div>
+        <div class="mf"><label>Fecha muestreo</label><input type="date" id="cal-fm" value="${escapeHtml(meta.fechaMuestreo==null ? today() : meta.fechaMuestreo)}" max="${today()}" onfocus="this.max=today()" oninput="calDraftTouch()"></div>
         <div class="mf"><label>Fecha resultados</label><input type="date" id="cal-fr" value="${escapeHtml(meta.fechaResultados||"")}" max="${today()}" onfocus="this.max=today();this.min=(document.getElementById('cal-fm')||{}).value||''" oninput="calDraftTouch()"></div>
         <div class="mf"><label>N° Corrida (opcional)</label><input id="cal-corr" value="${escapeHtml(meta.corrida||"")}" placeholder="Opcional" oninput="calDraftTouch()" onchange="calCorridaChange()"></div>
         <div class="mf"><label>Responsable <span style="color:#dc2626" title="Analista obligatorio para guardar y sincronizar">*</span></label><input id="cal-resp" list="cal-analistas" value="${escapeHtml(meta.responsable||"")}" placeholder="Analista" oninput="calDraftTouch()">${_analistaDL("cal-analistas")}</div>
@@ -30134,7 +30157,7 @@ function renderPatNuevo(){
       <span class="ssp ssp-mt">${escapeHtml(meta.fechaMuestreo||today())}</span></div>
     <div class="fc-b">
       <div class="meta">
-        <div class="mf"><label>Fecha muestreo</label><input type="date" id="pat-fm" value="${escapeHtml(meta.fechaMuestreo||today())}" max="${today()}" onfocus="this.max=today()" oninput="patDraftTouch()"></div>
+        <div class="mf"><label>Fecha muestreo</label><input type="date" id="pat-fm" value="${escapeHtml(meta.fechaMuestreo==null ? today() : meta.fechaMuestreo)}" max="${today()}" onfocus="this.max=today()" oninput="patDraftTouch()"></div>
         <div class="mf"><label>Fecha resultados</label><input type="date" id="pat-fr" value="${escapeHtml(meta.fechaResultados||"")}" max="${today()}" onfocus="this.max=today();this.min=(document.getElementById('pat-fm')||{}).value||''" oninput="patDraftTouch()"></div>
         <div class="mf"><label>N° Corrida (opcional)</label><input id="pat-corr" value="${escapeHtml(meta.corrida||"")}" placeholder="Opcional" oninput="patDraftTouch()" onchange="patCorridaChange()"></div>
         <div class="mf"><label>Responsable <span style="color:#dc2626" title="Analista obligatorio para guardar y sincronizar">*</span></label><input id="pat-resp" list="pat-analistas" value="${escapeHtml(meta.responsable||"")}" placeholder="Analista" oninput="patDraftTouch()">${_analistaDL("pat-analistas")}</div>
