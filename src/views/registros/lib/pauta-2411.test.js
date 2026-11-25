@@ -12,7 +12,7 @@ import { join } from 'node:path';
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['madResumenPdf', '_madResAvisoIncompleto', 'saveCSData', '_madAlimPreparar', '_madReproAltaBatch',
-  'madMortYaEnviados', '_madMortConfirmarSustituye', 'MAD_MORT_HEADERS', 'today'];
+  'madMortYaEnviados', '_madMortConfirmarSustituye', 'madMortGuardar', 'MAD_MORT_HEADERS', 'today'];
 const H = {};
 const avisos = [];
 
@@ -150,5 +150,21 @@ describe('T4.4 · un segundo Inf. Supervisor del mismo día avisa de que SUSTITU
     H.poner('_madHistCorrActiva', () => ({}));
     expect(await H._madMortConfirmarSustituye({ rows: [fila('A', 3)] })).toBe(true);
     expect(preguntas.length).toBe(1);
+  });
+  it('🔴 lo guardado con 💾 de un día que ya tiene informe también pregunta, y Cancelar no lo envía (auditoría de B, 25-11)', async () => {
+    const preguntas = [];
+    let enviados = 0;
+    window.confirm = (m) => { preguntas.push(m); return false; }; globalThis.confirm = window.confirm;
+    H.poner('_madGridBloqueada', (p, f) => f());
+    H.poner('_madMortPreparar', () => ({ model: { fecha: '2026-11-20' }, payload: { rows: [] } }));
+    H.poner('madLocLeer', () => [{ id: 'l1', payload: { rows: [fila('A', 3)] } }]);
+    H.poner('_madIngGasAlDia', async () => 'sello');
+    H.poner('_madLocEnviar', async () => { enviados++; return { fallo: false }; });
+    H.poner('_madHojaFresca', async () => [{ ID: 'A' }]);
+    H.poner('madHistLeer', () => []);
+    H.poner('_madHistCorrActiva', () => null);
+    await H.madMortGuardar();
+    expect(preguntas).toHaveLength(1);
+    expect(enviados).toBe(0);
   });
 });

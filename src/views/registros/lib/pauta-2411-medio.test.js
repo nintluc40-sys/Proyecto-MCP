@@ -11,7 +11,7 @@ import { join } from 'node:path';
 
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
-const EXPORTAR = ['syncAllPendingTras', 'renderMicNuevo', '_madRecTanques', 'today'];
+const EXPORTAR = ['syncAllPendingTras', 'renderMicNuevo', '_madRecTanques', 'postPayload', 'saveCfg', 'gcfg', 'today'];
 const H = {};
 const avisos = [];
 
@@ -96,5 +96,27 @@ describe('T3.4 · ↩ Recuperar de Tanques no descarta la ronda en curso', () =>
   });
   it('la copia vieja de algo guardado DESPUÉS sigue sin volver a entrar', () => {
     expect(H._madRecTanques(p1(3000), copia)).toBe(1);
+  });
+});
+
+describe('24 · si el GAS contesta «dedup» (ese mismo envío ya había llegado), la app lo dice', () => {
+  const responder = (cuerpo) => { globalThis.fetch = async () => ({ ok: true, text: async () => JSON.stringify(cuerpo) }); };
+  it('🔴 «dedup»: cuenta como enviado y avisa de que ya estaba en la hoja', async () => {
+    responder({ status: 'ok', dedup: true });
+    expect(await H.postPayload({ sheetName: 'Hoja ficticia', rows: [['a', 1]] }, 'https://script.google.com/macros/s/PRUEBA/exec', {})).toBe(true);
+    expect(avisos.join(' ')).toMatch(/ya había llegado a la hoja/);
+  });
+  it('un «ok» normal no lo dice', async () => {
+    responder({ status: 'ok' });
+    expect(await H.postPayload({ sheetName: 'Hoja ficticia', rows: [['b', 2]] }, 'https://script.google.com/macros/s/PRUEBA/exec', {})).toBe(true);
+    expect(avisos.join(' ')).not.toMatch(/ya había llegado/);
+  });
+});
+
+describe('25 · ⚙ Config no guarda la dirección POR DEFECTO como propia', () => {
+  const guardar = (url) => { document.getElementById('cfg-url').value = url; H.saveCfg(); return H.gcfg('gas-url', ''); };
+  it('🔴 la de por defecto queda sin fijar (el equipo seguirá a la de la app); una distinta sí se guarda', () => {
+    expect(guardar(H.leer('DEFAULT_GAS_URL'))).toBe('');
+    expect(guardar('https://script.google.com/macros/s/OTRA-FICTICIA/exec')).toBe('https://script.google.com/macros/s/OTRA-FICTICIA/exec');
   });
 });

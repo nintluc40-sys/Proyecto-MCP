@@ -1767,6 +1767,7 @@ const _sleep = (ms) => new Promise(res => setTimeout(res, ms));
    ⚠ Si alguna vez fuera un defecto de datos de verdad, tampoco se queda girando: la cola tiene tope
    de 50 (desde la pauta A8 ya no caduca), y el envío sigue VISIBLE como «en cola» en vez de desaparecer. */
 const _BUSY_RE = /ocupad|reintenta|demasiadas solicitudes|too many|rate limit|try again|error interno/i;
+const GAS_YA_ESTABA = "ℹ Ese envío ya había llegado a la hoja hace unos minutos: no se volvió a escribir (no hay nada duplicado).";
 async function _postOnce(bodyPayload, finalUrl, info){
   const ctrl  = new AbortController();
   // F2a: el tope del cliente tiene que cubrir la PEOR espera del servidor entera:
@@ -1804,6 +1805,9 @@ async function _postOnce(bodyPayload, finalUrl, info){
     // El motivo que manda el GAS («Hoja no permitida», «Límite de filas excedido»…) se
     // recoge SIEMPRE, no sólo al rechazar: quien llama decide si lo enseña.
     if(info) info.message = String((j && j.message) || "");
+    // Punto 24 (pauta del 24-11, usuario: «Que la app lo diga») · «dedup»: ese MISMO envío (mismo reqId = misma huella del
+    // contenido) ya había llegado hace unos minutos y el GAS no lo vuelve a escribir. Está en la hoja: es un «ok», y se dice.
+    if(info) info.dedup = !!(j && j.status === "ok" && j.dedup);
     if(j && j.status === "ok") return "ok";
     // F8: backpressure transitorio (lock ocupado / rate-limit) → reintentar/encolar,
     // no rendirse. Se honra también una bandera `retriable` por si un GAS futuro
@@ -2360,7 +2364,9 @@ async function flushSyncQueue(opts){
     const _selloPorUrl = {};   // PV3: la respuesta de ?p=ver, UNA por URL en este vaciado
     const _noSalieron = [];    // pauta A1: lo que sigue en la cola y aún puede salir; lo que se pise con ello, espera detrás (_colaSePisan)
     for(const it of q){
-      const url = it.url || gasUrl();
+      // Punto 25 · la cola entrega SIEMPRE a la dirección de ahora, no a la del momento de encolar (con un despliegue nuevo,
+      // lo encolado seguía yendo al viejo).
+      const url = gasUrl();
       if(!url || !isValidGasUrl(url)){ remaining.push(it); continue; }
       if(_noSalieron.some(p => _colaSePisan(p, it))){ remaining.push(it); _noSalieron.push(it); continue; }
       // Las hojas selladas de Maduración (_madHojaPideGasNuevo) sólo se entregan a EL GAS DE ESTA APP (ver _madIngGasAlDia).
@@ -2587,6 +2593,7 @@ async function postPayload(payload, url, opts){
       // ya superados.
       _purgeQueueMark(opts && opts.mark);
       _setOut("ok");
+      if(_gasInfo && _gasInfo.dedup) toast(GAS_YA_ESTABA, "info", 5000);   // punto 24
       return true;
     }
     if(res === "rejected"){
@@ -14398,11 +14405,14 @@ async function madMortGuardar(){ return _madGridBloqueada("fp-mortdes", async fu
     toast(aviso,"err",10000);
     return;
   }
+  /* T4.4 (pauta 24-11) · ¿ya hay un informe de ese día? Se pregunta UNA vez por TODO lo que va a salir: lo guardado con 💾 también
+     (auditoría de B, 25-11: salía antes del aviso y sustituía sin preguntar). La 📜 corrección se mira antes, como siempre. */
+  if(payload.rows.length && !_madHistCorrConfirma("mortdes", payload)) return;   // 📜 corrección: ¿cambió la llave? (2026-10-04)
+  const _todo={ rows: madLocLeer("mortdes").reduce(function(a, e){ return a.concat(e.payload.rows); }, []).concat(payload.rows) };
+  if(!(await _madMortConfirmarSustituye(_todo))) return;
   // PE1.4 · primero lo guardado con 💾 (lo más viejo antes); si algo falla, lo de pantalla tampoco sale.
   if(_loc && (await _madLocEnviar("mortdes", _gas)).fallo) return;
   if(!payload.rows.length) return;
-  if(!_madHistCorrConfirma("mortdes", payload)) return;   // 📜 corrección: ¿cambió la llave? (2026-10-04)
-  if(!(await _madMortConfirmarSustituye(payload))) return;   // T4.4 (pauta 24-11): ya hay un informe de ese día → se sustituye
   toast("Enviando "+payload.rows.length+" fila(s)…","info",2200);
   const _envio=_madLogEnvioId(), _t={ mark:_madLogMarca("mortdes", _envio) };
   const ok=await _madPostConSello(payload, _gas, _t);
@@ -32693,7 +32703,9 @@ function saveCfg(){
   // efectiva ocurre del lado del GAS). Se sanea para evitar caracteres de
   // control u overflow; se almacena obfuscado vía scfg (clave sensible).
   const tokenIn = sanitizeStr(document.getElementById("cfg-token").value);
-  scfg("gas-url",     url);
+  // Punto 25 (pauta del 24-11, usuario: «Que sigan la vigente») · la dirección POR DEFECTO no se guarda como propia: si mañana
+  // cambia el despliegue (DEFAULT_GAS_URL), este equipo lo sigue. Sólo se guarda una dirección DISTINTA tecleada aquí.
+  scfg("gas-url",     url === DEFAULT_GAS_URL ? "" : url);
   scfg("gas-token",   tokenIn);
   scfg("tec", sanitizeStr(document.getElementById("cfg-tec").value));
   closeCfg(); toast("Configuración guardada","ok");

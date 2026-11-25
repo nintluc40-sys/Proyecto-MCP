@@ -225,12 +225,14 @@ describe('🔵 lo que no se pisa sigue saliendo: un envío trabado no frena al r
     expect(cola()).toEqual([]);
   });
 
-  it('🔴 lo que no puede salir nunca, por una dirección no válida, no retiene: no puede pisar a nadie', async () => {
+  /* Punto 25 (pauta del 24-11, usuario: «Que sigan la vigente») · la dirección con la que se encoló ya no cuenta: todo sale a la de
+     AHORA. Antes este caso (encolado con una dirección no válida) se quedaba en la cola para siempre. */
+  it('🔴 lo encolado con otra dirección sale a la de ahora, y en su orden (lo nuevo gana)', async () => {
     H._enqueueSync(P(['a', 1], ['b', 2]), 'req-mala', 'https://no-es-valida.example/exec', MARK('a', 'b'));
     H._enqueueSync(P(['a', 99]), 'req-a', URL, MARK('a'));
     await H.flushSyncQueue();
-    expect(hoja).toEqual([[['a', 99]]]);
-    expect(cola()).toEqual(['req-mala']);
+    expect(enLaHoja()).toEqual({ a: 99, b: 2 });
+    expect(cola()).toEqual([]);
   });
 
   it('lo que salió antes no retiene a nada', async () => {
