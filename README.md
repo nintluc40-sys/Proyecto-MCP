@@ -516,7 +516,8 @@ del módulo se quede sin contraparte en el monolito.
 
 **Todas guardan un BORRADOR POR FECHA en el dispositivo (2026-09-15).** Salas y Tanques ya lo
 hacían por ser grillas —su lista local lleva la fecha dentro de cada fila—; desde esa fecha las
-siete fichas de formulario también. Se guardan los últimos **30 días** por ficha. Es lo tecleado en
+siete fichas de formulario también. Se guardan hasta **30 FECHAS** por ficha (`MAD_BORR_MAX`), no 30 días: no
+caducan con el tiempo; al guardar la 31.ª se olvida la fecha más antigua. Es lo tecleado en
 ESE dispositivo, no lo que hay en la hoja. (📈 Broodstock no lleva borrador: no se teclea, se carga
 un archivo que sigue en el equipo de quien lo sube.)
 
@@ -1500,7 +1501,8 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
 
 ### Las fichas de Maduración
 
-- **Cada ficha guarda un borrador POR FECHA** (30 días), al teclear, y lo trae al abrirse. Al cambiar
+- **Cada ficha guarda un borrador POR FECHA** (hasta 30 fechas, que no caducan: con la 31.ª se olvida la más
+  antigua), al teclear, y lo trae al abrirse. Al cambiar
   la fecha con algo tecleado, lo tecleado **se lleva** al día elegido o se pregunta (2026-09-24: ver
   «La FECHA con algo tecleado», arriba). Se guarda el panel, no un modelo, así que una ficha que cambia
   después deja borradores con campos que ya no existen: `_madBorrAdaptar` los adapta al traerlos.
