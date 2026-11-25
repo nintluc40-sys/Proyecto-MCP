@@ -35,6 +35,7 @@ const almacen = {
 const avisos = [];
 const copias = [];
 let fallaLaDescarga = false;
+const pedidas = [];      // punto 22 · lo que el motor intentó pedir a la red (no sale ninguna)
 
 beforeAll(async () => {
   const seguridad = await import('./security.js');
@@ -52,6 +53,12 @@ beforeAll(async () => {
     + '\ntry{ H.alInvalidarFotos=function(f){_invalidateFotosCache=f;}; }catch(_){}'
     + '\ntry{ H.huellas=function(){ return _lastSyncFingerprint; }; var _colaAseguraReal=_colaAsegura; H.alArrancarCola=function(f){ _colaAsegura = f || _colaAseguraReal; }; }catch(_){}\n})();';
   globalThis.__ENG = H;
+  /* Punto 22 (pauta 24-11) · SIN RED. El motor, al arrancar y con la cola, pide al GAS de verdad, y al cerrar el archivo
+     happy-dom esperaba la respuesta (el OPTIONS de CORS) de esa URL real: la corrida se quedaba colgada después de pasar
+     (07-11) o tardaba lo que tardase Google. Aquí ninguna petición sale: todas fallan en el acto, como sin conexión. */
+  const sinRed = async (url) => { pedidas.push(String(url && url.url || url)); throw new TypeError('sin red en la prueba'); };
+  globalThis.fetch = sinRed;
+  if (window !== globalThis) window.fetch = sinRed;
   new Function('window', 'document', 'localStorage', 'globalThis', readFileSync(ENGINE, 'utf8') + epilogo)(window, document, almacen, globalThis);
   H.setToast((msg, tipo) => { avisos.push({ msg: String(msg), tipo: tipo || 'info' }); });
   URL.createObjectURL = (blob) => { if (fallaLaDescarga) throw new Error('sin descarga'); copias.push(blob); return 'blob:prueba'; };
@@ -388,5 +395,14 @@ describe('Punto 26 · antes de sobrescribir, ¿está la copia?', () => {
     expect(H.exportBackup()).toBe(true);
     expect(ultimo().msg).toMatch(/Descargando la copia «fichas-larv-backup_\d{4}-\d{2}-\d{2}_1items\.json».*revisa que esté en Descargas/);
     expect(ultimo().msg).not.toMatch(/exportado/i);
+  });
+});
+
+describe('punto 22 · la prueba no sale a la red', () => {
+  it('fetch es el de la prueba: falla en el acto y apunta la petición (ninguna llega a Google)', async () => {
+    const antes = pedidas.length;
+    await expect(fetch('https://script.google.com/macros/s/X/exec')).rejects.toThrow('sin red en la prueba');
+    expect(pedidas.length).toBe(antes + 1);
+    expect(pedidas[pedidas.length - 1]).toContain('script.google.com');
   });
 });
