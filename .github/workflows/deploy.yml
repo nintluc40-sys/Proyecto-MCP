@@ -27,6 +27,10 @@ jobs:
     # `ubuntu-latest` hasta ahora. Subir a `ubuntu-26.04` (ya existe) es un cambio deliberado: en su
     # propio commit, y mirando la primera ejecución.
     runs-on: ubuntu-24.04
+    # Tope (punto 31, pauta 24-11): sin él, un paso colgado (una prueba que no termina, una descarga que no responde)
+    # retiene el runner hasta 6 h y deja en espera la cola de `pages`. Medido 09/16-11: el build tarda unos 4 min y el
+    # despliegue entero 4–7; 20 deja margen de sobra a una CI lenta. (`cancel-in-progress` se queda: decisión del usuario.)
+    timeout-minutes: 20
     steps:
       # Las acciones van en versiones que corren en Node 24 (2026-09-19). Con las anteriores, GitHub
       # avisaba en cada ejecución de que las forzaba a Node 24: da Node 20 por obsoleto en sus runners.
@@ -98,6 +102,7 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-24.04   # fijada por lo mismo que la de `build`
+    timeout-minutes: 10     # tope, como el de `build`: publicar el artefacto tarda segundos
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
