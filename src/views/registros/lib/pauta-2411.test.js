@@ -144,6 +144,7 @@ describe('T4.4 · un segundo Inf. Supervisor del mismo día avisa de que SUSTITU
     H.poner('madHistLeer', () => []);
     H.poner('_madHistCorrActiva', () => null);
     expect(await H._madMortConfirmarSustituye({ rows: [fila('A', 3)] })).toBe(false);
+    expect(avisos.join(' ')).toMatch(/Comprobando la hoja del Inf. Supervisor/);
     expect(preguntas[0]).toMatch(/Ya hay un Inf\. Supervisor de ese día[\s\S]*Lote LT1 \(CGX\) · Desove[\s\S]*SUSTITUYE/);
     expect(await H._madMortConfirmarSustituye({ rows: [fila('Z', 3)] })).toBe(true);
     H.poner('_madHistCorrActiva', () => ({}));

@@ -10982,7 +10982,7 @@ function renderMadHistorial(){
 }
 
 const MAD_BORR_PRE = "larv4_mad_borr_";
-const MAD_BORR_MAX = 30;    // días guardados por ficha; al pasarse se olvida el más viejo
+const MAD_BORR_MAX = 30;    // FECHAS guardadas por ficha (no caducan); al pasarse se olvida la más vieja
 const MAD_BORR_FICHAS = {
   ingreso:      { panel:"fp-ingreso",      fecha:"mi-fecha" },
   movimientos:  { panel:"fp-movimientos",  fecha:"mv-fecha" },
@@ -14434,6 +14434,7 @@ async function _madMortConfirmarSustituye(payload){
   if(_madHistCorrActiva("mortdes")) return true;
   const filas=(payload && payload.rows) || [];
   if(!filas.length) return true;
+  toast("Comprobando la hoja del Inf. Supervisor…","info",2500);   // puede tardar: que no parezca colgado (auditoría B, 25-11)
   const hoja=await _madHojaFresca(MAD_MORT_SHEET);
   const rep=madMortYaEnviados(filas, hoja, madHistLeer());
   if(!rep.length) return true;
