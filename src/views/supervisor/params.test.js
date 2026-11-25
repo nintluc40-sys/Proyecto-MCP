@@ -61,6 +61,22 @@ describe('waterSemaforo', () => {
   it('un valor muy alto (≥15) → rojo', () => {
     expect(waterSemaforo(16, 3, 'ok').level).toBe('rojo');
   });
+
+  it('punto 28 · la Suciedad con la escala 5/15/30 (como Larvicultura); la Espuma sigue en 10/15', () => {
+    const s = (x) => waterSemaforo(null, x, 'ok').level;
+    expect([s(5), s(5.5), s(15), s(30), s(30.5)]).toEqual(['verde', 'ambar', 'ambar', 'ambar', 'rojo']);
+    const e = (x) => waterSemaforo(x, null, 'ok').level;
+    expect([e(9.9), e(10), e(15)]).toEqual(['verde', 'ambar', 'rojo']);
+    expect(waterSemaforo(10, 6, 'ok').level).toBe('rojo');
+  });
+
+  it('punto 28 · la referencia de % Suciedad es ≤ 5 (Óptimo 0–5)', () => {
+    const fila = (fecha, v) => ({ _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '600', Tanque: 'TQ1', Fecha: fecha, 'Estadío': 'Z1', ...v });
+    const cabecera = (html) => (html.match(/<div class="lv-grp-sem lv-grp-[a-z]+">\s*<span class="lv-grp-sem-status">💧[^]*?<\/div>/) || [''])[0];
+    const { html } = buildParamSection([fila('01/10/2026', { '% Espuma': '3', '% Suciedad': '6', '% Recambio': '30' })], 'larv', [], null);
+    expect(html).toContain('obj ≤ 5%');
+    expect(cabecera(html)).toContain('lv-grp-ambar');
+  });
 });
 
 describe('iclSeries · término SV (híbrido: rellena huecos con SV por población)', () => {

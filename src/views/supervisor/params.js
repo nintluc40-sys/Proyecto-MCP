@@ -52,7 +52,7 @@ const LV_VARS = [
   { key: 'est', group: 'morfo', label: 'Estrés',      keys: ['Estrés', 'Estres', 'estrés', 'estres'], ref: { op: '<', val: 5 }, color: '#607D8B', stage: 'both', kind: 'idx', hint: 'Estrés elevado: revisar O₂, T°, densidad y manejo.' },
   // Manejo de Agua (umbrales referenciales; ajustables). Recambio sin alerta (refLine = máximo normal).
   { key: 'esp', group: 'agua', label: '% Espuma',    keys: ['% Espuma', 'Espuma', 'espuma'], ref: { op: '<', val: 10 }, color: '#26C6DA', stage: 'both', kind: 'pct', hint: 'Exceso de espuma: revisar aireación, materia orgánica y recambio.' },
-  { key: 'suc', group: 'agua', label: '% Suciedad',  keys: ['% Suciedad', 'Suciedad', 'suciedad'], ref: { op: '<', val: 10 }, color: '#8D6E63', stage: 'both', kind: 'pct', hint: 'Suciedad elevada: reforzar limpieza/sifoneo y recambio.' },
+  { key: 'suc', group: 'agua', label: '% Suciedad',  keys: ['% Suciedad', 'Suciedad', 'suciedad'], ref: { op: '<=', val: 5 }, color: '#8D6E63', stage: 'both', kind: 'pct', hint: 'Suciedad elevada: reforzar limpieza/sifoneo y recambio.' },
   { key: 'rec', group: 'agua', label: '% Recambio',  keys: ['% Recambio', 'Recambio', 'recambio'], refLine: 50, color: '#42A5F5', stage: 'both', kind: 'pct', hint: 'Recambio dentro de lo rutinario.' },
   // Productivos
   { key: 'plg',  group: 'prod', label: 'PL/g',          keys: ['PLG', 'Plg', 'plg', 'PL/g', 'pl/g'], ref: { op: '<', val: 200 }, color: '#00695C', stage: 'both', kind: 'num', hint: 'PL/g alto: revisar densidad/talla antes de cosecha.' },
@@ -290,11 +290,14 @@ function drawVarChart(canvasId, days, dataFull, v, stagesFull, opts = {}) {
  *  `modRows` (opcional) = filas de TODO el módulo, para el overlay de promedio
  *  del módulo en el fullscreen de cada variable (TQ1). */
 /** Mini-semáforo de Manejo de Agua: combina Espuma/Suciedad/Color (Recambio = informativo). */
+// Punto 28 (pauta 24-11; usuario 25-11): la Suciedad con la escala 5/15/30, como `aguaSemaforo` de Larvicultura
+// (ámbar por encima de 5, rojo por encima de 30; cambiarlas juntas); la Espuma sigue en 10/15.
+const SUC_AMBAR = 5, SUC_ROJO = 30;
 export function waterSemaforo(esp, suc, colorLevel) {
   const espBad = esp != null && esp >= 10;
-  const sucBad = suc != null && suc >= 10;
+  const sucBad = suc != null && suc > SUC_AMBAR;
   const colorBad = colorLevel === 'warn';
-  if (colorBad || (espBad && sucBad) || (esp != null && esp >= 15) || (suc != null && suc >= 15)) return { level: 'rojo', label: 'Alerta', icon: '🔴' };
+  if (colorBad || (espBad && sucBad) || (esp != null && esp >= 15) || (suc != null && suc > SUC_ROJO)) return { level: 'rojo', label: 'Alerta', icon: '🔴' };
   if (espBad || sucBad) return { level: 'ambar', label: 'Revisar', icon: '⚠️' };
   // Punto 8 (pauta del 12-11, usuario: «Sí, también Supervisor») · sin espuma, suciedad ni color juzgado no hay juicio: era
   // «✅ Normal» con sólo el recambio (que no se juzga). Como las franjas de Larvicultura, gris «Sin datos».

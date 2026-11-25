@@ -61,14 +61,18 @@ export function popSemaforo(pStats, ref) {
   return { level, detail: `Pérdida acumulada ${loss.toFixed(1)}% · ${dia}: de ${ref.n} corridas, 3 de cada 4 perdían hasta ${ref.p75.toFixed(1)}% y 9 de cada 10 hasta ${ref.p90.toFixed(1)}%${minimo}${tanques}` };
 }
 
-/** Manejo de agua: nivel según los últimos % Espuma / % Suciedad (umbral 10; sin fuente: heredado
- *  del sistema original y sin confirmar por el laboratorio). */
+/** Manejo de agua: nivel según los últimos % Espuma / % Suciedad.
+ *  Espuma: ámbar desde 10, rojo desde 15 (heredado del sistema original, sin confirmar por el laboratorio).
+ *  Suciedad (punto 28, pauta 24-11; usuario 25-11: «5/15/30», «≤5 verde · 6–30 ámbar · >30 rojo»): la escala del
+ *  histograma de `extra.js` (`HIST_CFG.suciedad`). Las dos en ámbar a la vez → rojo, como antes.
+ *  ⚠ La misma regla está en `supervisor/params.js` (`waterSemaforo`): cambiarlas juntas. */
+const SUC_AMBAR = 5, SUC_ROJO = 30;   // ámbar POR ENCIMA de 5, rojo POR ENCIMA de 30
 export function aguaSemaforo(mgmt) {
   const lastOf = (arr) => { for (let i = (arr || []).length - 1; i >= 0; i--) { if (arr[i] != null) return arr[i]; } return null; };
   const esp = lastOf(mgmt && mgmt.espuma), suc = lastOf(mgmt && mgmt.suciedad), rec = lastOf(mgmt && mgmt.recambio);
   if (esp == null && suc == null) return { level: 'sin', detail: 'Sin variables de manejo' };   // el recambio no se juzga
-  const espBad = esp != null && esp >= 10, sucBad = suc != null && suc >= 10;
-  const level = ((espBad && sucBad) || (esp != null && esp >= 15) || (suc != null && suc >= 15)) ? 'rojo'
+  const espBad = esp != null && esp >= 10, sucBad = suc != null && suc > SUC_AMBAR;
+  const level = ((espBad && sucBad) || (esp != null && esp >= 15) || (suc != null && suc > SUC_ROJO)) ? 'rojo'
     : (espBad || sucBad) ? 'ambar' : 'verde';
   const fmt = (x) => (x == null ? '—' : x.toFixed(1) + '%');
   return { level, detail: `Espuma ${fmt(esp)} · Suciedad ${fmt(suc)} · Recambio ${fmt(rec)}` };

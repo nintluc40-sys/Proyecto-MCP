@@ -112,7 +112,22 @@ describe('aguaSemaforo', () => {
   });
   it('con una de las dos ya se juzga', () => {
     expect(aguaSemaforo({ espuma: [3], suciedad: [] }).level).toBe('verde');
-    expect(aguaSemaforo({ espuma: [], suciedad: [16] }).level).toBe('rojo');
+    expect(aguaSemaforo({ espuma: [], suciedad: [31] }).level).toBe('rojo');
+  });
+  it('punto 28 · la Suciedad con la escala 5/15/30: ≤5 verde · 6–30 ámbar · >30 rojo', () => {
+    const s = (x) => aguaSemaforo({ espuma: [], suciedad: [x] }).level;
+    expect([s(0), s(5)]).toEqual(['verde', 'verde']);
+    expect([s(5.5), s(10), s(15), s(16), s(30)]).toEqual(['ambar', 'ambar', 'ambar', 'ambar', 'ambar']);
+    expect([s(30.5), s(45)]).toEqual(['rojo', 'rojo']);
+  });
+  it('punto 28 · la Espuma sigue en 10/15 (decisión del usuario 25-11)', () => {
+    const e = (x) => aguaSemaforo({ espuma: [x], suciedad: [] }).level;
+    expect([e(6), e(9.9), e(10), e(14.9), e(15)]).toEqual(['verde', 'verde', 'ambar', 'ambar', 'rojo']);
+  });
+  it('punto 28 · las dos en ámbar a la vez → rojo; una sola, ámbar', () => {
+    expect(aguaSemaforo({ espuma: [10], suciedad: [6] }).level).toBe('rojo');
+    expect(aguaSemaforo({ espuma: [9], suciedad: [20] }).level).toBe('ambar');
+    expect(aguaSemaforo({ espuma: [10], suciedad: [5] }).level).toBe('ambar');
   });
 });
 
