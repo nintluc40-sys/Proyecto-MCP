@@ -3330,6 +3330,8 @@ function goBack(){
   if(isMadMod(curMod) && MAD_FICHAS.includes(curTab) && _madGridDirty){
     if(confirm(MAD_SALIR_GRID)){
       if(!_madGridSePuedeDejar()) return;
+      // Guardar falló por un ERROR (no por espacio) y se eligió seguir: la copia ↩ se intenta igual, por si cabe (auditoría de B, 25-11).
+      if(_madCommitError){ try{ saveMadRecovery(); }catch(_){} }
       _madGridDirty = false;
     } else if(!confirm(MAD_SALIR_SIN_GUARDAR)) return;
   }
@@ -27956,7 +27958,7 @@ function renderMicNuevo(){
     : `<button class="btn brec" type="button" disabled style="opacity:.35;cursor:not-allowed" title="No hay autoguardado reciente">↩ Recuperar</button>`;
   fp.innerHTML = `${micTypeBar()}<div class="fc">
     <div class="fc-h"><div class="fc-t">🧫 Microbiología · Nuevo análisis (Bacteriología)</div>
-      <span class="ssp ssp-mt">${escapeHtml(meta.fechaMuestreo||today())}</span></div>
+      <span class="ssp ssp-mt">${escapeHtml(meta.fechaMuestreo||"— sin fecha —")}</span></div>
     <div class="fc-b">
       <div class="meta">
         <div class="mf"><label>Fecha muestreo</label><input type="date" id="mic-fm" value="${escapeHtml(meta.fechaMuestreo==null ? today() : meta.fechaMuestreo)}" max="${today()}" onfocus="this.max=today()" oninput="micDraftTouch()"></div>
@@ -28506,7 +28508,7 @@ function _micPdfCols(fmt, fmtKey, comps, rows){
 function downloadMicPDF(srcDraft){
   const draft = srcDraft || loadMicDraft(); const meta = draft.meta;
   const tsStr = new Date().toLocaleString("es-EC",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});
-  const codigo = genCodigo("micnuevo", MIC_MOD, meta.fechaMuestreo||today());
+  const codigo = genCodigo("micnuevo", MIC_MOD, meta.fechaMuestreo||"SINFECHA");
   let body = "";
   MIC_FORMAT_KEYS.forEach(fmtKey=>{
     const fmt = MIC_FORMATS[fmtKey]; const sec = (draft.sections && draft.sections[fmtKey]) || { rows:[] };
@@ -28533,11 +28535,11 @@ function downloadMicPDF(srcDraft){
     if(sec.obs) body += `<div class="obs-block"><div class="lbl">Observaciones</div><div class="txt">${escapeHtml(sec.obs)}</div></div>`;
   });
   if(!body){ toast("Sin datos para el PDF","warn"); return; }
-  const fileName = "MICRO_" + (meta.fechaMuestreo||today()).replace(/-/g,"") + (meta.corrida ? "_"+sanitizeStr(meta.corrida) : "");
+  const fileName = "MICRO_" + (meta.fechaMuestreo||"SINFECHA").replace(/-/g,"") + (meta.corrida ? "_"+sanitizeStr(meta.corrida) : "");
   const head = `<div class="ph"><div class="ph-brand"><div class="co">OMARSA · Microbiología</div><div class="su">Análisis microbiológico — UFC/mL (notación científica)</div></div>
     <div class="ph-center"><span class="doc-code">OMR-MIC</span></div>
     <div class="ph-right"><div class="mod">Mic</div><div class="mods">Microbiología</div></div></div>
-    <div class="mgrid"><div class="mf"><label>Fecha muestreo</label><span>${escapeHtml(meta.fechaMuestreo||today())}</span></div>
+    <div class="mgrid"><div class="mf"><label>Fecha muestreo</label><span>${escapeHtml(meta.fechaMuestreo||"— sin fecha —")}</span></div>
       <div class="mf"><label>Fecha resultados</label><span>${escapeHtml(meta.fechaResultados||"—")}</span></div>
       <div class="mf"><label>Corrida</label><span>${escapeHtml(String(meta.corrida||"—"))}</span></div>
       <div class="mf"><label>Responsable</label><span>${escapeHtml(meta.responsable||"—")}</span></div></div>`;
@@ -29512,7 +29514,7 @@ function renderCalNuevo(){
     ? `<div class="mf"><label>Estadío (todas)</label><select id="cal-hdr-estadio" onchange="calHdrFill('estadio',this.value)" title="Aplica este Estadío a TODAS las filas; luego edita las distintas">${_optSelC(MIC_ESTADIOS, meta.hdrEstadio||"")}</select></div>` : "";
   fp.innerHTML = `${micTypeBar()}<div class="fc">
     <div class="fc-h" style="background:linear-gradient(135deg,#0369a1,#0284c7)"><div class="fc-t">💧 Calidad de Agua · Nuevo análisis</div>
-      <span class="ssp ssp-mt">${escapeHtml(meta.fechaMuestreo||today())}</span></div>
+      <span class="ssp ssp-mt">${escapeHtml(meta.fechaMuestreo||"— sin fecha —")}</span></div>
     <div class="fc-b">
       <div class="meta">
         <div class="mf"><label>Fecha muestreo</label><input type="date" id="cal-fm" value="${escapeHtml(meta.fechaMuestreo==null ? today() : meta.fechaMuestreo)}" max="${today()}" onfocus="this.max=today()" oninput="calDraftTouch()"></div>
@@ -29909,7 +29911,7 @@ function _calPdfCols(fmt, fmtKey, rows){
 function downloadCalPDF(){
   const draft=loadCalDraft(); const meta=draft.meta;
   const tsStr=new Date().toLocaleString("es-EC",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});
-  const codigo=genCodigo("calnuevo", MIC_MOD, meta.fechaMuestreo||today());
+  const codigo=genCodigo("calnuevo", MIC_MOD, meta.fechaMuestreo||"SINFECHA");
   let body="";
   CAL_FORMAT_KEYS.forEach(fmtKey=>{
     const fmt=CAL_FORMATS[fmtKey]; const sec=(draft.sections && draft.sections[fmtKey])||{ rows:[] };
@@ -29934,11 +29936,11 @@ function downloadCalPDF(){
     if(sec.obs) body+=`<div class="obs-block"><div class="lbl">Observaciones</div><div class="txt">${escapeHtml(sec.obs)}</div></div>`;
   });
   if(!body){ toast("Sin datos para el PDF","warn"); return; }
-  const fileName="CALAGUA_"+(meta.fechaMuestreo||today()).replace(/-/g,"")+(meta.corrida?"_"+sanitizeStr(meta.corrida):"");
+  const fileName="CALAGUA_"+(meta.fechaMuestreo||"SINFECHA").replace(/-/g,"")+(meta.corrida?"_"+sanitizeStr(meta.corrida):"");
   const head=`<div class="ph"><div class="ph-brand"><div class="co">OMARSA · Calidad de Agua</div><div class="su">Análisis físico-químico — clasificación por rango</div></div>
     <div class="ph-center"><span class="doc-code">OMR-CDA</span></div>
     <div class="ph-right"><div class="mod">CA</div><div class="mods">Calidad de Agua</div></div></div>
-    <div class="mgrid"><div class="mf"><label>Fecha muestreo</label><span>${escapeHtml(meta.fechaMuestreo||today())}</span></div>
+    <div class="mgrid"><div class="mf"><label>Fecha muestreo</label><span>${escapeHtml(meta.fechaMuestreo||"— sin fecha —")}</span></div>
       <div class="mf"><label>Fecha resultados</label><span>${escapeHtml(meta.fechaResultados||"—")}</span></div>
       <div class="mf"><label>Corrida</label><span>${escapeHtml(String(meta.corrida||"—"))}</span></div>
       <div class="mf"><label>Responsable</label><span>${escapeHtml(meta.responsable||"—")}</span></div></div>`;
@@ -30164,7 +30166,7 @@ function renderPatNuevo(){
   const canAdd=nRows<PAT_MAX_ROWS;
   fp.innerHTML = `${micTypeBar()}<div class="fc">
     <div class="fc-h" style="background:linear-gradient(135deg,#7c3aed,#a78bfa)"><div class="fc-t">🔬 Patología en Fresco · Nuevo análisis</div>
-      <span class="ssp ssp-mt">${escapeHtml(meta.fechaMuestreo||today())}</span></div>
+      <span class="ssp ssp-mt">${escapeHtml(meta.fechaMuestreo||"— sin fecha —")}</span></div>
     <div class="fc-b">
       <div class="meta">
         <div class="mf"><label>Fecha muestreo</label><input type="date" id="pat-fm" value="${escapeHtml(meta.fechaMuestreo==null ? today() : meta.fechaMuestreo)}" max="${today()}" onfocus="this.max=today()" oninput="patDraftTouch()"></div>
@@ -30434,7 +30436,7 @@ function downloadPatPDF(){
   const rows=(draft.rows||[]).filter(patRowHasData);
   if(!rows.length){ toast("Sin datos para el PDF","warn"); return; }
   const tsStr=new Date().toLocaleString("es-EC",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});
-  const codigo=genCodigo("patnuevo", MIC_MOD, meta.fechaMuestreo||today());
+  const codigo=genCodigo("patnuevo", MIC_MOD, meta.fechaMuestreo||"SINFECHA");
   const avg=_patAverages(rows);
   const grpHead=PAT_GROUPS.map((g,i)=>`<th colspan="${g.cols.length}" class="${i===0?'thg':i===1?'thg2':'thg3'}">${escapeHtml(g.label)}</th>`).join("");
   const subHead=PAT_GROUPS.reduce((a,g)=> a.concat(g.cols.map(c=>`<th>${escapeHtml(c.l)}</th>`)), []).join("");
@@ -30451,11 +30453,11 @@ function downloadPatPDF(){
   const table=`<table><thead>
       <tr><th rowspan="2">#</th><th rowspan="2">Muestra</th><th rowspan="2">Lote</th><th rowspan="2">Sexo</th>${grpHead}<th rowspan="2">Peso</th><th rowspan="2">Observaciones</th></tr>
       <tr>${subHead}</tr></thead><tbody>${trs}</tbody><tfoot><tr>${gc}</tr></tfoot></table>`;
-  const fileName="PATFRESCO_"+(meta.fechaMuestreo||today()).replace(/-/g,"")+(meta.corrida?"_"+sanitizeStr(meta.corrida):"");
+  const fileName="PATFRESCO_"+(meta.fechaMuestreo||"SINFECHA").replace(/-/g,"")+(meta.corrida?"_"+sanitizeStr(meta.corrida):"");
   const head=`<div class="ph"><div class="ph-brand"><div class="co">OMARSA · Patología en Fresco</div><div class="su">Análisis de patología en fresco</div></div>
     <div class="ph-center"><span class="doc-code">OMR-PAT</span></div>
     <div class="ph-right"><div class="mod">Pat</div><div class="mods">Patología</div></div></div>
-    <div class="mgrid"><div class="mf"><label>Fecha muestreo</label><span>${escapeHtml(meta.fechaMuestreo||today())}</span></div>
+    <div class="mgrid"><div class="mf"><label>Fecha muestreo</label><span>${escapeHtml(meta.fechaMuestreo||"— sin fecha —")}</span></div>
       <div class="mf"><label>Fecha resultados</label><span>${escapeHtml(meta.fechaResultados||"—")}</span></div>
       <div class="mf"><label>Corrida</label><span>${escapeHtml(String(meta.corrida||"—"))}</span></div>
       <div class="mf"><label>Responsable</label><span>${escapeHtml(meta.responsable||"—")}</span></div></div>`;
@@ -30501,7 +30503,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "27ed035437ba";
+const GAS_VERSION = "5007c3ce5249";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -31986,10 +31988,11 @@ function upsertAlgasRows(ws, newRows) {
       porEscribir.push({ fila: entry.row, datos: merged });   // B1: en bloque al final
       updated++;
     } else if (sid && pending[sid] !== undefined) {
-      // Misma Sesión repetida dentro del mismo lote → fusiona los no vacíos.
+      // Misma Sesión repetida dentro del mismo lote → la ÚLTIMA manda, entera (también lo vacío: punto 6, auditoría de B
+      // del 25-11), como contra la hoja. La Sesión se conserva.
       var pi = pending[sid];
       for (var pc = 0; pc < nr.length; pc++) {
-        if (pc !== sidCol && nr[pc] !== "" && nr[pc] !== null && nr[pc] !== undefined) toAdd[pi][pc] = nr[pc];
+        if (pc !== sidCol) toAdd[pi][pc] = (nr[pc] === null || nr[pc] === undefined) ? "" : nr[pc];
       }
     } else {
       if (sid) { pending[sid] = toAdd.length; map[sid] = { row: -1, idx: -1 }; }
@@ -32574,6 +32577,14 @@ function saveCfg(){
 // Returns the GAS URL — single URL for all modules. Si el usuario no guardó una
 // propia en Config, usa la URL ANCLADA en código (DEFAULT_GAS_URL) → la app
 // sincroniza out-of-the-box sin pegar nada. Una URL guardada la sobrescribe.
+/* Punto 25 (pauta del 24-11; auditoría de B, 25-11) · los equipos que YA guardaron la dirección por defecto como propia (cualquier
+   «Guardar» de ⚙ Config lo hacía) quedaban anclados a ella: el día que cambie DEFAULT_GAS_URL no la seguirían. Al arrancar, si la
+   guardada ES la de por defecto, se suelta: el equipo pasa a seguir la de la app. Una dirección distinta, tecleada, se respeta. */
+function _soltarGasUrlPorDefecto(){
+  const u = String(gcfg("gas-url","") || "").trim();
+  if(u && u === DEFAULT_GAS_URL){ scfg("gas-url", ""); return true; }
+  return false;
+}
 function gasUrl(){
   const u = gcfg("gas-url","");
   return (u && u.trim()) ? u : DEFAULT_GAS_URL;
@@ -34254,6 +34265,7 @@ try{ window.addEventListener("online", function(){ try{ flushSyncQueue(); }catch
 try{ document.addEventListener("visibilitychange", function(){ try{ if(document.visibilityState === "visible" && syncQueueLen()) _colaProgramar(3000); }catch(_){} }); }catch(_){}
 const _bootCleanup = () => {
   let _changed = false;
+  try{ _soltarGasUrlPorDefecto(); }catch(_){}   // punto 25 (auditoría de B, 25-11)
   try{ _changed = cleanup(); }catch(_){}
   // #10: solo se re-pinta el grid si cleanup() purgó algo (caso común: nada que
   // purgar → se evita un buildGrid() redundante con sus parseos de localStorage).

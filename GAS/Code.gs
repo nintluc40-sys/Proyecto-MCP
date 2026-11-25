@@ -22,7 +22,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "27ed035437ba";
+const GAS_VERSION = "5007c3ce5249";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -1507,10 +1507,11 @@ function upsertAlgasRows(ws, newRows) {
       porEscribir.push({ fila: entry.row, datos: merged });   // B1: en bloque al final
       updated++;
     } else if (sid && pending[sid] !== undefined) {
-      // Misma Sesión repetida dentro del mismo lote → fusiona los no vacíos.
+      // Misma Sesión repetida dentro del mismo lote → la ÚLTIMA manda, entera (también lo vacío: punto 6, auditoría de B
+      // del 25-11), como contra la hoja. La Sesión se conserva.
       var pi = pending[sid];
       for (var pc = 0; pc < nr.length; pc++) {
-        if (pc !== sidCol && nr[pc] !== "" && nr[pc] !== null && nr[pc] !== undefined) toAdd[pi][pc] = nr[pc];
+        if (pc !== sidCol) toAdd[pi][pc] = (nr[pc] === null || nr[pc] === undefined) ? "" : nr[pc];
       }
     } else {
       if (sid) { pending[sid] = toAdd.length; map[sid] = { row: -1, idx: -1 }; }

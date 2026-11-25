@@ -11,7 +11,7 @@ import { join } from 'node:path';
 
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
-const EXPORTAR = ['syncAllPendingTras', 'renderMicNuevo', '_madRecTanques', 'postPayload', 'saveCfg', 'gcfg', 'addToAlgHist', 'today'];
+const EXPORTAR = ['syncAllPendingTras', 'renderMicNuevo', '_madRecTanques', 'postPayload', 'saveCfg', 'gcfg', 'addToAlgHist', 'scfg', '_soltarGasUrlPorDefecto', 'goBack', 'today'];
 const H = {};
 const avisos = [];
 
@@ -138,4 +138,30 @@ describe('6 · Algas no agrega un registro sin una fecha que exista', () => {
     expect(avisos.join(' ')).toMatch(/falta la Fecha, o no existe/);
   });
   it('con una fecha que existe, sí', () => { expect(agregar({ fecha: '2026-11-20', cel_ml: '5' })).toBe(1); });
+});
+
+describe('auditoría de B (25-11) · los tres detalles', () => {
+  it('🔴 2 · al arrancar se suelta la dirección POR DEFECTO guardada como propia; una distinta se respeta', () => {
+    H.scfg('gas-url', H.leer('DEFAULT_GAS_URL'));
+    expect(H._soltarGasUrlPorDefecto()).toBe(true);
+    expect(H.gcfg('gas-url', '')).toBe('');
+    H.scfg('gas-url', 'https://script.google.com/macros/s/OTRA-FICTICIA/exec');
+    expect(H._soltarGasUrlPorDefecto()).toBe(false);
+    expect(H.gcfg('gas-url', '')).toBe('https://script.google.com/macros/s/OTRA-FICTICIA/exec');
+  });
+  it('🔴 3 · Laboratorio con la fecha vacía: la cabecera no dice HOY', () => {
+    H.poner('loadMicDraft', () => ({ meta: { fechaMuestreo: '', fechaResultados: '', corrida: '', responsable: '' }, sections: {} }));
+    H.renderMicNuevo();
+    const chip = document.querySelector('#fp-micnuevo .ssp-mt');
+    expect(chip.textContent).toBe('— sin fecha —');
+  });
+  it('🔴 5 · salir tras un ERROR al guardar la grilla (y elegir seguir) intenta igual la copia ↩', () => {
+    let copias = 0;
+    window.confirm = () => true; globalThis.confirm = window.confirm;
+    H.poner('curMod', H.leer('MAD_MOD')); H.poner('curTab', 'tanques'); H.poner('_madGridDirty', true);
+    H.poner('_madCommitActive', () => { H.poner('_madCommitError', true); return false; });
+    H.poner('saveMadRecovery', () => { copias++; return true; });
+    try { H.goBack(); } catch (_) { /* el resto de la salida (repintar la entrada) no importa aquí */ }
+    expect(copias).toBe(1);
+  });
 });

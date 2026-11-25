@@ -50,10 +50,16 @@ describe('punto 6 · Lab_Algas: una corrección vacía lo que llega vacío', () 
     expect(res.upserted).toBe(1);
     expect(grid[1]).toEqual(['2026-11-20', '', 'texto nuevo', 'S1', 'de la hoja']);   // la columna a mano, intacta
   });
-  it('la Sesión no se pierde aunque llegue vacía, y otra Sesión es fila nueva', () => {
+  it('otra Sesión es fila nueva, y la existente no se toca', () => {
     const grid = [['Fecha', 'Cel/mL', 'Sesión'], ['2026-11-20', '5', 'S1']];
     correr(grid, [['2026-11-21', '7', 'S2']]);
     expect(grid).toHaveLength(3);
     expect(grid[1]).toEqual(['2026-11-20', '5', 'S1']);
+  });
+  it('🔴 la misma Sesión NUEVA dos veces en un envío: la última manda, entera (también lo vacío)', () => {
+    const grid = [['Fecha', 'Cel/mL', 'Obs', 'Sesión']];
+    correr(grid, [['2026-11-21', '9', 'primera', 'S3'], ['2026-11-21', '', 'segunda', 'S3']]);
+    expect(grid).toHaveLength(2);
+    expect(grid[1]).toEqual(['2026-11-21', '', 'segunda', 'S3']);
   });
 });
