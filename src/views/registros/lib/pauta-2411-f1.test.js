@@ -82,6 +82,21 @@ describe('T7.2 · Traslado: «🔍 Revisar» pregunta si lo de pantalla no está
   });
 });
 
+describe('T7.2 · control (auditoría de B): guardado y SIN cambios no pregunta', () => {
+  it('las mismas cosas con las claves en otro orden no son «cambios»', () => {
+    const preguntas = [];
+    window.confirm = (m) => { preguntas.push(m); return false; }; globalThis.confirm = window.confirm;
+    H.poner('loadTras', () => [{ id: 'v2', data: {} }]);
+    H.poner('_trasViajeActivo', 'v1');
+    H.poner('_trasFormDirty', false);
+    H.poner('collectTraslado', () => ({ fecha: '2026-11-20', camiones: [{ cid: '1', placa: 'PRB-0001', tinasOff: [] }] }));
+    H.poner('trasRegistroActivo', () => ({ data: { camiones: [{ placa: 'PRB-0001', tinasOff: [], cid: '1' }], fecha: '2026-11-20' } }));
+    H.poner('trasTieneDatos', () => true);
+    try { H.trasHistRevisar('v2'); } catch (_) { /* abrir el otro viaje (pintar) no importa aquí */ }
+    expect(preguntas).toHaveLength(0);
+  });
+});
+
 describe('T8.4 · 📝 Blanco: lo corregido no se pierde sin aviso', () => {
   const cargar = () => { H.poner('_blancoState', { ficha: 'calidad', histId: 'h1', data: { a: '1', b: '2' }, orig: { a: '1', b: '2' } }); };
   it('🔴 al dejar la pestaña, lo de pantalla queda en el estado (y al volver se pinta eso)', () => {

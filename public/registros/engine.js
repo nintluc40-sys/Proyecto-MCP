@@ -953,6 +953,8 @@ function _reclaimSpace(){
     try{ if(typeof pruneHist   === "function") pruneHist();   }catch(_){}
     // 1 bis) Lo ya enviado y fuera de plazo de Salas, Tanques, Zonas y el 📜 Historial de Maduración (2026-11-03).
     try{ if(typeof _madLimpiezaDeEspacio === "function") _madLimpiezaDeEspacio(); }catch(_){}
+    // 1 ter) T3.2 · los borradores de formularios de Maduración de días pasados, los más viejos primero (la mitad más vieja).
+    try{ if(typeof _madBorrSoltarViejos === "function" && _madBorrSoltarViejos(false)) freed = true; }catch(_){}
     // 2) Elimina FOTOS caducadas (FTTL) — suelen ser lo más pesado en cuota.
     try{
       const now = Date.now(), rm = [];
@@ -1208,10 +1210,21 @@ function _algLogSave(list){
   try{ localStorage.setItem(ALGLOG_KEY, JSON.stringify(list||[])); }
   catch(x){ toast("No se pudo actualizar la bitácora (espacio insuficiente)","err"); }
 }
+/* Punto 2 · F2 (revisión del 15-11; pauta del 24-11) · «SIN ESPACIO, Y LO DICE». Varios guardados de comodidad (borradores de Score,
+   Auditoría y Mantenimiento, la agenda de Alimentación…) fallaban en silencio. Ahora lo dicen, una vez por minuto y por cosa (cada
+   tecla vuelve a guardar: sin el freno, el aviso saldría en cada una). */
+const _avisoSinSitioTs = {};
+function _avisoSinSitio(que){
+  const t = Date.now();
+  if(_avisoSinSitioTs[que] && t - _avisoSinSitioTs[que] < 60000) return;
+  _avisoSinSitioTs[que] = t;
+  toast("⚠ Sin espacio en este equipo: " + que + " NO se guardó. Lo tecleado sigue en pantalla: envíalo, o libera espacio en ⚙ Config (🧹).", "err", 7000);
+}
 function pruneAlgLog(){
   const now = Date.now();
-  const list = _algLogRaw().filter(h => h && h.syncedAt && (now - h.syncedAt) < ALGLOG_TTL_MS);
-  _algLogSave(list);
+  const raw = _algLogRaw();
+  const list = raw.filter(h => h && h.syncedAt && (now - h.syncedAt) < ALGLOG_TTL_MS);
+  if(list.length !== raw.length) _algLogSave(list);   // F2 (B, 25-11) · sólo si quitó algo: si no, con el equipo lleno avisaba en cualquier módulo
   return list;
 }
 function loadAlgLog(){
@@ -3513,9 +3526,14 @@ function selTab(t){
   // 2026-09-24 · y al salir de una ficha de FORMULARIO, lo tecleado pendiente se guarda ya (hasta hoy no se guardaba aquí).
   if(isMadMod(curMod) && MAD_BORR_FICHAS[curTab]){ try{ madBorrGuardarYa(curTab); }catch(_){} }
   // Grilla de Mareas: vuelca lo tecleado/pegado antes de cambiar de pestaña.
-  if(curTab === "marea"){ try{ clearTimeout(_mareaDirtyTm); saveMareaDraftObj({ rows:_collectMareaGrid() }); }catch(_){} }
+  // T6.4 (pauta 24-11) · Mareas: si lo tecleado no cabe, se pregunta antes de dejar la pestaña (antes se perdía sin aviso).
+  if(curTab === "marea"){
+    let _rows = [], _ok = true;
+    try{ clearTimeout(_mareaDirtyTm); _rows = _collectMareaGrid(); _ok = saveMareaDraftObj({ rows:_rows }) !== false; }catch(_){}
+    if(!_ok && _rows.length && !confirm(MAREA_SIN_ESPACIO)) return;
+  }
   // Revisión 15-11 (T6.1) · Biomol: lo pegado sin guardar se guarda al dejar la pestaña (o al volver a pulsarla): se repinta desde lo guardado.
-  if(curTab === "biomol" && isBioMod(curMod)){ try{ if(_bioGridDirty) saveBioGrid({ silent:true, noRender:true }); }catch(_){} }
+  if(curTab === "biomol" && isBioMod(curMod) && _bioGridDirty){ if(!_bioGridSePuedeDejar()) return; }   // T6.4 · si no cabe, se pregunta
   // 2026-11-12 (punto 1) · As Técnico y Traslado: lo que hay en pantalla, para pintarlo al volver (no guarda ni envía nada).
   if(isAstMod(curMod)) _astTrasAlSalir();
   _blancoTomarPantalla();   // T8.4 (pauta 24-11) · al volver, Blanco se pinta con lo corregido, no con la copia original
@@ -4102,8 +4120,10 @@ function editAlgHistEntry(id){
   const entry = list.find(h => h.id === id);
   if(!entry){ toast("Registro no encontrado en el historial","warn"); return; }
   if(_algSinAgregar() && !confirm(_ALG_ABRIR_PISA)) return;   // pendiente 12
+  /* T2.6 (revisión del 15-11; pauta del 24-11) · sin espacio, el registro no se carga en la ficha: antes quedaba la ficha VACÍA en «modo
+     edición» y 💾 habría sustituido la entrada pendiente por ella. Ahora no se entra en edición y se dice. */
+  if(!saveE(curMod, "algas", Object.assign({}, entry.data), false)){ _algSinSitioEditar(); return; }
   _algEditingId = id;
-  saveE(curMod, "algas", Object.assign({}, entry.data), false);
   renderAlgas();
   // Lleva al usuario al inicio del formulario para que vea los campos cargados
   try{
@@ -4709,9 +4729,9 @@ function loadCS(m){
     return obj;
   }catch(x){ return {}; }
 }
-function saveCS(m, data){
-  try{ localStorage.setItem(csKey(m), JSON.stringify(data || {})); }
-  catch(x){ toast("No se pudo guardar (espacio insuficiente)","err"); }
+function saveCS(m, data){   // T2.3 · devuelve si quedó guardada
+  try{ localStorage.setItem(csKey(m), JSON.stringify(data || {})); return true; }
+  catch(x){ toast("No se pudo guardar (espacio insuficiente)","err"); return false; }
 }
 function clearCS(m){
   try{ localStorage.removeItem(csKey(m)); }catch(x){}
@@ -4788,7 +4808,8 @@ function saveCSData(){
     if(v === "" || v <= 0) continue;
     data["si_"+i] = v;
   }
-  saveCS(curMod, data);
+  // T2.3 (pauta 24-11) · sin espacio no se dice «guardada» ni se recalcula con la vieja: el panel se queda abierto con lo tecleado.
+  if(!saveCS(curMod, data)) return;
   toast("Cantidad sembrada guardada","ok",2200);
   // Re-renderiza la ficha de Población para reflejar el auto-cálculo
   if(curTab === "poblacion") rcPob();   // revisión 15-11 (T2.2) · recalcular EN SU SITIO: repintar desde lo guardado borraba lo tecleado
@@ -4990,9 +5011,9 @@ function loadTON(m){
     return obj;
   }catch(x){ return {}; }
 }
-function saveTON(m, data){
-  try{ localStorage.setItem(tonKey(m), JSON.stringify(data || {})); }
-  catch(x){ toast("No se pudo guardar (espacio insuficiente)","err"); }
+function saveTON(m, data){   // T2.3 · devuelve si quedaron guardadas
+  try{ localStorage.setItem(tonKey(m), JSON.stringify(data || {})); return true; }
+  catch(x){ toast("No se pudo guardar (espacio insuficiente)","err"); return false; }
 }
 function clearTON(m){
   try{ localStorage.removeItem(tonKey(m)); }catch(x){}
@@ -5057,7 +5078,7 @@ function saveTONData(){
     if(v === "" || v <= 0) continue;
     data["ton_"+i] = v;
   }
-  saveTON(curMod, data);
+  if(!saveTON(curMod, data)) return;   // T2.3 (pauta 24-11)
   toast("Toneladas guardadas","ok",2200);
   closeTON();
   // Re-renderiza Despacho para reflejar el auto-cálculo de Densidad cosechada
@@ -6690,6 +6711,7 @@ function openBitMenu(ev, id){
   setTimeout(() => document.addEventListener("click", closeHistMenu, {once:true}), 0);
 }
 
+function _algSinSitioEditar(){ toast("⚠ Sin espacio en este equipo: el registro NO se abrió para editar (no cabe en la ficha); sigue donde estaba. Libera espacio en ⚙ Config (🧹).","err",8000); }
 function bitEdit(id){
   closeHistMenu();
   const h = getAlgLogEntry(id);
@@ -6700,8 +6722,8 @@ function bitEdit(id){
   // historial y sincronizar se ACTUALIZA la fila existente en Sheets vía upsert por la
   // columna "Sesión" (aunque se editen Corrida/Módulo/Sistema/Área) — ver upsertAlgasRows
   // en la GAS (debe usar "Sesión" como clave).
+  if(!saveE(curMod, "algas", Object.assign({}, h.data), false)){ _algSinSitioEditar(); return; }   // T2.6 · y NO se saca de la Bitácora
   _algEditingId = null;  // limpia modo edición del historial pendiente, si lo había
-  saveE(curMod, "algas", Object.assign({}, h.data), false);
   removeAlgLogById(id);
   selTab("algas");
   renderAlgas();
@@ -11075,9 +11097,33 @@ function madBorrGuardar(ficha, fecha){
   todo[fecha] = fp.innerHTML;
   /* Tope por DÍAS y no por tamaño: una ficha de tres campos y otra con doce tarjetas no caben
      en el mismo presupuesto, y «los últimos 30 días» es lo que el usuario puede predecir. */
-  const dias = Object.keys(todo).sort();
-  while(dias.length > MAD_BORR_MAX) delete todo[dias.shift()];
+  /* T3.2 (pauta del 24-11, usuario: «Olvidar otra y guardar ésta») · con el tope lleno se olvida la más vieja de las DEMÁS: antes, teclear
+     en una fecha más antigua que todas la borraba en el acto a ella misma y decía «guardado». */
+  const dias = Object.keys(todo).filter(function(d){ return d !== fecha; }).sort();
+  while(dias.length + 1 > MAD_BORR_MAX) delete todo[dias.shift()];
   return _lsSet(_madBorrKey(ficha), JSON.stringify(todo));
+}
+/* T3.2 (pauta del 24-11, usuario: «Sí, los más viejos primero») · los borradores de Maduración no los miraba ninguna limpieza. Ahora
+   sueltan los de días PASADOS —nunca el de hoy ni el de la fecha abierta en su ficha—, los más viejos primero: sin espacio, la mitad
+   más vieja (al menos uno) cada vez; con 🧹 Liberar espacio, todos los pasados. Devuelve cuántos soltó. */
+function _madBorrSoltarViejos(todos){
+  const hoy = today(), cands = [];
+  Object.keys(MAD_BORR_FICHAS).forEach(function(ficha){
+    const t = madBorrTodo(ficha);
+    Object.keys(t).forEach(function(d){ if(d < hoy && d !== _madBorrFecha[ficha]) cands.push({ ficha: ficha, d: d }); });
+  });
+  if(!cands.length) return 0;
+  cands.sort(function(a, b){ return a.d < b.d ? -1 : a.d > b.d ? 1 : 0; });
+  const fuera = todos ? cands : cands.slice(0, Math.max(1, Math.floor(cands.length / 2)));
+  const porFicha = {};
+  fuera.forEach(function(c){ (porFicha[c.ficha] = porFicha[c.ficha] || []).push(c.d); });
+  let n = 0;
+  Object.keys(porFicha).forEach(function(ficha){
+    const t = madBorrTodo(ficha);
+    porFicha[ficha].forEach(function(d){ delete t[d]; n++; });
+    try{ localStorage.setItem(_madBorrKey(ficha), JSON.stringify(t)); }catch(_){}   // ocupa menos que antes: cabe
+  });
+  return n;
 }
 function madBorrLeer(ficha, fecha){
   const t = madBorrTodo(ficha);
@@ -11096,7 +11142,7 @@ function madBorrOlvidar(ficha, fecha){
 function madBorrGuardarYa(ficha){
   if(!MAD_BORR_FICHAS[ficha]) return;
   clearTimeout(_madBorrTm[ficha]); _madBorrTm[ficha] = null;
-  if(_madBorrTocado[ficha]) madBorrGuardar(ficha, _madBorrFecha[ficha]);
+  if(_madBorrTocado[ficha] && !madBorrGuardar(ficha, _madBorrFecha[ficha])) _avisoSinSitio("el borrador de la ficha de Maduración");   // T3.1
 }
 /* El panel se escucha UNA vez: el listener va en el contenedor, que sobrevive a los `innerHTML`. Cada cambio que no sea
    el de la fecha marca la ficha como tocada y programa su guardado; la fecha tiene su propia asa (madBorrFechaChange). */
@@ -11278,6 +11324,8 @@ function _madBorrAdaptar(ficha, fp, dia){
 }
 /** Asa del campo Fecha. Sin nada tecleado, guarda el día que se deja y trae el que se elige (2026-09-15). Con algo
  *  tecleado, lo LLEVA al día elegido si es trabajo nuevo y ese día no tiene nada; si no, pregunta (2026-09-24). */
+const MAD_BORR_SIN_ESPACIO = "⚠ No hay espacio en este equipo para guardar lo tecleado en esta ficha.\n\nAceptar = cambiar de fecha y PERDERLO."
+  + "\nCancelar = quedarte en la fecha de antes, con lo tecleado: ☁️ lo envía, o libera espacio en ⚙ Config (🧹).";   // T3.1
 function madBorrFechaChange(ficha){
   const cfg = MAD_BORR_FICHAS[ficha];
   if(!cfg) return;
@@ -11312,7 +11360,9 @@ function madBorrFechaChange(ficha){
       _madBorrTm[ficha] = setTimeout(function(){ _madBorrTm[ficha] = null; madBorrGuardar(ficha, _madBorrFecha[ficha]); }, MAD_BORR_ESPERA_MS);
       return;
     }
-    if(isValidDate(previa)) madBorrGuardar(ficha, previa);
+    /* T3.1 (revisión del 15-11; pauta del 24-11) · sin espacio para el borrador del día que se deja, cambiar de fecha lo PERDÍA (el panel
+       pasa al otro día). Ahora se pregunta; quedarse devuelve la fecha. */
+    if(isValidDate(previa) && !madBorrGuardar(ficha, previa) && !confirm(MAD_BORR_SIN_ESPACIO)){ f.value = previa; return; }
   }
   /* Se trae el día elegido. Sin borrador, la ficha se monta LIMPIA: arrastrar lo de ayer a un día en el que no se
      tecleó nada es lo que pedía el 2026-09-15. Sin tocar, lo que se deja no se guarda: ya estaba guardado, o no
@@ -14796,7 +14846,9 @@ let _madAlim = null;
 function madAlimCfgLeer(){
   try{ const v=JSON.parse(localStorage.getItem(MAD_ALIM_CFG_KEY)||"{}"); return (v && typeof v==="object" && !Array.isArray(v)) ? v : {}; }catch(_){ return {}; }
 }
-function madAlimCfgGuardar(cfg){ try{ localStorage.setItem(MAD_ALIM_CFG_KEY, JSON.stringify(cfg)); }catch(_){} }
+function madAlimCfgGuardar(cfg){   // T4.7 (pauta 24-11) · devuelve si quedó guardada, y lo dice si no
+  try{ localStorage.setItem(MAD_ALIM_CFG_KEY, JSON.stringify(cfg)); return true; }catch(_){ _avisoSinSitio("la agenda de Alimentación"); return false; }
+}
 function madAlimTomasDe(sala){
   const c=madAlimCfgLeer()[sala];
   return (c && Array.isArray(c.tomas) && c.tomas.length) ? c.tomas : MAD_ALIM_TOMAS_ESTANDAR.map(function(t){ return { hora:t.hora, producto:t.producto, pct:t.pct }; });
@@ -15014,7 +15066,7 @@ function madAlimCopiarATodas(btn){
     if(s===origen) return;
     cfg[s]={ tomas:tomas.map(function(t){ return { hora:t.hora, producto:t.producto, pct:t.pct }; }), pendiente:true, ts:Date.now() };
   });
-  madAlimCfgGuardar(cfg);
+  const _agOk=madAlimCfgGuardar(cfg);   // T4.7
   document.querySelectorAll("#ma-salas .ma-sala").forEach(function(otra){
     if(otra.getAttribute("data-sala")===origen) return;
     _madAlimRepintarTomas(otra);
@@ -15022,7 +15074,7 @@ function madAlimCopiarATodas(btn){
     madAlimRecalcular(otra);
   });
   madAlimPintarGeneral();
-  toast("📋 Agenda de "+origen+" copiada a las demás salas: guarda para dejarla en la hoja.","ok",4000);
+  if(_agOk) toast("📋 Agenda de "+origen+" copiada a las demás salas: guarda para dejarla en la hoja.","ok",4000);
 }
 async function madAlimLeer(){
   const btn=document.getElementById("ma-leer-btn"), nota=document.getElementById("ma-nota");
@@ -15153,6 +15205,8 @@ async function madAlimGuardar(){ return _madGridBloqueada("fp-alimentacion", asy
     _madAlimAgendaEnviada(model.salas.map(function(s){ return s.sala; }));
     madAlimLogAnota(model.fecha, payload.rows.length, ok ? "ok" : "cola", _envio);
     if(_madHistAnota("alimentacion", payload, model.fecha, _envio)) _madHistCorrSalir("alimentacion");   // 📜 Historial (2026-10-04): corregido, la ficha vuelve a su día
+    _madBorrOlvidarPantalla("alimentacion", model.fecha);   // T3.2 (pauta 24-11, usuario: «Olvidarlo al enviar, como las otras»)
+    _madBorrTocado["alimentacion"] = false;   // lo de pantalla ya salió: que salir de la pestaña no lo vuelva a guardar como borrador
     const lg=document.getElementById("ma-log"); if(lg) lg.innerHTML=madAlimLogHTML();
   }
   if(ok){ toast("✅ Alimentación registrada · "+payload.rows.length+" fila(s)","ok",5000); return; }
@@ -19682,11 +19736,22 @@ const BIO_SES_KEY = "larv4_biomol_ses";   // { "<sid>": {fecha, nombre, etiqueta
 let _bioSid = null;                       // análisis en pantalla
 
 function _bioNewSid(){ return "b" + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+/* T6.5 (revisión del 15-11; pauta del 24-11) · SIN ESPACIO, un análisis nuevo no se podía guardar: su número quedaba en _bioSid, pero
+   bioSes() no lo encontraba y bioSidActivo() caía al PRIMER análisis del día. La tanda siguiente viajaba con su etiqueta y la hoja,
+   que reemplaza por Sesión, borraba la tanda anterior. Ahora los análisis que no cupieron viven en memoria (_bioSesMem) hasta que se
+   puedan guardar: se ven, se nombran y se envían con SU número. */
+let _bioSesMem = {};
 function _bioSesAll(){
-  try{ const o = JSON.parse(localStorage.getItem(BIO_SES_KEY) || "{}"); return (o && typeof o==="object") ? o : {}; }
-  catch(x){ _silent("_bioSesAll", x); return {}; }
+  let o = {};
+  try{ o = JSON.parse(localStorage.getItem(BIO_SES_KEY) || "{}"); if(!o || typeof o!=="object") o = {}; }
+  catch(x){ _silent("_bioSesAll", x); o = {}; }
+  return Object.keys(_bioSesMem).length ? Object.assign({}, _bioSesMem, o) : o;
 }
-function _bioSesSave(map){ return _lsSet(BIO_SES_KEY, JSON.stringify(map || {})); }
+function _bioSesSave(map){
+  const ok = _lsSet(BIO_SES_KEY, JSON.stringify(map || {}));
+  if(ok) _bioSesMem = {}; else Object.assign(_bioSesMem, map || {});   // T6.5
+  return ok;
+}
 function bioSes(sid){ return _bioSesAll()[sid] || null; }
 
 /** Análisis de una fecha, en orden de creación. */
@@ -20067,6 +20132,7 @@ function loadMareaDraft(){
   try{ const j = localStorage.getItem(MAREA_DRAFT_KEY); const d = j ? JSON.parse(j) : null; return (d && Array.isArray(d.rows)) ? d : { rows:[] }; }
   catch(_){ return { rows:[] }; }
 }
+const MAREA_SIN_ESPACIO = "⚠ No hay espacio en este equipo para guardar lo tecleado en Mareas.\n\nAceptar = seguir y PERDERLO.\nCancelar = quedarte aquí, con lo tecleado: ☁️ lo envía sin guardarlo, o libera espacio en ⚙ Config.";   // T6.4
 function saveMareaDraftObj(d){ try{ return _lsSet(MAREA_DRAFT_KEY, JSON.stringify(d)); }catch(_){ return false; } }
 function _mareaShownRows(){
   const saved = loadMareaDraft().rows.length;
@@ -20276,8 +20342,8 @@ function _bioSesEnBlanco(sid){
    empezar otro sin haber enviado el primero. */
 function bioNuevoAnalisis(){
   const fecha = bioGridFecha();
-  try{ saveBioGrid({ fecha:_bioRenderedFecha, sid:_bioSid, silent:true, noRender:true }); }catch(_){}
-  if(_bioSesEnBlanco(bioSidActivo(fecha))){
+  if(!_bioGridSePuedeDejar({ fecha:_bioRenderedFecha, sid:_bioSid })) return;   // T6.4 · con lo de pantalla sin guardar no está «en blanco»
+  if(_bioSesEnBlanco(bioSidActivo(fecha)) && !_collectBioGrid().length){
     toast("Esta grilla ya está en blanco: pega aquí la tanda siguiente","info",3000);
     return;
   }
@@ -20290,7 +20356,7 @@ function bioNuevoAnalisis(){
 function bioSesChange(sel){
   const sid = sel && sel.value;
   if(!sid || sid === _bioSid) return;
-  try{ saveBioGrid({ fecha:_bioRenderedFecha, sid:_bioSid, silent:true, noRender:true }); }catch(_){}
+  if(!_bioGridSePuedeDejar({ fecha:_bioRenderedFecha, sid:_bioSid })){ sel.value = _bioSid; return; }   // T6.4
   _bioSid = sid;
   renderBiomol();
 }
@@ -20428,8 +20494,8 @@ function _bioHistBlock(curFecha, preList, curSid){
 function bioVerSes(sid){
   const ses = bioSes(sid);
   if(!ses){ toast("Ese análisis ya no existe","info",2500); return; }
-  // Persiste lo no guardado de lo que está EN PANTALLA antes de cargar otro análisis.
-  try{ saveBioGrid({ fecha:_bioRenderedFecha, sid:_bioSid, silent:true, noRender:true }); }catch(_){}
+  // Persiste lo no guardado de lo que está EN PANTALLA antes de cargar otro análisis (T6.4: si no cabe, se pregunta).
+  if(!_bioGridSePuedeDejar({ fecha:_bioRenderedFecha, sid:_bioSid })) return;
   const el = document.getElementById("bio-grid-fecha");
   if(el) el.value = ses.fecha;
   _bioSid = sid;
@@ -20438,11 +20504,21 @@ function bioVerSes(sid){
 // Cambio de día desde el selector de fecha: mismo commit anti-pérdida antes de
 // re-renderizar el día nuevo (antes el onchange llamaba a renderBiomol() directo
 // y descartaba lo tecleado/pegado sin guardar).
+/* T6.4 (revisión del 15-11; pauta del 24-11) · ANTES DE DEJAR LA GRILLA DE BIOMOL. Sin espacio, cambiar de día, de análisis o de pestaña
+   repintaba y borraba lo tecleado mientras el aviso decía «sigue en pantalla». Ahora, como en Maduración (A7): si no cabe, se pregunta.
+   Devuelve true para seguir. */
+const BIO_GRID_SIN_ESPACIO = "⚠ No hay espacio en este equipo para guardar lo tecleado en la grilla de Biomol.\n\nAceptar = seguir y PERDERLO."
+  + "\nCancelar = quedarte aquí, con lo tecleado: ☁️ lo envía sin guardarlo, o libera espacio en ⚙ Config.";
+function _bioGridSePuedeDejar(opts){
+  let r = 0;
+  try{ r = saveBioGrid(Object.assign({ silent:true, noRender:true }, opts || {})); }catch(_){}
+  return r !== -1 || confirm(BIO_GRID_SIN_ESPACIO);
+}
 function bioFechaChange(){
   // 2026-11-14 (punto 46) · una fecha posterior a hoy no se elige (como en las grillas de Maduración).
   const _el = document.getElementById("bio-grid-fecha"), _fut = _el ? _fechaPosterior(_el.value) : "";
   if(_fut){ toast("⚠️ " + _fut.charAt(0).toUpperCase() + _fut.slice(1) + ": no se puede registrar.", "warn", 7000); _el.value = _bioRenderedFecha; return; }
-  try{ saveBioGrid({ fecha:_bioRenderedFecha, sid:_bioSid, silent:true, noRender:true }); }catch(_){}
+  if(!_bioGridSePuedeDejar({ fecha:_bioRenderedFecha, sid:_bioSid })){ if(_el) _el.value = _bioRenderedFecha; return; }   // T6.4
   _bioSid = null;                 // al cambiar de día se entra por su primer análisis
   renderBiomol();
 }
@@ -22320,7 +22396,7 @@ function _scoreActual(){
   }catch(_){ _scoreModel = _scoreNuevo(); }
   return _scoreModel;
 }
-function _scoreGuardarBorrador(){ _lsSet(SCORE_DRAFT_KEY, JSON.stringify(_scoreActual())); }
+function _scoreGuardarBorrador(){ if(!_lsSet(SCORE_DRAFT_KEY, JSON.stringify(_scoreActual()))) _avisoSinSitio("el borrador del Score"); }   // T6.9
 function scorePick(k, pts){
   const m = _scoreActual();
   const t = m.tanques[_scoreTq] || (m.tanques[_scoreTq] = {});
@@ -23065,8 +23141,8 @@ function _mntTrabActual(){
   if(!_mntTrab) _mntTrab = _mntBorrador(MNT_TRAB_DRAFT_KEY, function(){ return true; }, _mntTrabNuevo);
   return _mntTrab;
 }
-function _mntGuardarRonda(){ _lsSet(MNT_RONDA_DRAFT_KEY, JSON.stringify(_mntRondaActual())); }
-function _mntGuardarTrab(){ _lsSet(MNT_TRAB_DRAFT_KEY, JSON.stringify(_mntTrabActual())); }
+function _mntGuardarRonda(){ if(!_lsSet(MNT_RONDA_DRAFT_KEY, JSON.stringify(_mntRondaActual()))) _avisoSinSitio("el borrador de la ronda de Mantenimiento"); }   // T6.9
+function _mntGuardarTrab(){ if(!_lsSet(MNT_TRAB_DRAFT_KEY, JSON.stringify(_mntTrabActual()))) _avisoSinSitio("el borrador del trabajo de Mantenimiento"); }
 /* 2026-11-15 (punto 23 de la pauta del 12-11; usuario: «Que siga al reloj») · LA FICHA SIGUIENTE NACÍA CON LA FECHA Y HORA DEL GUARDADO
    ANTERIOR. Al guardar, _mntRegistrar deja ya preparada la siguiente con la fecha (y en la ronda, la hora) de ESE momento; la ronda
    siguiente, hecha horas o días después, salía con ellas si nadie las cambiaba. Ahora, al pintarla, una ficha EN BLANCO toma las de
@@ -23701,7 +23777,7 @@ function _audActual(){
   }catch(_){ _audModel = _audNueva(); }
   return _audModel;
 }
-function _audGuardarBorrador(){ _lsSet(AUD_DRAFT_KEY, JSON.stringify(_audActual())); }
+function _audGuardarBorrador(){ if(!_lsSet(AUD_DRAFT_KEY, JSON.stringify(_audActual()))) _avisoSinSitio("el borrador de la Auditoría"); }   // T6.9
 // Los campos de la cabecera (corrida, módulo, registrado por): guardan sin repintar (perderían el foco).
 function audCampo(el){
   const k = el && el.getAttribute("data-ak");
@@ -25907,6 +25983,11 @@ function trasHistCerrar(){
 
 /* Abre OTRO viaje en la ficha. ⚠ Repinta, así que lo que estuviera tecleado y sin
    guardar se perdería: se pregunta antes y se ofrece guardarlo. */
+/* JSON con las claves ordenadas a todos los niveles: dos objetos con el mismo contenido dan la misma cadena. */
+function _jsonOrdenado(v){
+  const ord = (x) => Array.isArray(x) ? x.map(ord) : (x && typeof x === "object") ? Object.keys(x).sort().reduce((o, k) => { o[k] = ord(x[k]); return o; }, {}) : x;
+  return JSON.stringify(ord(v));
+}
 function trasHistRevisar(id){
   const list = loadTras();
   const rec = list.find(r => r && String(r.id) === String(id));
@@ -25917,7 +25998,7 @@ function trasHistRevisar(id){
      también si lo de pantalla difiere de lo GUARDADO (como trasRevSinGuardar). */
   let _trasSucio = _trasFormDirty;
   if(!_trasSucio){
-    try{ const p = collectTraslado(), g = (trasRegistroActivo() || {}).data || null; _trasSucio = trasTieneDatos(p) && JSON.stringify(p) !== JSON.stringify(g); }catch(_){}
+    try{ const p = collectTraslado(), g = (trasRegistroActivo() || {}).data || null; _trasSucio = trasTieneDatos(p) && _jsonOrdenado(p) !== _jsonOrdenado(g); }catch(_){}   // con las claves ORDENADAS: la pantalla y lo guardado no las traen en el mismo orden (auditoría de B)
   }
   if(_trasSucio){
     const seguir = confirm("El traslado abierto tiene cambios SIN guardar.\n\n"
@@ -27659,6 +27740,9 @@ function loadMicDraft(){
   return def;
 }
 function saveMicDraft(d){ return _lsSet(MIC_DRAFT_KEY, JSON.stringify(d||{})); }   // true si quedó guardado (punto 13)
+/* T7.5 (revisión del 15-11; pauta del 24-11) · «➕ Fila», cambiar de formato, ocultar una columna o cambiar de tipo REPINTAN desde el
+   borrador: sin espacio para guardarlo, lo tecleado se borraba. Ahora, si no cabe, no se repinta y se dice. */
+function _labSinSitio(){ toast("⚠ Sin espacio en este equipo: no se puede hacer eso sin PERDER lo tecleado (no cabe su borrador). Envíalo con ☁️ o libera espacio en ⚙ Config (🧹).", "err", 8000); }
 
 // ── Recolección del borrador desde el DOM ──────────────
 function collectMicDraft(){
@@ -27794,10 +27878,10 @@ function saveMicHidden(fmtKey, set){
   try{ const o = JSON.parse(localStorage.getItem(MIC_HIDCOLS_KEY)||"{}"); o[fmtKey] = Array.from(set); localStorage.setItem(MIC_HIDCOLS_KEY, JSON.stringify(o)); }catch(_){}
 }
 function micToggleCol(fmtKey, key){
+  const draft = collectMicDraft(); if(!saveMicDraft(draft)){ _labSinSitio(); return; }   // no perder lo escrito (T7.5: si no cabe, nada cambia)
   const hid = loadMicHidden(fmtKey);
   if(hid.has(key)) hid.delete(key); else hid.add(key);
   saveMicHidden(fmtKey, hid);
-  const draft = collectMicDraft(); saveMicDraft(draft);   // no perder lo escrito
   renderMicNuevo();
 }
 // Celdas editables/auto VISIBLES de una fila, en orden de columna (salta ocultas).
@@ -28044,13 +28128,13 @@ function calHdrFill(key, val){ _gridHdrFill("cal", key, val); }
 
 // Cambia el formato visible sin perder lo escrito (lo persiste en el borrador).
 function micFmtChange(val){
-  const draft = collectMicDraft();
+  const antes = (loadMicDraft() || {}).activeFmt, draft = collectMicDraft();   // el de ANTES: collect ya lee el selector cambiado
   draft.activeFmt = val;
-  saveMicDraft(draft);
+  if(!saveMicDraft(draft)){ _labSinSitio(); const sel=document.getElementById("mic-fmt-sel"); if(sel && antes) sel.value=antes; return; }   // T7.5 · sin repintar; el selector vuelve
   renderMicNuevo();
 }
 function micAddRow(fmtKey){
-  const draft = collectMicDraft(); saveMicDraft(draft);
+  const draft = collectMicDraft(); if(!saveMicDraft(draft)){ _labSinSitio(); return; }
   const drows = (draft.sections[fmtKey] && draft.sections[fmtKey].rows) ? draft.sections[fmtKey].rows.length : 0;
   const cur = Math.max(MIC_DEFAULT_ROWS + (_micExtra[fmtKey]||0), drows);
   if(cur >= MIC_MAX_ROWS){ toast("Máximo "+MIC_MAX_ROWS+" filas","info",2500); return; }
@@ -28829,7 +28913,7 @@ function loadCalDraft(){
     return { meta:Object.assign({},def.meta,o.meta||{}), sections:o.sections||{}, activeFmt:o.activeFmt||"larv" }; } }catch(_){}
   return def;
 }
-function saveCalDraft(d){ _lsSet(CAL_DRAFT_KEY, JSON.stringify(d||{})); }
+function saveCalDraft(d){ return _lsSet(CAL_DRAFT_KEY, JSON.stringify(d||{})); }   // T7.5 · true si quedó guardado
 
 function collectCalDraft(){
   const prev = loadCalDraft();
@@ -29004,9 +29088,9 @@ function calRecalcSection(fmtKey){
 function loadCalHidden(fmtKey){ try{ const o=JSON.parse(localStorage.getItem(CAL_HIDCOLS_KEY)||"{}"); return new Set(Array.isArray(o[fmtKey])?o[fmtKey]:[]); }catch(_){ return new Set(); } }
 function saveCalHidden(fmtKey,set){ try{ const o=JSON.parse(localStorage.getItem(CAL_HIDCOLS_KEY)||"{}"); o[fmtKey]=Array.from(set); localStorage.setItem(CAL_HIDCOLS_KEY,JSON.stringify(o)); }catch(_){} }
 function calToggleCol(fmtKey,key){
+  const draft=collectCalDraft(); if(!saveCalDraft(draft)){ _labSinSitio(); return; }   // T7.5 · si no cabe, nada cambia
   const hid=loadCalHidden(fmtKey); if(hid.has(key)) hid.delete(key); else hid.add(key);
   saveCalHidden(fmtKey,hid);
-  const draft=collectCalDraft(); saveCalDraft(draft);
   renderCalNuevo();
 }
 function _calVisRow(tr){
@@ -29503,7 +29587,9 @@ function micTypeToggle(v){
   if(micTypeGet()===v) return;
   // Preserva lo tecleado en Nuevo análisis del tipo actual antes de cambiar.
   if(curTab==="micnuevo"){
-    try{ const cur=micTypeGet(); if(cur==="cal") saveCalDraft(collectCalDraft()); else if(cur==="pat") savePatDraft(collectPatDraft()); else saveMicDraft(collectMicDraft()); }catch(_){}
+    let _ok=true;
+    try{ const cur=micTypeGet(); _ok = cur==="cal" ? saveCalDraft(collectCalDraft()) : cur==="pat" ? savePatDraft(collectPatDraft()) : saveMicDraft(collectMicDraft()); }catch(_){ _ok=false; }
+    if(!_ok){ _labSinSitio(); return; }   // T7.5 · sin sitio para lo tecleado, no se cambia de tipo
   }
   micTypeSet(v);
   const t=curTab;
@@ -29565,9 +29651,9 @@ function renderCalNuevo(){
   calRecalcSection(activeFmt);
   fixupLabels(fp);
 }
-function calFmtChange(val){ const draft=collectCalDraft(); draft.activeFmt=val; saveCalDraft(draft); renderCalNuevo(); }
+function calFmtChange(val){ const antes=(loadCalDraft()||{}).activeFmt, draft=collectCalDraft(); draft.activeFmt=val; if(!saveCalDraft(draft)){ _labSinSitio(); const sel=document.getElementById("cal-fmt-sel"); if(sel && antes) sel.value=antes; return; } renderCalNuevo(); }   // T7.5
 function calAddRow(fmtKey){
-  const draft=collectCalDraft(); saveCalDraft(draft);
+  const draft=collectCalDraft(); if(!saveCalDraft(draft)){ _labSinSitio(); return; }
   const drows=(draft.sections[fmtKey]&&draft.sections[fmtKey].rows)?draft.sections[fmtKey].rows.length:0;
   const cur=Math.max(CAL_DEFAULT_ROWS+(_calExtra[fmtKey]||0), drows);
   if(cur>=CAL_MAX_ROWS){ toast("Máximo "+CAL_MAX_ROWS+" filas","info",2500); return; }
@@ -30047,7 +30133,7 @@ function loadPatDraft(){
     return { meta:Object.assign({},def.meta,o.meta||{}), rows:Array.isArray(o.rows)?o.rows:[] }; } }catch(_){}
   return def;
 }
-function savePatDraft(d){ _lsSet(PAT_DRAFT_KEY, JSON.stringify(d||{})); }
+function savePatDraft(d){ return _lsSet(PAT_DRAFT_KEY, JSON.stringify(d||{})); }   // T7.5 · true si quedó guardado
 function collectPatDraft(){
   const prev=loadPatDraft();
   const meta=Object.assign({ fechaMuestreo:today(), fechaResultados:"", corrida:"", responsable:"", encabezado:"" }, prev.meta||{});
@@ -30235,7 +30321,7 @@ function renderPatNuevo(){
   fixupLabels(fp);
 }
 function patAddRow(){
-  const draft=collectPatDraft(); savePatDraft(draft);
+  const draft=collectPatDraft(); if(!savePatDraft(draft)){ _labSinSitio(); return; }
   const cur=Math.max(PAT_DEFAULT_ROWS+_patExtra, (draft.rows||[]).length);
   if(cur>=PAT_MAX_ROWS){ toast("Máximo "+PAT_MAX_ROWS+" filas","info",2500); return; }
   _patExtra=Math.min(PAT_MAX_ROWS-PAT_DEFAULT_ROWS, (cur-PAT_DEFAULT_ROWS)+PAT_ROW_STEP);
@@ -32569,6 +32655,8 @@ function liberarEspacio(){
     + "Con red se vuelve a bajar sola. Sin red, hasta entonces, el reproductivo no podrá registrar traslados ni eventos.\n\n"
     + "Aceptar: borrarla. Cancelar: dejarla.") ? _soltarCopiaMatriz() : null;
   const hecho = [];
+  const _borr = _madBorrSoltarViejos(true);   // T3.2 (pauta 24-11)
+  if(_borr) hecho.push(_borr + " borrador(es) de formularios de Maduración de días pasados");
   if(r.grillas) hecho.push(r.grillas + " registro(s) enviados de Salas, Tanques y Zonas");
   if(r.historial) hecho.push(r.historial + " envío(s) del Historial");
   if(copia) hecho.push(copia + " (se vuelve a bajar cuando haga falta)");
