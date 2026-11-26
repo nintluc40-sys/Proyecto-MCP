@@ -2047,6 +2047,21 @@ function _colaVersionEnCola(kind, rec){
    rechaza) y entonces ya no quedaba otra copia; con una versión anterior en la cola, lo cambiado después se perdía. Es la regla de la
    limpieza y del espacio (A8, punto 25): lo que espera en la cola no se toca. Sin nada en la cola, se pregunta: se perdería. */
 const QUITAR_EN_COLA = "espera en la cola para enviarse: no se puede quitar de este dispositivo hasta que llegue a la hoja (o la cola lo descarte). 🔄 lo envía en cuanto haya conexión.";
+/* Punto 2 · F3 (revisión del 15-11; pauta del 24-11) · la regla del punto 14 («No dejar quitarlo») llega a los 🗑 que no la tenían:
+   AsT, Biomol, Laboratorio, Algas, los días anteriores, Larvicultura y lo guardado con 💾 mientras se envía. ¿Espera en la cola un
+   envío de este tipo con alguna llave que cumpla `es`? */
+function _colaLleva(kind, es){
+  return _loadSyncQueue().some(function(it){
+    const m = it && it.mark;
+    return !!(m && m.kind === kind && Array.isArray(m.keys) && m.keys.some(function(k){ return es(String(k)); }));
+  });
+}
+/* Antes de quitar algo: con algo suyo en la cola, no se quita (y se dice); sin enviar, se avisa de que se pierde; ya enviado, el aviso
+   de siempre. Devuelve si se puede seguir. */
+function _quitarConCola(enCola, sinEnviar, que, femenino, avisoEnviado){
+  if(enCola || sinEnviar) return _quitarNoEnviado(enCola ? "actual" : null, que, femenino);
+  return confirm(avisoEnviado);
+}
 function _quitarNoEnviado(enCola, que, femenino, borrar){
   const Que = que.charAt(0).toUpperCase() + que.slice(1);
   if(enCola === "actual" || enCola === "anterior"){ toast("⏳ " + Que + " " + QUITAR_EN_COLA, "warn", 9000); return false; }
@@ -3151,9 +3166,18 @@ function previasDescartar(){
   const lista = lab ? _previasAlgas() : _previasFichas(curMod);
   const n = lab ? lista.reduce(function(a, x){ return a + x.lista.length; }, 0) : lista.length;
   if(!n){ _previasPintar(); return; }
-  if(!confirm("¿Descartar " + n + (lab ? " registro(s) de Lab. Algas" : " ficha(s)") + " de días anteriores SIN ENVIAR?\nSe borran de este dispositivo y no llegarán a la hoja.")) return;
-  lista.forEach(function(x){ try{ localStorage.removeItem(x.key); }catch(_){} if(!lab) _invalidateLoadE(x.key); });
-  toast("🗑 Descartado lo de días anteriores (" + n + ")", "info", 4000);
+  /* T1.3 (pauta 24-11) · decía «no llegarán a la hoja» de lo que esperaba en la cola, que llega igual. Lo de la cola no se descarta
+     (punto 14): se deja y se dice; el resto, sí. */
+  const _enCola = function(x){ return lab
+    ? _colaLleva("alg", function(k){ return x.lista.some(function(h){ return h && String(h.id) === k; }); })
+    : _colaLleva("fichas", function(k){ return k === curMod + "|" + x.ficha + "|" + x.dia; }); };
+  const quedan = lista.filter(_enCola), fuera = lista.filter(function(x){ return !_enCola(x); });
+  if(!fuera.length){ toast("⏳ Lo de días anteriores " + QUITAR_EN_COLA, "warn", 9000); return; }
+  const nf = lab ? fuera.reduce(function(a, x){ return a + x.lista.length; }, 0) : fuera.length;
+  if(!confirm("¿Descartar " + nf + (lab ? " registro(s) de Lab. Algas" : " ficha(s)") + " de días anteriores SIN ENVIAR?\nSe borran de este dispositivo y no llegarán a la hoja."
+    + (quedan.length ? "\n\n(" + quedan.length + " más esperan en la cola: ésas no se tocan y llegarán.)" : ""))) return;
+  fuera.forEach(function(x){ try{ localStorage.removeItem(x.key); }catch(_){} if(!lab) _invalidateLoadE(x.key); });
+  toast("🗑 Descartado lo de días anteriores (" + nf + ")" + (quedan.length ? " · " + quedan.length + " siguen en la cola" : ""), "info", 4000);
   try{ _previasPintar(); updateDots(); updateSyncUI(); }catch(_){}
 }
 
@@ -4014,7 +4038,10 @@ function renderFicha(fid){
 function clearFicha(fid){
   if(!ALL_FICHAS.includes(fid)) return;
   const label = FICHA_LABELS[fid] || fid;
-  if(!confirm("¿Borrar todos los datos de " + label + "?\nEsto no afecta lo ya enviado a Google Sheets.")) return;
+  // T2.8 (pauta 24-11) · el aviso era el mismo con la ficha enviada, sin enviar o en la cola.
+  const _e = loadE(curMod, fid), _pre = curMod + "|" + fid;
+  if(!_quitarConCola(_colaLleva("fichas", function(k){ return k === _pre || k.indexOf(_pre + "|") === 0; }), !!(_e && !_e.synced), "lo de " + label, false,
+    "¿Borrar todos los datos de " + label + "?\nEsto no afecta lo ya enviado a Google Sheets.")) return;
   localStorage.removeItem(skey(curMod, fid));
   _invalidateLoadE(skey(curMod, fid));
   _formDirty = false;            // R3: ya no hay datos sin guardar en esta ficha
@@ -4160,7 +4187,8 @@ function _algRepintarConservando(){
 }
 
 function removeAlgHistConfirm(id){
-  if(!confirm("¿Eliminar este registro del historial?\nNo afecta a registros ya sincronizados.")) return;
+  // T2.7 (pauta 24-11) · lo del historial está SIN ENVIAR (lo enviado pasa a la Bitácora): con su envío en la cola no se quita.
+  if(!_quitarNoEnviado(_colaLleva("alg", function(k){ return k === String(id); }) ? "actual" : null, "este registro", false)) return;
   removeAlgHistById(id);
   toast("Registro eliminado del historial","ok",2500);
   _algRepintarConservando();
@@ -4170,6 +4198,8 @@ function removeAlgHistConfirm(id){
 function clearAlgHistConfirm(){
   const list = loadAlgHist();
   if(list.length === 0){ toast("El historial ya está vacío","info",2000); return; }
+  const _ids = list.map(h => h && String(h.id));
+  if(_colaLleva("alg", function(k){ return _ids.indexOf(k) !== -1; })){ toast("⏳ Hay registros del historial que " + QUITAR_EN_COLA, "warn", 9000); return; }   // T2.7
   if(!confirm("¿Vaciar TODO el historial? Se perderán "+list.length+" registro(s) que aún no fueron sincronizados.")) return;
   clearAlgHist();
   toast("Historial vaciado","ok",2500);
@@ -10367,6 +10397,8 @@ function _madLocRepinta(ficha){
 function madLocDescartar(ficha, id){
   const l=madLocLeer(ficha), e=l.filter(function(x){ return x.id===id; })[0];
   if(!e){ toast("Ese envío ya no está guardado en este dispositivo.","warn",3000); _madLocRepinta(ficha); return; }
+  // T3.5 (pauta 24-11) · mientras se envía lo guardado, borrarlo decía «sin enviar» y llegaba igual: se espera a que termine.
+  if(_madLocEnVuelo && _madLocEnVuelo[ficha]){ toast("⏳ Lo guardado de esta ficha se está enviando ahora: espera a que termine para borrar nada.","warn",6000); return; }
   if(!confirm("¿Borrar de este dispositivo lo guardado del "+(e.fecha||"—")+" ("+e.filas+" fila(s)) SIN enviarlo?\nNo se podrá recuperar.")) return;
   madLocGuardar(ficha, l.filter(function(x){ return x.id!==id; }));
   _madLocRepinta(ficha);
@@ -20315,7 +20347,9 @@ function bioBorrarSes(sid){
   const nombre = bioSesNombre(sid);
   const list = _bioRaw();
   const mias = list.filter(r => r && r.data && r.data.sid === sid);
-  if(!confirm("¿Borrar «"+nombre+"» ("+mias.length+" muestra(s)) del "+ses.fecha+"?\nSe borra también su reporte y sus imágenes (gel y curvas).\nNo elimina lo ya enviado a Google Sheets.")) return;
+  // T6.6 (pauta 24-11) · con algo suyo en la cola no se borra; sin enviar, se avisa de que se pierde.
+  if(!_quitarConCola(_colaLleva("bio", function(k){ return k.split("|").pop() === String(sid); }), mias.some(r => !r.synced), "el análisis «"+nombre+"»", false,
+    "¿Borrar «"+nombre+"» ("+mias.length+" muestra(s)) del "+ses.fecha+"?\nSe borra también su reporte y sus imágenes (gel y curvas).\nNo elimina lo ya enviado a Google Sheets.")) return;
   _bioSave(list.filter(r => !(r && r.data && r.data.sid === sid)));
   const all = _bioSesAll(); delete all[sid]; _bioSesSave(all);
   try{ bioRptDelSes(sid); }catch(_){}
@@ -20525,7 +20559,8 @@ function bioFechaChange(){
 function clearAllBio(){
   const list = _bioRaw();
   if(list.length === 0){ toast("El historial ya está vacío","info",2000); return; }
-  if(!confirm("¿Borrar TODAS las "+list.length+" muestra(s) locales del historial Biomol (48 h)?\nNo afecta a lo ya enviado a Google Sheets.")) return;
+  if(!_quitarConCola(_colaLleva("bio", function(){ return true; }), list.some(r => r && !r.synced), "el historial de Biomol", false,
+    "¿Borrar TODAS las "+list.length+" muestra(s) locales del historial Biomol (48 h)?\nNo afecta a lo ya enviado a Google Sheets.")) return;   // T6.6
   _bioSave([]);
   _bioSesSave({});
   _bioGridExtra = {};
@@ -21633,7 +21668,9 @@ function cancelAstEdit(){
 function deleteAstRecord(id){
   const r = loadAst().find(x => x.id === id);
   if(!r){ toast("Registro no encontrado","warn"); return; }
-  if(!confirm("¿Eliminar este registro del historial?\nNo afecta a lo ya enviado a Google Sheets.")) return;
+  // T6.6 (pauta 24-11) · decía «no afecta a lo ya enviado» también de lo NO enviado, y lo quitaba de la cola de hecho.
+  if(!_quitarConCola(_colaLleva("ast", function(k){ return k === String(id); }), !r.synced, "este registro", false,
+    "¿Eliminar este registro del historial?\nNo afecta a lo ya enviado a Google Sheets.")) return;
   removeAstById(id);
   if(_astEditing === id) _astEditing = null;
   renderAst();
@@ -28493,7 +28530,8 @@ function micDeleteSession(k){
   // Sheets NO se toca: el historial local es un registro de trabajo independiente.
   const list = _micRaw(); const rs = list.filter(r=> micSessionKey(r.data) === k);
   if(!rs.length) return;
-  if(!confirm("¿Eliminar esta sesión del historial local ("+rs.length+" muestra(s))?\nSolo se borra del sistema; lo ya enviado a Google Sheets NO se elimina.")) return;
+  if(!_quitarConCola(_colaLleva("mic", function(x){ return x === k; }), rs.some(r => !r.synced), "esta sesión", true,
+    "¿Eliminar esta sesión del historial local ("+rs.length+" muestra(s))?\nSolo se borra del sistema; lo ya enviado a Google Sheets NO se elimina.")) return;   // T7.8
   _micSave(list.filter(r=> micSessionKey(r.data) !== k));
   const _fuera = _labRetirarAnulDe("mic", rs, micSessionKey, function(a, b){ return a.departamento === b.departamento && a.formato === b.formato; });   // punto 5
   renderMicHist(); updateDots(); updateSyncUI(); buildGrid();
@@ -29865,7 +29903,8 @@ function calDeleteSession(k){
   // Sheets NO se toca.
   const list=_calRaw(); const rs=list.filter(r=> calSessionKey(r.data)===k);
   if(!rs.length) return;
-  if(!confirm("¿Eliminar esta sesión del historial local ("+rs.length+" muestra(s))?\nSolo se borra del sistema; lo ya enviado a Google Sheets NO se elimina.")) return;
+  if(!_quitarConCola(_colaLleva("cal", function(x){ return x === k; }), rs.some(r => !r.synced), "esta sesión", true,
+    "¿Eliminar esta sesión del historial local ("+rs.length+" muestra(s))?\nSolo se borra del sistema; lo ya enviado a Google Sheets NO se elimina.")) return;   // T7.8
   _calSave(list.filter(r=> calSessionKey(r.data)!==k));
   const _fuera = _labRetirarAnulDe("cal", rs, calSessionKey, function(a, b){ return a.departamento === b.departamento && a.formato === b.formato; });   // punto 5
   renderCalHist(); updateDots(); updateSyncUI(); buildGrid();
@@ -30492,7 +30531,8 @@ function patDeleteSession(k){
   // Sheets NO se toca.
   const list=_patRaw(); const rs=list.filter(r=> patSessionKey(r.data)===k);
   if(!rs.length) return;
-  if(!confirm("¿Eliminar esta sesión del historial local ("+rs.length+" muestra(s))?\nSolo se borra del sistema; lo ya enviado a Google Sheets NO se elimina.")) return;
+  if(!_quitarConCola(_colaLleva("pat", function(x){ return x === k; }), rs.some(r => !r.synced), "esta sesión", true,
+    "¿Eliminar esta sesión del historial local ("+rs.length+" muestra(s))?\nSolo se borra del sistema; lo ya enviado a Google Sheets NO se elimina.")) return;   // T7.8
   _patSave(list.filter(r=> patSessionKey(r.data)!==k));
   const _fuera = _labRetirarAnulDe("pat", rs, patSessionKey, function(){ return true; });   // punto 5 (en Patología la sesión es sólo su número)
   renderPatHist(); updateDots(); updateSyncUI(); buildGrid();
