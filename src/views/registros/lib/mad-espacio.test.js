@@ -582,6 +582,21 @@ describe('🔴 dejar una grilla con lo tecleado sin poder guardarse', () => {
       expect(preguntas).toHaveLength(2);
       expect(H.loadMadRecovery()).toBeTruthy();
     });
+
+    /* Bancos G15/G16 (re-anclaje del 26-11) · tras T3.9, el camino de la copia que NO cabe sólo se alcanza con «salir sin guardar»:
+       sin esta prueba quedaba sin vigilar. */
+    it('🔴 sin sitio: «salir sin guardar» avisa de que la copia no cabe, y quien sigue no vuelve a oír la pregunta', () => {
+      irASala('Sala 2');
+      lleno();
+      teclear(celda(), '7');
+      contestar(false, true, true);   // no guardar · salir sin guardar · seguir y perderlo
+      H.goBack();
+      expect(preguntas).toHaveLength(3);
+      expect(preguntas[2]).toMatch(/No hay espacio/);
+      H.setVista(H.MAD_MOD, 'tanques');
+      H.selTab('salas');
+      expect(preguntas).toHaveLength(3);
+    });
   });
 
   describe('📦 llevar la grilla a otra fecha sin sitio para escribir allí', () => {

@@ -3433,8 +3433,7 @@ function goBack(){
   // Lo de pantalla del AsT y de Traslado ya tiene su copia (arriba): no se pinta al volver al módulo, que abre con lo guardado.
   _astAlVolver = null; _trasAlVolver = null;
   _astFormDirty = false;
-  // 2026-09-24 · y el borrador de una ficha de formulario, si quedaba algo tecleado por guardar.
-  try{ if(isMadMod(curMod) && MAD_BORR_FICHAS[curTab]) madBorrGuardarYa(curTab); }catch(_){}
+  // 2026-09-24 · y el borrador de una ficha de formulario: se guarda al ENTRAR en goBack (T3.1, que pregunta si no cabe).
   if(_recTimer){ clearInterval(_recTimer); _recTimer = null; }
   _algEditingId = null;  // limpia modo edición Lab. Algas al salir del módulo
   _blancoState = null;   // limpia sandbox Blanco
