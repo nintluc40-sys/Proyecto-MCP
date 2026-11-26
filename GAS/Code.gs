@@ -22,7 +22,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "5007c3ce5249";
+const GAS_VERSION = "d0ce18f105a6";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -853,6 +853,7 @@ function upsertRows(ws, newRows, isCtrl) {
       // aplica igual fmtData(..., isCtrl) sobre el tramo, que es de donde salía ya en el append.
       // (Sin comillas invertidas: este bloque viaja dentro de la plantilla GAS() y una sola la cierra.)
       porEscribir.push({ fila: entry.row, datos: merged });
+      data[entry.idx] = merged;   // T8.7 (pauta 24-11) · otra fila de la MISMA llave en este envío se fusiona con esto, no con lo viejo
       updated++;
 
     } else if (pendingMap[k2] !== undefined) {
@@ -1580,6 +1581,7 @@ function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol, llave) {
       // B1 (2026-09-21) · la escritura se APARTA y se hace en bloque al final (ver escribirActualizadas_).
       // El Trovan a TEXTO y el "Número" a General siguen aplicándose: ahora sobre el tramo, no fila a fila.
       porEscribir.push({ fila: entry.row, datos: merged });
+      data[entry.idx] = merged;   // T8.7 (pauta 24-11) · como upsertAstRows: la siguiente de la misma llave parte de aquí
       updated++;
     } else if (pendingMap[k2] !== undefined) {
       var pi = pendingMap[k2];
@@ -1911,8 +1913,8 @@ function evReceive(obj) {
     // NO se aborta la subida (la foto queda guardada; solo no tendrá miniatura).
     try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (eSh) {}
     var url = file.getUrl();
-    _evLog(fecha, modulo, corrida, tanque, name, url, file.getId());
-    return { ok: true, url: url };
+    var anotada = _evLog(fecha, modulo, corrida, tanque, name, url, file.getId());
+    return { ok: true, url: url, anotada: anotada };
   } catch (err) {
     // Devuelve el motivo REAL (antes era genérico y ocultaba la causa). Lo más
     // común: la carpeta EV_FOLDER_ID no existe o no es accesible por la cuenta que
@@ -1954,7 +1956,8 @@ function _evLog(fecha, modulo, corrida, tanque, archivo, url, id) {
     var ws = ss.getSheetByName(EV_SHEET);
     if (!ws) { ws = ss.insertSheet(EV_SHEET); ws.appendRow(["Fecha", "Modulo", "Corrida", "Tanque", "Archivo", "URL", "FileId", "Hora"]); }
     ws.appendRow([fecha, modulo, corrida, tanque, archivo, url, id, new Date()]);
-  } catch (e) {}
+    return true;
+  } catch (e) { return false; }   // T8.6 (pauta 24-11) · ya no se traga: quien llama lo dice
 }
 // Página HTML del portal (servida por doGet). Sin backticks ni interpolación
 // del cliente; el cierre de script va escapado para no romper el archivo.
@@ -1995,7 +1998,7 @@ function evPortalPage(t, m) {
     + "var d=new Date(),z=function(n){return(n<10?'0':'')+n;};f.value=d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate());"
     + "function add(tx,c){var x=document.createElement('div');x.className='it '+(c||'');x.textContent=tx;log.appendChild(x);return x;}"
     + "function comp(file,cb){var im=new Image(),u=URL.createObjectURL(file);im.onload=function(){URL.revokeObjectURL(u);var mx=1600,w=im.width,hh=im.height;if(w>hh&&w>mx){hh=Math.round(hh*mx/w);w=mx;}else if(hh>=w&&hh>mx){w=Math.round(w*mx/hh);hh=mx;}var cv=document.createElement('canvas');cv.width=w;cv.height=hh;cv.getContext('2d').drawImage(im,0,0,w,hh);cb(cv.toDataURL('image/jpeg',0.75));};im.onerror=function(){cb(null);};im.src=u;}"
-    + "function up(list,i){if(i>=list.length){btn.disabled=false;btn.textContent='Subir';add('Listo ('+list.length+' foto/s). Puedes elegir mas.','ok');fi.value='';return;}var it=add('Subiendo '+(i+1)+'/'+list.length+'...');comp(list[i],function(durl){if(!durl){it.textContent='No se pudo procesar la foto '+(i+1);it.className='it er';up(list,i+1);return;}google.script.run.withSuccessHandler(function(r){if(r&&r.ok){it.textContent='Foto '+(i+1)+' subida';it.className='it ok';}else{it.textContent=((r&&r.error)||'Error')+' (foto '+(i+1)+')';it.className='it er';}up(list,i+1);}).withFailureHandler(function(){it.textContent='Fallo la foto '+(i+1)+' (revisa conexion)';it.className='it er';up(list,i+1);}).evReceive({token:EV_T,modulo:document.getElementById('m').value,fecha:f.value,corrida:document.getElementById('c').value,tanque:document.getElementById('t').value,dataB64:durl});});}"
+    + "function up(list,i){if(i>=list.length){btn.disabled=false;btn.textContent='Subir';add('Listo ('+list.length+' foto/s). Puedes elegir mas.','ok');fi.value='';return;}var it=add('Subiendo '+(i+1)+'/'+list.length+'...');comp(list[i],function(durl){if(!durl){it.textContent='No se pudo procesar la foto '+(i+1);it.className='it er';up(list,i+1);return;}google.script.run.withSuccessHandler(function(r){if(r&&r.ok){var na=(r.anotada===false);it.textContent='Foto '+(i+1)+(na?' subida a Drive, pero NO anotada en la hoja (no saldra en la galeria): avisa':' subida');it.className=na?'it er':'it ok';}else{it.textContent=((r&&r.error)||'Error')+' (foto '+(i+1)+')';it.className='it er';}up(list,i+1);}).withFailureHandler(function(){it.textContent='Fallo la foto '+(i+1)+' (revisa conexion)';it.className='it er';up(list,i+1);}).evReceive({token:EV_T,modulo:document.getElementById('m').value,fecha:f.value,corrida:document.getElementById('c').value,tanque:document.getElementById('t').value,dataB64:durl});});}"
     + "btn.onclick=function(){var fs=fi.files;if(!fs||!fs.length){alert('Elige al menos una foto');return;}if(!document.getElementById('c').value.trim()&&!confirm('Sin numero de corrida. Continuar?'))return;btn.disabled=true;btn.textContent='Subiendo...';log.innerHTML='';up(fs,0);};})();"
     + "<\/script></body></html>";
   return HtmlService.createHtmlOutput(h)

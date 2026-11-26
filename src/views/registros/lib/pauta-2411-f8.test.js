@@ -74,6 +74,24 @@ describe('T7.10 · la ubicación llega a su parada aunque la ficha se haya repin
       expect(H.leer('_trasModel').revisiones[0].ubicacion).toBe('-2.200000, -80.900000');
     } finally { fp.innerHTML = antes; Object.defineProperty(navigator, 'geolocation', { configurable: true, value: geo }); }
   });
+  it('🔴 si la parada sellada se QUITA mientras llega el GPS, no cae en otra (auditoría de B)', () => {
+    const fp = document.getElementById('fp-traslado');
+    const antes = fp.innerHTML;
+    fp.innerHTML = '<div class="tras-rev" data-rev="0"><input data-k="hora"><input data-k="ubicacion"><span data-geo-estado></span></div>';
+    let cb = null;
+    const geo = navigator.geolocation;
+    Object.defineProperty(navigator, 'geolocation', { configurable: true, value: { getCurrentPosition: (ok) => { cb = ok; } } });
+    H.poner('trasGeoDisponible', () => true);
+    H.poner('_trasModel', { revisiones: [{ rid: 'r1' }, { rid: 'r2' }] });
+    try {
+      H.trasSellarUbicacion(0);
+      fp.innerHTML = '';
+      H.leer('_trasModel').revisiones.splice(0, 1);   // se quitó la parada 1: la 2 pasa a ser la primera
+      cb({ coords: { latitude: -2.2, longitude: -80.9, accuracy: 5 } });
+      expect(H.leer('_trasModel').revisiones[0].ubicacion).toBeUndefined();
+      expect(avisos.join(' ')).toMatch(/La parada que se selló ya no está/);
+    } finally { fp.innerHTML = antes; Object.defineProperty(navigator, 'geolocation', { configurable: true, value: geo }); }
+  });
 });
 
 describe('T3.6 · enviar una ✏️ corrección no borra el borrador del día del envío corregido', () => {

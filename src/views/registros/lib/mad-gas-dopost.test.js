@@ -2162,3 +2162,20 @@ describe('GAS · 🔧 Mantenimiento · Trabajos y Lecturas (2026-10-28)', () => 
     expect(r.rows[0].Equipo).toBe('BLW-03');
   });
 });
+
+/* T8.7 (revisión del 15-11; pauta del 24-11) · upsertRows y upsertMadRows fusionaban cada fila contra lo que había ANTES en la hoja:
+   con dos filas de la MISMA llave en un envío, la segunda borraba lo que sólo traía la primera. Ahora la segunda parte de la primera. */
+describe('T8.7 · dos filas de la misma llave en un envío no se pisan', () => {
+  it('🔴 Maduración Lotes (upsertMadRows): las dos aportan lo suyo a la fila existente', () => {
+    const H_ = MAD_DESOVE_HEADERS;
+    const hoja = hojaFalsa([H_, conValores(H_, { Fecha: '2026-09-07', Lote: 'BP', 'Código genético': 'CG1', Desoves: 5 })]);
+    const g = gas({ 'Maduración Lotes': hoja });
+    const r = g.post({ sheetName: 'Maduración Lotes', headers: H_, rows: [
+      conValores(H_, { Fecha: '2026-09-07', Lote: 'BP', 'Código genético': 'CG1', 'Total de huevos': 100 }),
+      conValores(H_, { Fecha: '2026-09-07', Lote: 'BP', 'Código genético': 'CG1', 'Hembras no viables': 3 }),
+    ] });
+    expect(r.status).toBe('ok');
+    const fila = hoja.filas[1], col = (h) => fila[H_.indexOf(h)];
+    expect([col('Desoves'), col('Total de huevos'), col('Hembras no viables')]).toEqual([5, 100, 3]);
+  });
+});
