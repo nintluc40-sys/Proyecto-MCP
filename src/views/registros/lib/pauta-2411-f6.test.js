@@ -72,7 +72,7 @@ describe('T4.5 · Alimentación de otra fecha avisa de que animales y pesos son 
     H.poner('_madAlimPinta', (r) => { pintado = r; });
     H.poner('_madAlim', { incompleto: '', ts: Date.now() });
     expect(H._madAlimPreparar()).not.toBeNull();
-    expect(pintado.avisos.join(' ')).toMatch(/son los del libro de HOY \(leído el [^)]*\), no los del 0?1.0?1.20/);   // fecha ficticia
+    expect(pintado.avisos.join(' ')).toMatch(/son los del libro leído el [0-9/]+, no los del 0?1.0?1.20/);   // fecha ficticia
   });
 });
 

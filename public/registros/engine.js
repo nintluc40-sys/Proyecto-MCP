@@ -9205,7 +9205,9 @@ function _madResAdmDoc(R, sel, filtro, titulo){
   const mal=R.libro ? madLibroIncompleto(R.libro) : "";
   const avisos=((R.libro && R.libro.avisos) || []).filter(function(a){
     if(!filtro) return true;
-    return a[filtro.tipo]===filtro.nombre || String(a.texto||"").indexOf(filtro.nombre)!==-1;
+    // T3.8 (pauta 24-11) · el nombre ENTERO: «Sala 1» no debe casar con «Sala 10», ni un lote con otro que lo contenga.
+    const _esc = String(filtro.nombre).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return a[filtro.tipo]===filtro.nombre || new RegExp("(^|[^A-Za-z0-9])" + _esc + "(?![A-Za-z0-9])").test(String(a.texto||""));
   }).slice().sort(function(a,b){ return _madResOrden(b.fecha, a.fecha); });
   const lista=avisos.slice(0, MAD_RES_ADM_TOPE).map(function(a){ return '<li>'+escapeHtml(_madUpDMY(a.fecha))+' · '+escapeHtml(a.texto)+'</li>'; }).join("")
     + (avisos.length>MAD_RES_ADM_TOPE ? '<li class="mas">+ '+(avisos.length-MAD_RES_ADM_TOPE)+' más (el detalle completo, en «📒 Detalle del libro» del Saldo)</li>' : "");
@@ -10499,7 +10501,10 @@ function madLocDescartar(ficha, id){
    la del panel en pantalla, que son la misma salvo una fecha tecleada sin confirmar. */
 function _madBorrOlvidarPantalla(ficha, fecha){
   clearTimeout(_madBorrTm[ficha]); _madBorrTm[ficha] = null;   // 2026-09-24 · un guardado pendiente lo resucitaría
-  [fecha, _madBorrFecha[ficha]].forEach(function(d){ if(isValidDate(d)) madBorrOlvidar(ficha, d); });
+  /* T3.6 (revisión del 15-11; pauta del 24-11) · en una ✏️ corrección del 📜, `fecha` es la del envío corregido: su borrador es OTRO
+     (lo que se tecleaba ese día) y no se toca. Se olvida sólo el del panel, que es donde vivía la corrección. */
+  const _dias = _madHistCorrActiva(ficha) ? [_madBorrFecha[ficha]] : [fecha, _madBorrFecha[ficha]];
+  _dias.forEach(function(d){ if(isValidDate(d)) madBorrOlvidar(ficha, d); });
 }
 /* PE1.4 · lo que 💾 y ☁️ comparten: recoger, revisar y construir. null si hay errores (ya los pintó y avisó). */
 /* 2026-11-09 (pendiente 26; usuario: «Como en Movimientos») · LA IDENTIDAD DEL FORMULARIO, como _madMovAsegurarEnvio: va en el ID y se
@@ -15322,7 +15327,7 @@ function _madAlimAvisoDia(res, model, filas){
   const d = new Date(_madAlim.ts || Date.now()), p2 = function(n){ return ("0" + n).slice(-2); };
   const leido = d.getFullYear() + "-" + p2(d.getMonth() + 1) + "-" + p2(d.getDate());
   const dmy = function(x){ return String(x).split("-").reverse().join("/"); };
-  if(model.fecha !== leido) res.avisos.push("Los animales y los pesos son los del libro de HOY (leído el " + dmy(leido) + "), no los del " + dmy(model.fecha) + ". Revísalos o vuelve a leer con 🔄 antes de enviar.");
+  if(model.fecha !== leido) res.avisos.push("Los animales y los pesos son los del libro leído el " + dmy(leido) + ", no los del " + dmy(model.fecha) + ". Revísalos o vuelve a leer con 🔄 antes de enviar.");
   return res;
 }
 function _madAlimPreparar(conGuardados){
@@ -17394,7 +17399,7 @@ function renderMadSalas(){
         <div class="sa-info"><span>💾 Guarda para persistir las ${MAD_SALA_OPTS.length} salas y las zonas a la vez</span></div>
         <div class="sa-btns">
           <button class="btn bd" type="button" onclick="clearMadSalasGrid()" title="Borrar todos los registros de Salas y de las zonas del día seleccionado">🗑 Borrar día</button>
-          <button class="btn bpdf" type="button" onclick="downloadMadPDF('salas')" title="PDF con todos los registros visibles">📄 PDF</button>
+          <button class="btn bpdf" type="button" onclick="madGridPDFSalas()" title="PDF del día de la grilla">📄 PDF</button>
           ${madRecBtn}
           <button class="btn bs" type="button" onclick="saveMadSalasGrid()">💾 Guardar local</button>
           <button class="btn bp" type="button" onclick="syncMadSalasGrid()">☁️ Guardar y sincronizar</button>
@@ -18693,7 +18698,7 @@ function madGridPaste(ev, ficha){
   const maxC = Array.from(fp.querySelectorAll('[data-c]')).reduce((m, x) => Math.max(m, parseInt(x.getAttribute('data-c'),10) || 0), 0);
   let filasFuera = 0, colsFuera = 0;
   const conv = _stdConvencion([].concat.apply([], matrix));   // la pista de UN número vale para todo el bloque
-  let malos = 0;
+  let malos = 0, bloqueadas = 0, noPegables = 0;   // T5.5
   matrix.forEach((cells, dr) => {
     if(!filaExiste(r0+dr)){ filasFuera++; return; }
     if(c0 + cells.length - 1 > maxC) colsFuera = Math.max(colsFuera, c0 + cells.length - 1 - maxC);
@@ -18701,6 +18706,10 @@ function madGridPaste(ev, ficha){
       const el = fp.querySelector(`[data-r="${r0+dr}"][data-c="${c0+dc}"]`);
       if(!el) return;
       const val = String(raw).trim();
+      /* T5.5 (revisión del 15-11; pauta del 24-11) · una celda BLOQUEADA (tanque sin animales) no se escribe, y una multiselección
+         (las Obs. sanitarias: un <div> de casillas) no se pega: antes recibían el valor en silencio, o se perdía sin aviso. */
+      if(el.disabled){ if(val !== "") bloqueadas++; return; }
+      if(!('value' in el) || (el.tagName !== 'INPUT' && el.tagName !== 'SELECT' && el.tagName !== 'TEXTAREA')){ if(val !== "") noPegables++; return; }
       if(el.tagName === 'SELECT'){
         const opt = Array.from(el.options).find(o => o.value.toLowerCase()===val.toLowerCase() || o.text.toLowerCase()===val.toLowerCase());
         if(opt) el.value = opt.value;
@@ -18713,6 +18722,8 @@ function madGridPaste(ev, ficha){
     });
   });
   if(malos) toast("📋 " + malos + " celda(s) no eran números y no se pegaron", "warn", 5500);
+  if(bloqueadas) toast("📋 " + bloqueadas + " celda(s) caían en tanques bloqueados (sin animales) y no se pegaron", "warn", 5500);
+  if(noPegables) toast("📋 " + noPegables + " celda(s) caían en las Obs. (se eligen con sus casillas) y no se pegaron", "warn", 5500);
   if(filasFuera || colsFuera) toast("📋 Lo pegado no cabía en la grilla: "
     + [filasFuera ? filasFuera + " fila(s)" : "", colsFuera ? colsFuera + " columna(s) de la derecha" : ""].filter(Boolean).join(" y ")
     + " NO se pegaron." + (filasFuera ? (ficha === 'marea' ? " Mareas admite como mucho " + MAREA_GRID_MAX_ROWS + " filas." : " Agrega filas (➕) si la grilla lo permite y pega el resto.") : ""), "warn", 9000);
@@ -18789,6 +18800,15 @@ if(typeof document!=="undefined" && !window.__madKeyNav){
 }
 
 // ── PDF de la grilla: fija el filtro fecha+sala y reutiliza downloadMadPDF ──
+/* T5.4 (revisión del 15-11; auditoría de B) · el 📄 de Salas imprimía TODAS las fechas del equipo (y con el nombre de hoy): ahora, el
+   día de la grilla, como el de Tanques. El filtro se pone SÓLO para este PDF. */
+function madGridPDFSalas(){
+  const fechaEl = document.getElementById("mad-salas-fecha");
+  const fecha = (fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today();
+  const antes = _madFilters.salas;
+  _madFilters.salas = { fecha: fecha, sala: "" };
+  try{ downloadMadPDF("salas"); }finally{ _madFilters.salas = antes; }
+}
 function madGridPDF(ficha){
   const sala = _madTanquesSala;
   if(!sala){ toast("Selecciona una sala primero","warn",2500); return; }
@@ -25113,20 +25133,28 @@ function trasSellarUbicacion(idx){
     return;
   }
   if(estado) estado.textContent = "Buscando ubicación…";
+  /* T7.10 (revisión del 15-11; pauta del 24-11) · el GPS tarda: si entretanto la ficha se repintó o se pasó a otra parada, `box` quedaba
+     suelto del DOM y la ubicación se perdía. Al llegar se busca la parada DE NUEVO; si no está en pantalla, se escribe en el modelo. */
+  const sellar = (campos, txt) => {
+    const b = document.querySelector('#fp-traslado .tras-rev[data-rev="'+idx+'"]');
+    if(b){
+      Object.keys(campos).forEach(k => { const el = b.querySelector('[data-k="'+k+'"]:not([data-cam])'); if(el) el.value = campos[k]; });
+      const e = b.querySelector('[data-geo-estado]'); if(e && txt) e.textContent = txt;
+    } else if(_trasModel && Array.isArray(_trasModel.revisiones) && _trasModel.revisiones[idx]){
+      Object.assign(_trasModel.revisiones[idx], campos);
+    }
+    _trasMarkDirty();
+  };
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       const c = pos.coords || {};
       // ⚠ NADA de sanitizeStr aquí: la longitud es negativa y quedaría invertida.
-      set("lat", c.latitude);
-      set("lon", c.longitude);
-      set("precision", Math.round(c.accuracy || 0));
-      set("ubicacion", Number(c.latitude).toFixed(6) + ", " + Number(c.longitude).toFixed(6));
-      if(estado) estado.textContent = "Ubicación sellada (±" + Math.round(c.accuracy || 0) + " m).";
-      _trasMarkDirty();
+      sellar({ lat: c.latitude, lon: c.longitude, precision: Math.round(c.accuracy || 0),
+        ubicacion: Number(c.latitude).toFixed(6) + ", " + Number(c.longitude).toFixed(6) }, "Ubicación sellada (±" + Math.round(c.accuracy || 0) + " m).");
     },
     (err) => {
       // Sin señal en carretera es lo NORMAL: se registra y se sigue. Jamás bloquea.
-      set("ubicacion", "sin señal");
+      sellar({ ubicacion: "sin señal" }, "");
       if(estado) estado.textContent = "Hora sellada. Sin ubicación (" + trasTxt(err && err.message ? err.message : "no disponible") + ").";
       toast("Hora sellada. No se pudo obtener la ubicación; el Lugar se registra a mano.","warn",4500);
     },

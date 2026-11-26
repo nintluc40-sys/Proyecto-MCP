@@ -1724,7 +1724,9 @@ const UBIC = TRAS.indexOf('Ubicación') + 1;               // columna de la hoja
 /* El texto EXACTO que escribe la app al sellar la ubicación, sacado de engine.js: si la app cambia de
    formato, el patrón del GAS tiene que cambiar con ella, y esta prueba lo dice. */
 const ubicacionDeLaApp = (() => {
-  const m = engineSrc.match(/set\("ubicacion", (Number\(c\.latitude\)[^;]*)\);/);
+  // T7.10 (pauta del 24-11) · desde entonces se sella con `sellar({ …, ubicacion: … })`; la forma vieja, por si vuelve.
+  const m = engineSrc.match(/ubicacion: (Number\(c\.latitude\)\.toFixed\(6\) \+ ", " \+ Number\(c\.longitude\)\.toFixed\(6\))/)
+    || engineSrc.match(/set\("ubicacion", (Number\(c\.latitude\)[^;]*)\);/);
   if (!m) throw new Error('no encuentro en engine.js cómo se sella la Ubicación');
   return (lat, lon) => new Function('c', 'return ' + m[1])({ latitude: lat, longitude: lon });
 })();

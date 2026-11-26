@@ -46,7 +46,6 @@ beforeEach(() => {
   window.confirm = (m) => { preguntas.push(String(m)); return true; }; globalThis.confirm = window.confirm;
 });
 const encolar = (kind, keys) => H._enqueueSync({ sheetName: 'Hoja ficticia', rows: [['x', keys.join(',')]] }, 'req-' + kind + keys.join(), URL, { kind, keys });
-const enCola = () => avisos.join(' ').includes('espera en la cola') || avisos.join(' ').includes('esperan en la cola') || avisos.join(' ').includes('que espera en la cola');
 
 describe('T6.6 · As. Técnico', () => {
   it('🔴 con su envío en la cola, no se quita y se dice (sin preguntar)', () => {
