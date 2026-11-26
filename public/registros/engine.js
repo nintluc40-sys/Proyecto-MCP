@@ -3036,10 +3036,24 @@ function _esDiaIso(d){ return /^\d{4}-\d{2}-\d{2}$/.test(String(d || "")); }
 function _diaCorto(d){ const p = String(d).split("-"); return p.length === 3 ? p[2] + "/" + p[1] : String(d); }
 function _algHistVacia(k){ let l = null; try{ l = JSON.parse(localStorage.getItem(k)); }catch(_){} return !Array.isArray(l) || !l.length; }
 /** Fichas de Larvicultura del módulo `m` guardadas en días ANTERIORES y sin enviar: [{ key, ficha, dia, e }], de la más vieja. */
+/** ¿Hay una copia MÁS NUEVA (guardada otro día después) de la misma ficha con la misma fecha de ficha? */
+function _previaSuperada(pre, f, d, e){
+  const fecha = e && e.data && e.data.fecha;
+  if(!fecha) return false;
+  for(let i = 0; i < localStorage.length; i++){
+    const k = localStorage.key(i);
+    if(!k || !k.startsWith(pre + f + "_")) continue;
+    const d2 = k.slice((pre + f + "_").length);
+    if(!_esDiaIso(d2) || d2 <= d) continue;
+    let o = null; try{ o = JSON.parse(localStorage.getItem(k)); }catch(_){}
+    if(o && o.data && o.data.fecha === fecha && (Number(o.updatedAt) || 0) >= (Number(e.updatedAt) || 0)) return true;
+  }
+  return false;
+}
 function _previasFichas(m){
   const out = [];
   if(!isValidMod(m) || !isStdMod(m)) return out;   // ⚠ isStdMod son negaciones: también es «true» con un módulo nulo
-  const hoy = today(), pre = PRE + mLabel(m) + "_";
+  const hoy = today(), pre = PRE + mLabel(m) + "_", superadas = [];
   for(let i = 0; i < localStorage.length; i++){
     const k = localStorage.key(i);
     if(!k || !k.startsWith(pre)) continue;
@@ -3049,8 +3063,13 @@ function _previasFichas(m){
     if(!_esDiaIso(d) || d >= hoy || (FICHAS.indexOf(f) === -1 && f !== "desinfeccion")) continue;
     let e = null; try{ e = JSON.parse(localStorage.getItem(k)); }catch(_){}
     if(!e || e.mod !== m || e.ficha !== f || e.synced || !e.data || typeof e.data !== "object" || Array.isArray(e.data)) continue;
+    /* T1.4 (revisión del 15-11; pauta del 24-11, usuario: «La nueva manda; la vieja no sale») · guardada a las 23:59 y corregida a
+       las 00:01 con la MISMA fecha de ficha, quedan dos copias (la clave lleva el día del guardado). La vieja no se ofrece ni se envía
+       —saldría encima de la corrección— y se retira del equipo. */
+    if(_previaSuperada(pre, f, d, e)){ superadas.push(k); continue; }   // se retiran al terminar: quitar mientras se recorre por índice salta claves
     out.push({ key:k, ficha:f, dia:d, e:e });
   }
+  superadas.forEach(function(k){ try{ localStorage.removeItem(k); _invalidateLoadE(k); }catch(_){} });
   return out.sort(function(a, b){ return a.dia < b.dia ? -1 : a.dia > b.dia ? 1 : (a.ficha < b.ficha ? -1 : 1); });
 }
 /** Registros de Lab. Algas de días ANTERIORES que siguen en su historial (= sin enviar): [{ key, dia, lista }]. */
@@ -3799,9 +3818,21 @@ function _numerosMalos(root){
   el.querySelectorAll('input[type="number"]').forEach(function(i){
     const mal = !!(i.validity && i.validity.badInput);
     if(i.classList) i.classList.toggle("inp-bad", mal);
-    if(mal){ const lab = i.closest(".mf") && i.closest(".mf").querySelector("label"); malos.push((lab && lab.textContent.trim()) || i.name || "un campo"); }
+    if(mal) malos.push(_nombreDeCampo(i));
   });
   return malos;
+}
+function _nombreDeCampo(i){
+  const lab = i.closest(".mf") && i.closest(".mf").querySelector("label");
+  if(lab && lab.textContent.trim()) return lab.textContent.trim();
+  const td = i.closest("td"), tr = td && td.parentElement, tabla = td && td.closest("table");
+  if(td && tabla){   // en una tabla: «columna · fila» (las fichas de Larvicultura no tienen <label>)
+    const fila0 = tabla.querySelector("thead tr:last-child") || tabla.querySelector("tr");
+    const th = fila0 && fila0.children[td.cellIndex];
+    const col = th ? th.textContent.trim() : "", row = tr && tr.firstElementChild && tr.firstElementChild !== td ? tr.firstElementChild.textContent.trim() : "";
+    if(col || row) return [col, row].filter(Boolean).join(" · ");
+  }
+  return i.getAttribute("aria-label") || i.title || i.name || "un campo";
 }
 function _avisoNumerosMalos(malos, que){
   if(!malos.length) return false;
@@ -12681,9 +12712,19 @@ function _madDesPinta(res, filas){
   box.innerHTML=h;
   _madReporteVigila("fp-desoves", "md-report");
 }
+/* T4.3 (revisión del 15-11; pauta del 24-11) · una fecha SECUNDARIA imposible (N2, N5, aplicación: 31/11) llega vacía del navegador y la
+   recogida ponía en su lugar la de oficio, sin avisar. Ahora es un error, como la fecha principal (punto 27). Va aquí y no en madXValidar,
+   que tiene su gemelo en el módulo (paridad). */
+function _madFechasSecMalas(res, sel, que){
+  let n = 0;
+  document.querySelectorAll(sel).forEach(function(el){ const mal = !!(el.validity && el.validity.badInput); if(el.classList) el.classList.toggle("inp-bad", mal); if(mal) n++; });
+  if(n) res.errores.push(que + " no existe (revisa el día y el mes)" + (n > 1 ? ": hay " + n + "." : "."));
+  return res;
+}
 function madDesRevisar(){
   const model=madDesCollect();
   const res=_madFechaPosterior(madDesValidar(model), model.fecha);   // punto 46 (la del desove; las de N2/N5 son futuras por naturaleza)
+  _madFechasSecMalas(res, "#fp-desoves .md-fn2, #fp-desoves .md-fn5", "Una «Fecha N2» o «Fecha N5»");   // T4.3
   _madDesPinta(res, madDesBuildRows(model).length);
   return _madRevisarRemata("md-report", res, MAD_DESOVE_SHEET);
 }
@@ -12762,6 +12803,7 @@ function madDesLogHTML(){
 function _madDesPreparar(conGuardados){
   const model=madDesCollect();
   const res=_madFechaPosterior(madDesValidar(model), model.fecha);   // punto 46 (la del desove; las de N2/N5 son futuras por naturaleza)
+  _madFechasSecMalas(res, "#fp-desoves .md-fn2, #fp-desoves .md-fn5", "Una «Fecha N2» o «Fecha N5»");   // T4.3
   const payload=buildMadDesovePayload(model);
   // Con envíos guardados con 💾, una pantalla SIN filas no es un error: ☁️ envía lo guardado y lo de pantalla se queda.
   if(conGuardados && !payload.rows.length) return { model:model, payload:payload };
@@ -13544,6 +13586,7 @@ function _madFinPinta(res, filas){
 function madFinRevisar(){
   const model=madFinCollect();
   const res=_madFechaPosterior(madFinValidar(model), model.fecha);   // punto 46
+  _madFechasSecMalas(res, "#fp-fin .mf-mbsf", "Una «Fecha aplicación»");   // T4.3
   _madFinPinta(res, madFinBuildRows(model).length);
   return _madRevisarRemata("mf-report", res, MAD_FIN_SHEET);
 }
@@ -13653,6 +13696,7 @@ function _madFinPreparar(conGuardados){
   _madFinAsegurarEnvio();   // pendiente 26 · el ID lleva la identidad del formulario
   const model=madFinCollect();
   const res=_madFechaPosterior(madFinValidar(model), model.fecha);   // punto 46
+  _madFechasSecMalas(res, "#fp-fin .mf-mbsf", "Una «Fecha aplicación»");   // T4.3
   const payload=buildMadFinPayload(model);
   // Con envíos guardados con 💾, una pantalla SIN filas no es un error: ☁️ envía lo guardado y lo de pantalla se queda.
   if(conGuardados && !payload.rows.length) return { model:model, payload:payload };
@@ -15228,6 +15272,9 @@ function _madAlimPreparar(conGuardados){
   if(conGuardados && !payload.rows.length) return { model:model, payload:payload };
   /* Punto 4 de la pauta del 24-11 (usuario: «No dejar enviar», como Laboratorio) · con el libro leído INCOMPLETO los animales
      pueden quedarse cortos: ni se guarda ni se envía lo de pantalla hasta releer con 🔄 Leer y que llegue entero. */
+  /* T4.5 (revisión del 15-11; pauta del 24-11, usuario: «Avisar y dejar seguir») · el saldo y los pesos se leen del libro de HOY: con
+     otra fecha, los animales y pesos no son los de ese día (y los pesos cuentan luego como la biometría de ese día). Se avisa. */
+  if(payload.rows.length && _madAlim && model.fecha && model.fecha !== today()) res.avisos.push("La fecha no es hoy: los animales y los pesos son los del libro de HOY, no los del " + String(model.fecha).split("-").reverse().join("/") + ". Revísalos antes de enviar.");
   if(payload.rows.length && _madAlim && _madAlim.incompleto){ res.errores.push("El libro llegó INCOMPLETO ("+_madAlim.incompleto+"): los animales pueden quedarse cortos. Vuelve a leer las hojas y, cuando llegue entero, guarda."); }
   _madAlimPinta(res, payload.rows.length);
   if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return null; }
@@ -15764,6 +15811,8 @@ function _madBsRevision(){
     const L=h.lectura, v=madBsValidar(L), et="«"+String(L.nombre).trim()+"» ("+(L.fechaCorte||"sin corte")+"): ";
     L.errores.concat(v.errores).forEach(function(e){ errores.push(et+e); });
     L.avisos.concat(v.avisos).forEach(function(a){ avisos.push(et+a); });
+    // T4.6 (revisión del 15-11; pauta del 24-11) · una fecha de corte posterior a hoy no se sube (punto 46, como las demás fichas).
+    { const _fut = L.fechaCorte ? _fechaPosterior(L.fechaCorte) : ""; if(_fut) errores.push(et + "la fecha de corte " + _fut.replace(/^la fecha /, "")); }
   });
   return { errores:errores, avisos:avisos };
 }
@@ -18759,6 +18808,7 @@ function _collectTanquesGrid(salaOverride, fechaOverride){
 }
 const _MAD_TQ_CONTEO_NOMBRE = { machos_muertos:"Machos muertos", hembras_muertas:"Hembras muertas", machos_descarte:"Machos descarte",
   hembras_descarte:"Hembras descarte", copulas:"Cópulas", muda:"Muda" };
+const _MAD_TQ_PESO_NOMBRE = { peso_machos:"Peso machos", peso_hembras:"Peso hembras" };   // F5 (auditoría de B) · el aviso dice el nombre, no la clave
 
 /* ── EL PARTE DE LA RONDA (usuario, 2026-09-17) ───────────────────────────────
    «Se recogen mortalidades 5 veces al día… lo que hacen es en una hoja ir llenando poco a poco lo que
@@ -18919,7 +18969,7 @@ function saveMadTanquesGrid(opts){
   const _inv = rows.invalidos || [];
   if(_inv.length){
     const _it = _inv[0];
-    const _msg = sala + " · tanque " + _it.tanque + ": «" + (String(_it.valor).trim() || "?") + "» en " + (_MAD_TQ_CONTEO_NOMBRE[_it.k] || _it.k)
+    const _msg = sala + " · tanque " + _it.tanque + ": «" + (String(_it.valor).trim() || "?") + "» en " + (_MAD_TQ_CONTEO_NOMBRE[_it.k] || _MAD_TQ_PESO_NOMBRE[_it.k] || _it.k)
       + (_MAD_TQ_CONTEO_NOMBRE[_it.k] ? " no es un conteo (un número entero, de 0 en adelante)." : " no es un peso válido (un número de 0 en adelante).") + (_inv.length > 1 ? " Y " + (_inv.length - 1) + " celda(s) más." : "");
     if(!silent){ toast(_msg + " Corrígelo antes de guardar.", "err", 6500); opts.cancelado = true; return 0; }
     toast(_msg + " Esa celda NO se guardó; el resto sí.", "warn", 6500);
@@ -23746,6 +23796,8 @@ function audValidar(d){
     if(!fecha(c.fecha) || !c.modulo || !_audTq(c.tanque) || !(audEntero(c.cantidad) > 0))
       err.push(n + ": faltan fecha, módulo, tanque o cantidad");
     const x = audDecimal(c.plg); if(c.plg !== "" && c.plg != null && !(x > 0)) err.push(n + ": PL/g fuera de rango");
+    // F5 (auditoría de B) · la facturada y las tinas son ENTEROS: con decimales se rechazan (audEntero da NaN), no se envían vacías.
+    ["facturada", "tinas"].forEach(function(kk){ if(c[kk] !== "" && c[kk] != null && Number.isNaN(audEntero(c[kk]))) err.push(n + ": " + (kk === "tinas" ? "las tinas" : "la facturada") + " lleva decimales («" + c[kk] + "»): tiene que ser un entero"); });
     const k = audRowId("cosechas", m, c); if(vistos.has(k)) err.push(n + ": esa partida del tanque ya está"); vistos.add(k);
   });
   return err;
