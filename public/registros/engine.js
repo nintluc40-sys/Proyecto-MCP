@@ -3323,6 +3323,7 @@ function enter(){
 }
 
 function goBack(){
+  if(_blancoEditado() && !confirm(BLANCO_SIN_ENVIAR)) return;   // T8.4 (pauta 24-11)
   /* 2026-11-05 (pauta A7, usuario: «Preguntar») · Salir no guarda la grilla: deja su copia de recuperación. Sin sitio tampoco para ella,
      lo tecleado se perdería: se pregunta. Quien sigue ya lo da por perdido: no se le vuelve a preguntar al volver. */
   /* T3.9 (revisión del 15-11; pauta del 24-11, usuario: «Preguntar antes de salir») · con la grilla tecleada sin guardar, la copia ↩ caduca
@@ -3517,6 +3518,7 @@ function selTab(t){
   if(curTab === "biomol" && isBioMod(curMod)){ try{ if(_bioGridDirty) saveBioGrid({ silent:true, noRender:true }); }catch(_){} }
   // 2026-11-12 (punto 1) · As Técnico y Traslado: lo que hay en pantalla, para pintarlo al volver (no guarda ni envía nada).
   if(isAstMod(curMod)) _astTrasAlSalir();
+  _blancoTomarPantalla();   // T8.4 (pauta 24-11) · al volver, Blanco se pinta con lo corregido, no con la copia original
   curTab = t;
   closeHistMenu();
   document.querySelectorAll(".ftab").forEach(b=>b.classList.toggle("on",b.dataset.f===t));
@@ -11811,10 +11813,17 @@ async function madMovGuardar(){ return _madGridBloqueada("fp-movimientos", async
   let _p=_madMovPreparar(_loc>0); if(!_p) return;
   if(!_p.payload.rows.length && !_loc){ toast("No hay ningún tramo completo que guardar.","warn",4000); return; }
   // Se pregunta ANTES de enviar nada: «Cancelar» tampoco envía lo guardado. Una corrección reemplaza su propia fila: de ésa no se pregunta.
-  const _aMirar=(_madHistCorrActiva("movimientos") ? [] : _p.payload.rows).concat(_loc ? _madMovFilasGuardadas() : []);
+  const _corrAntes=_madHistCorrActiva("movimientos");   // T4.8 · la de ANTES de esperar a la hoja
+  const _aMirar=(_corrAntes ? [] : _p.payload.rows).concat(_loc ? _madMovFilasGuardadas() : []);
   if(!(await _madMovConfirmarRepetidos(_aMirar))){ _madMovNoEnviado(); return; }
   // Leer la hoja puede tardar hasta 15 s: sale lo que se ve ahora, no lo de antes de esperar.
+  /* T4.8 (revisión del 15-11; pauta del 24-11) · pero si en la espera se abrió (o se cerró) una ✏️ corrección del 📜 en esta ficha,
+     ya no es el mismo envío: saldría esa corrección en lugar del movimiento nuevo, diciendo «registrado». No sale nada. */
   _p=_madMovPreparar(_loc>0); if(!_p) return;
+  if(_madHistCorrActiva("movimientos")!==_corrAntes){
+    toast("⚠ Mientras se comprobaba la hoja cambió lo que hay en Movimientos (¿se abrió ✏️ Editar del 📜?). No se envió nada: revísalo y vuelve a pulsar ☁️.","warn",8000);
+    return;
+  }
   const model=_p.model, payload=_p.payload;
   // PE1.4 · primero lo guardado con 💾 (lo más viejo antes); si algo falla, lo de pantalla tampoco sale.
   if(_loc && (await _madLocEnviar("movimientos")).fallo) return;
@@ -18682,7 +18691,7 @@ function madTanquesReabrirParte(){
   const fechaEl = document.getElementById("mad-tanques-fecha");
   const fecha = (fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today();
   if(!sala) return;
-  _madCommitActive();
+  if(!_madGridSePuedeDejar()) return;   // T5.6 (pauta 24-11) · si lo tecleado no se pudo guardar, se pregunta como al dejar la grilla
   const list = loadMad("tanques");
   if(_madParteAbierto(list, fecha, sala)){ toast("Ya hay un parte abierto: guárdalo antes de reabrir otro.","warn",4000); return; }
   const ultimo = _madParteSiguiente(list, fecha, sala) - 1;
@@ -21135,7 +21144,9 @@ function renderBiomol(){
   // columnas sin obligar a guardar antes). Se consume una vez y se limpia.
   const enCurso = _bioPintarCon; _bioPintarCon = null;
   const datosDe = (fila) => {
-    if(enCurso && enCurso[String(fila)]) return enCurso[String(fila)];
+    /* T6.2 (revisión del 15-11; pauta del 24-11) · repintando con lo de PANTALLA, una fila que no viene es una fila VACÍA en
+       pantalla (el analista la vació): antes volvía con lo guardado y, al guardar o enviar, la hoja recuperaba la fila quitada. */
+    if(enCurso) return enCurso[String(fila)] || {};
     const r = byFila[String(fila)];
     return (r && r.data) || {};
   };
@@ -25901,7 +25912,14 @@ function trasHistRevisar(id){
   const rec = list.find(r => r && String(r.id) === String(id));
   if(!rec){ toast("Ese traslado ya no está en el dispositivo","warn",4000); trasHistAbrir(); return; }
   if(String(id) === String(_trasViajeActivo)){ trasHistCerrar(); return; }
-  if(_trasFormDirty){
+  /* T7.2 (revisión del 15-11; pauta del 24-11) · _trasFormDirty se apaga en cada repintado interno (añadir camión, pasar de
+     parada, marcar un insumo…): tras uno de ellos, «Revisar» cambiaba de viaje en silencio y lo tecleado se perdía. Se mira
+     también si lo de pantalla difiere de lo GUARDADO (como trasRevSinGuardar). */
+  let _trasSucio = _trasFormDirty;
+  if(!_trasSucio){
+    try{ const p = collectTraslado(), g = (trasRegistroActivo() || {}).data || null; _trasSucio = trasTieneDatos(p) && JSON.stringify(p) !== JSON.stringify(g); }catch(_){}
+  }
+  if(_trasSucio){
     const seguir = confirm("El traslado abierto tiene cambios SIN guardar.\n\n"
       + "Aceptar = guardarlos y abrir el otro.\nCancelar = quedarse donde estás.");
     if(!seguir) return;
@@ -33316,10 +33334,12 @@ function histEdit(id){
   closeHistMenu();
   const h = getHistEntry(curMod, id);
   if(!h){ toast("Registro no encontrado","warn"); return; }
+  if(_blancoEditado() && !confirm(BLANCO_SIN_ENVIAR)) return;   // T8.4
   // Carga en Blanco en lugar de sobrescribir la ficha activa.
   _blancoState = { ficha: h.ficha, histId: id, data: Object.assign({}, h.data) };
   selTab("blanco");
   renderBlanco();
+  try{ _blancoState.orig = collectBlanco(); }catch(_){}   // T8.4 · la forma recogida del registro intacto
   toast("📝 Registro cargado en Blanco · edita y sincroniza sin afectar las fichas del día","ok",5000);
 }
 
@@ -33899,6 +33919,22 @@ function _renderBlancoDespacho(fp, d, _tqn, tec, _corrida, fecha, lbl){
   // así el técnico puede corregir un registro histórico sin que se sobrescriban.
 }
 
+/* T8.4 (revisión del 15-11; pauta del 24-11) · las correcciones tecleadas en 📝 Blanco se perdían sin aviso: al volver a su pestaña
+   (se repintaba desde la copia ORIGINAL del Historial), al salir del módulo, al cargar otro registro o con «🗑 Vaciar». Ahora lo de
+   pantalla se toma al dejar la pestaña, y salir, cargar otro o vaciar con correcciones sin enviar PREGUNTA. «Editado» se compara con
+   lo que la ficha recogió al cargarse (_blancoState.orig), en la misma forma, para no preguntar por un registro intacto. */
+function _blancoTomarPantalla(){
+  if(!_blancoState || curTab !== "blanco") return;
+  try{ const d = collectBlanco(); if(d) _blancoState.data = Object.assign({}, _blancoState.data, d); }catch(_){}
+}
+function _blancoEditado(){
+  if(!_blancoState || !_blancoState.orig) return false;
+  _blancoTomarPantalla();
+  const actual = {};
+  Object.keys(_blancoState.orig).forEach(function(k){ actual[k] = _blancoState.data[k] == null ? "" : _blancoState.data[k]; });
+  return JSON.stringify(actual) !== JSON.stringify(_blancoState.orig);
+}
+const BLANCO_SIN_ENVIAR = "📝 Blanco tiene correcciones SIN ENVIAR: si sigues, se pierden.\n\nAceptar = seguir y perderlas.\nCancelar = quedarte, con lo tecleado (☁️ las envía).";
 function collectBlanco(){
   if(!_blancoState) return null;
   const fp = document.getElementById("fp-blanco");
@@ -33967,6 +34003,7 @@ async function syncBlanco(){
 }
 
 function clearBlanco(){
+  if(_blancoEditado() && !confirm(BLANCO_SIN_ENVIAR)) return;   // T8.4
   _blancoState = null;
   renderBlanco();
   toast("Blanco vaciado","ok",2000);
