@@ -11,7 +11,7 @@ const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['pruneAlgLog', 'saveCSData', 'madAlimCfgGuardar', '_scoreGuardarBorrador', 'micAddRow', 'calToggleCol', 'micTypeToggle',
   'editAlgHistEntry', 'bioFechaChange', 'selTab', 'bioSesCrear', 'bioSes', 'bioSidActivo', 'madBorrGuardar', 'madBorrTodo',
-  '_madBorrSoltarViejos', 'madAlimGuardar', 'madBorrFechaChange', 'MAD_BORR_FICHAS', 'MAD_BORR_MAX', 'today'];
+  '_madBorrSoltarViejos', 'madAlimGuardar', 'madBorrFechaChange', 'goBack', '_bioSesSave', 'MAD_BORR_FICHAS', 'MAD_BORR_MAX', 'today'];
 const H = {};
 const avisos = [];
 
@@ -228,5 +228,24 @@ describe('T3.1 · cambiar la fecha de un formulario de Maduración sin poder gua
     expect(preguntas[1]).toMatch(/No hay espacio en este equipo para guardar lo tecleado en esta ficha/);
     expect(document.getElementById(cfg.fecha).value).toBe('2026-11-20');
     expect(restaura).toBe(0);
+  });
+});
+
+describe('matices de la auditoría de B (F2)', () => {
+  it('🔴 T6.5 · lo de memoria (más nuevo) gana a lo guardado', () => {
+    const F = '2026-11-20';
+    localStorage.setItem(H.leer('BIO_SES_KEY'), JSON.stringify({ s1: { fecha: F, nombre: 'viejo', creado: 1 } }));
+    H.poner('_lsSet', () => false);
+    H._bioSesSave({ s1: { fecha: F, nombre: 'nuevo', creado: 1 } });
+    expect(H.bioSes('s1').nombre).toBe('nuevo');
+  });
+  it('🔴 T3.1 · salir con el formulario sin poder guardarse pregunta, y Cancelar no sale', () => {
+    const preguntas = [];
+    window.confirm = (m) => { preguntas.push(m); return false; }; globalThis.confirm = window.confirm;
+    H.poner('curMod', H.leer('MAD_MOD')); H.poner('curTab', 'ingreso');
+    H.poner('madBorrGuardarYa', () => false);
+    H.goBack();
+    expect(preguntas[0]).toMatch(/Aceptar = salir y PERDERLO/);
+    expect(H.leer('curTab')).toBe('ingreso');
   });
 });

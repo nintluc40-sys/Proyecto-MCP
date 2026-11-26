@@ -3361,6 +3361,8 @@ function enter(){
 
 function goBack(){
   if(_blancoEditado() && !confirm(BLANCO_SIN_ENVIAR)) return;   // T8.4 (pauta 24-11)
+  // T3.1 (auditoría de B) · un formulario de Maduración tecleado que no cabe: salir lo perdía tras el aviso; ahora se pregunta, como en las grillas.
+  try{ if(isMadMod(curMod) && MAD_BORR_FICHAS[curTab] && !madBorrGuardarYa(curTab) && !confirm(MAD_BORR_SALIR_SIN_ESPACIO)) return; }catch(_){}
   /* 2026-11-05 (pauta A7, usuario: «Preguntar») · Salir no guarda la grilla: deja su copia de recuperación. Sin sitio tampoco para ella,
      lo tecleado se perdería: se pregunta. Quien sigue ya lo da por perdido: no se le vuelve a preguntar al volver. */
   /* T3.9 (revisión del 15-11; pauta del 24-11, usuario: «Preguntar antes de salir») · con la grilla tecleada sin guardar, la copia ↩ caduca
@@ -11171,10 +11173,11 @@ function madBorrOlvidar(ficha, fecha){
 }
 /** Guarda YA lo pendiente tras teclear (al salir de la pestaña, al volver atrás). SÓLO si se tecleó: una ficha sin
  *  tocar no se guarda nunca, porque pisaría el borrador que tuviera su día (R1, 2026-09-24). */
-function madBorrGuardarYa(ficha){
-  if(!MAD_BORR_FICHAS[ficha]) return;
+function madBorrGuardarYa(ficha){   // true si no quedó nada sin guardar
+  if(!MAD_BORR_FICHAS[ficha]) return true;
   clearTimeout(_madBorrTm[ficha]); _madBorrTm[ficha] = null;
-  if(_madBorrTocado[ficha] && !madBorrGuardar(ficha, _madBorrFecha[ficha])) _avisoSinSitio("el borrador de la ficha de Maduración");   // T3.1
+  if(_madBorrTocado[ficha] && !madBorrGuardar(ficha, _madBorrFecha[ficha])){ _avisoSinSitio("el borrador de la ficha de Maduración"); return false; }   // T3.1
+  return true;
 }
 /* El panel se escucha UNA vez: el listener va en el contenedor, que sobrevive a los `innerHTML`. Cada cambio que no sea
    el de la fecha marca la ficha como tocada y programa su guardado; la fecha tiene su propia asa (madBorrFechaChange). */
@@ -11186,7 +11189,7 @@ function _madBorrEscuchar(ficha){
     if(ev && ev.target && ev.target.id === cfg.fecha) return;
     _madBorrTocado[ficha] = true;
     clearTimeout(_madBorrTm[ficha]);
-    _madBorrTm[ficha] = setTimeout(function(){ _madBorrTm[ficha] = null; madBorrGuardar(ficha, _madBorrFecha[ficha]); }, MAD_BORR_ESPERA_MS);
+    _madBorrTm[ficha] = setTimeout(function(){ _madBorrTm[ficha] = null; if(!madBorrGuardar(ficha, _madBorrFecha[ficha])) _avisoSinSitio("el borrador de la ficha de Maduración"); }, MAD_BORR_ESPERA_MS);
   };
   fp.addEventListener("input", alTeclear);
   fp.addEventListener("change", alTeclear);
@@ -11358,6 +11361,8 @@ function _madBorrAdaptar(ficha, fp, dia){
  *  tecleado, lo LLEVA al día elegido si es trabajo nuevo y ese día no tiene nada; si no, pregunta (2026-09-24). */
 const MAD_BORR_SIN_ESPACIO = "⚠ No hay espacio en este equipo para guardar lo tecleado en esta ficha.\n\nAceptar = cambiar de fecha y PERDERLO."
   + "\nCancelar = quedarte en la fecha de antes, con lo tecleado: ☁️ lo envía, o libera espacio en ⚙ Config (🧹).";   // T3.1
+const MAD_BORR_SALIR_SIN_ESPACIO = "⚠ No hay espacio en este equipo para guardar lo tecleado en esta ficha.\n\nAceptar = salir y PERDERLO."
+  + "\nCancelar = quedarte, con lo tecleado: ☁️ lo envía, o libera espacio en ⚙ Config (🧹).";
 function madBorrFechaChange(ficha){
   const cfg = MAD_BORR_FICHAS[ficha];
   if(!cfg) return;
@@ -11365,6 +11370,7 @@ function madBorrFechaChange(ficha){
   if(!f) return;
   const nueva = f.value;
   const previa = _madBorrFecha[ficha];
+  const _autoAntes = _madBorrAuto[ficha];   // «quedarse» (T3.1) la devuelve
   if(isValidDate(nueva) && previa !== nueva) _madBorrAuto[ficha] = (nueva === today()) ? nueva : null;   // T3.3 · elegida a mano: ya no es «de la app»
   /* Una fecha A MEDIO TECLEAR llega aquí vacía. Ni se guarda ni se trae, y sobre todo NO se
      toca `_madBorrFecha`: perder el último día válido haría que la siguiente fecha entera ya no
@@ -11394,7 +11400,7 @@ function madBorrFechaChange(ficha){
     }
     /* T3.1 (revisión del 15-11; pauta del 24-11) · sin espacio para el borrador del día que se deja, cambiar de fecha lo PERDÍA (el panel
        pasa al otro día). Ahora se pregunta; quedarse devuelve la fecha. */
-    if(isValidDate(previa) && !madBorrGuardar(ficha, previa) && !confirm(MAD_BORR_SIN_ESPACIO)){ f.value = previa; return; }
+    if(isValidDate(previa) && !madBorrGuardar(ficha, previa) && !confirm(MAD_BORR_SIN_ESPACIO)){ f.value = previa; _madBorrAuto[ficha] = _autoAntes; return; }
   }
   /* Se trae el día elegido. Sin borrador, la ficha se monta LIMPIA: arrastrar lo de ayer a un día en el que no se
      tecleó nada es lo que pedía el 2026-09-15. Sin tocar, lo que se deja no se guarda: ya estaba guardado, o no
@@ -15126,6 +15132,8 @@ async function madAlimLeer(){
     let cargadas=0;
     if(agendas) Object.keys(agendas).forEach(function(sala){
       if(cfg[sala] && cfg[sala].pendiente) return;   // lo tecleado aquí y sin guardar no se pisa
+      // T4.7 (auditoría de B) · y sin espacio la marca no se guardó: la de PANTALLA (⏳ pendiente visible) también cuenta.
+      { const _el = document.querySelector('#ma-salas .ma-sala[data-sala="' + String(sala).replace(/"/g, '') + '"] .ma-pend'); if(_el && !_el.hidden) return; }
       cfg[sala]={ tomas:agendas[sala].tomas, pendiente:false, ts:Date.now(), desde:agendas[sala].fecha };
       cargadas++;
     });
@@ -19777,7 +19785,7 @@ function _bioSesAll(){
   let o = {};
   try{ o = JSON.parse(localStorage.getItem(BIO_SES_KEY) || "{}"); if(!o || typeof o!=="object") o = {}; }
   catch(x){ _silent("_bioSesAll", x); o = {}; }
-  return Object.keys(_bioSesMem).length ? Object.assign({}, _bioSesMem, o) : o;
+  return Object.keys(_bioSesMem).length ? Object.assign({}, o, _bioSesMem) : o;   // lo de memoria es lo más nuevo (auditoría de B)
 }
 function _bioSesSave(map){
   const ok = _lsSet(BIO_SES_KEY, JSON.stringify(map || {}));
@@ -20195,7 +20203,7 @@ function _mareaGridEnSuSitio(){
 }
 function mareaDirty(){
   clearTimeout(_mareaDirtyTm);
-  _mareaDirtyTm = setTimeout(()=>{ try{ saveMareaDraftObj({ rows:_collectMareaGrid() }); }catch(_){} }, 500);
+  _mareaDirtyTm = setTimeout(()=>{ try{ if(saveMareaDraftObj({ rows:_collectMareaGrid() }) === false) _avisoSinSitio("lo tecleado en Mareas"); }catch(_){} }, 500);   // T6.4
 }
 function saveMareaDraft(opts){
   opts = opts || {};
@@ -20351,7 +20359,7 @@ function bioBorrarSes(sid){
   if(!_quitarConCola(_colaLleva("bio", function(k){ return k.split("|").pop() === String(sid); }), mias.some(r => !r.synced), "el análisis «"+nombre+"»", false,
     "¿Borrar «"+nombre+"» ("+mias.length+" muestra(s)) del "+ses.fecha+"?\nSe borra también su reporte y sus imágenes (gel y curvas).\nNo elimina lo ya enviado a Google Sheets.")) return;
   _bioSave(list.filter(r => !(r && r.data && r.data.sid === sid)));
-  const all = _bioSesAll(); delete all[sid]; _bioSesSave(all);
+  const all = _bioSesAll(); delete all[sid]; delete _bioSesMem[sid]; _bioSesSave(all);
   try{ bioRptDelSes(sid); }catch(_){}
   delete _bioGridExtra[sid];
   if(_bioSid === sid) _bioSid = null;
@@ -20562,6 +20570,7 @@ function clearAllBio(){
   if(!_quitarConCola(_colaLleva("bio", function(){ return true; }), list.some(r => r && !r.synced), "el historial de Biomol", false,
     "¿Borrar TODAS las "+list.length+" muestra(s) locales del historial Biomol (48 h)?\nNo afecta a lo ya enviado a Google Sheets.")) return;   // T6.6
   _bioSave([]);
+  _bioSesMem = {};
   _bioSesSave({});
   _bioGridExtra = {};
   _bioSid = null;
