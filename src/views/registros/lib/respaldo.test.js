@@ -386,14 +386,14 @@ describe('Punto 26 · antes de sobrescribir, ¿está la copia?', () => {
     expect(vistas).toHaveLength(2);
     expect(vistas[1].copiasPedidas, 'se preguntó antes de pedir la copia').toBe(1);
     expect(vistas[1].m).toMatch(/¿Ya está en Descargas la copia de lo que hay ahora\?/);
-    expect(vistas[1].m).toMatch(/«fichas-larv-backup_\d{4}-\d{2}-\d{2}_2items\.json»/);
+    expect(vistas[1].m).toMatch(/«fichas-larv-backup_\d{4}-\d{2}-\d{2}_\d{6}_2items\.json»/);   // T8.8 · con la hora
     expect(mapa.get('larv4_a'), '«sí»: se importa (control)').toBe('nuevo');
   });
 
   it('🔴 exportar ya no dice «exportado»: dice qué archivo y que se revise en Descargas', () => {
     mapa.set('larv4_a', 'uno');
     expect(H.exportBackup()).toBe(true);
-    expect(ultimo().msg).toMatch(/Descargando la copia «fichas-larv-backup_\d{4}-\d{2}-\d{2}_1items\.json».*revisa que esté en Descargas/);
+    expect(ultimo().msg).toMatch(/Descargando la copia «fichas-larv-backup_\d{4}-\d{2}-\d{2}_\d{6}_1items\.json».*revisa que esté en Descargas/);
     expect(ultimo().msg).not.toMatch(/exportado/i);
   });
 });

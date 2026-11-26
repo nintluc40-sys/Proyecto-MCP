@@ -328,7 +328,7 @@ describe('🔴 nadie marca «enviado» por su cuenta al terminar un envío', () 
       veces[f] = (veces[f] || 0) + 1;
     });
     expect(veces).toEqual({
-      syncAll: 5,            // Algas, Salas/Zonas/Tanques, Datos, Parámetros y Desinfección
+      _syncAllCuerpo: 5,     // (syncAll, desde T1.5 de la pauta del 24-11: syncAll es la guarda de reentrada) Algas, Salas/Zonas/Tanques, Datos, Parámetros y Desinfección
       syncOneFicha: 3,
       _syncMadSalasGrid: 1, _madZonasSync: 1, _syncMadTanquesGrid: 1,
       syncBioGrid: 1,

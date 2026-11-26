@@ -2644,7 +2644,10 @@ async function postPayload(payload, url, opts){
       return false;
     }
     _setOut("queued");
-    if(!(opts && opts.sinAvisos)) toast("📶 Conexión inestable — guardado en cola; se sincronizará y verificará automáticamente","warn",5500);
+    // T1.6 (revisión del 15-11; pauta del 24-11) · si no salió directo porque otro envío de lo mismo espera delante (_colaSolapa), la red
+    // está bien: decir «conexión inestable» confundía. Se dice lo que pasa.
+    if(!(opts && opts.sinAvisos)) toast(_directo ? "📶 Conexión inestable — guardado en cola; se sincronizará y verificará automáticamente"
+      : "⏳ Guardado en cola detrás de otro envío de lo mismo (va en orden, para que gane lo último); sale en unos segundos","warn",5500);
     // F2: intento de auto-resolución. A los 8s (margen para que un envío lento
     // termine en el servidor) se vacía la cola: _verifyReqId confirmará por
     // lectura si el dato SÍ llegó y reconciliará "En verificación" → sincronizado,
@@ -2708,7 +2711,16 @@ function _datosPorFecha(m, pend){
     return { fichas:porFecha[d], fecha:d, datos:datos };
   });
 }
+/* T1.5 (revisión del 15-11; pauta del 24-11) · un segundo 🔄 mientras el primero esperaba a la red terminaba en el acto diciendo
+   «¡Datos registrados!» sin haber enviado nada (sólo el «en curso» de postPayload). Ahora se dice que ya está sincronizando y no se
+   repite. */
+let _syncAllVuelo = false;
 async function syncAll(){
+  if(_syncAllVuelo){ toast("⏳ Ya se está sincronizando: espera a que termine.","info",3500); return; }
+  _syncAllVuelo = true;
+  try{ return await _syncAllCuerpo(); } finally { _syncAllVuelo = false; }
+}
+async function _syncAllCuerpo(){
   // Atajo: Microbiología delega en syncMic / syncCal (reemplazo por sesión a sus hojas).
   if(isMicMod(curMod)){
     // Guarda PRIMERO el análisis que está EN PANTALLA. Sin esto, lo capturado y aún no
@@ -3827,10 +3839,25 @@ function _nombreDeCampo(i){
   if(lab && lab.textContent.trim()) return lab.textContent.trim();
   const td = i.closest("td"), tr = td && td.parentElement, tabla = td && td.closest("table");
   if(td && tabla){   // en una tabla: «columna · fila» (las fichas de Larvicultura no tienen <label>)
-    const fila0 = tabla.querySelector("thead tr:last-child") || tabla.querySelector("tr");
-    const th = fila0 && fila0.children[td.cellIndex];
-    const col = th ? th.textContent.trim() : "", row = tr && tr.firstElementChild && tr.firstElementChild !== td ? tr.firstElementChild.textContent.trim() : "";
-    if(col || row) return [col, row].filter(Boolean).join(" · ");
+    /* La columna REAL de la celda (sumando los colspan de las de antes) y, en la cabecera, la celda MÁS BAJA que la cubre, contando
+       rowspan y colspan de todas sus filas (auditoría de B: con «TQ» y «Estadio» en rowspan, mirar sólo la última fila corría 2). */
+    let col0 = 0;
+    const _cs = function(c){ return Number(c.getAttribute("colspan")) || 1; }, _rs = function(c){ return Number(c.getAttribute("rowspan")) || 1; };
+    for(const c of Array.from(tr.children)){ if(c === td) break; col0 += _cs(c); }
+    const filas = Array.from(tabla.querySelectorAll("thead tr")), ocup = [];
+    let nombre = "";
+    filas.forEach(function(r, ri){
+      let c = 0;
+      Array.from(r.children).forEach(function(cel){
+        while(ocup[ri] && ocup[ri][c]) c++;
+        const cs = _cs(cel), rs = _rs(cel);
+        for(let a = 0; a < rs; a++) for(let b = 0; b < cs; b++){ (ocup[ri + a] = ocup[ri + a] || [])[c + b] = true; }
+        if(col0 >= c && col0 < c + cs && cel.textContent.trim()) nombre = cel.textContent.trim();   // la de más abajo gana
+        c += cs;
+      });
+    });
+    const row = tr && tr.firstElementChild && tr.firstElementChild !== td ? tr.firstElementChild.textContent.trim() : "";
+    if(nombre || row) return [nombre, row].filter(Boolean).join(" · ");
   }
   return i.getAttribute("aria-label") || i.title || i.name || "un campo";
 }
@@ -5002,6 +5029,7 @@ async function recalcSurvivalForCorrida(){
   });
   if(histChanged) saveHistList(curMod, fullHist);
 
+  let _recalcHoyP = null;
   const eP = loadE(curMod, "poblacion");
   if(eP && String((eP.data||{}).corrida||"").trim() === scan.corr){
     /* A11 (2026-11-06) · loadE devuelve los datos CONGELADOS (Object.freeze, por su caché), y el motor no corre en modo
@@ -5009,8 +5037,11 @@ async function recalcSurvivalForCorrida(){
        con la supervivencia vieja. Ahora se recalcula sobre una copia. */
     const dP = Object.assign({}, eP.data);
     _recalcSvInData(dP, cs);
-    saveE(curMod, "poblacion", dP, getStatus(curMod,"poblacion") === "synced");
+    /* T2.5 (revisión del 15-11; pauta del 24-11) · la ficha cambió: queda SIN ENVIAR hasta que el reenvío de abajo llegue (antes se
+       quedaba «✅» aunque el reenvío fallara o ni saliera). */
+    saveE(curMod, "poblacion", dP, false);
     _recalcAffected[dP.fecha || today()] = dP;   // el día de hoy gana su fecha
+    _recalcHoyP = dP.fecha || today();
     if(curTab === "poblacion") try{ renderPoblacion(); }catch(_){}
   }
 
@@ -5032,7 +5063,11 @@ async function recalcSurvivalForCorrida(){
            salvo. Mismo criterio que `_syncNotOkUI`; aquí va por DÍA porque el panel
            de recálculo lleva una fila por día. Un `rejected` sí sigue siendo error. */
         const o = { dedupeSalt:"recalc:"+mLabel(curMod)+":"+f };
+        // T2.5 · la ficha de HOY lleva su marca: al llegar (directo o desde la cola) se da por enviada con la conciliación común, que
+        // compara la versión. Antes quedaba «✅» aunque el reenvío fallara.
+        if(f === _recalcHoyP && typeof _marcaFichas === "function") o.mark = _marcaFichas(curMod, ["poblacion"]);
         const sent = await postPayload(payload, url, o);
+        if(sent && o.mark && typeof _marcarEnviado === "function") _marcarEnviado(o);
         _recalcStatus[f] = sent ? "ok"
           : (o.outcome === "queued" || o.outcome === "inflight") ? o.outcome : "err";
         /* El GAS manda el porqué en `message` y postPayload lo deja aquí SÓLO cuando
@@ -10973,8 +11008,11 @@ function madHistGrilla(f, fecha, sala){
 }
 function madHistGrillaPdf(f, fecha, sala){
   if(f!=="salas" && f!=="tanques") return;
+  /* T5.4 (revisión del 15-11; pauta del 24-11) · el filtro del día se pone SÓLO para este PDF: se quedaba puesto, y el 📄 de la grilla
+     de Salas imprimía después ese día en lugar de lo visible. */
+  const antes=_madFilters[f];
   _madFilters[f]={ fecha:fecha, sala: f==="tanques" ? sala : "" };
-  downloadMadPDF(f);
+  try{ downloadMadPDF(f); }finally{ _madFilters[f]=antes; }
 }
 let _madHistFiltro = "";
 function madHistFiltrar(v){ _madHistFiltro=String(v||""); renderMadHistorial(); }
@@ -11025,8 +11063,12 @@ function _madHistPdfDiaHTML(sel){
   const lista=(sel||[]).slice().sort(function(a,b){ return (pos(a.ficha)-pos(b.ficha)) || ((a.ts||0)-(b.ts||0)); });
   const cel=function(v){ return escapeHtml(v==null ? "" : String(v)); };
   const nombre=function(f){ return _madHistNombre(f); };
+  const tabla=function(p){ const h=p.headers||[], filas=p.rows||[];
+    return '<table><thead><tr>'+h.map(function(c){ return '<th>'+cel(c)+'</th>'; }).join("")+'</tr></thead><tbody>'
+      + filas.map(function(r){ return '<tr>'+h.map(function(_, j){ return '<td>'+cel((r||[])[j])+'</td>'; }).join("")+'</tr>'; }).join("")
+      + '</tbody></table>'; };
   const secciones=lista.map(function(x){
-    let titulo, meta, p;
+    let titulo, meta, p, pz=null;
     if(x.e){
       const e=x.e; p=e.payload||{};
       titulo=nombre(e.ficha)+" · "+e.fecha+(e.resumen ? " · "+e.resumen : "");
@@ -11034,14 +11076,16 @@ function _madHistPdfDiaHTML(sel){
         +(e.reenviado ? " · reenvío (el 1.º, el "+_madHistCuando(e.primero)+")" : "");
     } else {
       const g=x.g; p=_madHistPayloadGrilla(g);
+      // T3.7 (revisión del 15-11; pauta del 24-11) · la grilla de Salas lleva sus Zonas (se cuentan juntas en el 📜): también en el PDF.
+      if(g.ficha==="salas") pz=_madHistPayloadGrilla({ ficha:"zonas", fecha:g.fecha, sala:"" });
       titulo=nombre(g.ficha)+" · "+(g.sala || "Todas las salas")+" · "+g.fecha;
       meta="Último envío el "+_madHistCuando(g.ts);
     }
-    const h=p.headers||[], filas=p.rows||[];
+    const filas=p.rows||[], zf=(pz && pz.rows) || [];
     return { titulo:titulo, html:'<section><h2>'+cel(titulo)+'</h2><div class="m">'+cel(meta)+' · '+filas.length+' fila(s), tal como se enviaron a la hoja «'+cel(p.sheetName||"")+'».</div>'
-      + '<table><thead><tr>'+h.map(function(c){ return '<th>'+cel(c)+'</th>'; }).join("")+'</tr></thead><tbody>'
-      + filas.map(function(r){ return '<tr>'+h.map(function(_, j){ return '<td>'+cel((r||[])[j])+'</td>'; }).join("")+'</tr>'; }).join("")
-      + '</tbody></table></section>' };
+      + tabla(p)
+      + (zf.length ? '<div class="m" style="margin-top:6px">Zonas · '+zf.length+' fila(s), tal como se enviaron a la hoja «'+cel(pz.sheetName||"")+'».</div>' + tabla(pz) : "")
+      + '</section>' };
   });
   const fechas=lista.map(function(x){ return x.fecha; }).filter(function(f, i, a){ return f && a.indexOf(f)===i; }).sort();
   const dia=fechas.length<=1 ? (fechas[0]||"") : fechas[0]+" a "+fechas[fechas.length-1];
@@ -13085,9 +13129,13 @@ function madDesCorreccionCambios(orig, nuevo){
     return sanitizeStr(v, c==="observaciones" ? 300 : 60);
   };
   const campos=[], vaciados=[];
+  /* T4.9 (revisión del 15-11; pauta del 24-11) · un desove viejo enviado SIN N2/N5: la ficha de corrección pone la fecha de OFICIO, y eso
+     contaba como cambio («Corrección registrada (Fecha N2…)» sin haber tocado nada). La de oficio frente a la vacía no es un cambio. */
+  const _of=madDesFechasNauplios(n.fecha || o.fecha);
   MAD_DES_CAMPOS_DATO.forEach(function(c){
     const a=norma(c, o[c]), b=norma(c, n[c]);
     if(a===b) return;
+    if(a==="" && ((c==="fechaN2" && b===_of.n2) || (c==="fechaN5" && b===_of.n5))) return;
     if(b==="") vaciados.push(c); else campos.push(c);
   });
   return { campos:campos, vaciados:vaciados };
@@ -15231,6 +15279,7 @@ function _madAlimPinta(res, filas){
 }
 function madAlimRevisar(){
   const model=madAlimCollect(), res=_madFechaPosterior(madAlimValidar(model), model.fecha);   // punto 46
+  _madAlimAvisoDia(res, model, madAlimBuildRows(model).length);   // T4.5 · también al revisar
   _madAlimPinta(res, madAlimBuildRows(model).length);
   return _madRevisarRemata("ma-report", res, MAD_ALIM_SHEET);
 }
@@ -15266,6 +15315,16 @@ function _madAlimAgendaEnviada(enviadas){
   document.querySelectorAll("#ma-salas .ma-sala").forEach(function(el){ if(enviadas.indexOf(el.getAttribute("data-sala"))!==-1){ const b=el.querySelector(".ma-pend"); if(b) b.hidden=true; } });
 }
 /* PE1.4 · lo que 💾 y ☁️ comparten: recoger, revisar y construir. null si hay errores (ya los pintó y avisó). */
+/* T4.5 · el saldo y los pesos son los del día en que se LEYÓ el libro (🔄 Leer): con otra fecha en la ficha —elegida a mano, o la de hoy
+   tras dejar la app abierta de un día para otro— no son los de ese día. Se avisa y se deja seguir (usuario). */
+function _madAlimAvisoDia(res, model, filas){
+  if(!filas || !_madAlim || !model || !model.fecha) return res;
+  const d = new Date(_madAlim.ts || Date.now()), p2 = function(n){ return ("0" + n).slice(-2); };
+  const leido = d.getFullYear() + "-" + p2(d.getMonth() + 1) + "-" + p2(d.getDate());
+  const dmy = function(x){ return String(x).split("-").reverse().join("/"); };
+  if(model.fecha !== leido) res.avisos.push("Los animales y los pesos son los del libro de HOY (leído el " + dmy(leido) + "), no los del " + dmy(model.fecha) + ". Revísalos o vuelve a leer con 🔄 antes de enviar.");
+  return res;
+}
 function _madAlimPreparar(conGuardados){
   const model=madAlimCollect(), res=_madFechaPosterior(madAlimValidar(model), model.fecha), payload=buildMadAlimPayload(model);   // punto 46
   // Con envíos guardados con 💾, una pantalla SIN filas no es un error: ☁️ envía lo guardado y lo de pantalla se queda.
@@ -15274,7 +15333,7 @@ function _madAlimPreparar(conGuardados){
      pueden quedarse cortos: ni se guarda ni se envía lo de pantalla hasta releer con 🔄 Leer y que llegue entero. */
   /* T4.5 (revisión del 15-11; pauta del 24-11, usuario: «Avisar y dejar seguir») · el saldo y los pesos se leen del libro de HOY: con
      otra fecha, los animales y pesos no son los de ese día (y los pesos cuentan luego como la biometría de ese día). Se avisa. */
-  if(payload.rows.length && _madAlim && model.fecha && model.fecha !== today()) res.avisos.push("La fecha no es hoy: los animales y los pesos son los del libro de HOY, no los del " + String(model.fecha).split("-").reverse().join("/") + ". Revísalos antes de enviar.");
+  _madAlimAvisoDia(res, model, payload.rows.length);
   if(payload.rows.length && _madAlim && _madAlim.incompleto){ res.errores.push("El libro llegó INCOMPLETO ("+_madAlim.incompleto+"): los animales pueden quedarse cortos. Vuelve a leer las hojas y, cuando llegue entero, guarda."); }
   _madAlimPinta(res, payload.rows.length);
   if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return null; }
@@ -19250,7 +19309,7 @@ function downloadMadPDF(ficha){
 
   const ts    = new Date();
   const tsStr = ts.toLocaleString('es-EC',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
-  const fecha = today();
+  const fecha = (_madFilters[ficha] && isValidDate(_madFilters[ficha].fecha)) ? _madFilters[ficha].fecha : today();   // T5.4 · el nombre y el código, del día filtrado
   const codigo = genCodigo(ficha, MAD_MOD, fecha);
   const tec    = gcfg('tec','');
 
@@ -28283,7 +28342,7 @@ function renderMicNuevo(){
 // Derivado de los registros guardados (sobrevive a re-render y recarga).
 function _micLastSavedText(meta){
   const recs = _micRaw().filter(r => r.data && r.data.fechaMuestreo === meta.fechaMuestreo &&
-    (!meta.corrida || String(r.data.corrida) === String(meta.corrida)));
+    (!meta.corrida || String(r.data.corrida) === String(meta.corrida)) && (!meta.sid || r.data.sid === meta.sid));   // T7.7 · de ESTE análisis
   if(!recs.length) return "○ Sin guardar localmente";
   const maxTs = Math.max.apply(null, recs.map(r => r.ts || 0));
   const allSynced = recs.every(r => r.synced);
@@ -29912,7 +29971,7 @@ function saveCalLocal(){
 // Texto de referencia del último guardado local del análisis activo (Cal).
 function _calLastSavedText(meta){
   const recs = _calRaw().filter(r => r.data && r.data.fechaMuestreo === meta.fechaMuestreo &&
-    (!meta.corrida || String(r.data.corrida) === String(meta.corrida)));
+    (!meta.corrida || String(r.data.corrida) === String(meta.corrida)) && (!meta.sid || r.data.sid === meta.sid));   // T7.7
   if(!recs.length) return "○ Sin guardar localmente";
   const maxTs = Math.max.apply(null, recs.map(r => r.ts || 0));
   const allSynced = recs.every(r => r.synced);
@@ -30525,7 +30584,7 @@ function patNuevoReset(){
 
 // ── Guardar / Sincronizar ──────────────────────────────
 function _patLastSavedText(meta){
-  const recs=_patRaw().filter(r=> r.data && r.data.fechaMuestreo===meta.fechaMuestreo && (!meta.corrida || String(r.data.corrida)===String(meta.corrida)));
+  const recs=_patRaw().filter(r=> r.data && r.data.fechaMuestreo===meta.fechaMuestreo && (!meta.corrida || String(r.data.corrida)===String(meta.corrida)) && (!meta.sid || r.data.sid===meta.sid));   // T7.7
   if(!recs.length) return "○ Sin guardar localmente";
   const maxTs=Math.max.apply(null, recs.map(r=>r.ts||0));
   const allSynced=recs.every(r=>r.synced);
@@ -34385,7 +34444,7 @@ function exportBackup(){
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = _respaldoNombre = "fichas-larv-backup_" + today() + "_" + dump.count + "items.json";
+    a.download = _respaldoNombre = "fichas-larv-backup_" + today() + "_" + (function(d){ return ("0"+d.getHours()).slice(-2) + ("0"+d.getMinutes()).slice(-2) + ("0"+d.getSeconds()).slice(-2); })(new Date()) + "_" + dump.count + "items.json";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

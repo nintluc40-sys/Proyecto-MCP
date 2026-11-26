@@ -70,9 +70,9 @@ describe('T4.5 · Alimentación de otra fecha avisa de que animales y pesos son 
     H.poner('madAlimValidar', () => ({ errores: [], avisos: [] }));
     H.poner('buildMadAlimPayload', () => ({ rows: [['x']] }));
     H.poner('_madAlimPinta', (r) => { pintado = r; });
-    H.poner('_madAlim', { incompleto: '' });
+    H.poner('_madAlim', { incompleto: '', ts: Date.now() });
     expect(H._madAlimPreparar()).not.toBeNull();
-    expect(pintado.avisos.join(' ')).toMatch(/son los del libro de HOY, no los del 0?1.0?1.20/);   // fecha ficticia
+    expect(pintado.avisos.join(' ')).toMatch(/son los del libro de HOY \(leído el [^)]*\), no los del 0?1.0?1.20/);   // fecha ficticia
   });
 });
 
@@ -103,5 +103,13 @@ describe('matices de la auditoría de B sobre F5', () => {
     const t = document.createElement('table');
     t.innerHTML = '<thead><tr><th>TQ</th><th>OD</th></tr></thead><tbody><tr><td>TQ 1</td><td><input type="number"></td></tr></tbody>';
     expect(H._nombreDeCampo(t.querySelector('input'))).toBe('OD · TQ 1');
+  });
+  it('🔴 con cabeceras de varias filas (rowspan / colspan), la columna es la buena (auditoría de B)', () => {
+    const t = document.createElement('table');
+    t.innerHTML = '<thead><tr><th rowspan="2">TQ</th><th rowspan="2">Estadio</th><th colspan="2">Calidad</th></tr><tr><th>%Llenas</th><th>%Vacías</th></tr></thead>'
+      + '<tbody><tr><td>TQ 1</td><td><input type="number" id="e"></td><td><input type="number" id="ll"></td><td><input type="number" id="va"></td></tr></tbody>';
+    expect(H._nombreDeCampo(t.querySelector('#ll'))).toBe('%Llenas · TQ 1');
+    expect(H._nombreDeCampo(t.querySelector('#e'))).toBe('Estadio · TQ 1');
+    expect(H._nombreDeCampo(t.querySelector('#va'))).toBe('%Vacías · TQ 1');
   });
 });
