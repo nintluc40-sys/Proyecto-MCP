@@ -11,7 +11,7 @@ const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['pruneAlgLog', 'saveCSData', 'madAlimCfgGuardar', '_scoreGuardarBorrador', 'micAddRow', 'calToggleCol', 'micTypeToggle',
   'editAlgHistEntry', 'bioFechaChange', 'selTab', 'bioSesCrear', 'bioSes', 'bioSidActivo', 'madBorrGuardar', 'madBorrTodo',
-  '_madBorrSoltarViejos', 'madAlimGuardar', 'madBorrFechaChange', 'goBack', '_bioSesSave', 'MAD_BORR_FICHAS', 'MAD_BORR_MAX', 'today'];
+  '_madBorrSoltarViejos', 'madAlimGuardar', 'madBorrFechaChange', 'goBack', '_bioSesSave', 'bioBorrarSes', 'MAD_BORR_FICHAS', 'MAD_BORR_MAX', 'today'];
 const H = {};
 const avisos = [];
 
@@ -247,5 +247,19 @@ describe('matices de la auditoría de B (F2)', () => {
     H.goBack();
     expect(preguntas[0]).toMatch(/Aceptar = salir y PERDERLO/);
     expect(H.leer('curTab')).toBe('ingreso');
+  });
+});
+
+describe('T6.5 · borde (auditoría de B): un análisis guardado que se borra sin espacio no reaparece', () => {
+  it('🔴', () => {
+    localStorage.setItem(H.leer('BIO_SES_KEY'), JSON.stringify({ s9: { fecha: '2026-11-20', nombre: '', creado: 1 } }));
+    H.poner('_lsSet', () => false);
+    H.poner('_bioRaw', () => []);
+    H.poner('_bioSave', () => true);
+    H.poner('renderBiomol', () => {});
+    H.poner('bioRptDelSes', () => {});
+    window.confirm = () => true; globalThis.confirm = window.confirm;
+    H.bioBorrarSes('s9');
+    expect(H.bioSes('s9')).toBeNull();
   });
 });

@@ -16670,6 +16670,21 @@ function _reproFechaFutura(fecha){
 function _reproPaso(id, txt){ const el=document.getElementById(id); if(el) el.textContent = txt ? "⏳ " + txt : ""; }
 /** El aviso final: `ok` (lo que dijeron sus envíos), `hecho` («12 desove(s) registrado(s)»), sus envíos (los `opts` de
  *  postPayload: en cola, en curso o rechazado, y por qué) y lo que requiere atención, que va dentro del mismo aviso. */
+/* T5.3 (revisión del 15-11; pauta del 24-11) · un traslado (MATRIZ + Transferencias) o una mortalidad/desove (Bitácora + MATRIZ) son
+   DOS envíos. Si uno llegó (o espera en la cola) y la hoja RECHAZÓ el otro, el aviso era «no se pudo… reintenta», y reintentar
+   duplicaba el traslado con otro TR-ID (o no escribía nunca la segunda hoja). Ahora se dice que quedó A MEDIAS, qué parte está y
+   que NO se vuelva a procesar. `partes` = [[nombre, opts, había], …]. Devuelve true si avisó. */
+function _reproAMedias(id, que, partes){
+  const llego = function(o){ return o && (o.outcome === "ok" || o.outcome === "queued"); };
+  const hay = partes.filter(function(p){ return p[2]; });
+  const bien = hay.filter(function(p){ return llego(p[1]); }), mal = hay.filter(function(p){ return !llego(p[1]); });
+  if(!bien.length || !mal.length) return false;
+  _reproPaso(id, "");
+  toast("⚠ " + que + " quedó A MEDIAS: " + bien.map(function(p){ return p[0]; }).join(" y ") + " ya lo tiene, pero "
+    + mal.map(function(p){ return p[0] + (p[1].gasMessage ? " (" + p[1].gasMessage + ")" : ""); }).join(" y ")
+    + " lo rechazó. NO lo vuelvas a procesar (saldría repetido): completa esa hoja a mano o avisa.", "err", 15000);
+  return true;
+}
 function _reproAvisoFinal(id, ok, hecho, envios, atencion){
   _reproPaso(id, "");
   const extra = (atencion || []).filter(Boolean).join(" ");
@@ -16759,6 +16774,7 @@ async function _madReproProcess(){
     _reproAvisoFinal("repro-paso", true, res.report.processed.length+" "+(tipo==="Desove"?"desove(s) registrado(s)":"mortalidad(es) registrada(s)"), [_o1,_o2], atencion);
     cEl.value="";
   } else {
+    if(!_reproAMedias("repro-paso", "El registro", [["la Bitácora", _o1, !!res.bitacora], ["la MATRIZ", _o2, !!res.matriz]]))   // T5.3
     _reproAvisoFinal("repro-paso", false, "", [_o1,_o2], atencion);
   }
 }
@@ -16964,6 +16980,7 @@ async function _madReproTransfer(){
   if(res.transfer){ okAll=(await postPayload(res.transfer, gasUrl(), _t2)) && okAll; }
   if(res.matriz) _reproUltimaEscritura=Date.now();   // 1a · la MATRIZ cambió: una lectura de antes ya no vale para confirmar
   _madReproShowTransferReport(res.report, trId, okAll);
+  if(!okAll && _reproAMedias("repro-t-paso", "El traslado " + trId, [["la MATRIZ", _t1, !!res.matriz], ["el historial de Transferencias", _t2, !!res.transfer]])) return;   // T5.3
   _reproAvisoFinal("repro-t-paso", okAll, res.report.moved.length+" individuo(s) transferido(s) en el traslado "+trId, [_t1,_t2], atencion);
   if(okAll) _reproBumpTrSeq(trId);
 }
@@ -19785,7 +19802,10 @@ function _bioSesAll(){
   let o = {};
   try{ o = JSON.parse(localStorage.getItem(BIO_SES_KEY) || "{}"); if(!o || typeof o!=="object") o = {}; }
   catch(x){ _silent("_bioSesAll", x); o = {}; }
-  return Object.keys(_bioSesMem).length ? Object.assign({}, o, _bioSesMem) : o;   // lo de memoria es lo más nuevo (auditoría de B)
+  if(!Object.keys(_bioSesMem).length) return o;
+  const all = Object.assign({}, o, _bioSesMem);   // lo de memoria es lo más nuevo (auditoría de B)
+  Object.keys(all).forEach(function(k){ if(all[k] === null) delete all[k]; });   // null = borrado sin poder guardarlo
+  return all;
 }
 function _bioSesSave(map){
   const ok = _lsSet(BIO_SES_KEY, JSON.stringify(map || {}));
@@ -20359,7 +20379,8 @@ function bioBorrarSes(sid){
   if(!_quitarConCola(_colaLleva("bio", function(k){ return k.split("|").pop() === String(sid); }), mias.some(r => !r.synced), "el análisis «"+nombre+"»", false,
     "¿Borrar «"+nombre+"» ("+mias.length+" muestra(s)) del "+ses.fecha+"?\nSe borra también su reporte y sus imágenes (gel y curvas).\nNo elimina lo ya enviado a Google Sheets.")) return;
   _bioSave(list.filter(r => !(r && r.data && r.data.sid === sid)));
-  const all = _bioSesAll(); delete all[sid]; delete _bioSesMem[sid]; _bioSesSave(all);
+  const all = _bioSesAll(); delete all[sid]; delete _bioSesMem[sid];
+  if(!_bioSesSave(all)) _bioSesMem[sid] = null;   // sin espacio: el borrado se recuerda en memoria (si no, reaparecería desde lo guardado)
   try{ bioRptDelSes(sid); }catch(_){}
   delete _bioGridExtra[sid];
   if(_bioSid === sid) _bioSid = null;
@@ -21588,12 +21609,15 @@ function _persistAst(opts){
     }
     _astEditing = null;
   }
+  /* T6.10 (revisión del 15-11; pauta del 24-11) · el registro que se editaba ya no está (la purga se lo llevó mientras tanto): se guarda
+     con SU MISMO ID, que es el de su fila en la hoja. Con uno nuevo, la hoja acababa con la fila vieja y otra corregida. */
+  const _idEditado = (editingId && list.findIndex(r => r.id === editingId) < 0) ? editingId : null;
   if(list.length >= AST_MAX){
     toast("Historial lleno ("+AST_MAX+" registros). Borra alguno antes de agregar más.","warn",4500);
     return null;
   }
   const entry = {
-    id: _astIdSinGuardar || (Date.now().toString(36) + Math.random().toString(36).slice(2,6)),
+    id: _idEditado || _astIdSinGuardar || (Date.now().toString(36) + Math.random().toString(36).slice(2,6)),
     ts: Date.now(),
     synced: false,
     syncedAt: null,
@@ -22591,6 +22615,15 @@ function _scoreEnviados(rec){
   const ya = Array.isArray(rec.enviados) ? rec.enviados.slice() : [];
   // Enviada (también la que la cola dio por entregada, que no pasa por syncAllPendingScore): sus tanques completos están en la hoja.
   if((rec.synced || rec.syncedAt) && rec.data) scoreFilas(rec.data).forEach(function(f){ if(ya.indexOf(f[5]) === -1) ya.push(f[5]); });   // f[5]: Tanque
+  /* T6.3 (revisión del 15-11; pauta del 24-11) · y lo que ESPERA EN LA COLA (cualquier versión suya, llave id@ts) llegará: sus tanques
+     cuentan como enviados, para que una corrección los anule. Antes quedaban vivos en la hoja junto a los corregidos. */
+  const _pre = String(rec.id) + "@";
+  _loadSyncQueue().forEach(function(it){
+    const m = it && it.mark;
+    if(!m || m.kind !== "score" || !Array.isArray(m.keys) || !m.keys.some(function(k){ return String(k).indexOf(_pre) === 0; })) return;
+    const tq = SCORE_HEADERS.indexOf("Tanque");
+    ((it.payload && it.payload.rows) || []).forEach(function(f){ const t = f && f[tq]; if(t !== undefined && t !== "" && ya.indexOf(t) === -1) ya.push(t); });
+  });
   return ya;
 }
 function _scoreAnulacion(d, tq, motivo){
@@ -26535,6 +26568,12 @@ function trasLimpiarRevision(i){
   // parada distinta. Sin esto, vaciar la parada 2 de un viaje ya sincronizado le
   // daría una identidad nueva y dejaría sus filas viejas huérfanas en la hoja.
   if(revs[i] && revs[i].rid) vacia.rid = revs[i].rid;
+  /* T7.3 (revisión del 15-11; pauta del 24-11) · vaciar una parada YA enviada no mandaba nada: la hoja conservaba la hora, el lugar
+     y las mediciones borradas, con «✅ Sincronizado». Sus filas se apagan como al quitar la parada (_trasSacarRevision); si se vuelve
+     a medir antes de enviar, lo vivo no se apaga (buildTrasPayload mira vivos). */
+  if(revs[i] && revs[i].rid) trasCamiones(_trasAsegurarIds(data)).forEach(cam => {
+    if(cam && cam.cid) _trasOlvidar(data, _trasSufijos([cam.cid], [revs[i].rid], trasTinasEnUso(cam)));
+  });
   revs[i] = vacia;
   data.revisiones = revs;
   _trasRepintar(data);
@@ -27596,9 +27635,11 @@ function _labDescribir(d){
 function _labCambioDeClave(lista, nuevos, mismaSesion, clave){
   const n0 = nuevos.length ? nuevos[0].data : null;
   if(!n0 || !n0.sid) return { accion:"nada", previos:[] };
-  const kNueva = clave(n0);
+  /* T7.11 (revisión del 15-11; pauta del 24-11) · con VARIAS claves en el mismo análisis (p. ej. «Maduración · Despacho», una corrida
+     por fila), «lo de antes» es lo que tiene una clave que YA NO está entre las nuevas, no cualquiera distinta de la primera. */
+  const kNuevas = new Set(nuevos.map(function(r){ return clave(r.data); }));
   const previos = (lista || []).filter(function(r){
-    return r && r.data && r.data.sid === n0.sid && mismaSesion(r.data, n0) && clave(r.data) !== kNueva;
+    return r && r.data && r.data.sid === n0.sid && mismaSesion(r.data, n0) && !kNuevas.has(clave(r.data));
   });
   if(!previos.length) return { accion:"nada", previos:[] };
   const viejo = _labDescribir(previos[0].data), nuevo = _labDescribir(n0);
@@ -27619,6 +27660,7 @@ function _labCorregir(tipo, lista, previos, nuevos, clave, llave){
   const ya = new Set(anul.map(function(a){ return clave(a.data); }));
   const enCola = _labClavesEnCola(tipo);
   previos.forEach(function(r){
+    if(kNuevas.has(clave(r.data))) return;   // T7.11 · una clave que se vuelve a escribir no se anula
     if(!_labLlego(r, clave, enCola)) return;   // nunca salió: no hay nada que anular en la hoja (punto 5: ver _labLlego)
     const k = clave(r.data);
     if(ya.has(k)) return;
