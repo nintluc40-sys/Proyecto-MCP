@@ -106,6 +106,10 @@ describe('T5.3 · reproductivo: un envío a medias se dice (y que NO se repita)'
     expect(r).toBe(true);
     expect(avisos.join(' ')).toMatch(/quedó A MEDIAS: la MATRIZ ya lo tiene, pero el historial de Transferencias \(motivo\) lo rechazó\. NO lo vuelvas a procesar/);
   });
+  it('🔴 «inflight» no es «rechazó», y lo que requiere atención sale en el mismo aviso', () => {
+    H._reproAMedias('x', 'El traslado', [['la MATRIZ', { outcome: 'ok' }, true], ['Transferencias', { outcome: 'inflight' }, true]], ['2 chips por elegir.']);
+    expect(avisos.join(' ')).toMatch(/Transferencias no lo recibió\. NO lo vuelvas a procesar[\s\S]*2 chips por elegir\./);
+  });
   it('si fallan las dos, no es «a medias»', () => {
     expect(H._reproAMedias('x', 'y', [['a', { outcome: 'rejected' }, true], ['b', { outcome: 'rejected' }, true]])).toBe(false);
   });

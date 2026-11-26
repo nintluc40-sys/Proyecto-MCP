@@ -142,6 +142,7 @@ beforeAll(async () => {
     + '\ntry{ H.setToast=function(f){toast=f;}; }catch(_){}'
     + '\ntry{ H.setPost=function(f){postPayload=f;}; }catch(_){}'
     + '\ntry{ H.setLecturas=function(hojas, trunc){ _reproSheets=hojas; _reproTrunc=trunc; }; }catch(_){}'
+    + '\ntry{ H.lectura=function(n){ return { rows:(_reproSheets||{})[n]||[], truncated:!!((_reproTrunc||{})[n]) }; }; }catch(_){}'
     + '\n})();';
   globalThis.__ENG = H;
   new Function('window', 'document', 'localStorage', 'globalThis', readFileSync(ENGINE, 'utf8') + epilogo)(
@@ -149,6 +150,15 @@ beforeAll(async () => {
   );
   H.setToast((msg, tipo) => { avisos.push({ msg: String(msg), tipo: tipo || 'info' }); });
   H.setPost(async (payload) => { envios.push(payload); return true; });
+  /* Punto 2 (pauta del 24-11; hallado por la Sesión B) · la relectura con force de _madReproTransfer (A11) salía al GAS REAL de
+     producción con el fetch de happy-dom: lenta (reintentos con espera) y dependiente de la red. Ahora contesta un doble con lo que
+     fija cada prueba (setLecturas): no sale nada a la red y el resultado es determinista. */
+  const doble = async (u) => {
+    const hoja = decodeURIComponent((/[?&]sheet=([^&]*)/.exec(String(u)) || [])[1] || '');
+    const l = H.lectura(hoja);
+    return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, rows: l.rows, truncated: l.truncated }) };
+  };
+  window.fetch = doble; globalThis.fetch = doble;
 });
 
 const TROVAN = '000821AFF0';

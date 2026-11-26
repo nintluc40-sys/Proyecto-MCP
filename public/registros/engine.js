@@ -3789,6 +3789,25 @@ function _rangeGuard(){
 }
 /* 2026-11-13 (punto 27) · El aviso de una ficha de Larvicultura sin fecha válida; true = no seguir. Lab. Algas no entra (su regla es otra:
    «la Fecha o las Cel/mL»). */
+/* F5 (revisión del 15-11; pauta del 24-11, usuario: «Todos en español») · un número que el navegador NO entiende («1e», «e5», «--3»…)
+   llega VACÍO (validity.badInput) y viajaba vacío sin aviso. Ahora se marca y no se guarda ni se envía hasta corregirlo. Devuelve los
+   nombres de los campos malos (o []). */
+function _numerosMalos(root){
+  const el = typeof root === "string" ? document.querySelector(root) : root;
+  if(!el) return [];
+  const malos = [];
+  el.querySelectorAll('input[type="number"]').forEach(function(i){
+    const mal = !!(i.validity && i.validity.badInput);
+    if(i.classList) i.classList.toggle("inp-bad", mal);
+    if(mal){ const lab = i.closest(".mf") && i.closest(".mf").querySelector("label"); malos.push((lab && lab.textContent.trim()) || i.name || "un campo"); }
+  });
+  return malos;
+}
+function _avisoNumerosMalos(malos, que){
+  if(!malos.length) return false;
+  toast("⚠ «" + malos[0] + "»" + (malos.length > 1 ? " y " + (malos.length - 1) + " campo(s) más" : "") + " no es un número que se entienda. " + que + ": corrígelo (marcado en rojo).", "err", 8000);
+  return true;
+}
 function _fichaSinFecha(fid, que){
   if(fid === "algas") return false;
   const e = _fechaFichaError("fp-" + fid);
@@ -3801,6 +3820,7 @@ function localSave(fid){
   // R2: bloquea si hay valores fuera del rango declarado (min/max).
   if(_rangeGuard()) return;
   if(_fichaSinFecha(fid, "No se guardó")) return;   // punto 27
+  if(_avisoNumerosMalos(_numerosMalos("#fp-" + fid), "No se guardó")) return;   // F5
   // SECURITY: validate inputs before persisting
   if(!validateFicha(fid, data)) return;
   // Si el navegador no persiste de verdad (cuota llena / incógnito), NO mentir
@@ -3824,6 +3844,7 @@ async function localSync(fid){
   // R2: bloquea si hay valores fuera del rango declarado (min/max).
   if(_rangeGuard()) return;
   if(_fichaSinFecha(fid, "No se guardó ni se envió")) return;   // punto 27
+  if(_avisoNumerosMalos(_numerosMalos("#fp-" + fid), "No se guardó ni se envió")) return;   // F5
   if(!validateFicha(fid, data)) return;
   // Block sync without corrida y sin técnico para M01-M10 y CIO (las 6 fichas
   // estándar). Lab. Algas se excluye porque su validación se hace en syncAll.
@@ -13790,7 +13811,8 @@ function madTratProductos(catalogo, v){
 }
 function madTratLotes(v){
   const vistos={}, out=[];
-  (Array.isArray(v) ? v : String(v==null?"":v).split(",")).forEach(function(x){ const l=madDesNormLote(x); if(l && vistos[l]!==1){ vistos[l]=1; out.push(l); } });
+  // T4.10 (pauta 24-11, usuario) · el espacio (y el punto y coma) también separan: «BP BC» son dos lotes, no «BPBC».
+  (Array.isArray(v) ? v : String(v==null?"":v).split(/[,;\s]+/)).forEach(function(x){ const l=madDesNormLote(x); if(l && vistos[l]!==1){ vistos[l]=1; out.push(l); } });
   return out.sort();
 }
 function _madTratSalaId(sala){ return sanitizeStr(sala,30) ? madIngSalaTag(sala) : "GEN"; }
@@ -16674,15 +16696,15 @@ function _reproPaso(id, txt){ const el=document.getElementById(id); if(el) el.te
    DOS envíos. Si uno llegó (o espera en la cola) y la hoja RECHAZÓ el otro, el aviso era «no se pudo… reintenta», y reintentar
    duplicaba el traslado con otro TR-ID (o no escribía nunca la segunda hoja). Ahora se dice que quedó A MEDIAS, qué parte está y
    que NO se vuelva a procesar. `partes` = [[nombre, opts, había], …]. Devuelve true si avisó. */
-function _reproAMedias(id, que, partes){
+function _reproAMedias(id, que, partes, atencion){
   const llego = function(o){ return o && (o.outcome === "ok" || o.outcome === "queued"); };
   const hay = partes.filter(function(p){ return p[2]; });
   const bien = hay.filter(function(p){ return llego(p[1]); }), mal = hay.filter(function(p){ return !llego(p[1]); });
   if(!bien.length || !mal.length) return false;
   _reproPaso(id, "");
   toast("⚠ " + que + " quedó A MEDIAS: " + bien.map(function(p){ return p[0]; }).join(" y ") + " ya lo tiene, pero "
-    + mal.map(function(p){ return p[0] + (p[1].gasMessage ? " (" + p[1].gasMessage + ")" : ""); }).join(" y ")
-    + " lo rechazó. NO lo vuelvas a procesar (saldría repetido): completa esa hoja a mano o avisa.", "err", 15000);
+    + mal.map(function(p){ return p[0] + (p[1].gasMessage ? " (" + p[1].gasMessage + ")" : "") + (p[1].outcome === "rejected" ? " lo rechazó" : " no lo recibió"); }).join(" y ")
+    + ". NO lo vuelvas a procesar (saldría repetido): completa esa hoja a mano o avisa." + ((atencion || []).filter(Boolean).length ? " " + atencion.filter(Boolean).join(" ") : ""), "err", 15000);   // auditoría de B: «inflight» no es «rechazó», y lo que requiere atención no se pierde
   return true;
 }
 function _reproAvisoFinal(id, ok, hecho, envios, atencion){
@@ -16774,7 +16796,7 @@ async function _madReproProcess(){
     _reproAvisoFinal("repro-paso", true, res.report.processed.length+" "+(tipo==="Desove"?"desove(s) registrado(s)":"mortalidad(es) registrada(s)"), [_o1,_o2], atencion);
     cEl.value="";
   } else {
-    if(!_reproAMedias("repro-paso", "El registro", [["la Bitácora", _o1, !!res.bitacora], ["la MATRIZ", _o2, !!res.matriz]]))   // T5.3
+    if(!_reproAMedias("repro-paso", "El registro", [["la Bitácora", _o1, !!res.bitacora], ["la MATRIZ", _o2, !!res.matriz]], atencion))   // T5.3
     _reproAvisoFinal("repro-paso", false, "", [_o1,_o2], atencion);
   }
 }
@@ -16980,7 +17002,7 @@ async function _madReproTransfer(){
   if(res.transfer){ okAll=(await postPayload(res.transfer, gasUrl(), _t2)) && okAll; }
   if(res.matriz) _reproUltimaEscritura=Date.now();   // 1a · la MATRIZ cambió: una lectura de antes ya no vale para confirmar
   _madReproShowTransferReport(res.report, trId, okAll);
-  if(!okAll && _reproAMedias("repro-t-paso", "El traslado " + trId, [["la MATRIZ", _t1, !!res.matriz], ["el historial de Transferencias", _t2, !!res.transfer]])) return;   // T5.3
+  if(!okAll && _reproAMedias("repro-t-paso", "El traslado " + trId, [["la MATRIZ", _t1, !!res.matriz], ["el historial de Transferencias", _t2, !!res.transfer]], atencion)) return;   // T5.3
   _reproAvisoFinal("repro-t-paso", okAll, res.report.moved.length+" individuo(s) transferido(s) en el traslado "+trId, [_t1,_t2], atencion);
   if(okAll) _reproBumpTrSeq(trId);
 }
@@ -18709,9 +18731,12 @@ function _collectTanquesGrid(salaOverride, fechaOverride){
          no entiende («--3») llega VACÍO y contaba como celda vaciada. Ahora la celda se marca y se anota, y saveMadTanquesGrid lo
          DICE (con 💾 o ☁️ no guarda nada). La columna no se pone en `data`: ni es un dato ni cuenta como celda VACIADA
          (_madTqVaciadas), que pondría a 0 lo ya guardado de ese tanque. */
-      const el = col.type === "int" ? fp.querySelector(`[name="tg_${tank}_${col.k}"]`) : null;
+      /* F5 (pauta 24-11) · y los PESOS: un negativo se guardaba como 0 sin aviso, y lo que el navegador no entiende contaba como celda
+         vaciada. Se marcan y se dicen como los conteos (los pesos sí admiten decimales). */
+      const el = (col.type === "int" || col.type === "num") ? fp.querySelector(`[name="tg_${tank}_${col.k}"]`) : null;
       if(el){
-        const malo = (v !== "" && !/^\d+$/.test(String(v).trim())) || !!(el.validity && el.validity.badInput);
+        const _t = String(v).trim(), _x = Number(_t.replace(",", "."));
+        const malo = (v !== "" && (col.type === "int" ? !/^\d+$/.test(_t) : !(isFinite(_x) && _x >= 0))) || !!(el.validity && el.validity.badInput);
         if(el.classList) el.classList.toggle("inp-bad", malo);
         if(malo){ invalidos.push({ tanque: tank, k: col.k, valor: v }); return; }
       }
@@ -18895,7 +18920,7 @@ function saveMadTanquesGrid(opts){
   if(_inv.length){
     const _it = _inv[0];
     const _msg = sala + " · tanque " + _it.tanque + ": «" + (String(_it.valor).trim() || "?") + "» en " + (_MAD_TQ_CONTEO_NOMBRE[_it.k] || _it.k)
-      + " no es un conteo (un número entero, de 0 en adelante)." + (_inv.length > 1 ? " Y " + (_inv.length - 1) + " celda(s) más." : "");
+      + (_MAD_TQ_CONTEO_NOMBRE[_it.k] ? " no es un conteo (un número entero, de 0 en adelante)." : " no es un peso válido (un número de 0 en adelante).") + (_inv.length > 1 ? " Y " + (_inv.length - 1) + " celda(s) más." : "");
     if(!silent){ toast(_msg + " Corrígelo antes de guardar.", "err", 6500); opts.cancelado = true; return 0; }
     toast(_msg + " Esa celda NO se guardó; el resto sí.", "warn", 6500);
   }
@@ -20204,7 +20229,7 @@ function _collectMareaGrid(){
   for(let fila=1; fila<=n; fila++){
     const g = (k)=>{ const el = fp.querySelector(`[name="mg_${fila}_${k}"]`); return el ? el.value : ""; };
     const row = {}; let hasData = false;
-    MAREA_GRID_COLS.forEach(c=>{ const v = sanitizeStr(g(c.k)); row[c.k] = v; if(v !== "") hasData = true; });
+    MAREA_GRID_COLS.forEach(c=>{ const v = _MAREA_ALTURAS.indexOf(c.k) !== -1 ? _mareaAlturaTxt(g(c.k)) : sanitizeStr(g(c.k)); row[c.k] = v; if(v !== "") hasData = true; });
     if(hasData) out.push(row);
   }
   return out;
@@ -20267,12 +20292,19 @@ function _mareaFechasMalas(rows){
   return (rows || []).map(function(a){ return sanitizeStr(a.fecha || "").trim(); })
     .filter(function(f){ return f !== "" && !isValidDate(mareaFechaIso(f)); });
 }
+/* T8.5 (revisión del 15-11; pauta del 24-11, usuario: «Sí: conservar el signo») · una altura NEGATIVA («-0,15», por debajo del cero)
+   llegaba en positivo: sanitizeStr (y el cleanCell del GAS) quitan el «-» inicial de un TEXTO, por si es una fórmula. Ahora una altura
+   que es exactamente un número negativo se conserva en la grilla y viaja como NÚMERO, que el GAS no toca. Lo demás, como siempre. */
+const _MAREA_ALTURAS = ["ap1","ab1","ap2","ab2","amp"];
+const _MAREA_NEG = /^-\s*\d+(?:[.,]\d+)?$/;
+function _mareaAlturaTxt(v){ const t = String(v == null ? "" : v).trim(); return _MAREA_NEG.test(t) ? t.replace(/\s+/g, "") : sanitizeStr(t); }
+function _mareaAlturaEnvio(v){ const t = String(v == null ? "" : v).trim(); return _MAREA_NEG.test(t) ? Number(t.replace(/\s+/g, "").replace(",", ".")) : sanitizeStr(t); }
 // Payload → hoja Marea. Sólo filas con Fecha (clave de upsert). El GAS reemplaza por Fecha.
 function buildMareaPayload(rows){
   const headers = MAREA_GRID_HEADERS.slice();
   const out = rows
     .filter(a => sanitizeStr(a.fecha||"") !== "")
-    .map(a => MAREA_GRID_COLS.map(c => c.k === "fecha" ? mareaFechaIso(a.fecha) : sanitizeStr(a[c.k]||"")));
+    .map(a => MAREA_GRID_COLS.map(c => c.k === "fecha" ? mareaFechaIso(a.fecha) : _MAREA_ALTURAS.indexOf(c.k) !== -1 ? _mareaAlturaEnvio(a[c.k]) : sanitizeStr(a[c.k]||"")));
   return { sheetName: MAREA_SHEET, headers, rows: out, replaceKey: true, keyCols:[0] };
 }
 async function syncMareaGrid(){
@@ -20691,7 +20723,9 @@ const BIO_NIVELES = [
   { max: Infinity, n: "Alto"  }
 ];
 function bioNivelCopias(v){
-  const s = String(v == null ? "" : v).trim().replace(",", ".");
+  // T6.12 (pauta 24-11) · «1.500» (punto de miles) son 1500 copias, no 1,5.
+  const s0 = String(v == null ? "" : v).trim();
+  const s = /^\d{1,3}(?:\.\d{3})+$/.test(s0) ? s0.replace(/\./g, "") : s0.replace(",", ".");
   if(!s) return "";
   const num = Number(s);
   if(!isFinite(num) || num <= 0) return "";       // "N/A", texto suelto, 0 o negativo
@@ -21582,6 +21616,7 @@ function astEstadioChange(){
    que se guarde, se envíe o se vacíe el formulario: así reintentar ☁️ corrige SU fila en la hoja en vez de añadir otra. */
 let _astIdSinGuardar = null;
 function _persistAst(opts){
+  if(_avisoNumerosMalos(_numerosMalos("#fp-ast"), "No se guardó ni se envió")) return null;   // F5 (T6.7)
   const data = collectAst();
   if(!validateAst(data)) return null;
   { const _fut = _fechaPosterior(data.fecha); if(_fut){ toast("⚠️ As Técnico: " + _fut + ". No se guardó ni se envió: corrígela.", "warn", 7000); return null; } }   // punto 46
@@ -23627,9 +23662,17 @@ const AUD_COLS_FICHA = {
 
 /* ── Las reglas (puras) ─────────────────────────────────── */
 // Una cantidad de larvas es un ENTERO: se quitan separadores («6,300,000», «6.300.000» o «6 300 000» son lo mismo).
+/* T6.11 (revisión del 15-11; pauta del 24-11, usuario: «Puntos de miles sí, decimales no») · antes se quitaba TODO lo que no era un
+   dígito: «1,5» → 15, «2.5» → 25, «6.300.000,00» → 630 000 000. Ahora: «6.300.000» = 6 300 000 (y «…,00», con ceros, también); una
+   cifra con decimales de verdad («1,5», «2.5») da NaN y la validación la rechaza. */
 function audEntero(v){
-  const s = String(v == null ? "" : v).replace(/[^\d]/g, "");
-  return s === "" ? "" : Number(s);
+  const s = String(v == null ? "" : v).replace(/\s+/g, "");
+  if(s === "") return "";
+  if(/^\d+$/.test(s)) return Number(s);
+  if(/^\d{1,3}([.,])\d{3}(?:\1\d{3})*$/.test(s)) return Number(s.replace(/[.,]/g, ""));   // miles: «6.300.000», «6,300,000», «1.500»
+  const m = /^(\d{1,3}(?:([.,])\d{3})*|\d+)([.,])(\d{1,2})$/.exec(s);                    // con decimales: «6.300.000,00», «1,5», «2.5»
+  if(m && m[3] !== m[2] && !/[1-9]/.test(m[4])) return Number(m[1].replace(/[.,]/g, ""));   // sólo ceros detrás: es entero
+  return NaN;
 }
 // PL/g, toneladas y porcentajes admiten decimales, con coma o punto.
 function audDecimal(v){
@@ -26720,6 +26763,8 @@ function downloadTrasladoPDF(){
    refrescan el rótulo de estado y las marcas del selector. */
 function trasGuardarLocal(opts){
   const callado = !!(opts && opts.callado);
+  // F5 (T7.9) · lo que el navegador no entiende (O₂, temperatura, salinidad…) no se guarda vacío: se dice SIEMPRE, también en silencio.
+  if(_avisoNumerosMalos(_numerosMalos("#fp-traslado"), "No se guardó")) return false;
   const data = collectTraslado();
   if(!trasTieneDatos(data)){
     if(!callado) toast("Todavía no hay nada que guardar en este traslado","warn",3500);
@@ -28597,7 +28642,7 @@ function renderMicFactores(){
   const blocks = Object.keys(MIC_DR_BASE).map(ak=>{
     const rows = Object.keys(MIC_DR_BASE[ak]).map(pk=>{
       const r = (F[ak] && F[ak][pk]) || {};
-      const inp = (field, w)=> `<input type="number" class="pinp" value="${r[field]!=null?r[field]:""}" onchange="micFactorSet('${ak}','${pk}','${field}',this.value)" step="any" min="0" placeholder="—" style="width:${w}px">`;
+      const inp = (field, w)=> `<input type="number" class="pinp" value="${r[field]!=null?r[field]:""}" onchange="micFactorSet('${ak}','${pk}','${field}',(this.validity&&this.validity.badInput)?null:this.value)" step="any" min="0" placeholder="—" style="width:${w}px">`;
       // TODOS los parámetros muestran Mínimo/Leve/Moderado editables (incluidos
       // Enterobact./Levaduras/Bact.Rojas, antes "sin umbrales"). Si se dejan
       // vacíos, ese parámetro no se clasifica por color (solo registra el UFC).
@@ -28619,6 +28664,7 @@ function renderMicFactores(){
     <div class="fc-b"><div style="font-size:10.5px;color:var(--tx3);margin-bottom:8px">El conteo se multiplica por el <b>Factor</b>; el <b>UFC/mL</b> resultante se clasifica con los umbrales (Elevado ≥ Moderado). <b>Enterobact., Levaduras y Bact.Rojas</b> también aceptan umbrales: déjalos vacíos si aún no los tienes (no se clasifican). Se guarda automáticamente en este dispositivo al editar; el botón <b>Guardar factores</b> confirma el guardado.</div>${blocks}</div></div>`;
 }
 function micFactorSet(ak, pk, field, val){
+  if(val === null){ toast("⚠ Eso no es un número que se entienda: no se cambió nada. Corrígelo.","err",5000); return; }   // F5 (T4.3 del Lab)
   const F = loadMicFactors(); F[ak] = F[ak] || {}; F[ak][pk] = F[ak][pk] || {};
   const n = _labNum(val);
   if(val === "" || !isFinite(n)) delete F[ak][pk][field]; else F[ak][pk][field] = n;
@@ -29971,7 +30017,7 @@ function renderCalRangos(){
     { t:"Ensayo (antes / después)", keys:["sal_a","sal_d","ph_a","ph_d","calcio_a","calcio_d","magnesio_a","magnesio_d","potasio_a","potasio_d"] },
     { t:"Sulfato, Sulfuros y Cloro", keys:["sulfato","sulfuro","cl_libre","cl_total","cl_comb"] }
   ];
-  const inp=(pk,field,w)=>{ const r=R[pk]||{}; return `<input type="number" class="pinp" value="${r[field]!=null?r[field]:""}" onchange="calRangeSet('${pk}','${field}',this.value)" step="any" placeholder="—" style="width:${w}px">`; };
+  const inp=(pk,field,w)=>{ const r=R[pk]||{}; return `<input type="number" class="pinp" value="${r[field]!=null?r[field]:""}" onchange="calRangeSet('${pk}','${field}',(this.validity&&this.validity.badInput)?null:this.value)" step="any" placeholder="—" style="width:${w}px">`; };
   const blocks=groupDefs.map(g=>{
     const rows=g.keys.map(pk=>`<tr><td style="text-align:left;font-weight:600">${escapeHtml(CAL_PARAMS[pk]?CAL_PARAMS[pk].l:pk)}</td><td>${inp(pk,"min",90)}</td><td>${inp(pk,"max",90)}</td></tr>`).join("");
     return `<div class="fc" style="margin-bottom:12px"><div class="fc-h"><div class="fc-t">${escapeHtml(g.t)}</div></div>
@@ -29991,7 +30037,7 @@ function renderCalRangos(){
       const her = propio ? null : (R[pk]||{});
       const ph = her && her[field]!=null ? String(her[field]) : "—";
       const v = propio && propio[field]!=null ? propio[field] : "";
-      return `<input type="number" class="pinp" value="${v}" onchange="calFmtRangeSet('${fk}','${pk}','${field}',this.value)" step="any" placeholder="${escapeHtml(ph)}" style="width:${w}px">`;
+      return `<input type="number" class="pinp" value="${v}" onchange="calFmtRangeSet('${fk}','${pk}','${field}',(this.validity&&this.validity.badInput)?null:this.value)" step="any" placeholder="${escapeHtml(ph)}" style="width:${w}px">`;
     };
     const rows=fmt.params.map(pk=>{
       const est = declarado(pk) ? (R2[pk] ? "propio" : "sin rango") : "hereda";
@@ -30008,6 +30054,7 @@ function renderCalRangos(){
     <div class="fc-b"><div style="font-size:10.5px;color:var(--tx3);margin-bottom:8px">El valor medido se clasifica <b>verde</b> (dentro) o <b>rojo</b> (fuera). Si dejas <b>Mínimo y Máximo</b> vacíos, ese parámetro no se colorea (solo registro). Se guarda automáticamente al editar; el botón <b>Guardar rangos</b> confirma el guardado.</div>${blocks}${fmtBlocks}</div></div>`;
 }
 function calFmtRangeSet(fk, pk, field, val){
+  if(val === null){ toast("⚠ Eso no es un número que se entienda: no se cambió nada. Corrígelo.","err",5000); return; }   // F5 (T4.3 del Lab)
   const R=loadCalFmtRanges(); R[fk]=R[fk]||{};
   // Si el parámetro HEREDABA, el override arranca desde el rango general: así
   // editar solo el Máximo no borra en silencio el Mínimo que venía heredado.
@@ -30025,6 +30072,7 @@ function calRangosGuardar(){
   toast("✅ Rangos (Calidad de Agua) guardados","ok",2500);
 }
 function calRangeSet(pk, field, val){
+  if(val === null){ toast("⚠ Eso no es un número que se entienda: no se cambió nada. Corrígelo.","err",5000); return; }   // F5 (T4.3 del Lab)
   const R=loadCalRanges(); R[pk]=R[pk]||{};
   const n=_labNum(val);
   if(val===""||!isFinite(n)) delete R[pk][field]; else R[pk][field]=n;
