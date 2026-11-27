@@ -1005,9 +1005,11 @@ describe('Libro · «Recalcular» RECALCULA de verdad (2026-09-09)', () => {
     const veces = (src.match(/madSaldoCargar\(true[,)]/g) || []).length;
     // 2026-09-15: el sexto es «🔄 Leer saldo y pesos» de Alimentación.
     // 2026-09-24 (punto 5): el séptimo es la lectura de «📥 Cargar» de Desoves y su «🔄 Releer».
-    expect(veces, 'se esperaban las 7 llamadas forzadas del libro').toBe(7);
+    // 2026-11-26 (usuario): el octavo es «⬇ Cargar» de los pesos promedio en Fin de Ciclo.
+    expect(veces, 'se esperaban las 8 llamadas forzadas del libro').toBe(8);
     expect(src).toContain('async function madAlimLeer(){');
     expect(src).toContain('async function madIngVerOcupacion(){');
     expect(src).toContain('async function madDesCargarReleer(el){');
+    expect(src).toContain('async function madFinCargarPesos(btn){');
   });
 });

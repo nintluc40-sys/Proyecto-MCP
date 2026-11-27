@@ -20,7 +20,7 @@ describe('el catálogo', () => {
     const src = readFileSync(join(process.cwd(), 'public/registros/engine.js'), 'utf8');
     const bloque = src.match(/const MAD_ZONAS = \[([\s\S]*?)\];/)[1];
     const deEngine = [...bloque.matchAll(/zona:\s*"([^"]+)",\s*tanques:\s*(\d+)/g)].map((m) => ({ zona: m[1], tanques: +m[2] }));
-    expect(deEngine).toHaveLength(5);
+    expect(deEngine).toHaveLength(8);
     expect(ZONAS).toEqual(deEngine);
   });
   it('las horas de las tomas son las de la sala: 12 de temperatura (2:00 … 0:00) y 4 de O₂', () => {

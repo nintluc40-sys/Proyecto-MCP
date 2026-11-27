@@ -21,6 +21,10 @@ export const ZONAS = [
   { zona: 'Sala desove/eclosión 2', tanques: 5 },
   { zona: 'Reservorio 1', tanques: 0 },
   { zona: 'Reservorio 2', tanques: 0 },
+  // 2026-11-26 (usuario) · tres áreas más, como los reservorios.
+  { zona: 'Colector', tanques: 0 },
+  { zona: 'RAS', tanques: 0 },
+  { zona: 'Agua de playa', tanques: 0 },
 ];
 const horaDe = (columna) => columna.split(' ').pop();
 /** Las horas de las tomas: la temperatura, 2:00 … 0:00; el O₂, 06:00 … 00:00. */

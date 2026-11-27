@@ -169,7 +169,11 @@ const MAD_ZONAS = [
   { zona: "Sala desove/eclosión 1", tanques: 5 },
   { zona: "Sala desove/eclosión 2", tanques: 5 },
   { zona: "Reservorio 1",           tanques: 0 },
-  { zona: "Reservorio 2",           tanques: 0 }
+  { zona: "Reservorio 2",           tanques: 0 },
+  // 2026-11-26 (usuario) · tres áreas más, como los reservorios: una fila cada una, sin tanque.
+  { zona: "Colector",               tanques: 0 },
+  { zona: "RAS",                    tanques: 0 },
+  { zona: "Agua de playa",          tanques: 0 }
 ];
 /** Las filas de la grilla de zonas, en su orden: { zona, tanque } (tanque "" en un reservorio). */
 const MAD_ZONAS_FILAS = MAD_ZONAS.reduce(function(out, z){
@@ -13572,7 +13576,10 @@ function _madFinCardHTML(fecha){
     +   '<label style="'+_MAD_ING_LBL+'" title="Van dentro de los machos y hembras que salen">Rojos<input class="mf-rojos" type="number" min="0" step="1" inputmode="numeric" style="'+_MAD_ING_INP+';width:90px"></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Peso promedio machos (g)<input class="mf-ppm" type="number" min="0" step="0.01" inputmode="decimal" style="'+_MAD_ING_INP+';width:150px"></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Peso promedio hembras (g)<input class="mf-pph" type="number" min="0" step="0.01" inputmode="decimal" style="'+_MAD_ING_INP+';width:150px"></label>'
+    // 2026-11-26 (usuario) · ⬇ Cargar: los dos pesos promedio del lote escrito, de sus tanques. Ver madFinCargarPesos.
+    +   '<button class="btn mf-pcargar" type="button" onclick="madFinCargarPesos(this)" title="Rellena los dos pesos promedio con el último peso registrado de cada tanque donde está el lote, ponderado por sus animales" style="font-size:11px">⬇ Cargar</button>'
     + '</div>'
+    + '<div class="mf-pnota" style="font-size:11px;color:#64748b;margin:-4px 0 8px"></div>'
     + '<div class="mf-nota" style="font-size:11px;color:#64748b;margin-bottom:8px"></div>'
     + '<label style="'+_MAD_ING_LBL+'">Observaciones<input class="mf-obs" style="'+_MAD_ING_INP+';width:100%;box-sizing:border-box"></label>'
     + '</div>';
@@ -13607,6 +13614,80 @@ function madFinDelCard(btn){
   const b=btn.closest(".mf-cierre"), c=document.getElementById("mf-cards");
   if(b && c && c.querySelectorAll(".mf-cierre").length>1) b.remove();
   else toast("Debe quedar al menos un cierre.","warn",2500);
+}
+/* 2026-11-26 (usuario) · ⬇ CARGAR LOS PESOS PROMEDIO DEL LOTE en un cierre de Fin de Ciclo. Decisiones del usuario:
+   - de cada tanque donde está el lote, su ÚLTIMO peso registrado: el mismo que usa Alimentación (madAlimPesosDeReferencia:
+     la biometría de Tanques o lo tecleado en Alimentación; sin ninguna, la del lote en otro tanque o la de Ingreso);
+   - el promedio entre tanques, PONDERADO por los animales de ESE sexo del lote en cada tanque;
+   - un tanque MIXTO (el lote con otros) cuenta, con su peso de tanque entero: la nota lo dice.
+   «Dónde está el lote» es el libro AL CIERRE de la fecha del registro (hoy si no hay fecha o es futura); si ese día el lote
+   ya no tiene animales (un cierre Total ya enviado), el del día anterior. Sólo cuentan las lecturas hasta esa fecha.
+   Pisa lo escrito en los dos pesos (es un botón: se pulsa para eso); un sexo sin peso en ningún tanque se deja como estaba. */
+function _madFinLotesVivos(libro, lote){
+  const L = String(lote).toUpperCase().replace(/\s+/g, ""), out = [];
+  Object.keys(libro.tanques || {}).forEach(function(kt){
+    const T = libro.tanques[kt], vivos = T.composicion.filter(function(c){ return c.machos > 0 || c.hembras > 0; });
+    const c = vivos.filter(function(x){ return String(x.lote).toUpperCase().replace(/\s+/g, "") === L; })[0];
+    if(c) out.push({ k:kt, sala:T.sala, tanque:T.tanque, machos:c.machos, hembras:c.hembras, mixto:vivos.length > 1 });
+  });
+  return out;
+}
+function madFinPesosDelLote(fuentes, lote, fecha){
+  const hasta = function(r){ return _madAlimF10(r.Fecha) <= fecha; };
+  const f = {}; Object.keys(fuentes || {}).forEach(function(n){ f[n] = (fuentes[n] || []).filter(hasta); });
+  let libro = madConstruirLibro(f, { hoy:fecha, hasta:fecha }), tanques = _madFinLotesVivos(libro, lote);
+  if(!tanques.length){
+    const d = new Date(fecha + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - 1);
+    const antes = d.toISOString().slice(0, 10);
+    libro = madConstruirLibro(f, { hoy:antes, hasta:antes }); tanques = _madFinLotesVivos(libro, lote);
+  }
+  const pesos = madAlimPesosDeReferencia(f, libro);
+  const sexo = function(s, n){
+    let suma = 0, animales = 0; const usados = [];
+    tanques.forEach(function(t){
+      const p = (pesos[t.k] || {})[s] || {}, v = Number(p.valor);
+      if(!(t[n] > 0) || !(v > 0)) return;
+      suma += v * t[n]; animales += t[n]; usados.push(t);
+    });
+    return { valor:animales ? _madAlimR2(suma / animales) : "", tanques:usados.length, animales:animales };
+  };
+  return { tanques:tanques, machos:sexo("machos", "machos"), hembras:sexo("hembras", "hembras") };
+}
+async function madFinCargarPesos(btn){
+  const c = btn && btn.closest(".mf-cierre"); if(!c) return;
+  const nota = c.querySelector(".mf-pnota"), lote = madLibroTxt((c.querySelector(".mf-lote") || {}).value);
+  if(!lote){ toast("Escribe primero el lote del cierre.","warn",3000); return; }
+  const fEl = document.getElementById("mf-fecha"), hoy = today();
+  const fecha = fEl && isValidDate(fEl.value) && fEl.value <= hoy ? fEl.value : hoy;
+  btn.disabled = true;
+  if(nota) nota.textContent = "Leyendo las hojas… puede tardar unos segundos.";
+  try{
+    let filasAlim = [], sinAlim = false;
+    const pAlim = _reproFetchSheet(MAD_ALIM_SHEET, null).then(function(x){ filasAlim = x || []; }).catch(function(){ sinAlim = true; });
+    const base = await madSaldoCargar(true);
+    await pAlim;
+    const fu = madLibroFuentes(); fu.alimentacion = filasAlim;
+    const r = madFinPesosDelLote(fu, lote, fecha), mal = madLibroIncompleto(base);
+    if(!r.tanques.length){
+      if(nota) nota.textContent = "";
+      toast("El lote " + lote + " no tiene animales en ningún tanque al " + fecha + ": no hay pesos que cargar.","warn",5000);
+      return;
+    }
+    const poner = function(sel, v){ const e = c.querySelector(sel); if(!e || v === "") return; e.value = String(v); e.dispatchEvent(new Event("input", { bubbles:true })); };
+    poner(".mf-ppm", r.machos.valor); poner(".mf-pph", r.hembras.valor);
+    const mixtos = r.tanques.filter(function(t){ return t.mixto; }).map(function(t){ return t.sala + " T" + t.tanque; });
+    const parte = function(simbolo, x){ return x.valor === "" ? simbolo + " sin peso registrado (se deja como estaba)" : simbolo + " " + x.valor + " g de " + x.tanques + " tanque(s), " + x.animales + " animales"; };
+    if(nota) nota.textContent = "⬇ Lote " + lote + " al " + fecha + ": " + parte("♂", r.machos) + " · " + parte("♀", r.hembras) + "."
+      + (mixtos.length ? " Mixtos (peso del tanque entero): " + mixtos.join(", ") + "." : "")
+      + (sinAlim ? " Sin la hoja de Alimentación: sólo los pesos de Tanques e Ingreso." : "")
+      + (mal ? " ⚠ " + mal + "." : "");
+    if(r.machos.valor === "" && r.hembras.valor === "") toast("Ningún tanque del lote " + lote + " tiene peso registrado.","warn",4000);
+  }catch(_){
+    if(nota) nota.textContent = "";
+    toast("No se pudieron leer las hojas. Reintenta.","err",4000);
+  }finally{
+    btn.disabled = false;
+  }
 }
 function madFinCollect(){
   const g=function(el,sel){ const e=el.querySelector(sel); return e?e.value:""; };
