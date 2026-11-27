@@ -8,7 +8,7 @@
    «Maduración Zonas», con llave (Fecha, Zona, Tanque), y en el mismo PDF de Salas.
 
    Qué se exige:
-   1 · La grilla pinta las 21 filas (18 + Colector, RAS y Agua de playa, 26-11) y sólo se guardan y envían las que llevan alguna lectura.
+   1 · La grilla pinta las 21 filas (18 + Ambiente, RAS y Agua de playa, 26-11) y sólo se guardan y envían las que llevan alguna lectura.
    2 · Las mismas reglas que Salas: fuera de rango no se guarda (bloquea a mano, avisa en silencio) y una
        lectura borrada se guarda borrada. Cada (fecha, zona, tanque) es UN registro: guardar otra vez
        actualiza, y el T1 de una zona no es el de otra.
@@ -96,12 +96,12 @@ const celS = (si, k) => document.querySelector('#fp-salas [name="sg_' + si + '_'
 const zonas = () => H.loadMad('zonas').map((r) => r.data);
 
 describe('Maduración · Zonas · la grilla', () => {
-  it('pinta las 21 filas en su orden: 6 + 5 + 5 tanques, los dos reservorios y Colector, RAS y Agua de playa, sin tanque', () => {
+  it('pinta las 21 filas en su orden: 6 + 5 + 5 tanques, los dos reservorios y Ambiente, RAS y Agua de playa, sin tanque', () => {
     expect(H.MAD_ZONAS_FILAS.map((f) => f.zona + '|' + f.tanque)).toEqual([
       ...[1, 2, 3, 4, 5, 6].map((t) => 'Sala desove (masivos)|' + t),
       ...[1, 2, 3, 4, 5].map((t) => 'Sala desove/eclosión 1|' + t),
       ...[1, 2, 3, 4, 5].map((t) => 'Sala desove/eclosión 2|' + t),
-      'Reservorio 1|', 'Reservorio 2|', 'Colector|', 'RAS|', 'Agua de playa|',
+      'Reservorio 1|', 'Reservorio 2|', 'Ambiente|', 'RAS|', 'Agua de playa|',
     ]);
     const filas = document.querySelectorAll('#fp-zonas tbody tr');
     expect(filas).toHaveLength(21);
@@ -165,12 +165,12 @@ describe('Maduración · Zonas · guardar', () => {
     expect(avisos.at(-1).tipo).toBe('warn');
   });
 
-  it('🆕 26-11 · las tres áreas nuevas (Colector, RAS, Agua de playa) se guardan como un reservorio: sin tanque', () => {
-    ponerZ(18, 'temp_02', 27.5);      // Colector
+  it('🆕 26-11 · las tres áreas nuevas (Ambiente, RAS, Agua de playa) se guardan como un reservorio: sin tanque', () => {
+    ponerZ(18, 'temp_02', 27.5);      // Ambiente
     ponerZ(19, 'ox_06', 6.1);         // RAS
     ponerZ(20, 'temp_10', 28.4);      // Agua de playa
     expect(H.saveMadSalasGrid()).toBe(3);
-    expect(zonas().map((x) => x.zona + '|' + x.tanque).sort()).toEqual(['Agua de playa|', 'Colector|', 'RAS|']);
+    expect(zonas().map((x) => x.zona + '|' + x.tanque).sort()).toEqual(['Agua de playa|', 'Ambiente|', 'RAS|']);
   });
 
   it('cada (fecha, zona, tanque) es UN registro: guardar otra vez actualiza, y el T1 de otra zona es otro', () => {

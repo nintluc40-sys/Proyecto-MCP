@@ -171,7 +171,7 @@ const MAD_ZONAS = [
   { zona: "Reservorio 1",           tanques: 0 },
   { zona: "Reservorio 2",           tanques: 0 },
   // 2026-11-26 (usuario) · tres áreas más, como los reservorios: una fila cada una, sin tanque.
-  { zona: "Colector",               tanques: 0 },
+  { zona: "Ambiente",               tanques: 0 },   // 2026-11-27 (usuario): antes «Colector»
   { zona: "RAS",                    tanques: 0 },
   { zona: "Agua de playa",          tanques: 0 }
 ];
